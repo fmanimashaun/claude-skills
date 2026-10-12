@@ -220,6 +220,12 @@
      "used_by": ["scripts/check_always_on_cost.py"]},
     {"id": "subagent-descriptions-take-context", "url": "https://code.claude.com/docs/en/sub-agents",
      "quote": "Those descriptions take up context, so keep them short.",
-     "used_by": ["scripts/check_always_on_cost.py"]}
+     "used_by": ["scripts/check_always_on_cost.py"]},
+    {"id": "trust-keyed-on-repository-root", "url": "https://code.claude.com/docs/en/permissions",
+     "quote": "keys the trust on the git repository root",
+     "used_by": ["docs/evidence/audits/2026-10-12-test-preflight-threat-model-1821.md"]},
+    {"id": "pretooluse-before-permission-prompt", "url": "https://code.claude.com/docs/en/permissions",
+     "quote": "PreToolUse hooks run before the permission prompt",
+     "used_by": ["docs/evidence/audits/2026-10-12-test-preflight-threat-model-1821.md"]}
   ]
 }
