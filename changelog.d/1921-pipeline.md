@@ -1,2 +1,0 @@
-section: pipeline
-- **The installer fixture installs from non-executable hooks — `plugins/pipeline/scripts/git_guard_selftest.py`** (#1921). `cp` keeps the source mode and the staged sources have been executable since #1898, so the installer's `chmod +x` was a no-op and its mutant survived the v1.156.0 sweep. The "both guards are installed" case now copies the installer and hooks with mode 0644 first; `mutation_check.py --guard install_git_guards` catches 7 of 7. Our own design; no framework claim.
