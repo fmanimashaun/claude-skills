@@ -1196,7 +1196,9 @@ def check_misdescribed_agents() -> tuple[list[Finding], int]:
                 own = json.loads(plugin_json.read_text(encoding="utf-8"))
             except ValueError:
                 own = {}
-            descriptions.append((f"{source.lstrip('./')}/.claude-plugin/plugin.json", own.get("description") or ""))
+            if not isinstance(own, dict):   # a manifest that is valid JSON but not an object (a list, a string) has no description to read
+                own = {}
+            descriptions.append((f"{source.removeprefix('./')}/.claude-plugin/plugin.json", own.get("description") or ""))
 
         for where, description in descriptions:
             named = [agent for agent in shipped if agent in description]
@@ -2050,11 +2052,12 @@ def check_marketplace_version_duplicate() -> tuple[list[Finding], int]:
         name = entry["name"]
         examined += 1
         source = str(entry.get("source") or "")
-        own = ROOT / source.lstrip("./") / ".claude-plugin" / "plugin.json" if source else None
+        own = ROOT / source.removeprefix("./") / ".claude-plugin" / "plugin.json" if source else None
         own_version = None
         if own is not None and own.is_file():
             try:
-                own_version = (json.loads(read(own)) or {}).get("version")
+                own_obj = json.loads(read(own))
+                own_version = own_obj.get("version") if isinstance(own_obj, dict) else None   # valid JSON that is not an object (#1945's non-object scenario crashed here)
             except json.JSONDecodeError:
                 own_version = None
         if own_version and "version" in entry:
@@ -5322,6 +5325,10 @@ def selftest() -> int:
     scenario(
         "a plugin manifest with a wrong stated count", rule="misdescribed-agents", expect_finding=True,
         files={".claude-plugin/marketplace.json": _agents_manifest("A flow."), "p/.claude-plugin/plugin.json": _own_manifest("Has five specialist subagents."), **_TWO},
+    )
+    scenario(
+        "a plugin manifest that is JSON but not an object is not read as a description", rule="misdescribed-agents", expect_finding=False,
+        files={".claude-plugin/marketplace.json": _agents_manifest("A flow."), "p/.claude-plugin/plugin.json": json.dumps(["Agents: alpha."]) + "\n", **_TWO},
     )
     # A plugin with NO agents directory is out of scope entirely -- rails-stack is skills only.
     scenario(

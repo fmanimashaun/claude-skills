@@ -523,6 +523,13 @@ GUARD = Guard(
             "a wrong spelled-out count",
         ),
         Mutation(
+            # #1945, a0's P3: the stated count is compared for the plugin manifest too, not only the marketplace entry.
+            "a stated agent count is never compared with what the plugin ships",
+            "                if claimed is not None and claimed != len(shipped):",
+            "                if False:",
+            "a plugin manifest with a wrong stated count",
+        ),
+        Mutation(
             # #1945: the plugin's own plugin.json is a second description of the same plugin.
             "the plugin's own manifest description is never read, so only the marketplace entry is checked",
             "        if plugin_json.is_file():",
@@ -1193,7 +1200,7 @@ GUARD = Guard(
             # version leaves the marketplace copy operative, and flagging it would be a false
             # positive of exactly the kind #1041 was filed for.
             "presence of plugin.json counts as a declared version, whatever is in it",
-            '                own_version = (json.loads(read(own)) or {}).get("version")',
+            '                own_version = own_obj.get("version") if isinstance(own_obj, dict) else None',
             '                own_version = "present"',
             "a plugin.json without a version key leaves marketplace.json authoritative",
         ),
