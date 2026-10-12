@@ -102,8 +102,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a declaration is judged by its name, not its own base",
-            '            if m and _is_tool(m["base"], tools) and m["name"].split("::")[-1] not in bases:',
-            '            if m and m["name"].split("::")[-1] in tools and m["name"].split("::")[-1] not in bases:',
+            '        if m and _is_tool(m["base"], tools) and m["name"].split("::")[-1] not in bases:',
+            '        if m and m["name"].split("::")[-1] in tools and m["name"].split("::")[-1] not in bases:',
             "a name declared in two places is judged per declaration",
         ),
         Mutation(

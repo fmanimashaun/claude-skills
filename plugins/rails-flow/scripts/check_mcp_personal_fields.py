@@ -5,8 +5,8 @@ Read from DECLARATIONS, never from a run (coordinator's decision on #1931: deter
 convention is the app's, generalised from Retask; it is not `mcp` gem API (gem 1.7.0 has `MCP::Tool.output_schema` and nothing
 naming sources):
 
-  * a TOOL is a Ruby class under `app/` that inherits `MCP::Tool`, directly or through an app class that does, and calls
-    `tool_name`;
+  * a TOOL is a class-form MCP tool as check_mcp_annotations.py finds it (under `app/` or `lib/`, inheriting `MCP::Tool`
+    directly or through an app class) that calls `tool_name`; the `define` and `Class.new` forms declare no `sources` here;
   * its own file declares what its result is built from: `sources: %w[table.column ...]` or `sources: ["table.column", ...]`.
     `count(...)` and `derived(...)` carry no row value and are skipped. A bare `table.column` reaches the result, and so does
     `sum(...)`, `avg(...)`, `min(...)` or `max(...)` of one: those are held to the inner column's category.
@@ -32,25 +32,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_privacy_inventory import INVENTORY, Unusable, load_inventory  # noqa: E402  one inventory reader, not two
+import check_mcp_annotations as annotations  # noqa: E402  one definition of "what is an MCP tool class", not two
 
 DECLARATION = Path(".rails-flow/mcp.json")
 MCP_GEM = re.compile(r"""^\s*gem\s+["']mcp["']""", re.M)
-CLASS = re.compile(r"^\s*class\s+(?P<name>[A-Z][\w:]*)\s*<\s*(?P<parent>(?:::)?[A-Z][\w:]*)", re.M)
 TOOL_NAME = re.compile(r"^\s*tool_name\s*\(?\s*[\"'](?P<name>[^\"']+)[\"']", re.M)
 SOURCES_W = re.compile(r"sources:\s*%w\[(?P<body>[^\]]*)\]")
 SOURCES_A = re.compile(r"sources:\s*\[(?P<body>[^\]]*)\]")
 COLUMN = re.compile(r"\A[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*\Z")
 # An aggregate that RETURNS a value derived from the column (a sum of one person's pay is their pay when the group is one).
 VALUE_AGGREGATE = re.compile(r"\A(?:sum|avg|min|max)\((?P<col>[^()]+)\)\Z")
-GEM_BASE = "MCP::Tool"
 
 
 class CouldNotCheck(Exception):
     pass
-
-
-def _short(const: str) -> str:
-    return const.removeprefix("::")
 
 
 def code_only(text: str) -> str:
@@ -85,32 +80,24 @@ def _read(path: Path) -> str:
 
 
 def tools(root: Path) -> list[tuple[str, Path, list[str]]]:
-    """[(tool_name, file, [source tokens])] for every class under app/ that reaches MCP::Tool and calls `tool_name`."""
-    classes: dict[str, tuple[str, Path, str]] = {}            # short name -> (parent, file, code)
-    for f in sorted((root / "app").rglob("*.rb")) if (root / "app").is_dir() else []:
-        code = code_only(_read(f))
-        for m in CLASS.finditer(code):
-            name = _short(m.group("name")).split("::")[-1]
-            classes[name] = (_short(m.group("parent")), f, code)
-
-    def reaches_gem(name: str, seen: frozenset = frozenset()) -> bool:
-        parent = classes[name][0]
-        if parent == GEM_BASE:
-            return True
-        short = parent.split("::")[-1]
-        return short in classes and short not in seen and reaches_gem(short, seen | {name})
-
+    """[(tool_name, file, [source tokens])] for every concrete class-form MCP tool (check_mcp_annotations.class_tools) that
+    calls `tool_name`. An abstract base (no `tool_name`) declares nothing of its own and is not judged."""
+    try:
+        found = annotations.class_tools(root)
+    except annotations.Unusable as exc:
+        raise CouldNotCheck(str(exc)) from exc
     out = []
-    for name, (_parent, f, code) in sorted(classes.items()):
+    for path, _line, _name, body in found:
+        code = code_only(body)
         tn = TOOL_NAME.search(code)
-        if not tn or not reaches_gem(name):
+        if not tn:
             continue
         tokens: list[str] = []
         for m in SOURCES_W.finditer(code):
             tokens += m.group("body").split()
         for m in SOURCES_A.finditer(code):
             tokens += re.findall(r"""["']([^"']+)["']""", m.group("body"))
-        out.append((tn.group("name"), f, tokens))
+        out.append((tn.group("name"), path, tokens))
     return out
 
 
@@ -205,6 +192,8 @@ def selftest() -> int:
          {**base, T: 'class Countries < Mcp::Report\n  tool_name "countries"\n  # fields("a" => { sources: %w[requests.country] })\nend\n'}, 1),
         ("a sum of a personal column is held to that column's category", {**base, T: tool("countries", "%w[sum(users.email_address)]")}, 1),
         ("CONTROL: a sum of a `none` column is clean", {**base, T: tool("countries", "%w[sum(requests.country)]")}, 0),
+        ("CONTROL: a trailing comment's sources are not a declaration",
+         {**base, T: 'class Countries < Mcp::Report\n  tool_name "countries"\n  fields("a" => { sources: %w[requests.country] }) # was sources: %w[users.email_address]\nend\n'}, 0),
         ("a column the inventory does not list is a finding", {**base, T: tool("countries", "%w[requests.secret]")}, 1),
         ("a source that is not table.column is a finding", {**base, T: tool("countries", "%w[country]")}, 1),
         ("CONTROL: a class that is not a tool (no MCP::Tool ancestor) is not checked",
