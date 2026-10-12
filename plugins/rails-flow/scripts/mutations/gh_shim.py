@@ -21,6 +21,7 @@ GUARD = Guard(
         Mutation('a gh api that marks a PR ready is not judged', 'if has_pr_ready "${ORIG[@]}" || has_api_ready "${ORIG[@]}"; then', 'if has_pr_ready "${ORIG[@]}"; then', 'gh api'),
         Mutation('an alias placeholder is not substituted', 'expanded+=("${rest[$((n - 1))]:-}")', 'expanded+=("$w")', 'alias placeholder'),
         Mutation('a second copy of the shim is taken for the real gh', '  is_shim "$d/gh" && continue', '  :', 'two shims'),
-        Mutation('an alias expansion with a quote or backslash is read as plain blanks-separated words', '    *[\\\'\\"\\\\]*) case "$exp" in *ready*|*api*) judge=1; argv=(pr ready "$exp") ;; esac ;;', '    *[\\\'\\"\\\\]*) : ;;', 'alias flags'),
+        Mutation('an alias expansion that is not plain words is read, not refused', '    *[!A-Za-z0-9\\ \\\t_./:@=,+%\\$-]*)', '    *NEVER_MATCHES*)', 'alias flags'),
+        Mutation('a quoted placeholder is not normalised, so a documented alias is refused', '  for n in 1 2 3 4 5 6 7 8 9; do', '  for n in; do', 'alias placeholder'),
     ),
 )
