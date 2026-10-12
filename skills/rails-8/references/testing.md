@@ -402,25 +402,31 @@ Alternative driver worth knowing: `cuprite` (CDP, no chromedriver binary).
 ### Playwright: a declared alternative, not the default (#1441)
 
 **Selenium stays the mandated driver.** Playwright is a choice a project may make on purpose and records in its
-CLAUDE.md "Project Overrides", not a swap to make by default. Rails ships the driver name since 7.2 (`:playwright` is one
-of `ActionDispatch::SystemTesting::Driver`'s built-in drivers, beside `:selenium`, `:cuprite` and `:rack_test`); it needs
-the `capybara-playwright-driver` gem (0.5.12 when this was written), the Node `playwright-core` package at the version its
-`playwright-ruby-client` expects, and a browser installed with `playwright-core install chromium` — on CI too.
+CLAUDE.md "Project Overrides", not a swap to make by default. Rails ships the driver name since **7.1** (`:playwright` is one
+of `ActionDispatch::SystemTesting::Driver`'s built-in drivers, beside `:selenium`, `:cuprite` and `:rack_test`; absent at
+v7.0.0, present from v7.1.0). It needs the `capybara-playwright-driver` gem (0.5.12 when this was written) and, per its README,
+the Node `playwright` package at the version the Ruby client declares, plus the browsers — on CI too:
+
+```bash
+PLAYWRIGHT_CLI_VERSION=$(bundle exec ruby -e 'require "playwright"; puts Playwright::COMPATIBLE_PLAYWRIGHT_VERSION.strip')
+npm install "playwright@${PLAYWRIGHT_CLI_VERSION}"
+./node_modules/.bin/playwright install --with-deps
+```
 
 ```ruby
 # spec/support/system.rb, in a project that has DECLARED Playwright
 config.before(:each, type: :system) do
   driven_by :playwright, using: :chromium, screen_size: [1400, 1400],
-            options: { headless: true, playwright_cli_executable_path: "./node_modules/.bin/playwright-core" }
+            options: { headless: true, playwright_cli_executable_path: "./node_modules/.bin/playwright" }
 end
 ```
 
 **Measure before declaring it.** On a real Rails 8 app (Retask, 2026-10-12; a 20-file sample of its 123 browser spec files,
-3 runs per driver): the 53 portable examples passed on both drivers every run, in about a minute each warm — no speed or
-flake difference. The cost was elsewhere: **83 of the 123 files called the Selenium API directly** —
+3 runs per driver): the 53 portable examples passed on both drivers in every run, in about a minute each warm — no speed
+difference, and no flake measured in 3 runs (a sample, not the whole suite). The cost was elsewhere: **83 of the 123 files called the Selenium API directly** —
 `page.driver.browser.execute_cdp(...)` for phone viewports and the accessibility tree, `page.driver.browser.action.send_keys`
-— and under Playwright every such example fails (`NoMethodError: private method 'browser' called for an instance of
-Capybara::Playwright::Driver`). Before choosing it, count the specs that reach into `page.driver.browser`; each needs
+— and in the 3 such files run under Playwright, all 9 examples failed (`NoMethodError: private method 'browser' called for an
+instance of Capybara::Playwright::Driver`). Before choosing it, count the specs that reach into `page.driver.browser`; each needs
 rewriting to Playwright's API first.
 
 **Known differences from Selenium** (the driver's README, its Rails integration guide and open issues): no `Element#drop`;
