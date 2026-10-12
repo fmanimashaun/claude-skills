@@ -39,8 +39,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the matcher is ignored, so a hook is counted on sources it never fires on",
-            "    return tuple(s for s in SOURCES if rx.fullmatch(s))",
-            "    return SOURCES",
+            "        return tuple(s for s in SOURCES if s in names)",
+            "        return SOURCES",
             "a matcher limits the sources",
         ),
         Mutation(
@@ -48,6 +48,18 @@ GUARD = Guard(
             "            os.killpg(proc.pid, signal.SIGKILL)",
             "            proc.kill()",
             "grandchild is killed with its process group",
+        ),
+        Mutation(
+            "a regex matcher is anchored, so `^c` or `comp.*` reads differently from Claude Code's unanchored test",
+            "    return tuple(s for s in SOURCES if rx.search(s))",
+            "    return tuple(s for s in SOURCES if rx.fullmatch(s))",
+            "fires_on: the hooks docs' rule",
+        ),
+        Mutation(
+            "a settings key with a path in it is used, so ../evil reaches outside the plugin cache",
+            "            if not (PART.fullmatch(plugin) and PART.fullmatch(market)):\n                continue\n",
+            "",
+            "a settings key whose parts are not plain names is skipped",
         ),
     ),
 )

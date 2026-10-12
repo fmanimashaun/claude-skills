@@ -14,9 +14,11 @@ It reads the plugins this user has enabled (`enabledPlugins` in `~/.claude/setti
 newest installed version of each under `~/.claude/plugins/cache/<marketplace>/<plugin>/` (a numbered directory such as 0.33.0;
 a commit-hash directory is never taken for a version), and runs each SessionStart command from its `hooks/hooks.json` inside the
 same fixed fixture project the ratchet uses, once for EACH source its matcher selects (startup, resume, clear, compact), with
-`CLAUDE_PLUGIN_ROOT` set, that source's payload on stdin, a 20-second limit, and its own process group, killed whole on timeout. It measures the bytes printed on stdout -- what the hook injects -- and reports a token estimate at 4
+`CLAUDE_PLUGIN_ROOT` set, that source's payload on stdin, a 20-second limit, and its own process group, killed whole on timeout. It measures the bytes printed on stdout -- most hooks print a JSON wrapper whose `additionalContext` is what reaches the model, so
+this over-estimates the injected text by the framing and escapes -- and reports a token estimate at 4
 bytes per token (an estimate, labelled as one). It RUNS THIRD-PARTY CODE: only plugins you already enabled, in a temp project.
-A hook that fails, times out or needs something the fixture lacks is reported with its status, never as 0 bytes.
+A hook that fails, times out or needs something the fixture lacks is reported with its status, never as 0 bytes. `CLAUDE_ENV_FILE`
+is not set, so a hook that writes to it is reported as failed, not measured.
 
 WHAT IT CANNOT SEE: a hook whose output depends on state outside the project -- `remember` prints the user's stored memories --
 measures what it prints for an EMPTY fixture project. On 2026-10-12 `remember` 0.33.0 printed 550 bytes here, against the ~5.7k
@@ -36,8 +38,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 OURS = "claude-skills"
 BYTES_PER_TOKEN = 4
+PART = re.compile(r"[\w.-]+")
 TIMEOUT = 20
-SOURCES = ("startup", "resume", "clear", "compact")   # the SessionStart `source` values a matcher selects among
+SOURCES = ("startup", "resume", "clear", "compact", "fork")   # the SessionStart `source` values (hooks docs; fork since v2.1.214)
 VERSION = re.compile(r"^\d+(\.\d+)+$")               # 0.33.0, not a commit-hash directory such as 5bf4e7801107
 
 
@@ -56,6 +59,9 @@ def enabled_plugins(settings: Path) -> list[tuple[str, str]]:
     for key, on in (data.get("enabledPlugins") or {}).items():
         if on is True and "@" in key:
             plugin, market = key.rsplit("@", 1)
+            # Both halves become path parts under the plugin cache: a key such as `../evil@..` must not reach outside it.
+            if not (PART.fullmatch(plugin) and PART.fullmatch(market)):
+                continue
             if market != OURS:
                 out.append((plugin, market))
     return sorted(out)
@@ -69,15 +75,26 @@ def newest_install(cache: Path, plugin: str, market: str) -> Path | None:
     return pick[-1] if pick else None
 
 
+EXACT = re.compile(r"[A-Za-z0-9_\- ,|]*")
+
+
 def fires_on(matcher: object) -> tuple[str, ...]:
-    """The SessionStart sources an entry's matcher selects: none, "" or "*" means all; otherwise a regex matched in full."""
+    """The SessionStart sources an entry's matcher selects, by the hooks docs' "Matcher patterns" rule
+    (https://code.claude.com/docs/en/hooks, read 2026-10-12): `*`, `""` or omitted match all; a value of only letters, digits,
+    `_`, `-`, spaces, `,` and `|` is a list of exact names split on `|` or `,`; anything else is a JavaScript regex tested with
+    `RegExp.prototype.test`, which "succeeds on a match anywhere in the value" -- an unanchored search, approximated here with
+    Python's `re.search`. An invalid regex is counted as matching all, so a hook is never under-reported."""
     if matcher in (None, "", "*"):
         return SOURCES
+    text = str(matcher)
+    if EXACT.fullmatch(text):
+        names = {n.strip() for n in re.split(r"[|,]", text) if n.strip()}
+        return tuple(s for s in SOURCES if s in names)
     try:
-        rx = re.compile(str(matcher))
+        rx = re.compile(text)
     except re.error:
         return SOURCES
-    return tuple(s for s in SOURCES if rx.fullmatch(s))
+    return tuple(s for s in SOURCES if rx.search(s))
 
 
 def session_start_commands(install: Path) -> list[tuple[str, tuple[str, ...]]]:
@@ -192,6 +209,15 @@ def selftest() -> int:
         check("report: a timed-out hook's grandchild is killed with its process group, not orphaned", not marker.exists(), "marker written")
         check("report: largest first", rows[0]["plugin"] == "loud@mk", rows[0])
         totals = per_source(rows)
+        check("fires_on: the hooks docs' rule -- exact names split on | or , ; unanchored regex otherwise",
+              fires_on("startup|compact") == ("startup", "compact") and fires_on("resume, clear") == ("resume", "clear")
+              and fires_on("start") == () and fires_on("o") == () and fires_on("^c") == ("clear", "compact")
+              and fires_on("comp.*") == ("compact",) and fires_on("r.") == ("startup", "resume", "fork")
+              and fires_on(None) == SOURCES, {m: fires_on(m) for m in ("start", "o", "^c", "comp.*", "r.")})
+        keys = t / "keys.json"
+        keys.write_text(json.dumps({"enabledPlugins": {"../evil@..": True, "x@../up": True, "ok@mk": True}}))
+        check("report: a settings key whose parts are not plain names is skipped (no path outside the cache)",
+              enabled_plugins(keys) == [("ok", "mk")], enabled_plugins(keys))
         check("report: start and compaction are totalled separately",
               totals["startup"] == 4000 + len("startup-text") and totals["compact"] == 4000 + 2, totals)
     for b in bad:
