@@ -848,7 +848,7 @@ NEGATIVES_1342 = ['git clean -n', 'git clean -fdn', 'git checkout feature/x', 'g
 # way. The normaliser never classified any of these, so every guard-bash rule was blind to them.
 POSITIVES_1472 = ["bash -c 'git add -A'", 'sh -c "git push --force origin main"', "bash -lc 'git reset --hard'",
                   "bash -o pipefail -c 'git add -A'", "zsh -c -- 'git add -A'", 'eval "git add -A"', "eval 'git add' '-A'",
-                  "bash -c \"eval 'git add -A'\"", 'echo "$(git add -A)"', 'echo `git add -A`', 'diff <(git add -A) x',
+                  "bash -c \"eval 'git add -A'\"", 'bash -c "bash -c \\"bash -c \'git add -A\'\\""', 'echo "$(git add -A)"', 'echo `git add -A`', 'diff <(git add -A) x',
                   'command git add -A', 'exec git add -A', 'time git add -A', 'nice -n 5 git add -A', 'env -i git add -A',
                   'sudo -u deploy git add -A', 'timeout 60 git add -A', 'echo x | xargs git add -A', '{ git add -A; }',
                   '( git add -A )', '(git add -A)', 'if true; then git add -A; fi', '\\git add -A', '/usr/bin/git add -A',
