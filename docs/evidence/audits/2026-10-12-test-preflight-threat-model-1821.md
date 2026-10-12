@@ -63,12 +63,15 @@ whole). This file is the one home for #1821, so the facts that record held and t
 - **More of the environment is unprotected than the table above names.** A whole-page grep of the three pages found `PYTHONPATH`,
   `NODE_OPTIONS`, `LD_PRELOAD`, `LD_LIBRARY_PATH` and `DYLD_*` nowhere, and `PATH`, `GIT_*` and `SHELL` not on the ignore list
   either (the INCONCLUSIVE caveat on that list still applies).
-- **Git has its own code-running variables.** A project `env` can set `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_0=core.fsmonitor` (or
-  `GIT_EXTERNAL_DIFF`), so any hook that runs `git` — even `git status` — can run a program the repository chose. That is why the
-  shipped hooks scrub `GIT_*` (`lib/trusted-env.sh`, #1850).
+- **Git has its own code-running variables.** A project `env` can set `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_0=core.fsmonitor`,
+  so any hook that runs `git` — even `git status` — can run a program the repository chose. Measured, not inferred:
+  `docs/evidence/audits/2026-10-11-hook-environment-1843.md` (line 25). `GIT_EXTERNAL_DIFF` does the same only for the `git diff`
+  family, not `git status`, and is a git(1) fact nothing here measured. That is why the shipped hooks scrub `GIT_*`
+  (`lib/trusted-env.sh`, #1850).
 - hooks page, verbatim: *"Handlers run in the current directory with Claude Code's environment."*
 - **The owner's standing rule** that came out of it: a `PreToolUse` hook never executes repository- or environment-controlled code.
-  #1564 was narrowed under it (decision recorded on #1564, 2026-10-10): its WIP commit runs only at `Stop`, after the turn, with an
+  #1564 was narrowed under it (decision recorded on #1564, 2026-10-10:
+  https://github.com/fmanimashaun/claude-skills/issues/1564#issuecomment-6101717465): its WIP commit runs only at `Stop`, after the turn, with an
   absolute `git` found outside the project, no `GIT_*`, `core.hooksPath` and `core.fsmonitor` disabled and `commit --no-verify`; the
   `PreToolUse[Bash]` WIP commit on push/merge/ready was dropped.
 
