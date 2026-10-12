@@ -291,6 +291,13 @@ def _alias_flags(base: Path) -> None:
         check(f"shim: an alias expansion that is not plain words is refused where in force, whatever it mentions, and never un-quoted: {exp[:40]}", ok, why)
     ok, why = refused(fx, "gh mine", {"STUB_ALIASES": "mine: pr list --search \"a b\""})
     check("shim: ...so even a harmless quoted expansion is refused where in force (the stated cost of an allowlist; RAILS_FLOW_GH_OK=1 is the escape)", ok, why)
+    # THE REAL FORMAT of `gh alias list` (gh 2.102.0, measured by the adversary): YAML, so a multi-line expansion is a block scalar, not `name: expansion` on one line (review of 1d2151c9, M1)
+    for shape, listing in (("a `|-` block scalar", "rdy2: |-\n    pr\n    ready"), ("a `>` folded scalar", "rdy2: >-\n    pr\n    ready"), ("a first line of plain words and an indented continuation", "rdy2: pr\n    ready"),
+                           ("a block scalar followed by another alias", "rdy2: |-\n    pr\n    ready\nother: pr list")):
+        ok, why = refused(fx, "gh rdy2 5", {"STUB_ALIASES": listing})
+        check(f"shim: a multi-line alias expansion as `gh alias list` prints it ({shape}) is refused where in force, not read as its first line", ok, why)
+    ok, why = allowed(fx, "gh other", {"STUB_ALIASES": "rdy2: |-\n    pr\n    ready\nother: pr list"})
+    check("shim: CONTROL: the alias AFTER a multi-line one is read as its own single line and untouched", ok, why)
     nof = Fixture(base / "nf2", in_force=False)
     ok, why = allowed(nof, "gh mine", {"STUB_ALIASES": "mine: pr list --search \"a b\""})
     check("shim: CONTROL: ...and it runs where project_gates does not", ok, why)

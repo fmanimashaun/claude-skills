@@ -102,15 +102,21 @@ has_api_ready() {
   return 1
 }
 
-# The expansion of the alias `$1` ("name: expansion" from `gh alias list`, a tab or spaces after the colon), or nothing.
+# The expansion of the alias `$1` ("name: expansion" from `gh alias list`, a tab or spaces after the colon), or nothing. `gh alias list` prints YAML: a multi-line expansion comes as `name: |-`
+# and then indented lines (the review of 1d2151c9, M1), so an INDENTED LINE after the alias line makes the expansion unreadable, and a `|` is appended that the plain-words check refuses.
 alias_expansion() {
-  local name="$1" line value
+  local name="$1" line value="" found=0
   while IFS= read -r line; do
+    if [ "$found" = 1 ]; then
+      case "$line" in " "*|"	"*) value="$value |" ;; *) break ;; esac
+      continue
+    fi
     case "$line" in
-      "$name":*) value="${line#"$name":}"; value="${value#"${value%%[![:space:]]*}"}"; printf '%s' "$value"; return 0 ;;
+      "$name":*) found=1; value="${line#"$name":}"; value="${value#"${value%%[![:space:]]*}"}" ;;
     esac
   done < <("$real" alias list 2>/dev/null)
-  return 1
+  [ "$found" = 1 ] || return 1
+  printf '%s' "$value"
 }
 
 # The first argument that is not a flag, when it is not one of gh's own commands, is an alias if `gh alias list` says so.
