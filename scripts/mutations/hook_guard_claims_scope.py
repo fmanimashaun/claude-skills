@@ -49,14 +49,14 @@ GUARD = Guard(
         ),
         Mutation(
             "a quote no longer ends the plain words before gh, so a title that names `gh pr create` is a command again",
-            r"""([^;&|()`"'"'"'#]|[A-Za-z_]""",
-            r"""([^;&|()`#]|[A-Za-z_]""",
+            r"""([^;&|()`"'"'"'#]|"[^"]*"|'"'"'""",
+            r"""([^;&|()`#]|"[^"]*"|'"'"'""",
             "...even when the title names `gh pr create`",
         ),
         Mutation(
             "a `#` no longer ends the plain words before gh, so a trailing shell comment naming `gh pr edit` is a command again",
-            r"""([^;&|()`"'"'"'#]|[A-Za-z_]""",
-            r"""([^;&|()`"'"'"']|[A-Za-z_]""",
+            r"""([^;&|()`"'"'"'#]|"[^"]*"|'"'"'""",
+            r"""([^;&|()`"'"'"']|"[^"]*"|'"'"'""",
             "...and when a trailing shell comment names `gh pr edit`",
         ),
         Mutation(
@@ -72,10 +72,28 @@ GUARD = Guard(
             "an unchecked numeric claim in a PR body is blocked",
         ),
         Mutation(
-            "a quoted VAR=\"a b\" assignment is not one plain word, so `GIT_CONFIG_PARAMETERS=\"..\" gh pr create` is not seen",
-            r"""|[A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'"'"'[^'"'"']*'"'"'))*\bgh""",
-            r""")*\bgh""",
-            "is still blocked behind a quoted env assignment",
+            "a whole double-quoted string is not a word before gh, so `env -C \"$d\" gh pr create` is not seen",
+            r"""|"[^"]*"|'"'"'[^'"'"']*'"'"'|\$\(""",
+            r"""|'"'"'[^'"'"']*'"'"'|\$\(""",
+            "is still blocked behind a double-quoted word",
+        ),
+        Mutation(
+            "a whole single-quoted string is not a word before gh, so `timeout '60' gh pr edit` is not seen",
+            r"""|"[^"]*"|'"'"'[^'"'"']*'"'"'|\$\(""",
+            r"""|"[^"]*"|\$\(""",
+            "is still blocked behind a single-quoted word",
+        ),
+        Mutation(
+            "a $(...) substitution is not a word before gh, so `FOO=$(date) gh pr create` is not seen",
+            r"""|\$\([^()]*\)|`[^`]*`)*\bgh""",
+            r"""|`[^`]*`)*\bgh""",
+            "is still blocked behind a $(...) assignment",
+        ),
+        Mutation(
+            "a backtick substitution is not a word before gh, so ``FOO=`date` gh pr edit`` is not seen",
+            r"""|\$\([^()]*\)|`[^`]*`)*\bgh""",
+            r"""|\$\([^()]*\))*\bgh""",
+            "is still blocked behind a backtick assignment",
         ),
         Mutation(
             "the refusal says 'PR body' for an issue comment again",
