@@ -113,5 +113,78 @@ GUARD = Guard(
             '    return r.returncode == 0 and bool(r.stdout.strip())',
             'a git failure is treated as a dirty CHANGELOG',
         ),
+        # #1841: a bullet added directly under `### Unreleased` is refused; each path of the rule has a mutant.
+        Mutation(
+            'no bullet is ever a direct bullet',
+            '        if seen[(heading, name)] <= have[(heading, name)]:\n            continue',
+            '        if True:\n            continue',
+            'a bullet added directly under `### Unreleased` is a finding',
+        ),
+        Mutation(
+            'an edit of a bullet base already has is refused',
+            '        if seen[(heading, name)] <= have[(heading, name)]:',
+            '        if False:',
+            'an EDIT of a bullet base already has',
+        ),
+        Mutation(
+            'the folded copy of a deleted fragment is refused',
+            '        if moved[name] > 0:',
+            '        if False:',
+            'the folded copy of a fragment this change deletes',
+        ),
+        Mutation(
+            'any deleted fragment excuses any bullet',
+            '        if moved[name] > 0:',
+            '        if moved:',
+            'a deleted fragment for a DIFFERENT bullet does not excuse it',
+        ),
+        Mutation(
+            'a bullet under a release block counts as direct',
+            '            inside, cur = line.strip() == UNRELEASED, None',
+            '            inside, cur = True, None',
+            'added under a RELEASE block',
+        ),
+        Mutation(
+            'the finding no longer names the fragment path',
+            'add changelog.d/{issue}-{slug}.md, whose first line is',
+            'add a fragment, whose first line is',
+            'that names the fragment path to use',
+        ),
+        Mutation(
+            'an unreadable base is reported clean',
+            '        return (1 if in_ci else 3), [f"cannot read',
+            '        return 0, [f"cannot read',
+            'a base that does not exist is a SKIP (3)',
+        ),
+        Mutation(
+            'deleted fragments are not read, so a fold is refused',
+            '"--diff-filter=D"',
+            '"--diff-filter=A"',
+            'with the fragment it came from deleted',
+        ),
+        Mutation(
+            'an unreadable base is a skip even in CI',
+            '    if base is None or not cl.is_file():\n        return (1 if in_ci else 3), [',
+            '    if base is None or not cl.is_file():\n        return 3, [',
+            'in CI an unreadable base is a FAILURE (1)',
+        ),
+        Mutation(
+            "the branch is compared with the base's tip, not the commit it was cut from",
+            '    base = _git_out(root, "show", f"{mb}:CHANGELOG.md") if mb else None',
+            '    base = _git_out(root, "show", f"{base_ref}:CHANGELOG.md") if mb else None',
+            'a branch cut before the base armed is compared with the commit it was cut from',
+        ),
+        Mutation(
+            'headlines are looked up, not counted',
+            '        if seen[(heading, name)] <= have[(heading, name)]:',
+            '        if have[(heading, name)]:',
+            'a SECOND bullet with a headline the section already has is a finding',
+        ),
+        Mutation(
+            'one deleted fragment excuses every bullet with its headline',
+            '            moved[name] -= 1                           # one deleted fragment excuses ONE bullet',
+            '            pass',
+            'one deleted fragment excuses ONE of two bullets',
+        ),
     ),
 )
