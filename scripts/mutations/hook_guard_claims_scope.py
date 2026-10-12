@@ -85,15 +85,9 @@ GUARD = Guard(
         ),
         Mutation(
             "a $(...) substitution is not a word before gh, so `FOO=$(date) gh pr create` is not seen",
-            r"""|\$\([^()]*\)|`[^`]*`)*\bgh""",
-            r"""|`[^`]*`)*\bgh""",
-            "is still blocked behind a $(...) assignment",
-        ),
-        Mutation(
-            "a backtick substitution is not a word before gh, so ``FOO=`date` gh pr edit`` is not seen",
-            r"""|\$\([^()]*\)|`[^`]*`)*\bgh""",
             r"""|\$\([^()]*\))*\bgh""",
-            "is still blocked behind a backtick assignment",
+            r""")*\bgh""",
+            "is still blocked behind a $(...) assignment",
         ),
         Mutation(
             "the refusal says 'PR body' for an issue comment again",

@@ -43,13 +43,13 @@ has() { ( set +o pipefail; printf '%s' "$1" | grep -qE "$2" ); }
 # and any command with `# gh pr edit` after it: the words were prose, not a command. So `gh` must sit in its own simple
 # command: after the start of a line, a separator (; & | ( ` {) or the quote of a `-c`/`eval` string (so `bash -c "gh pr create"`
 # is still seen), with only WORDS before it: plain words, a whole quoted string (`env -C "$d" gh`, `VAR="a b" gh`), or a `$(...)` / backtick
-# substitution (`FOO=$(date) gh`). A quoted string is consumed whole, so a `gh pr create` NAMED inside one is prose and
+# substitution (`FOO=$(date) gh`; a backtick substitution needs no alternative of its own, its closing backtick is already a command start). A quoted string is consumed whole, so a `gh pr create` NAMED inside one is prose and
 # is not seen; an unquoted separator, quote or `#` ends the prefix (#1877 review: the first draft allowed plain words only and
 # let `env -C "$d" gh pr create` and `FOO=$(date) gh pr create` through). That is what lets `timeout 60 gh`,
 # `nice -n 5 gh`, `env -C dir gh`, `FOO=1 gh` and `/opt/homebrew/bin/gh` through the gate without a list of wrapper words to
 # keep current. A tripwire for honest commands, not a parser (#1793): `echo gh pr create`, or a quote that opens with
 # `gh pr create`, is still matched, which fails closed.
-GH_AT_COMMAND='(^|[;&|(`{]|[[:space:]]-[a-z]*c[[:space:]]+["'"'"']|eval[[:space:]]+["'"'"'])([^;&|()`"'"'"'#]|"[^"]*"|'"'"'[^'"'"']*'"'"'|\$\([^()]*\)|`[^`]*`)*\bgh[[:space:]]+'
+GH_AT_COMMAND='(^|[;&|(`{]|[[:space:]]-[a-z]*c[[:space:]]+["'"'"']|eval[[:space:]]+["'"'"'])([^;&|()`"'"'"'#]|"[^"]*"|'"'"'[^'"'"']*'"'"'|\$\([^()]*\))*\bgh[[:space:]]+'
 has "$cmd" "${GH_AT_COMMAND}(pr[[:space:]]+(create|edit)|issue[[:space:]]+comment)\\b" || exit 0
 has "$cmd" '(--body-file|--body)\b' || exit 0
 
