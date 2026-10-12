@@ -26,7 +26,7 @@ WHAT IT DOES, in order, and each step has a fixture that goes red without it:
      force off the keys we name, not the ones whose name the repository chooses, so such a repository is not committed to at all.
 
 WHY A STOP HOOK AND NOT PreToolUse. A `PreToolUse` hook runs BEFORE the user is asked about the command, under an environment a
-project's own settings can set (`docs/evidence/audits/2026-10-11-hook-environment-1843.md`, `...2026-10-10-hook-environment-1821.md`).
+project's own settings can set (`docs/evidence/audits/2026-10-11-hook-environment-1843.md`, `...2026-10-12-test-preflight-threat-model-1821.md`).
 Running `git` there would run whatever the repository chose before the user answered. `Stop` runs after the turn the user already
 allowed. The #1564 proposal's `PreToolUse[Bash]` WIP commit on `git push`, `gh pr merge` and `gh pr ready` is deliberately not built.
 

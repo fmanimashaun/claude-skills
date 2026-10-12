@@ -180,7 +180,7 @@ command to start with. It is read-only and fetches nothing. A resumed lane re-ru
 fails open, runs only an absolute `git` found outside the project with a scrubbed environment, never `git add -A`, and never runs a hook
 the repository supplies. There is deliberately no hook on `git push`, `gh pr merge` or `gh pr ready`: a `PreToolUse` hook runs before the
 user is asked, under an environment a project's settings can set, so it must not execute anything the repository or the environment chose
-(the threat model is `docs/evidence/audits/2026-10-10-hook-environment-1821.md`).
+(the threat model is `docs/evidence/audits/2026-10-12-test-preflight-threat-model-1821.md`).
 
 ## Run
 
