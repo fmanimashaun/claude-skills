@@ -586,6 +586,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("always-on cost", ("python3", "scripts/check_always_on_cost.py")),
     ("always-on cost selftest", ("python3", "scripts/check_always_on_cost.py", "--selftest")),
     ("hook output budget", ("python3", "scripts/check_hook_output_budget.py")),
+    # #1887. Third-party SessionStart hooks are reported, not gated (we do not ship them); the report's own logic is a gate.
+    ("third-party hooks report selftest", ("python3", "scripts/report_third_party_hooks.py", "--selftest")),
     ("hook output budget selftest",
      ("python3", "scripts/check_hook_output_budget.py", "--selftest")),
     # #1575. A hook that spins blocks every Bash call, and a timeout that kills only the parent bash left

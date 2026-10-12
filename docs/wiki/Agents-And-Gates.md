@@ -281,6 +281,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | sweep proof wiring | `repo` | `python3 scripts/sweep_proof.py check-wiring` | live check |
 | tenancy cop derived | `repo` | `python3 scripts/derive_tenancy_cop.py --check` | live check |
 | tenancy cop derived selftest | `repo` | `python3 scripts/derive_tenancy_cop.py --selftest` | selftest |
+| third-party hooks report selftest | `repo` | `python3 scripts/report_third_party_hooks.py --selftest` | selftest |
 | token contrast | `repo` | `python3 scripts/check_token_contrast.py` | live check |
 | token contrast selftest | `repo` | `python3 scripts/check_token_contrast.py --selftest` | selftest |
 | upstream check selftest | `repo` | `python3 scripts/check_upstream_docs.py --selftest` | selftest |
