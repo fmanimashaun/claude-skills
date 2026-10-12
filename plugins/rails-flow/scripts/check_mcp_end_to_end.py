@@ -15,7 +15,8 @@ Declared, never guessed: a project with the gem and no declaration is a FINDING,
 server works" is not "nothing to check". No `mcp` gem is not applicable. The claude.ai connector check a person runs at
 certification is not this gate.
 
-What it cannot see: whether the declared spec PASSES (the suite does that), or a helper reached through another helper.
+What it cannot see: whether the declared spec PASSES (the suite does that), or a helper reached through another helper. A
+quoted method name that is not a call still counts: `it "lists via 'tools/list'"`, or the text of a heredoc.
 
 Exit: 0 clean · 1 findings · 2 could not check (an unreadable Gemfile) · 3 not applicable (no `mcp` gem).
 """
@@ -51,8 +52,12 @@ def uses_mcp(root: Path) -> bool:
 
 def code_only(text: str) -> str:
     """Ruby with comment lines and trailing `# ...` removed (a `#` inside a quote is kept). A method named in a comment is no call."""
-    out = []
+    out, block = [], False
     for line in text.splitlines():
+        if block or line.startswith("=begin"):          # a =begin ... =end block comment (the markers start a line)
+            block = not line.startswith("=end")
+            out.append("")
+            continue
         quote, kept = None, []
         for ch in line:
             if quote:
@@ -187,6 +192,8 @@ def selftest() -> int:
           "../outside/spec/requests/e2e_spec.rb": good}, 1),
         ("an absolute spec path is a finding",
          {**base, ".rails-flow/mcp.json": '{"end_to_end_spec": "/etc/passwd"}'}, 1),
+        ("a =begin ... =end block naming both methods is a comment, not a call",
+         {**base, E2E: 'RSpec.describe "MCP", type: :request do\n=begin\n  mcp_post("tools/list"); call_tool("x", token: t)\n=end\n  it "works" do\n  end\nend\n'}, 1),
         ("CONTROL: a # inside a string literal is not a comment",
          {**base, E2E: 'RSpec.describe "MCP", type: :request do\n  it { mcp_post("tools/list", id: "#1"); call_tool("x", token: t) }\nend\n'}, 0),
         ("CONTROL: both methods named literally need no helper",

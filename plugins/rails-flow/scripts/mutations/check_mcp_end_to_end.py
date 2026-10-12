@@ -67,5 +67,9 @@ GUARD = Guard(
                  "        raise Unreadable(f\"Gemfile could not be read ({exc})\") from exc",
                  "        return False",
                  "an unreadable Gemfile is could-not-check (exit 2)"),
+        Mutation("a =begin block is read as code",
+                 '        if block or line.startswith("=begin"):',
+                 '        if False:',
+                 "a =begin ... =end block naming both methods is a comment"),
     ),
 )
