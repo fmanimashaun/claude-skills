@@ -30,8 +30,8 @@ GUARD = Guard(
     mutations=(
         Mutation(
             "the advisory hook exits non-zero, so a failure inside it can stop the turn",
-            'python3 -I "${BASH_SOURCE[0]%/*}/../../scripts/wip_commit.py" 2>/dev/null\nexit 0',
-            'python3 -I "${BASH_SOURCE[0]%/*}/../../scripts/wip_commit.py" 2>/dev/null\nexit 3',
+            'stop >/dev/null 2>&1\nexit 0',
+            'stop >/dev/null 2>&1\nexit 3',
             "the real wrapper, exit 0, silent",
         ),
         Mutation(
@@ -39,6 +39,12 @@ GUARD = Guard(
             'python3 -I "${BASH_SOURCE[0]%/*}/../../scripts/wip_commit.py" 2>/dev/null',
             'true',
             "the real wrapper, exit 0, silent",
+        ),
+        Mutation(
+            "the where-stopped record is not rewritten after the commit, so the next start calls it stale",
+            '| python3 -I "${BASH_SOURCE[0]%/*}/lib/where_stopped.py" stop >/dev/null 2>&1',
+            '| true',
+            "the where-stopped record is rewritten after the commit",
         ),
         Mutation(
             "the lib is not sourced, so a repository's python3 on a relative PATH, its PYTHONPATH and its GIT_CONFIG_* run",

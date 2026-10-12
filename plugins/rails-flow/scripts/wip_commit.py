@@ -53,6 +53,9 @@ MARK = "WIP(auto): "
 GIT_TIMEOUT = 20.0
 HARD_CONFIG = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "commit.gpgsign=false", "-c", "gc.auto=0",
                "-c", "maintenance.auto=false", "-c", "core.pager=cat", "-c", "protocol.ext.allow=never"]
+# A secret-looking path is never auto-committed: one in the change set skips the whole commit (review of 8725ef4d: a tracked `.env` and
+# `config/master.key` went into a WIP commit). Matched on the file name, case-insensitively.
+SECRET = re.compile(r"^(?:\.env(?:\..*)?|.*\.key|.*\.pem|credentials.*)$", re.I)
 IN_PROGRESS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "rebase-merge", "rebase-apply")
 
 
@@ -139,6 +142,16 @@ def run_git(git: str, root: Path, env: dict[str, str], *args: str) -> subprocess
         return None
 
 
+def lane_paths(paths: list[str], lane: str) -> list[str]:
+    """The paths inside the assigned lane (`RAILS_FLOW_LANE`, a subtree relative to the repository root). No lane: every path."""
+    lane = lane.strip().strip("/")
+    while lane.startswith("./"):
+        lane = lane[2:]
+    if not lane or lane == ".":
+        return list(paths)
+    return [p for p in paths if p == lane or p.startswith(lane + "/")]
+
+
 def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool = False) -> tuple[str, str]:
     """(action, detail). action is `committed`, `amended`, or a `skip:<why>`; a skip is never an error."""
     parent_env = os.environ if parent_env is None else parent_env
@@ -190,6 +203,17 @@ def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool 
         return "skip:clean", "no tracked change"
     if any(l[:2] in ("UU", "AA", "DD", "AU", "UA", "DU", "UD") for l in lines):
         return "skip:unmerged-paths", "unmerged paths"
+    names = g("diff", "--name-only", "-z", "--no-renames", "HEAD")
+    if names is None or names.returncode != 0:
+        return "skip:diff-failed", "git diff HEAD failed"
+    changed = [n for n in names.stdout.split("\0") if n]
+    secrets = [n for n in changed if SECRET.match(n.rsplit("/", 1)[-1])]
+    if secrets:
+        return "skip:secret-looking-path", "a changed file looks like a secret, so nothing is auto-committed: " + ", ".join(sorted(secrets)[:3])
+    lane = parent_env.get("RAILS_FLOW_LANE", "")
+    paths = lane_paths(changed, lane)
+    if not paths:
+        return "skip:nothing-in-lane", f"no tracked change inside the lane {lane!r}"
     if dry_run:
         return "skip:dry-run", f"{len(lines)} tracked change(s) on {name}"
     stamp = time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime(now if now is not None else time.time()))
@@ -200,12 +224,14 @@ def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool 
     if head_is_wip:
         contained = g("for-each-ref", "--contains", "HEAD", "--format=%(refname)", "refs/remotes")
         pushed = contained is None or contained.returncode != 0 or bool(contained.stdout.strip())
-    args = ["commit", "-a", "--no-verify", "-q", "-m", message]
+    # `commit -- <paths>` commits exactly those paths' working-tree content (git's `--only`), never another lane's file or whatever else is
+    # staged; `--literal-pathspecs` stops a file name such as `:(glob)*` being read as pathspec magic.
+    args = ["--literal-pathspecs", "commit", "--no-verify", "-q", "-m", message, "--", *paths]
     action = "committed"
     if head_is_wip and not pushed:
-        args.insert(1, "--amend")
+        args.insert(2, "--amend")
         action = "amended"
-    done = g(*args)
+    done = run_git(git, toplevel, env, *args)    # from the TOP: `git diff --name-only` paths are top-relative, the hook's cwd may be a subdirectory
     if done is None or done.returncode != 0:
         return "skip:commit-failed", ((done.stderr or "").strip()[:160] if done else "git did not run")
     return action, message
@@ -321,6 +347,37 @@ def selftest() -> int:
         action, _ = run(repo)
         expect("once a remote-tracking ref contains the WIP commit, the next change is a NEW commit", action == "committed" and count(repo) == 3, (action, count(repo)))
         expect("...and the pushed commit was not rewritten", git(repo, "rev-parse", "origin/feature/x") == git(repo, "rev-parse", "HEAD~1"))
+
+        # ---- SECRETS and LANES (review of 8725ef4d): a secret-looking change skips the commit; a lane commits only its subtree
+        for secret in (".env", ".env.production", "config/master.key", "certs/server.pem", "config/credentials.yml.enc"):
+            srepo = make_repo("s-" + re.sub(r"\W", "_", secret))
+            (srepo / secret).parent.mkdir(parents=True, exist_ok=True)
+            (srepo / secret).write_text("SECRET=1\n")
+            git(srepo, "add", secret)
+            git(srepo, "commit", "-q", "-m", "track it")
+            (srepo / secret).write_text("SECRET=2\n")
+            (srepo / "a.txt").write_text("changed\n")
+            action, detail = run(srepo)
+            expect(f"a changed secret-looking {secret!r} skips the WIP commit", action == "skip:secret-looking-path" and count(srepo) == 2,
+                   (action, detail, count(srepo)))
+        laned = make_repo("laned")
+        for rel in ("app/models/m.rb", "app/views/v.erb"):
+            (laned / rel).parent.mkdir(parents=True, exist_ok=True)
+            (laned / rel).write_text("one\n")
+            git(laned, "add", rel)
+        git(laned, "commit", "-q", "-m", "files")
+        (laned / "app/models/m.rb").write_text("two\n")
+        (laned / "app/views/v.erb").write_text("two\n")
+        (laned / "a.txt").write_text("staged elsewhere\n")
+        git(laned, "add", "a.txt")
+        action, detail = run(laned, {"RAILS_FLOW_LANE": "./app/models/"})
+        taken = git(laned, "show", "--name-only", "--format=", "HEAD").split()
+        expect("with a lane assigned, only the lane's subtree is committed (not another lane's file, not a staged file outside it)",
+               action == "committed" and taken == ["app/models/m.rb"], (action, detail, taken))
+        expect("...and the other lane's change is still in the working tree", "app/views/v.erb" in git(laned, "diff", "--name-only"))
+        action, _ = run(laned, {"RAILS_FLOW_LANE": "app/controllers"})
+        expect("a lane with no tracked change in it commits nothing", action == "skip:nothing-in-lane", action)
+        expect("lane matching is by path component: `app/model` is not `app/models`", lane_paths(["app/models/m.rb"], "app/model") == [])
 
         # ---- branches it must leave alone
         for branch in ("dev", "main", "master", "chore/arm-v1.0.0", "feature", "release/x", "hotfix/y"):

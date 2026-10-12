@@ -5047,6 +5047,11 @@ def wip_commit_fixtures() -> None:
               rc == 0 and out.strip() == "" and commits(repo) == before + 1, f"rc={rc} out={out[:120]!r} commits={commits(repo)} before={before}")
         listed = _fixture_git(repo, "ls-tree", "-r", "--name-only", "HEAD", capture_output=True, text=True).stdout
         check("wip-commit: ...and never the untracked file", "untracked.txt" not in listed, listed)
+        common = Path(_fixture_git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir", capture_output=True, text=True).stdout.strip())
+        head = _fixture_git(repo, "rev-parse", "HEAD", capture_output=True, text=True).stdout.strip()
+        record = "".join(f.read_text() for f in (common / "handoff").glob("*.md")) if (common / "handoff").is_dir() else ""
+        check("wip-commit: the where-stopped record is rewritten after the commit, naming the NEW HEAD (review of 8725ef4d)",
+              f"- HEAD: {head}" in record, record[:300])
     with scratch_dir() as td:
         repo, witness, home = lane(td, "dev")
         (repo / "a.txt").write_text("two\n", encoding="utf-8")

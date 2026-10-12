@@ -12,6 +12,30 @@ GUARD = Guard(
     needs=("scripts/test_preflight.py",),   # it imports the one trusted_which resolver
     mutations=(
         Mutation(
+            "a secret-looking changed file no longer stops the commit, so a tracked .env or master.key is auto-committed",
+            '    if secrets:\n',
+            '    if False:\n',
+            "a changed secret-looking",
+        ),
+        Mutation(
+            "the lane is ignored, so another lane's tracked change goes into the WIP commit",
+            '    paths = lane_paths(changed, lane)',
+            '    paths = changed',
+            "only the lane's subtree is committed",
+        ),
+        Mutation(
+            "commit takes every staged file again (-a, no path list)",
+            '    args = ["--literal-pathspecs", "commit", "--no-verify", "-q", "-m", message, "--", *paths]',
+            '    args = ["--literal-pathspecs", "commit", "-a", "--no-verify", "-q", "-m", message]',
+            "only the lane's subtree is committed",
+        ),
+        Mutation(
+            "lane matching is a string prefix, so app/model claims app/models",
+            '    return [p for p in paths if p == lane or p.startswith(lane + "/")]',
+            '    return [p for p in paths if p.startswith(lane)]',
+            "lane matching is by path component",
+        ),
+        Mutation(
             "the parent's environment reaches git, so GIT_CONFIG_* and GIT_EXTERNAL_DIFF run what the repository chose",
             '    out = {"PATH": os.path.dirname(git), "LC_ALL": "C", "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"}',
             '    out = dict(env); out.update({"PATH": os.path.dirname(git), "LC_ALL": "C"})',
@@ -37,8 +61,8 @@ GUARD = Guard(
         ),
         Mutation(
             "untracked files are staged too (git add -A in spirit)",
-            '    args = ["commit", "-a", "--no-verify", "-q", "-m", message]',
-            '    g("add", "-A")\n    args = ["commit", "-a", "--no-verify", "-q", "-m", message]',
+            '    args = ["--literal-pathspecs", "commit", "--no-verify", "-q", "-m", message, "--", *paths]',
+            '    g("add", "-A")\n    args = ["--literal-pathspecs", "commit", "-a", "--no-verify", "-q", "-m", message]',
             "an UNTRACKED file is never committed",
         ),
         Mutation(
