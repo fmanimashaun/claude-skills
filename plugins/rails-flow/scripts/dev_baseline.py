@@ -139,7 +139,7 @@ def touched_files(ref: str, cwd: str | None = None) -> set[str] | None:
     """
     try:
         base = git("merge-base", "HEAD", ref, cwd=cwd)
-        names = git("diff", "--name-only", base, cwd=cwd)
+        names = git("diff", "--name-only", "--ignore-submodules=dirty", base, cwd=cwd)
     except RuntimeError:
         return None
     return {normalise(n) for n in names.splitlines() if n.strip()}

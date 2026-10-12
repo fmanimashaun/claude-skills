@@ -752,7 +752,7 @@ judge() {
       fi
       # quotePath off: a non-ASCII evidence filename must arrive as itself (#1437 review). --no-renames:
       # a rename lists BOTH paths, so code moved into the evidence folder is still seen leaving app/.
-      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$tgt" 2>/dev/null)"; then
+      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$tgt" 2>/dev/null)"; then  # submodule-safe: two refs, no worktree read (measured, #1919)
         JWHY="could not diff the certified sha ${csha:0:12} against ${what} ${tgt:0:12}. Fetch and retry, or re-certify."; return 1
       fi
       # The stamp's own commit may also carry the evidence it names (#1428): recorded AFTER the tested

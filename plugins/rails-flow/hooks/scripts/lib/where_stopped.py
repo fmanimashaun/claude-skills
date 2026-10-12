@@ -291,7 +291,7 @@ def selftest() -> int:
         _deadline[0] = time.monotonic() - 1
         TIMED_OUT[0] = False
         t0 = time.monotonic()
-        none = git(repo, "status")
+        none = git(repo, "status")                    # submodule-safe: the selftest's own temp repo, which has no submodule
         check("past the overall deadline git is not called at all, and the run is marked timed out",
               none is None and TIMED_OUT[0] and time.monotonic() - t0 < 0.5)
         _deadline[0] = saved

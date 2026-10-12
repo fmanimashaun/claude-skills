@@ -57,8 +57,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the changed set leaves out uncommitted edits",
-            '        names = git("diff", "--name-only", base, cwd=cwd)',
-            '        names = git("diff", "--name-only", base + "..HEAD", cwd=cwd)',
+            '        names = git("diff", "--name-only", "--ignore-submodules=dirty", base, cwd=cwd)',
+            '        names = git("diff", "--name-only", "--ignore-submodules=dirty", base + "..HEAD", cwd=cwd)',
             "the files this branch changed since the merge base are read, committed or not",
         ),
         Mutation(

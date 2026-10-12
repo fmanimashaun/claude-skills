@@ -114,7 +114,7 @@ def changed_paths(root: Path, base: str) -> list[str] | None:
         return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=60)
     if git("rev-parse", "--verify", "--quiet", base + "^{commit}").returncode != 0:
         return None
-    done = git("diff", "--name-only", f"{base}...HEAD")
+    done = git("diff", "--name-only", f"{base}...HEAD")  # submodule-safe: base...HEAD compares commits, no worktree read
     return [ln for ln in done.stdout.splitlines() if ln.strip()] if done.returncode == 0 else None
 
 

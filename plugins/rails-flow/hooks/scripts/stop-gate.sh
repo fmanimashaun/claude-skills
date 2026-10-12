@@ -27,7 +27,7 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 # could finish with no spec at all. `cut -c4-` takes the path (cols 1-2 are status, 3 a space)
 # so paths containing spaces survive, and the sed strips the "old -> new" of a rename to the
 # new path, which is the one that needs proving. Found by behaviour-testing #125's gate.
-changed="$(git status --porcelain -uall 2>/dev/null | cut -c4- | sed 's/^.* -> //')"
+changed="$(git status --porcelain -uall --ignore-submodules=dirty 2>/dev/null | cut -c4- | sed 's/^.* -> //')"
 app_changed="$(printf '%s\n' "$changed" | grep -E '^(app|lib)/.*\.rb$' || true)"
 spec_changed="$(printf '%s\n' "$changed" | grep -E '^spec/.*_spec\.rb$' || true)"
 

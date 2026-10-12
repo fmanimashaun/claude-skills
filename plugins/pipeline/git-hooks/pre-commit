@@ -88,7 +88,7 @@ note() { problems="${problems}  - $1"$'\n'; nproblems=$((nproblems + 1)); }
 # The staged paths go to a temp file first: a `git diff` that fails inside `< <(...)` would read as "nothing staged" and let the commit through.
 tmp="$(mktemp "${TMPDIR:-/tmp}/git-guard.XXXXXX")" || fail "cannot create a temp file, so the staged content cannot be read"
 trap 'rm -f "$tmp"' EXIT
-staged() { git diff --cached --name-only -z --diff-filter="$1" > "$tmp" 2>/dev/null || fail "cannot read the index (git diff --cached failed)"; }
+staged() { git diff --cached --name-only -z --diff-filter="$1" > "$tmp" 2>/dev/null || fail "cannot read the index (git diff --cached failed)"; }  # submodule-safe: --cached reads the index, never the worktree (measured, #1919)
 
 # Rule 1: a new path (added, copied, renamed in).
 staged ACR

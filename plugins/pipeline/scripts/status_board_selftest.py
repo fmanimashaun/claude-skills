@@ -83,7 +83,7 @@ class World:
             self.on(["git", "remote", "get-url", "origin"], f"git@github.com:{slug}.git\n", cwd=r)
         self.on(["git", "worktree", "list", "--porcelain"], f"worktree {r}\nHEAD {'1' * 40}\nbranch refs/heads/dev\n\n", cwd=r)
         self.on(["git", "merge-base", "--is-ancestor", "1" * 40, "origin/dev"], "", cwd=r)
-        self.on(["git", "-C", r, "status", "--porcelain"], "")
+        self.on(["git", "-C", r, "status", "--porcelain", "--ignore-submodules=dirty"], "")
         self.gh_set(["pr", "list", "--state", "open", "--limit", "100", "--json", PR_FIELDS], [])
         self.gh_set(["issue", "list", "--state", "open", "--limit", "200", "--json", "number,title,labels"], [])
         self.gh_set(["pr", "list", "--state", "merged", "--search", "merged:>=2026-10-03", "--limit", "50",
@@ -219,7 +219,7 @@ def integration_branch(tmp: Path) -> None:
              f"worktree {r}\nHEAD {'1' * 40}\nbranch refs/heads/dev\n\nworktree /w/done\nHEAD {done}\nbranch refs/heads/fix/done\n\n", cwd=r)
         for b in ("main", "dev", "release"):
             w.on(["git", "merge-base", "--is-ancestor", done, f"origin/{b}"], "", rc=0 if b == reaches else 1, cwd=r)
-        w.on(["git", "-C", "/w/done", "status", "--porcelain"], "")
+        w.on(["git", "-C", "/w/done", "status", "--porcelain", "--ignore-submodules=dirty"], "")
         if config is not None:
             w.config(config)
         return w
@@ -368,13 +368,13 @@ def measured_panels(tmp: Path) -> None:
          f"worktree /w/unk\nHEAD {'5' * 40}\nbranch refs/heads/fix/unk\n\n"
          f"worktree /w/bare\nbare\n\n", cwd=r)
     w.on(["git", "merge-base", "--is-ancestor", "5" * 40, "origin/dev"], "", rc=128, cwd=r)
-    w.on(["git", "-C", "/w/unk", "status", "--porcelain"], "")
+    w.on(["git", "-C", "/w/unk", "status", "--porcelain", "--ignore-submodules=dirty"], "")
     for h, merged in (("1", True), ("2", True), ("3", True), ("4", False)):
         w.on(["git", "merge-base", "--is-ancestor", h * 40, "origin/dev"], "", rc=0 if merged else 1, cwd=r)
-    w.on(["git", "-C", r, "status", "--porcelain"], "")
-    w.on(["git", "-C", "/w/done", "status", "--porcelain"], "")
-    w.on(["git", "-C", "/w/dirty", "status", "--porcelain"], " M file.rb\n")
-    w.on(["git", "-C", "/w/live", "status", "--porcelain"], "")
+    w.on(["git", "-C", r, "status", "--porcelain", "--ignore-submodules=dirty"], "")
+    w.on(["git", "-C", "/w/done", "status", "--porcelain", "--ignore-submodules=dirty"], "")
+    w.on(["git", "-C", "/w/dirty", "status", "--porcelain", "--ignore-submodules=dirty"], " M file.rb\n")
+    w.on(["git", "-C", "/w/live", "status", "--porcelain", "--ignore-submodules=dirty"], "")
     w.machine("me S 1\nme Z 100\nme Z 101\nme T 1\nme T 4242\nme R 5\nroot Z 1\nother T 1\n")
     w.record({"version": 1, "coordinator": None, "sessions": {},
               "events": [{"time": "09:30", "text": "Decision recorded."}]})
@@ -524,7 +524,7 @@ def review_59(tmp: Path) -> None:
     w = w_with(tmp, "r59c")
     r = str(w.root)
     w.on(["git", "worktree", "list", "--porcelain"], f"worktree {r}\nHEAD {'1' * 40}\nbranch refs/heads/dev\n\nworktree /w/nohead\nbranch refs/heads/x\n\n", cwd=r)
-    w.on(["git", "-C", "/w/nohead", "status", "--porcelain"], "")
+    w.on(["git", "-C", "/w/nohead", "status", "--porcelain", "--ignore-submodules=dirty"], "")
     wt = {i["branch"]: i for i in items(w.board(), "worktrees")}
     check("a worktree row with no HEAD reads merged UNKNOWN, never 'not merged'", wt["x"]["merged"] is None and wt["x"]["finished"] is False,
           str(wt["x"]))

@@ -20,8 +20,8 @@ GUARD = Guard(
     mutations=(
         Mutation(
             "git status loses --no-optional-locks, so a read-only band can rewrite .git/index",
-            "['--no-optional-locks', 'status', '--porcelain']",
-            "['status', '--porcelain']",
+            "['--no-optional-locks', 'status', '--porcelain', '--ignore-submodules=dirty']",
+            "['status', '--porcelain', '--ignore-submodules=dirty']",
             "takes no optional locks",
         ),
         Mutation(
@@ -83,6 +83,12 @@ GUARD = Guard(
             "{ component: 'AbovePrompt' }",
             "{}",
             "limited to AbovePrompt",
+        ),
+        Mutation(  # #1919
+            "git status recurses into a submodule and runs its own clean filter",
+            "'status', '--porcelain', '--ignore-submodules=dirty']",
+            "'status', '--porcelain']",
+            "never recurses into a submodule",
         ),
     ),
 )
