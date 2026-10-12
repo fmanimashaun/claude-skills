@@ -32,7 +32,14 @@ Auditor: fd / claude-skills-e9, assigned by coordinator claude-skills-24. Tree: 
 - **The two ADVICE items** are rules the model follows, with no script behind them; neither claims a mechanism:
   - `commands/report.md:15`: the reporter refuses an observation about your own app;
   - `commands/toolchain-audit.md:129`: "not installed is reported as not installed".
-- **One HELD with an outside dependency:** `commands/setup-flow.md:1015` (the coverage floor is "never red on day one, cannot slide"). That behaviour is SimpleCov's `refuse_coverage_drop`. Our `check_coverage_ratchet.py` only requires the line; SimpleCov's own behaviour was not checked against its docs here.
+- **One HELD with an outside dependency:** `commands/setup-flow.md:1015`, the coverage floor that is "never red on day one, cannot slide, rises by itself". That behaviour is SimpleCov's `refuse_coverage_drop`. doctrine-verifier read SimpleCov's source at v0.22.0, v1.0.0 and v1.3.2 and CONFIRMED it:
+  - with no baseline, the check passes (`coverage_violations.rb` `return [] unless baseline`);
+  - any drop fails the run (`MaximumCoverageDropCheck`, maximum 0);
+  - `coverage/.last_run.json` is written only after a passing run (`exit_handling.rb:131` at v1.3.2), so the floor never slides.
+
+  The same check found one defect beside it, filed as **#1957**:
+  - the prescribed `minimum_coverage_by_file line: 0` has been deprecated since SimpleCov 1.0.0 and warns on every run;
+  - `refuse_coverage_drop :branch` needs `enable_coverage :branch`, which the snippet omits.
 
 **Agent tool lists against agent bodies.** All 13 agents were compared.
 - Every agent told to run a command has `Bash`.
