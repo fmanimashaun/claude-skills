@@ -912,6 +912,27 @@ def selftest(match: str | None = None, real: str | None = None) -> int:
             continue
         if bool(CLEAN_PREFIX.match(prefix)) is not want:
             failures.append(f"{label}: CLEAN_PREFIX.match({prefix!r}) should be {want}")
+    # #1873: main()'s exit-3 path, with its collaborators stubbed. A clean tree whose DEFAULT base cannot be
+    # read is a skip (exit 3); the same tree named by an explicit --base that cannot be read is an error (exit 2).
+    if not match or "default base cannot be read" in match:
+        g = globals()
+        saved = (g["settings"], g["check"], cr.base_ref, cr.base_baseline)
+        g["settings"] = lambda root: {"baseline": E2E_BASELINE}
+        g["check"] = lambda root, base=None, lister=None: (0, [], [])
+        cr.base_baseline = lambda ref, root, **kw: ("unreadable", [])
+        try:
+            import contextlib, io
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                cr.base_ref = lambda root, base: ("origin/dev", False)
+                implicit = main(["--root", "."])
+                cr.base_ref = lambda root, base: ("origin/dev", True)
+                explicit = main(["--root", ".", "--base", "origin/dev"])
+        finally:
+            g["settings"], g["check"], cr.base_ref, cr.base_baseline = saved
+        if implicit != 3:
+            failures.append(f"a clean tree whose default base cannot be read is a skip (exit 3), not a pass: got {implicit}")
+        if explicit != 2:
+            failures.append(f"an explicit --base that cannot be read is an error (exit 2): got {explicit}")
     if failures:
         print("check_e2e_paths selftest FAILED --\n" + "\n".join(f"  - {f}" for f in failures))
         return 1

@@ -13,7 +13,10 @@ def main(argv: list[str]) -> int:
     import argparse
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("root", nargs="?", default="docs/design", help="where the canvas manifests and port reports live")
+    ap.add_argument("--selftest", action="store_true", help="prove the n/a and the gap verdicts")
     a = ap.parse_args(argv)                      # project_gates asserts every check's script answers --help
+    if a.selftest:
+        return selftest()
     root = Path(a.root)
     manifests = sorted(root.rglob("*.manifest.json")) if root.is_dir() else []
     if not manifests:
@@ -36,6 +39,25 @@ def main(argv: list[str]) -> int:
             bad += 1
     print(f"{len(manifests)} manifest(s), {bad} with gaps" if bad else f"{len(manifests)} manifest(s), every port accounted for")
     return 1 if bad else 0
+
+
+
+def selftest() -> int:
+    """#1873: the exit codes the runner grades. No manifest is n/a (3); a manifest with no port report is a gap (1)."""
+    import contextlib, io, tempfile
+    failures = []
+    with tempfile.TemporaryDirectory() as td, contextlib.redirect_stdout(io.StringIO()):
+        empty = main([td])
+        (Path(td) / "home.manifest.json").write_text("{}", encoding="utf-8")
+        unported = main([td])
+    if empty != 3:
+        failures.append(f"no canvas manifest is n/a (exit 3), never a pass: got {empty}")
+    if unported != 1:
+        failures.append(f"CONTROL: a manifest with no port report is a gap (exit 1): got {unported}")
+    for f in failures:
+        print(f"selftest FAIL: {f}")
+    print(f"port_fidelity_gate selftest: {'FAILED' if failures else 'ok'} ({len(failures)} failure(s))")
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":

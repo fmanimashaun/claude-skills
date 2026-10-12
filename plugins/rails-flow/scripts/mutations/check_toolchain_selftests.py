@@ -39,5 +39,11 @@ GUARD = Guard(
             "        if False:",
             "a manifest naming a missing script is a finding",
         ),
+        Mutation(  # #1873: the n/a row reaches its site
+            'zero selftests run is a pass instead of n/a',
+            'this proved nothing.")\n        return 3',
+            'this proved nothing.")\n        return 0',
+            'no shipped selftest found is not applicable (exit 3)',
+        ),
     ),
 )

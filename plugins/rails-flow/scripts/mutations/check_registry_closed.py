@@ -93,7 +93,7 @@ GUARD = Guard(
             'a missing registry is a pass instead of a skip',
             '    if not path.is_file():\n        return 3, [],',
             '    if not path.is_file():\n        return 0, [],',
-            'no registry is exit 3',
+            'no registry is n/a (exit 3)',
         ),
         Mutation(
             'an unreadable registry line is a pass',

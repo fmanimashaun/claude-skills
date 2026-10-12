@@ -395,5 +395,11 @@ GUARD = Guard(
             '    if False:\n        return "redirect"',
             'under the one `redirect` area',
         ),
+        Mutation(  # #1873: the n/a row reaches its site
+            'a stale inventory reports instead of n/a (exit 0, a number about nothing)',
+            'print(f"NOT APPLICABLE — coverage cannot be reported: {stale}", file=sys.stderr)\n        return 3',
+            'print(f"NOT APPLICABLE — coverage cannot be reported: {stale}", file=sys.stderr)\n        return 0',
+            'an inventory from another commit is n/a (exit 3)',
+        ),
     ),
 )
