@@ -214,7 +214,8 @@ generate, then trim what isn't needed.
 - **Credentials, not ENV, for app secrets:** `Rails.application.credentials.dig(:stripe, :secret_key)`;
   edit via `bin/rails credentials:edit`.
 - Run `bin/rubocop` mentally: 2-space indent, `frozen_string_literal` not
-  required (omakase), double quotes, no `and/or` for control flow.
+  required (omakase; Rails `main` changes this for new apps, see
+  `references/rails-8-2-readiness.md`), double quotes, no `and/or` for control flow.
 
 ## New in 8.1 — reach for these when relevant
 

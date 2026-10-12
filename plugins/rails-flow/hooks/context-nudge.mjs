@@ -38,6 +38,30 @@ let resume = null
 
 // The last fill the engine measured, in whole percent, or null while the live window has no reading.
 let percent = null
+// The main conversation's last request: the share of its input the API served from the prompt cache, whole percent (#1884).
+let cache = null
+// The usage windows' label, kept so a cache reading can redraw the status line without a new measure.
+let limitsText = null
+
+// The share of a request's input read from the prompt cache, in whole percent, or null when it cannot be told. The Claude API
+// reports input in three parts -- `input_tokens` (uncached), `cache_creation_input_tokens` (written to the cache) and
+// `cache_read_input_tokens` (served from it) -- so the hit rate is read / (read + written + uncached). A falling figure is the
+// sign a session's prefix stopped being cached: text injected early that changes each turn, a model switch, an idle gap past
+// the cache's lifetime. Shown on the status line only, so it costs no context.
+export function cacheHit(usage) {
+  if (usage === null || typeof usage !== 'object') return null
+  const read = usage.cache_read_input_tokens
+  const written = usage.cache_creation_input_tokens ?? 0
+  const uncached = usage.input_tokens ?? 0
+  if (![read, written, uncached].every((n) => Number.isFinite(n) && n >= 0)) return null
+  const total = read + written + uncached
+  return total === 0 ? null : Math.round((100 * read) / total)
+}
+
+function statusText() {
+  const parts = [percent === null ? null : `context ${percent}%`, cache === null ? null : `cache ${cache}%`, limitsText].filter(Boolean)
+  return parts.length ? parts.join(' · ') : undefined
+}
 // The line has been added since the fill last fell below the threshold or lost its reading.
 let nudged = false
 
@@ -149,9 +173,8 @@ export function register(on) {
       reading[k] = windowOf(e.rateLimits, k, now)
       if (level(reading[k]?.pct, ...levels) === null) announced[k] = null
     }
-    const limits = limitsLabel(e.rateLimits, now)
-    const parts = [percent === null ? null : `context ${percent}%`, limits ?? null].filter(Boolean)
-    $.ui.status(parts.length ? parts.join(' · ') : undefined)
+    limitsText = limitsLabel(e.rateLimits, now) ?? null
+    $.ui.status(statusText())
     // At the 5-hour hard level, schedule one prompt for just after the reset, so the work resumes by itself.
     const five = reading.five_hour
     if (resume === null && level(five?.pct, ...levels) === 'block' && (await $.env.get('RAILS_FLOW_AUTO_RESUME')) !== '0') {
@@ -161,6 +184,24 @@ export function register(on) {
     if (percent === null || percent < (await threshold($))) nudged = false
     await maybeCompact($, levels)
     return next(e)
+  })
+
+  // Runs once per request to the model (#1884). It forwards the response untouched as it streams, then reads the request's
+  // usage. Only the main conversation's requests count: a subagent's (`e.agentId` set) has its own prefix and cache.
+  on('turn.step', async function* ($, e, next) {
+    const result = yield* next(e)
+    try {
+      if (!e.agentId) {
+        const hit = cacheHit(result?.usage)
+        if (hit !== null) {
+          cache = hit
+          $.ui.status(statusText())
+        }
+      }
+    } catch {
+      // Advisory: a failed reading leaves the status line as it was
+    }
+    return result
   })
 
   // Runs when a prompt is submitted

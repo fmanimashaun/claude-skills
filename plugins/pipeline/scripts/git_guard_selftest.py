@@ -13,6 +13,7 @@ Global and system git config are isolated: a maintainer's own `core.hooksPath` w
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -88,8 +89,8 @@ class World:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(text if isinstance(text, bytes) else text.encode())
 
-    def install(self) -> subprocess.CompletedProcess:
-        return subprocess.run(["bash", str(INSTALLER)], cwd=self.work, env=fixture_git.hermetic(self.env), capture_output=True, text=True)
+    def install(self, installer: Path = INSTALLER) -> subprocess.CompletedProcess:
+        return subprocess.run(["bash", str(installer)], cwd=self.work, env=fixture_git.hermetic(self.env), capture_output=True, text=True)
 
     def head(self) -> str:
         return self.git("rev-parse", "HEAD").stdout.strip()
@@ -480,7 +481,16 @@ def _(base):
 def _(base):
     label = "installer: both guards are installed where git runs hooks and fire"
     w = World(base, "inst-plain", remote=False, guards=False)
-    p = w.install()
+    # The hooks the installer copies are NOT executable here (a checkout or a staged copy that drops the mode, as scripts/mutation_check.py's stage() once did): `cp` keeps the source mode,
+    # so only the installer's own `chmod +x` makes the installed guard fire. With executable sources the chmod is a no-op and nothing guards it (the v1.156.0 sweep's survivor).
+    plug = base / "inst-plain-plugin"
+    shutil.copytree(PLUGIN / "git-hooks", plug / "git-hooks")
+    (plug / "scripts").mkdir()
+    shutil.copy(INSTALLER, plug / "scripts" / INSTALLER.name)
+    for hook in (plug / "git-hooks").iterdir():
+        if hook.is_file():
+            hook.chmod(0o644)
+    p = w.install(plug / "scripts" / INSTALLER.name)
     check(label, p.returncode == 0 and "installed:" in p.stdout, f"exit {p.returncode}: {p.stdout.strip()[:200]}")
     before = w.head()
     q = stage_and_commit(w, {".env": "S=1\n"})

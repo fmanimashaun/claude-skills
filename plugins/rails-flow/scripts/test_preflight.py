@@ -36,7 +36,8 @@ ABSOLUTE `PATH` entries outside the project (`trusted_which`): a `.`, an empty e
 `pg_isready` shipped there would be repository code run before the user is asked. NOT closable here, and the same for
 every plugin hook: anything that can set the environment before the hook starts beats this script (`PATH` itself, which still
 chooses WHICH `pg_isready` runs and cannot be narrowed to world-writable directories only without more code, `LD_PRELOAD`,
-`CLAUDE_PLUGIN_ROOT`). The WRAPPER picks `python3` by the same rule as `trusted_which` and runs it isolated (`-I`), so `PYTHONPATH`
+`CLAUDE_PLUGIN_ROOT` is listed by the docs as set by the harness per spawn, and #1843 measured a project `env` value for it
+not applied). The WRAPPER picks `python3` by the same rule as `trusted_which` and runs it isolated (`-I`), so `PYTHONPATH`
 and a `python3` shipped in the repository are not in that list, which is a harness and workspace-trust question; and `DATABASE_URL` makes
 `pg_isready` contact the host it names (a connection, not code execution).
 

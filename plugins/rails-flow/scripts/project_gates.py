@@ -481,7 +481,7 @@ def tree_state(project: Path) -> dict[str, str] | None:
     change, but not the path the reader needs.
     """
     try:
-        done = subprocess.run(["git", "status", "--porcelain", "-uall"], cwd=project,
+        done = subprocess.run(["git", "status", "--porcelain", "-uall", "--ignore-submodules=dirty"], cwd=project,
                               capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.SubprocessError):
         return None
@@ -717,7 +717,7 @@ def write_sweep_record(project: Path, results: list[Result], problems: list[str]
     try:
         if _git(project, "rev-parse", "--is-inside-work-tree") != "true":
             return "rails-flow: not a git worktree, so no sweep record was written."
-        status = _git(project, "status", "--porcelain")
+        status = _git(project, "status", "--porcelain", "--ignore-submodules=dirty")
         if status is None:
             return "WARNING: rails-flow: git status failed, so no sweep record was written."
         if status:

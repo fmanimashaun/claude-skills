@@ -66,7 +66,7 @@ def diff(root: Path, base: str) -> dict[str, tuple[list[str], list[str]]]:
     # `--no-renames`: a rename is a delete of the old path AND an add of the new one. Git's default pairs them and prints only the
     # NEW path in the header, so `git mv app/policies/p_policy.rb app/services/p.rb` read as a change to app/services/p.rb and a
     # policy move was two-way (review of #1834). `core.quotePath=false` keeps a non-ASCII path readable instead of octal-quoted.
-    for line in _git(root, "-c", "core.quotePath=false", "diff", "--no-color", "--no-renames", "-U0", merge_base).splitlines():
+    for line in _git(root, "-c", "core.quotePath=false", "diff", "--no-color", "--no-renames", "--ignore-submodules=dirty", "-U0", merge_base).splitlines():
         if line.startswith("diff --git "):
             rest = line[len("diff --git "):]
             # A path git still quotes (a quote, a backslash, a control character) or one that contains " b/" cannot be split

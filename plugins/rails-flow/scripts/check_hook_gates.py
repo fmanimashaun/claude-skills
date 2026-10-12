@@ -48,6 +48,11 @@ import fixture_git  # noqa: E402  (#1588: a fixture's git touches only its own t
 HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
 
 
+# The prefix of every fixture directory. The `--match` mask (`_TEMP_PATH`) is built from it, so a label that embeds a scratch path compares equal in the survey and the run
+# (#1893: the prefix changed in #1800 and the mask, which only knew `tmp...`, did not follow: 9 worktree guards read "cannot be narrowed").
+SCRATCH_PREFIX = "hookgates-"
+
+
 @contextlib.contextmanager
 def scratch_dir():
     """A temp directory a fixture owns, removed on exit WITHOUT ever failing the run (#1800).
@@ -57,7 +62,7 @@ def scratch_dir():
     escaped the fixture group, failed the whole selftest, and read in the mutation harness as "the UNMUTATED selftest fails" (run 38054049242):
     a cleanup problem reported as a verdict. A leftover temp directory is harmless; a raised cleanup is not. So: retry a few times, then give
     up, and say what was left on stderr so the next occurrence names its writer instead of being a bare traceback."""
-    path = tempfile.mkdtemp(prefix="hookgates-")
+    path = tempfile.mkdtemp(prefix=SCRATCH_PREFIX)
     try:
         yield path
     finally:
@@ -95,7 +100,7 @@ class MatchSequenceError(Exception):
 # `--match` would refuse the group. The path is MASKED for the comparison, including a name a label cut short (`cmd[:40]` in
 # a label ends mid-name when the directory is short, as `/tmp` is on a Linux runner and `/private/var/folders/...` is not on
 # a Mac: a group that surveyed clean on a laptop was refused in CI, #1596). Failures still print the label as written.
-_TEMP_PATH = re.compile(r"/\S*?/tmp\w+")
+_TEMP_PATH = re.compile(r"/\S*?/(?:tmp\w+|" + re.escape(SCRATCH_PREFIX) + r"\w*)")
 
 
 def _stable(label: str) -> str:
@@ -499,7 +504,7 @@ def blocked_lines(out: str) -> str:
 
 def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
              env_extra: dict[str, str] | None = None, unset: tuple[str, ...] = (),
-             shell: str = "bash") -> tuple[int, str]:
+             shell: str | tuple[str, ...] = "bash") -> tuple[int, str]:
     env = dict(os.environ)
     for k in unset:
         env.pop(k, None)
@@ -510,7 +515,7 @@ def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
         env["PATH"] = os.pathsep.join(str(p) for p in path_prefix) + os.pathsep + env["PATH"]
     if env_extra:
         env.update(env_extra)
-    done = _run([shell, str(HOOKS / name)], cwd=cwd, input=stdin, env=env,
+    done = _run([*((shell,) if isinstance(shell, str) else shell), str(HOOKS / name)], cwd=cwd, input=stdin, env=env,
                           capture_output=True, text=True, timeout=60)
     return done.returncode, done.stdout + done.stderr
 
@@ -1802,6 +1807,46 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: ...and the same comment passes once it shows it was verified",
           run("gh issue comment 1141 --body-file BODY", CHECKED) == 0, said())
 
+    # WHERE THE `gh` IS (#1877). The match used to be a substring of the whole command, so `gh issue create` was blocked
+    # whenever its title or a trailing comment merely NAMED `gh pr create`. Words are not a command; a command is.
+    check("guard-claims (#1877): `gh issue create -R ... --body-file` is not a claim-carrying command and passes",
+          run("gh issue create -R a/b --title t --body-file BODY --label x", NUMERIC) == 0, said())
+    check("guard-claims (#1877): ...even when the title names `gh pr create`",
+          run("gh issue create -R a/b --title 'guard-claims blocks gh pr create' --body-file BODY", NUMERIC) == 0, said())
+    check("guard-claims (#1877): ...and when a trailing shell comment names `gh pr edit`",
+          run("gh issue create --title t --body-file BODY # gh pr edit", NUMERIC) == 0, said())
+    for label, shape in (
+        ("after a separator", "cd /tmp && gh pr create --base dev --body-file BODY"),
+        ("on a later line", "echo start\ngh pr create --base dev --body-file BODY"),
+        ("inside bash -c", "bash -c \"gh pr create --base dev --body-file BODY\""),
+        ("behind an env assignment", "GH_TOKEN=x gh pr edit 5 --body-file BODY"),
+        ("behind a quoted env assignment", "FOO=\"a b\" BAR='c d' gh pr edit 5 --body-file BODY"),
+        ("behind a double-quoted word", "env -C \"$d\" gh pr create --body-file BODY"),
+        ("behind a single-quoted word", "timeout '60' gh pr edit 3 --body-file BODY"),
+        ("behind a $(...) assignment", "FOO=$(date) gh pr create --body-file BODY"),
+        ("behind a backtick assignment", "FOO=`date` BAR=2 gh pr edit 3 --body-file BODY"),
+        ("behind a wrapper word", "env -i sudo gh issue comment 5 --body-file BODY"),
+        ("through an absolute path", "/opt/homebrew/bin/gh pr create --body-file BODY"),
+        ("after a chained issue create", "gh issue create --title t --label x && gh issue comment 5 --body-file BODY"),
+    ):
+        check(f"guard-claims (#1877): a real claim-carrying command is still blocked {label}",
+              run(shape, NUMERIC) == 2, said())
+
+    # THE EVIDENCE THE REFUSAL ASKS FOR MUST BE ACCEPTED (#1877). Its message tells the author to write 'verified against
+    # <tag>', 'measured 2026-..-..' or CONFIRMED; the pattern rejected the middle one, so following the instruction kept the
+    # PR blocked for four attempts. One fixture per phrase the message names, and per shape the pattern accepts.
+    for phrase in ("verified against v1.134.0", "re-verified on dev", "measured 2026-10-11", "measured on 2026-10-11",
+                   "measured against dev", "measured live on dev", "CONFIRMED by doctrine-verifier"):
+        check(f"guard-claims (#1877): the evidence phrase '{phrase}' is accepted",
+              run("gh pr create --base dev --body-file BODY", NUMERIC + phrase + ".\n") == 0, said())
+    check("guard-claims (#1877) control: 'measured' with no date and no on/against is not evidence",
+          run("gh pr create --base dev --body-file BODY", NUMERIC + "Measured, I think.\n") == 2, said())
+    check("guard-claims (#1877) control: a year alone ('measured 2026') is not a date",
+          run("gh pr create --base dev --body-file BODY", NUMERIC + "measured 2026.\n") == 2, said())
+    _, refusal = run("gh issue comment 5 --body-file BODY", NUMERIC, with_output=True)[:2]
+    check("guard-claims (#1877): the refusal for an issue comment says 'body', not 'PR body'",
+          "this body makes" in str(refusal) and "PR body" not in str(refusal), said())
+
     # MUST PASS -- and these are the half that keeps the guard alive. A hook that blocked every
     # `gh pr create` would be switched off within a day, and then nothing is checked at all.
     check("guard-claims: the same claim passes once the body shows it was verified",
@@ -2873,7 +2918,12 @@ def release_gate_fixtures() -> None:
             only.mkdir()
             for tool in tools:
                 (only / tool).symlink_to(shutil.which(tool))
-            done = _run([str(only / "bash"), str(QA_HOOK)], cwd=td,
+            # The hook starts by rebuilding PATH from absolute entries OUTSIDE the repository (#1850), and with no .git or Gemfile above it the repository is the working directory
+            # itself: a tool directory INSIDE it is dropped, so `only` made every tool look missing and "python3 and git present" was the same test as "only bash" (the v1.156.0 sweep's
+            # survivor). The hook runs in a sibling directory.
+            work = Path(td) / "work"
+            work.mkdir()
+            done = _run([str(only / "bash"), str(QA_HOOK)], cwd=work,
                                   input=json.dumps({"tool_input": {"command": cmd}}),
                                   env={"PATH": str(only)}, capture_output=True, text=True, timeout=60)
             return done.returncode, done.stdout + done.stderr
@@ -4973,6 +5023,28 @@ def guard_worktree_pointer_fixtures() -> None:
         (done_wt / "scratch.txt").write_text("uncommitted\n")
         check("resume pointer: a merged worktree with uncommitted work is NOT listed as finished",
               str(done_wt) not in start(repo)[1])
+        # #1916: a SUBMODULE'S OWN clean filter never runs when the pointer reads a worktree's status. The gitlink is merged into dev,
+        # so the worktree stays finished; the sub's config names `filter.evil.clean`, and a same-size change makes git hash the file.
+        (done_wt / "scratch.txt").unlink()
+        sub = done_wt / "vendor" / "sub"
+        sub.mkdir(parents=True)
+        git(sub, "init", "-q")
+        (sub / "f.txt").write_text("aaaa\n")
+        git(sub, "add", "f.txt")
+        git(sub, "commit", "-q", "-m", "f")
+        git(done_wt, "add", "vendor/sub")
+        git(done_wt, "commit", "-q", "-m", "gitlink")
+        git(repo, "branch", "-f", "dev", "feature/done")
+        marker, clean = Path(td) / "filter-ran", Path(td) / "clean.sh"
+        clean.write_text(f"#!/bin/sh\necho ran >> {marker}\ncat\n")
+        clean.chmod(0o755)
+        git(sub, "config", "filter.evil.clean", str(clean))
+        (sub / ".gitattributes").write_text("*.txt filter=evil\n")
+        time.sleep(1.1)                               # a new mtime, so git cannot trust the cached stat
+        (sub / "f.txt").write_text("bbbb\n")          # SAME SIZE: only hashing tells it apart
+        out = start(repo)[1]
+        check("resume pointer: a submodule's own clean filter never runs when a worktree's status is read (#1916)",
+              not marker.exists(), marker.read_text() if marker.exists() else out[-200:])
         # Zombies: a real one, parented to this process, then reaped.
         child = subprocess.Popen(["sh", "-c", "exit 0"])
         time.sleep(0.5)
@@ -5007,6 +5079,107 @@ def guard_worktree_pointer_fixtures() -> None:
 # killing the hook's descendants: orphaned awk processes ran 51 minutes, one 23 hours, and the load hit 348.
 # `lib/deadline.sh` runs each hook's work in its own process group under a wall-clock deadline and kills the whole
 # group. The stub below is the incident: an `awk` that hangs and leaves a sleeper behind, every pid recorded.
+# ---- wip-commit.sh (#1564) ----------------------------------------------------------------------------------------------------
+def wip_commit_fixtures() -> None:
+    """The Stop hook that commits a lane's tracked changes as WIP, driven the way the harness drives it, in the environment a project's own
+    settings can set (#1843). Advisory, so every fixture also proves it exits 0. The judgement is proved by `wip_commit.py --selftest` (70 checks,
+    hostile environments and every refusal); this group proves the HOOK: registered with the hardened start, sourcing the lib first, committing
+    through the real wrapper, not running a program the repository chose, and failing open."""
+    hooks = json.loads((HOOKS.parent / "hooks.json").read_text())["hooks"]
+    entries = [h["command"] for e in hooks.get("Stop", []) for h in e["hooks"] if "wip-commit.sh" in h["command"]]
+    check("wip-commit: wip-commit.sh is registered on Stop", len(entries) == 1, entries)
+    check("wip-commit: ...and registered with the hardened start `/bin/bash -p`", bool(entries) and entries[0].startswith("/bin/bash -p "), entries)
+    check("wip-commit: it is NOT registered on PreToolUse (a PreToolUse hook runs before the user is asked, #1843)",
+          not any("wip-commit.sh" in h["command"] for e in hooks.get("PreToolUse", []) for h in e["hooks"]))
+    text = (HOOKS / "wip-commit.sh").read_text()
+    first = next((l.strip() for l in text.splitlines() if l.strip() and not l.strip().startswith("#") and not l.strip().startswith("set ")), "")
+    check("wip-commit: the first executable line sources lib/trusted-env.sh", first.startswith('. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh"'), first)
+
+    real_python = shutil.which("python3") or ""
+
+    def lane(td: str, branch: str = "feature/x") -> tuple[Path, Path, Path]:
+        """(repo, witness dir, home with a git identity): a repository on `branch` holding one tracked file."""
+        base = Path(td).resolve()
+        repo, witness, home = base / "repo", base / "witness", base / "home"
+        for d in (repo / "bin", witness, home):
+            d.mkdir(parents=True)
+        (home / ".gitconfig").write_text("[user]\n\tname = Lane Tester\n\temail = lane@example.com\n", encoding="utf-8")
+        _git_repo(repo)
+        (repo / "a.txt").write_text("one\n", encoding="utf-8")
+        _fixture_git(repo, "add", "a.txt")
+        _fixture_git(repo, "commit", "-q", "-m", "base")
+        if branch != "dev":
+            _fixture_git(repo, "checkout", "-q", "-B", branch)
+        return repo, witness, home
+
+    def stop(repo: Path, home: Path, **kw) -> tuple[int, str]:
+        env = dict(kw.pop("env_extra", None) or {})
+        env["HOME"] = str(home)
+        return run_hook("wip-commit.sh", cwd=repo, stdin=json.dumps({"hook_event_name": "Stop", "cwd": str(repo)}), env_extra=env,
+                        shell=("/bin/bash", "-p"), **kw)      # exactly as the registration starts it: an absolute shell (a PATH with no bash must not matter), and -p (BASH_ENV is not read)
+
+    def commits(repo: Path) -> int:
+        return int(_fixture_git(repo, "rev-list", "--count", "HEAD", capture_output=True, text=True).stdout.strip())
+
+    with scratch_dir() as td:
+        repo, witness, home = lane(td)
+        (repo / "a.txt").write_text("two\n", encoding="utf-8")
+        (repo / "untracked.txt").write_text("x\n", encoding="utf-8")
+        before = commits(repo)
+        rc, out = stop(repo, home)
+        check("wip-commit: a dirty tracked change on a feature lane is committed through the real wrapper, exit 0, silent",
+              rc == 0 and out.strip() == "" and commits(repo) == before + 1, f"rc={rc} out={out[:120]!r} commits={commits(repo)} before={before}")
+        listed = _fixture_git(repo, "ls-tree", "-r", "--name-only", "HEAD", capture_output=True, text=True).stdout
+        check("wip-commit: ...and never the untracked file", "untracked.txt" not in listed, listed)
+        common = Path(_fixture_git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir", capture_output=True, text=True).stdout.strip())
+        head = _fixture_git(repo, "rev-parse", "HEAD", capture_output=True, text=True).stdout.strip()
+        record = "".join(f.read_text() for f in (common / "handoff").glob("*.md")) if (common / "handoff").is_dir() else ""
+        check("wip-commit: the where-stopped record is rewritten after the commit, naming the NEW HEAD (review of 8725ef4d)",
+              f"- HEAD: {head}" in record, record[:300])
+    with scratch_dir() as td:
+        repo, witness, home = lane(td, "dev")
+        (repo / "a.txt").write_text("two\n", encoding="utf-8")
+        before = commits(repo)
+        rc, out = stop(repo, home)
+        check("wip-commit: on dev nothing is committed, and the exit is still 0", rc == 0 and commits(repo) == before, f"rc={rc} commits={commits(repo)} before={before}")
+
+    # THE HOSTILE ENVIRONMENT through the wrapper: a fake python3 FIRST on a relative PATH, the settings' PYTHONPATH and BASH_ENV, and a
+    # GIT_CONFIG_* clean filter. The witness stays empty and the lane is still committed.
+    with scratch_dir() as td:
+        repo, witness, home = lane(td)
+        fake = repo / "bin" / "python3"
+        fake.write_text(f'#!/bin/sh\necho "$0 $*" >> "{witness}/fake-python3"\nexec "{real_python}" "$@"\n', encoding="utf-8")
+        fake.chmod(0o755)
+        (repo / "pylib").mkdir()
+        (repo / "pylib" / "sitecustomize.py").write_text(f"open({str(witness / 'pythonpath')!r}, 'a').write('ran\\n')\n", encoding="utf-8")
+        (repo / "bashenv.sh").write_text(f'echo ran >> "{witness}/bash-env"\n', encoding="utf-8")
+        clean = repo / "bin" / "clean"
+        clean.write_text(f'#!/bin/sh\necho ran >> "{witness}/clean-filter"\ncat\n', encoding="utf-8")
+        clean.chmod(0o755)
+        (repo / ".gitattributes").write_text("*.txt filter=evil\n", encoding="utf-8")
+        _fixture_git(repo, "add", ".gitattributes")
+        _fixture_git(repo, "commit", "-q", "-m", "attributes")
+        (repo / "a.txt").write_text("two\n", encoding="utf-8")
+        before = commits(repo)
+        rc, out = stop(repo, home, env_extra={
+            "PATH": "bin" + os.pathsep + os.environ["PATH"], "PYTHONPATH": str(repo / "pylib"), "BASH_ENV": str(repo / "bashenv.sh"),
+            "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "filter.evil.clean", "GIT_CONFIG_VALUE_0": str(clean)})
+        ran = sorted(p.name for p in witness.iterdir())
+        check("wip-commit: a repository-chosen python3 (relative PATH), PYTHONPATH, BASH_ENV and a GIT_CONFIG_* filter ran nothing", ran == [], ran)
+        check("wip-commit: ...and the lane was still committed", rc == 0 and commits(repo) == before + 1, f"rc={rc} commits={commits(repo)} before={before}")
+
+    # FAILS OPEN: no python3 at all on PATH, a payload that is not JSON, and a directory that is not a repository
+    with scratch_dir() as td:
+        repo, witness, home = lane(td)
+        (repo / "a.txt").write_text("two\n", encoding="utf-8")
+        before = commits(repo)
+        rc, out = stop(repo, home, env_extra={"PATH": "/nonexistent"})
+        check("wip-commit: with no python3 on PATH it exits 0, silently, committing nothing", rc == 0 and out.strip() == "" and commits(repo) == before, f"rc={rc} out={out[:120]!r}")
+        done = _run(["/bin/bash", "-p", str(HOOKS / "wip-commit.sh")], cwd=Path(td), input="not json", env={**os.environ, "HOME": str(home)}, capture_output=True, text=True, timeout=60)
+        check("wip-commit: a garbage payload outside any repository exits 0, silently", done.returncode == 0 and (done.stdout + done.stderr).strip() == "",
+              f"rc={done.returncode} {done.stdout + done.stderr!r}")
+
+
 # ---- stop-where.sh + session-start.sh's where-stopped lines (#1639) -----------------------------------------------------
 def where_stopped_fixtures() -> None:
     """Where this worktree stopped: the Stop hook writes the facts file and warns ONCE about unsaved work; SessionStart
@@ -5062,7 +5235,7 @@ def where_stopped_fixtures() -> None:
         out = start(repo)
         check("where-stopped: SessionStart states the unsaved work and points at the file",
               "- unsaved work: 1 commit not on any remote, 1 uncommitted file" in out
-              and f"where this worktree stopped (last turn, " in out and str(files[0] if files else "?") in out, out[-400:])
+              and f"where this worktree stopped (last turn): " in out and str(files[0] if files else "?") in out, out[-400:])
 
         # FAIL OPEN: a python3 that fails never stops the turn (a hung git is bounded by the lib's own deadline, which
         # where_stopped.py --selftest proves; the harness does not hang a real git here).
@@ -5570,6 +5743,7 @@ def release_gate_fallback_fixtures() -> None:
 
 
 # ---- guard-pr-ready.sh (#1565) ------------------------------------------------------------------
+@real_setup     # #1906: the repository, its HEAD and each sweep record are built by code that runs BEFORE the check that reads them; under `--match` that code is stubbed unless it is real setup
 def guard_pr_ready_fixtures() -> None:
     """`gh pr ready` only on a GREEN sweep record with zero skips for HEAD; chains are not parsed (#1565)."""
     def head_of(repo: Path) -> str:
@@ -5635,6 +5809,11 @@ def guard_pr_ready_fixtures() -> None:
         for cmd in ("gh repo set-default o/r && gh pr ready 5", "git remote set-url origin https://x/o/r && gh pr ready 5"):
             expect(f"guard-pr-ready: with a green record, an earlier segment that can retarget gh refuses: {cmd[:40]}",
                    guard(repo, cmd), 2, "must be its own command")
+        # #1906: the one place the python judge FAILS CLOSED on a directory it cannot tell (lib/command_cwd.py exits 3). These are single commands, so the shell hook's own chain
+        # check lets them through to it; with a GREEN record for the session's HEAD a guess of the session's directory would allow each, so a refusal proves it does not guess.
+        for cmd in ("HOME=/x gh pr ready 5", "GIT_DIR=/x gh pr ready 5", "sudo gh pr ready 5"):
+            expect(f"guard-pr-ready: with a green record, a command whose directory cannot be told refuses, it does not guess the session's: {cmd}",
+                   guard(repo, cmd), 2, "cannot be told")
         expect("guard-pr-ready: a `cd` before it is another command: refused, even with a green record",
                guard(repo, "cd $HOME && gh pr ready 12"), 2, "must be its own command")
         # shell-adversary on #1831: an earlier segment that MOVES HEAD would pass on the old HEAD's green record.
@@ -5660,6 +5839,9 @@ def guard_pr_ready_fixtures() -> None:
         # DOCUMENTED LIMITS (#1831's third adversary round; the coordinator's ruling, as for guard-bash, #1793): this hook is a
         # TRIPWIRE, not a boundary. Each class below is pinned at TODAY's behaviour, so a change in either direction is seen. The
         # guarantee moves to the gh shim, where argv is final. NOT a statement that these are acceptable forever.
+        # (#1839: it HAS moved. `git-shim/gh` refuses each of these classes after the shell has expanded them, pinned by `gh_shim_selftest.py`'s "six spellings"
+        # case, which runs the hook alone (still 0: the text match does not see them) AND the shim (refused). The expectations below stay at 0 on purpose: they
+        # describe the TRIPWIRE, which is still only a tripwire.)
         expect("guard-pr-ready LIMIT (degraded): a quote-split word is not seen: gh pr re\"\"ady 5", degraded('gh pr re""ady 5'), 0)
         # A FRESH repo, in force with NO record: here exit 0 can only mean "not seen" (with a green record a seen command passes too).
         lim = new_repo(td, "limits")
@@ -5903,8 +6085,10 @@ def hostile_env_fixtures() -> None:
 
     got = inherited_view()
     check("hostile environment: trusted-env.sh keeps a copy of an inherited GH_REPO as RF_INHERITED_GH_REPO for the gates, and unsets the variable itself", got.startswith("unset|evil/repo|"), f"got {got!r}")
-    check("hostile environment: ...and of an inherited CDPATH", got.split("|")[2:3] == ["/x"], f"got {got!r}")
-    check("hostile environment: ...but not of what the lib sets itself (GIT_CONFIG_GLOBAL when HOME is the repository root)", got.split("|")[3:4] == ["unset"], f"got {got!r}")
+    got_cd = inherited_view()      # its own view: `--match` skips the code before an unwanted check, so a view computed above this one would be empty (#1893)
+    check("hostile environment: ...and of an inherited CDPATH", got_cd.split("|")[2:3] == ["/x"], f"got {got_cd!r}")
+    got_own = inherited_view()
+    check("hostile environment: ...but not of what the lib sets itself (GIT_CONFIG_GLOBAL when HOME is the repository root)", got_own.split("|")[3:4] == ["unset"], f"got {got_own!r}")
     check("hostile environment: ...and a credential (GH_TOKEN, GH_ENTERPRISE_TOKEN) is not copied, so it is in front of no more child processes than before",
           inherited_view(creds=True) == "unset|unset", f"got {inherited_view(creds=True)!r}")
     got = inherited_view(forged=True)
@@ -6027,6 +6211,43 @@ def hostile_env_fixtures() -> None:
         check("hostile environment: rf_trusted_python finds nothing when the only python3 links into the repository", none == "[]", f"RF_PYTHON {none!r}")
 
 
+def submodule_filter_fixtures() -> None:
+    """#1919: no hook runs a SUBMODULE'S own clean filter. Measured on git 2.50.1, `status` and `diff HEAD` recurse into a submodule
+    and hash a same-size change through a `filter.<name>.clean` that THAT repository's config names, a command it chose, before the
+    user is asked anything. Each hook runs in a host whose submodule names a marker-writing filter; the marker must never appear."""
+    def host_with_filter(td: str) -> tuple[Path, Path]:
+        root = Path(td)
+        host, sub = root / "host", root / "host" / "vendor" / "sub"
+        _git_repo(host)
+        sub.mkdir(parents=True)
+        _git_repo(sub)
+        (sub / "f.txt").write_text("aaaa\n")
+        _fixture_git(sub, "add", "f.txt")
+        _fixture_git(sub, "commit", "-q", "-m", "f")
+        _fixture_git(host, "add", "vendor/sub")
+        _fixture_git(host, "commit", "-q", "-m", "gitlink")
+        (host / "spec").mkdir()                                 # stop-gate reads status only in a project with spec/
+        marker, clean = root / "filter-ran", root / "clean.sh"
+        clean.write_text(f"#!/bin/sh\necho ran >> {marker}\ncat\n")
+        clean.chmod(0o755)
+        _fixture_git(sub, "config", "filter.evil.clean", str(clean))
+        (sub / ".gitattributes").write_text("*.txt filter=evil\n")
+        time.sleep(1.1)                                         # a new mtime, so git cannot trust the cached stat
+        (sub / "f.txt").write_text("bbbb\n")                   # SAME SIZE: only hashing tells it apart
+        return host, marker
+
+    for hook, payload in (("session-start.sh", lambda td: json.dumps({"session_id": "S"})),
+                          ("stop-gate.sh", lambda td: "{}"),
+                          ("guard-claims.sh", lambda td: json.dumps({"tool_input": {"command": f"gh pr create --base dev --body-file {td}/body.md"}}))):
+        with scratch_dir() as td:
+            host, marker = host_with_filter(td)
+            (Path(td) / "body.md").write_text("Tidy up the wording in the README.\n", encoding="utf-8")
+            run_hook(hook, cwd=host, stdin=payload(td), env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])},
+                     unset=("CLAUDE_PROJECT_DIR", "CLAUDE_ENV_FILE"))
+            check(f"submodule filter: {hook} never runs a submodule's own clean filter (#1919)", not marker.exists(),
+                  marker.read_text() if marker.exists() else "")
+
+
 GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
@@ -6038,14 +6259,15 @@ GROUPS = {
     "release_gate_adversary": release_gate_adversary_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "test_preflight": test_preflight_fixtures, "session_end": session_end_fixtures, "timeout": timeout_fixtures,
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
+    "submodule_filter": submodule_filter_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
-    "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures, "tools_missing": tools_missing_fixtures,
+    "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures, "wip_commit": wip_commit_fixtures, "tools_missing": tools_missing_fixtures,
     "fixture_git_binding": fixture_git_binding_fixtures, "guard_pr_ready": guard_pr_ready_fixtures,
     "hostile_env": hostile_env_fixtures,
 }
 
 
-# The doctor runs this harness as THREE gates (`--part a`, `--part b`, `--part c`), because the whole run takes far longer than
+# The doctor runs this harness as FOUR gates (`--part a` .. `--part d`), because the whole run takes far longer than
 # the doctor's 180 s limit for a gate, and a gate that cannot finish is a SKIP on every sweep (#1581). It was two gates until
 # a measurement showed part a alone at 164 CPU-seconds and 244 s wall under load: dev's `guard_claims` had grown from 4.9 s to
 # 55.6 s since the first split, and the worktree groups came on top, so a skip would have been the normal result.
@@ -6056,13 +6278,17 @@ GROUPS = {
 # guard_claims + guard_bash + the small ones (about 96), part b the two release_gate groups (about 110), and part c the
 # repos, refs and deadline groups and the four worktree groups (about 60 CPU-s, about 80 s of wall). EVERY group must be in exactly one part: a group in none
 # would never run in the doctor, which is the vacuous gate this repository keeps finding; the selftest checks it below.
+# PART D (v1.156.0 sweep, #1893): part a grew to 468 s wall at load 11-27 against its 400 s budget, and under the sweep's own load it was
+# killed before printing. MEASURED alone on an origin/dev export: guard_bash 196 s wall (137 CPU-s), the rest of part a 273 s (115 CPU-s,
+# 623 checks). guard_bash is its own part so each fits its budget; no budget was raised.
 PARTS = {
-    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_bash_db_reset", "guard_claims", "guard_claims_pipe",
+    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash_db_reset", "guard_claims", "guard_claims_pipe",
           "ci_verdict_hint", "session_end", "timeout", "hostile_env"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
-          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding", "test_preflight",
-          "guard_pr_ready"],
+          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "wip_commit", "tools_missing", "fixture_git_binding", "test_preflight",
+          "guard_pr_ready", "submodule_filter"],
+    "d": ["guard_bash"],
 }
 
 
@@ -6151,9 +6377,13 @@ def meta_checks() -> None:
           and _stable("no path in this label") == "no path in this label"
           and _stable("a /tmp/tmpAbCd1234/x") != _stable("b /tmp/tmpAbCd1234/x"),
           repr([_stable("x: git worktree remove /tmp/tmpAbCd1234/a"), _stable("x /private/tmp/tmpp47g")]))
-    check("--part a, --part b and --part c name groups; any other part is refused, never an empty pass",
-          all(parse_part(k) == PARTS[k] for k in ("a", "b", "c")) and all(parse_part(x) is None for x in ("", "d", "ab", "A")),
-          repr([parse_part(x) for x in ("a", "b", "c", "", "d")]))
+    with scratch_dir() as made:
+        masked, cut = _stable(f"x: {made}/a"), _stable(f"x: {made[:made.index(SCRATCH_PREFIX) + len(SCRATCH_PREFIX)]}")
+    check("a label's path under a REAL scratch directory is masked, whole or cut right after its prefix, so --match works for the labels that embed one (#1893)",
+          masked == "x: <tmp>/a" and cut == "x: <tmp>", repr([masked, cut]))
+    check("--part a, b, c and d name groups; any other part is refused, never an empty pass",
+          all(parse_part(k) == PARTS[k] for k in ("a", "b", "c", "d")) and all(parse_part(x) is None for x in ("", "e", "ab", "A")),
+          repr([parse_part(x) for x in ("a", "b", "c", "d", "", "e")]))
     check("CONTROL: --only release_gate,guard_bash is accepted",
           parse_only("release_gate,guard_bash") == ["release_gate", "guard_bash"], repr(parse_only("release_gate,guard_bash")))
     # ...and a selection runs exactly what it names, proved on stand-ins so the proof costs nothing.
@@ -6293,7 +6523,7 @@ def meta_checks() -> None:
           not is_starved(hot, 5.0, 40.0, 10), "starved")
     check("starved: only a hook script's run sets the CPU a verdict is judged by, never the git or gh a fixture ran after it",
           _runs_a_hook((["bash", "/x/plugins/qa-flow/hooks/scripts/release-gate.sh"],)) and _runs_a_hook((["bash", "/x/hooks/scripts/guard-bash.sh"],))
-          and not _runs_a_hook((["git", "status"],)) and not _runs_a_hook((["gh", "pr", "view"],)), "misclassified")
+          and not _runs_a_hook((["git", "status"],)) and not _runs_a_hook((["gh", "pr", "view"],)), "misclassified")  # submodule-safe: an argv classified, not run
     check("starved: ...and a machine under its cores never excuses a deadline denial", not is_starved(hot, 0.4, 3.0, 10), "starved")
     check("starved: with --strict-timing the same deadline denial is a FAILURE, never a skip (a mutant that stalls a hook is a catch)",
           not is_starved("the gate took longer than 13s", 0.3, 40.0, 4, "release_gate_repos", strict=True)
@@ -6369,6 +6599,13 @@ def meta_checks() -> None:
         name = group.__name__.replace("_fixtures", "").replace("_", "-")
         check(f"{name} fixtures: no check that runs the hook carries a bare constant `exit N` as its detail (it must carry what the hook said)",
               not bare, f"{len(bare)} left, e.g. {bare[:2]}")
+    # #1810 (the v1.156.0 sweep's survivor): the release-gate groups' detail comes from `_said_recorder`, and the guard of this harness runs only THIS group, so the proof that the recorder
+    # keeps the process's output has to live here. The release-gate group's own check of it is not reached by `--only timeout`.
+    import types
+    record, said = _said_recorder()
+    record(types.SimpleNamespace(returncode=2, stdout="BLOCKED by qa-flow release gate", stderr="why: no certification"))
+    check("release-gate (#1810): the detail of a failed check carries what the hook said (the recorder keeps stdout and stderr, not only the exit code)",
+          said().startswith("exit 2: ") and "BLOCKED by qa-flow release gate" in said() and "why: no certification" in said(), said())
 
 
 def selftest(groups: list[str] | None = None, match: str | None = None, fail_fast: bool = False) -> int:
@@ -6400,7 +6637,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--selftest", action="store_true", help="drive every hook under its stub environments")
     ap.add_argument("--only", metavar="GROUP[,GROUP]",
                     help=f"run only these fixture groups: {', '.join(GROUPS)} (#1497)")
-    ap.add_argument("--part", metavar="a|b", help="run one half of the groups: the doctor runs both as two gates (#1581)")
+    ap.add_argument("--part", metavar="a|b|c|d", help="run one part of the groups: the doctor runs each as its own gate (#1581, #1893)")
     ap.add_argument("--match", metavar="SUBSTR",
                     help="run only the checks whose label contains SUBSTR, case-insensitively (#1599)")
     ap.add_argument("--strict-timing", action="store_true",

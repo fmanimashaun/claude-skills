@@ -523,5 +523,11 @@ GUARD = Guard(
             '    _SIMPLE = frozenset({"exec", "env", "cross-env", "bunx", "run"})',
             'prefix: yarn run run is refused',
         ),
+        Mutation(  # #1873: the n/a row reaches its site
+            'a clean tree whose default base cannot be read is a pass instead of a skip',
+            '(a skip, not a pass)")\n        return 3',
+            '(a skip, not a pass)")\n        return 0',
+            'default base cannot be read is a skip (exit 3)',
+        ),
     ),
 )

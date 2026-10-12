@@ -5,7 +5,7 @@
 """
 from mutation_types import Guard, Mutation  # noqa: F401
 
-_NEEDS = ("plugins/rails-flow/scripts/fixture_git.py", "plugins/rails-flow/scripts/test_preflight.py",
+_NEEDS = ("plugins/rails-flow/scripts/fixture_git.py", "plugins/rails-flow/scripts/test_preflight.py", "plugins/rails-flow/scripts/wip_commit.py",
           'plugins/qa-flow/scripts/remote_evidence.py',
           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',
           "plugins/rails-flow/hooks/hooks.json",
@@ -32,7 +32,7 @@ GUARD = Guard(
             "a target it cannot tell is guessed as the session's directory (fail open)",
             "        root = git(start, \"rev-parse\", \"--show-toplevel\")\n        if root and in_force(root):\n            return refuse(f\"which repository",
             "        where = start\n        root = None\n        if root and in_force(root):\n            return refuse(f\"which repository",
-            "an earlier segment that can retarget gh refuses: gh repo set-default",
+            "a command whose directory cannot be told refuses, it does not guess the session's: HOME=/x gh pr ready 5",
         ),
         Mutation(
             "the allowlist accepts any word",

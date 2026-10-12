@@ -27,7 +27,7 @@ async function refresh($) {
   let next = null
   if (top !== null) {
     const branch = (await git($, ['branch', '--show-current'])) || 'detached HEAD'
-    const status = (await git($, ['--no-optional-locks', 'status', '--porcelain'])) ?? ''
+    const status = (await git($, ['--no-optional-locks', 'status', '--porcelain', '--ignore-submodules=dirty'])) ?? ''
     let lane = ''
     try {
       lane = (await $.env.get('RAILS_FLOW_LANE')) || ''

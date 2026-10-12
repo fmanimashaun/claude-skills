@@ -26,7 +26,7 @@ GUARD = Guard(
            'plugins/qa-flow/scripts/release_evidence.py',
            'plugins/rails-flow/scripts/self_consistency.py',
            'plugins/rails-flow/scripts/extract_claims.py',
-           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/test_preflight.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),
+           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/test_preflight.py', 'plugins/rails-flow/scripts/wip_commit.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),
     mutations=(
         Mutation(
             'the resume pointer is never printed',
@@ -42,17 +42,24 @@ GUARD = Guard(
             'ANOTHER session is not pointed at it',
             narrow=False,
         ),
+        Mutation(  # #1916
+            "the pointer's status recurses into a submodule and runs the submodule's own clean filter",
+            '"status", "--porcelain", "--ignore-submodules=dirty")[1].strip()]',
+            '"status", "--porcelain")[1].strip()]',
+            "a submodule's own clean filter never runs when a worktree's status is read",
+            narrow=False,
+        ),
         Mutation(
             'a merged worktree with uncommitted work is listed as finished',
-            ' and not git(w["path"], "status", "--porcelain")[1].strip()]',
+            '\n                and not git(w["path"], "status", "--porcelain", "--ignore-submodules=dirty")[1].strip()]',
             ']',
             'a merged worktree with uncommitted work is NOT listed',
             narrow=False,
         ),
         Mutation(
             'an unmerged worktree is listed as finished',
-            'finished = [w for w in existing[1:] if merged(cwd, w["head"], integ) and',
-            'finished = [w for w in existing[1:] if True and',
+            'finished = [w for w in existing[1:] if merged(cwd, w["head"], integ)\n',
+            'finished = [w for w in existing[1:] if True\n',
             'the session that holds a lane is told where to resume',
             narrow=False,
         ),

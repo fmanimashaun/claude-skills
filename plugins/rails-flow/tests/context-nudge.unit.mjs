@@ -59,6 +59,14 @@ async function harness(env) {
         echo,
       ),
     submit: (text, origin) => hooks['prompt.submit']($, { text, ...(origin ? { origin } : {}) }, echo),
+    // One model request (#1884): the hook is an async generator that forwards the response, then reads its usage.
+    step: async (usage, agentId) => {
+      async function* nextStep() { return { usage } }
+      const gen = hooks['turn.step']($, agentId ? { agentId } : {}, nextStep)
+      let r = await gen.next()
+      while (!r.done) r = await gen.next()
+      return r.value
+    },
   }
 }
 
@@ -175,4 +183,51 @@ await check('a Remote Control prompt counts as the person', async () => {
   await h.measure(90)
   const r = await h.submit('from a phone', { kind: 'bridge' })
   assert.equal(r.context.length, 1)
+})
+
+// #1884: the cache-hit meter.
+await check('cacheHit: read / (read + written + uncached), whole percent', async () => {
+  const h = await harness(undefined)
+  assert.equal(h.mod.cacheHit({ input_tokens: 10, cache_creation_input_tokens: 90, cache_read_input_tokens: 900 }), 90)
+  assert.equal(h.mod.cacheHit({ input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 5 }), 100)
+  assert.equal(h.mod.cacheHit({ input_tokens: 500, cache_read_input_tokens: 0 }), 0)
+})
+
+await check('cacheHit: no reading when usage is missing, empty or malformed (never a fake 0%)', async () => {
+  const h = await harness(undefined)
+  for (const u of [undefined, null, {}, { input_tokens: 5 }, { cache_read_input_tokens: -1, input_tokens: 1 },
+                   { cache_read_input_tokens: 'x', input_tokens: 1 }, { input_tokens: 0, cache_read_input_tokens: 0 }])
+    assert.equal(h.mod.cacheHit(u), null, JSON.stringify(u))
+})
+
+await check('the cache share joins the status line after the context fill, and the response passes through unchanged', async () => {
+  const h = await harness(undefined)
+  await h.measure(42)
+  const usage = { input_tokens: 20, cache_creation_input_tokens: 0, cache_read_input_tokens: 180 }
+  const out = await h.step(usage)
+  assert.deepEqual(out, { usage })
+  assert.equal(h.status.at(-1), 'context 42% · cache 90%')
+  await h.measure(43)
+  assert.equal(h.status.at(-1), 'context 43% · cache 90%')
+})
+
+await check("a subagent's request does not move the main conversation's meter", async () => {
+  const h = await harness(undefined)
+  await h.measure(42)
+  await h.step({ input_tokens: 20, cache_read_input_tokens: 180 })
+  const before = h.status.length
+  await h.step({ input_tokens: 200, cache_read_input_tokens: 0 }, 'agent-1')
+  assert.equal(h.status.length, before)
+  await h.measure(42)
+  assert.equal(h.status.at(-1), 'context 42% · cache 90%')
+})
+
+await check('a request with no usage keeps the last reading, and adds no context line', async () => {
+  const h = await harness(undefined)
+  await h.measure(10)
+  await h.step({ input_tokens: 1, cache_read_input_tokens: 3 })
+  await h.step(undefined)
+  await h.measure(10)
+  assert.equal(h.status.at(-1), 'context 10% · cache 75%')
+  assert.deepEqual((await h.submit('x')).context ?? [], [])
 })

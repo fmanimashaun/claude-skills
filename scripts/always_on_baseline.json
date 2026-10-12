@@ -1,0 +1,42 @@
+{
+  "about": "Always-on listing characters per shipped plugin (#1881). The gate fails when a plugin's count grows; lower it with --write after a drop. est_tokens = chars / 3.0.",
+  "cli_cross_check": {
+    "tool": "claude plugin details <name>",
+    "version": "2.1.296",
+    "date": "2026-10-11",
+    "always_on_tokens": {
+      "rails-flow": 2907,
+      "qa-flow": 2048,
+      "design-flow": 1859,
+      "pipeline": 810,
+      "rails-stack": 1955
+    },
+    "note": "The CLI counts commands with disable-model-invocation: true (pipeline's deploy-cloud, ~80 tok), which the skills docs say are not in context; and it adds a per-component overhead this estimate does not. The ratchet is on characters, so the gap does not affect pass/fail."
+  },
+  "plugins": {
+    "design-flow": {
+      "chars": 4435,
+      "est_tokens": 1478
+    },
+    "flow-suite": {
+      "chars": 0,
+      "est_tokens": 0
+    },
+    "pipeline": {
+      "chars": 1538,
+      "est_tokens": 513
+    },
+    "qa-flow": {
+      "chars": 5558,
+      "est_tokens": 1853
+    },
+    "rails-flow": {
+      "chars": 8496,
+      "est_tokens": 2832
+    },
+    "rails-stack": {
+      "chars": 5416,
+      "est_tokens": 1805
+    }
+  }
+}

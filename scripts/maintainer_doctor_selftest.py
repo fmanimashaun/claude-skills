@@ -877,7 +877,7 @@ def run() -> int:
     # #1635: the two hook-gate parts that run whole hook fixture groups took 190 to 203 s at the maintainer's machine load, past the
     # 180 s default, and are measured in SLOW_GATES' comment. #1667: the full tier of the guard-bash cases is about 300 real-hook runs (94 s at a load of
     # 35, measured in SLOW_GATES' comment). Exactly these five; a sixth needs its own measurement.
-    expected_slow = {"mutation coverage", "hook gates", "hook gates (release)", "hook gates (worktree)", "guard-bash cases (full)"}
+    expected_slow = {"mutation coverage", "hook gates", "hook gates (release)", "hook gates (worktree)", "hook gates (guard-bash)", "guard-bash cases (full)"}
     if set(md.SLOW_GATES) != expected_slow:
         FAILURES.append(
             f"SLOW_GATES is {sorted(md.SLOW_GATES)}, expected {sorted(expected_slow)} — only "

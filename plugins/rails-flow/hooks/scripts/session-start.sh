@@ -17,7 +17,7 @@ fi
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
 branch="$(git branch --show-current 2>/dev/null)"
-dirty="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+dirty="$(git status --porcelain --ignore-submodules=dirty 2>/dev/null | wc -l | tr -d ' ')"
 last="$(git log -1 --oneline 2>/dev/null)"
 base="main"; git show-ref --verify --quiet refs/heads/dev && base="dev"
 
@@ -72,7 +72,13 @@ if [ -f docs/brain/STATUS.md ]; then
     _ts="$(tr -dc 0-9 < docs/brain/.last-review 2>/dev/null)"
     if [ -n "$_ts" ]; then
       _age=$(( ( $(date +%s) - _ts ) / 86400 ))
-      [ "$_age" -ge "$_days" ] && echo "- brain-review due: last swept ${_age}d ago (cadence ${_days}d) — run /rails-flow:brain-review"
+      # THE DATE IT BECAME DUE, never the age (#1886): "swept 14d ago" is a different string every day, so the text this hook injects
+      # changed with the clock alone. The due date is fixed once the cadence has passed. GNU date takes -d, BSD date takes -r.
+      if [ "$_age" -ge "$_days" ]; then
+        _due=$(( _ts + _days * 86400 ))
+        _due_date="$(date -u -d "@$_due" +%F 2>/dev/null || date -u -r "$_due" +%F 2>/dev/null)"
+        echo "- brain-review due since ${_due_date:-the cadence passed} (cadence ${_days}d) — run /rails-flow:brain-review"
+      fi
     fi
   else
     echo "- brain-review: no sweep on record — run /rails-flow:brain-review to start the maintenance cadence"

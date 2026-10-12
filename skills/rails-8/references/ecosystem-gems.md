@@ -165,6 +165,42 @@ Add `rescue_from Pundit::NotAuthorizedError` → redirect with alert, and
 `after_action :verify_authorized` in ApplicationController to catch forgotten
 checks.
 
+**An area whose existence must stay hidden** (an operator console only root
+and Admin may know about) needs a different answer. A redirect to sign in, or
+a 403, tells everyone else the area exists. Answer them with the app's
+ordinary 404 instead (in production), from two locks that ask the same question:
+
+1. **A route constraint** (see `controllers-routing.md`, Constraints). A
+   refused request finds no route, so the anonymous visitor, the wrong role,
+   the expired session and the ended account all get the same 404 as an
+   unknown path.
+2. **The area's base controller asks the same predicate first**, and refuses
+   the same way, so a route added outside the constraint is still closed and
+   still hidden. Use `prepend_before_action`: the generator's
+   `Authentication` concern adds `before_action :require_authentication` to
+   `ApplicationController`, and a plain `before_action` here would run after
+   it, so an anonymous visitor would get the sign-in redirect instead. Running
+   first, the check reads the session itself (`Current.user` is not set yet),
+   with the same cookie lookup as the constraint:
+
+   ```ruby
+   class SystemHealth::BaseController < ApplicationController
+     prepend_before_action do
+       user = Session.find_by(id: cookies.signed[:session_id])&.user
+       raise ActionController::RoutingError, "Not Found" unless SystemHealth::Access.allowed?(user)
+     end
+   end
+   ```
+
+   It raises, so nothing after it runs. In production a `RoutingError` renders
+   `public/404.html`; in development (`consider_all_requests_local`) it shows
+   the routing-error debug page instead.
+
+Back both with a route-map spec: for every path under the area's prefix in
+`bin/rails routes`, sign in as each refused persona and expect 404, so a new
+route that escapes the constraint fails the suite. Keep Pundit's redirect for
+ordinary pages, where the area's existence is not a secret.
+
 **CanCanCan** — one central `Ability` class of `can :update, Product,
 store: { id: user.store_ids }` rules; quicker for simple role matrices,
 harder to keep tidy at scale. `authorize! :update, @product`,

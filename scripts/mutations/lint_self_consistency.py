@@ -1548,5 +1548,54 @@ GUARD = Guard(
             '        if False:\n            continue',
             'a plugin whose hooks.json holds no command hook needs no lib: silent',
         ),
+        # #1919: a worktree git status/diff in shipped code recurses into a submodule and runs ITS clean filter.
+        Mutation(
+            "a git status without the flag is not reported",
+            '            if "--ignore-submodules=dirty" in line or _SUBMODULE_SAFE.search(line):\n                continue',
+            '            continue',
+            "git-status-recurses-submodules: a hook's `git status --porcelain` is a finding",
+        ),
+        Mutation(
+            "a submodule-safe marker with no reason exempts the line",
+            '_SUBMODULE_SAFE = re.compile(r"submodule-safe:\\s*\\S")',
+            '_SUBMODULE_SAFE = re.compile(r"submodule-safe:")',
+            "git-status-recurses-submodules: a marker with no reason is a finding",
+        ),
+        Mutation(
+            "a JS hook's git($, [status]) is not read",
+            '        python_like = f.suffix in (".py", ".js", ".mjs", ".ts")',
+            '        python_like = f.suffix in (".py",)',
+            "git-status-recurses-submodules: a JS hook's git($, [status]) is a finding",
+        ),
+        Mutation(
+            "a comment line counts as a call",
+            '            if code.startswith(("#", "//")):\n                continue\n            hit = any(',
+            '            hit = any(',
+            "git-status-recurses-submodules: CONTROL: a comment line is silent",
+        ),
+        Mutation(
+            "selftests are in scope, so a fixture's own repository is reported",
+            'f.name.endswith(("_selftest.py", ".md", ".json"))',
+            'f.name.endswith((".md", ".json"))',
+            "git-status-recurses-submodules: CONTROL: a selftest builds its own repository is silent",
+        ),
+        Mutation(
+            "a git hook outside hooks/ is not in scope",
+            '        if "hooks" in parts or "git-hooks" in parts or',
+            '        if "hooks" in parts or',
+            "git-status-recurses-submodules: a git hook's status is a finding",
+        ),
+        Mutation(
+            "only a helper named exactly git( is read, so _git( and run_git( escape (#1920 review)",
+            'r"""\\b_?(?:run_)?g(?:it)?\\([^()\\n]*?',
+            'r"""\\bgit\\([^()\\n]*?',
+            "git-status-recurses-submodules: a `_git(` helper's status (#1920 review) is a finding",
+        ),
+        Mutation(
+            "--ignore-submodules=all is accepted, so a gate's diff hides a moved gitlink (#1920 security review)",
+            '            if "--ignore-submodules=dirty" in line or _SUBMODULE_SAFE.search(line):',
+            '            if "--ignore-submodules=" in line or _SUBMODULE_SAFE.search(line):',
+            "git-status-recurses-submodules: =all, which hides a moved gitlink from a gate is a finding",
+        ),
     ),
 )

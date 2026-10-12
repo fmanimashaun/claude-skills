@@ -361,9 +361,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("hook gates", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "a")),
     ("hook gates (release)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "b")),
     ("hook gates (worktree)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "c")),
+    ("hook gates (guard-bash)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "d")),
     # #1790. The git shim (put first on PATH by the SessionStart hook) refuses whole-tree add, reset --hard, tree checkout/restore, clean -f and
     # --no-verify by what git is asked to do; proven with real git on real repositories and a look at what MOVED.
     ("git shim", ("python3", "plugins/rails-flow/scripts/git_shim_selftest.py")),
+    # #1839. The gh shim: `gh pr ready` from the argv the shell finally hands gh, against the sweep record for HEAD.
+    ("gh shim", ("python3", "plugins/rails-flow/scripts/gh_shim_selftest.py")),
     # #1828. The auto-memory index limit check: its boundaries (200 lines, 25KB read as KiB), the ratchet baseline and the one-line SessionStart output.
     ("memory index limit", ("python3", "plugins/rails-flow/scripts/check_memory_index.py", "--selftest")),
     # #1829. The status line a project vendors: every payload field optional, a window that has reset left out (#1854), amber from 80%, never a traceback.
@@ -485,7 +488,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # two readers of the registry (qa-flow's and rails-flow's: plugins install alone, so each has its own).
     ("rails-flow registry closed gate", ("python3", "plugins/rails-flow/scripts/check_registry_closed.py", "--selftest")),
     ("registry reader parity", ("python3", "scripts/check_registry_reader_parity.py")),
+    # #1858. A change that closes an issue brings its catalogue case, and a fix its spec (slice 4 of #1853); the shipped check's own selftest.
+    ("rails-flow case in diff", ("python3", "plugins/rails-flow/scripts/check_case_in_diff.py", "--selftest")),
     ("registry reader parity selftest", ("python3", "scripts/check_registry_reader_parity.py", "--selftest")),
+    ("exit-3 rows", ("python3", "scripts/check_exit3_rows.py")),                                  # #1873
+    ("exit-3 rows selftest", ("python3", "scripts/check_exit3_rows.py", "--selftest")),
+    ("design-flow port fidelity gate", ("python3", "plugins/design-flow/scripts/port_fidelity_gate.py", "--selftest")),
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),
     # #953. What a page hides INSIDE the viewport, which every boundary assertion passes on.
     ("qa-flow layout fit", ("python3", "plugins/qa-flow/scripts/layout_fit.py", "--selftest")),
@@ -577,7 +585,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # each time the context is reclaimed -- exactly when it is scarcest. One hook was 98% of the
     # cost and 85% of that was one file printed verbatim. A ratchet against a fixture project, so
     # the baseline cannot drift on an unrelated commit.
+    # #1881 (slice 1 of #1683): what each shipped plugin costs every session before anything is invoked, ratcheted.
+    ("always-on cost", ("python3", "scripts/check_always_on_cost.py")),
+    ("always-on cost selftest", ("python3", "scripts/check_always_on_cost.py", "--selftest")),
     ("hook output budget", ("python3", "scripts/check_hook_output_budget.py")),
+    # #1887. Third-party SessionStart hooks are reported, not gated (we do not ship them); the report's own logic is a gate.
+    ("third-party hooks report selftest", ("python3", "scripts/report_third_party_hooks.py", "--selftest")),
     ("hook output budget selftest",
      ("python3", "scripts/check_hook_output_budget.py", "--selftest")),
     # #1575. A hook that spins blocks every Bash call, and a timeout that kills only the parent bash left
@@ -616,6 +629,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("label-new-issue selftest", ("python3", "plugins/rails-flow/scripts/label_new_issue.py", "--selftest")),
     ("changelog fragments", ("python3", "scripts/changelog_fragments.py", "--check")),
     ("changelog fragments selftest", ("python3", "scripts/changelog_fragments.py", "--selftest")),
+    # #1841 (phase 2 of #1825). A bullet this branch adds straight to `### Unreleased` is refused, and the finding names the fragment to write. Reads git, so it needs `origin/dev` (a SKIP without it).
+    ("changelog direct bullets", ("python3", "scripts/changelog_fragments.py", "--check-direct")),
     # #1635. The record a promotion's release reuses instead of re-running the full sweep.
     ("sweep proof selftest", ("python3", "scripts/sweep_proof.py", "--selftest")),
     ("sweep proof wiring", ("python3", "scripts/sweep_proof.py", "check-wiring")),
@@ -695,6 +710,9 @@ SLOW_GATES: dict[str, int] = {
     "hook gates": 400,
     "hook gates (release)": 600,
     "hook gates (worktree)": 600,
+    # #1893 (v1.156.0 sweep): part a reached 468 s wall at load 11-27, past its 400 s, so guard_bash moved to part d rather than the
+    # budget growing. MEASURED alone: guard_bash 196 s wall (137 CPU-s) at load 19-28; part a without it 273 s. 400 s is 2x part d.
+    "hook gates (guard-bash)": 400,
     # #1667, MEASURED: the full tier took 94 s wall at a load of 35 (about 300 real-hook runs, four at a time). 600 s is 6x that.
     "guard-bash cases (full)": 600,
 }

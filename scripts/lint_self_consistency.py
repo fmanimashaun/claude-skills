@@ -867,6 +867,89 @@ def check_fixture_git_bypass(python_sources: dict[Path, str]) -> tuple[list[Find
     return findings, examined
 
 
+_SUBMODULE_SAFE = re.compile(r"submodule-safe:\s*\S")
+_GIT_STATUS_DIFF = (
+    re.compile(r"""["']git["']\s*,[^\n]*?["'](?:status|diff(?:-files|-index)?)["']"""),     # ["git", ..., "status", ...]
+    # Any git-named helper: git(, _git(, run_git(, g( -- a helper named anything else was invisible (#1920 review).
+    re.compile(r"""\b_?(?:run_)?g(?:it)?\([^()\n]*?["'](?:status|diff(?:-files|-index)?)["']"""),
+)
+_SHELL_GIT_STATUS_DIFF = re.compile(r"""(?:^|[\s;&|(`])git\b[^;&|`#\n]*?\s(?:status|diff)\b""")
+
+
+def _hook_scope(root: Path) -> list[Path]:
+    """The shipped code that runs git in a USER'S worktree: hook scripts and git hooks, and plugin scripts. Selftests,
+    tests and mutation guards build their own repositories, so they are out of scope."""
+    out: list[Path] = []
+    for f in sorted((root / "plugins").glob("*/**/*")):
+        rel = f.relative_to(root)
+        parts = rel.parts
+        if not f.is_file() or "mutations" in parts or "tests" in parts or f.name.endswith(("_selftest.py", ".md", ".json")):
+            continue
+        if "hooks" in parts or "git-hooks" in parts or (len(parts) == 4 and parts[2] == "scripts" and f.suffix == ".py"):
+            out.append(f)
+    return out
+
+
+def check_git_status_recurses_submodules() -> tuple[list[Finding], int]:
+    """A `git status` or worktree `git diff` in shipped code without `--ignore-submodules=dirty` is a finding (#1919).
+
+    Measured on git 2.50.1: `status` (also with `-uall` or `--no-optional-locks`) and `diff HEAD` recurse into a submodule
+    and run a `filter.<name>.clean` named in THAT repository's own config when a same-size change makes git hash a file.
+    `diff --cached` and a diff between two refs do not; such a line says why with `# submodule-safe: <reason>`, so the
+    lint never guesses which side of a diff is the worktree. `diff-files` and `diff-index HEAD` are read too.
+
+    Not seen, stated: `git add -u` and `git commit -a` also hash the worktree and run the filter (measured in the #1920
+    review); no shipped code runs them in a user's worktree today. The scan is per LINE: a flag or marker anywhere on the
+    line passes it, and an argv list split across lines whose flag sits on a continuation line is reported (put the flag,
+    or the marker, on the line that names the subcommand). A command built as text is not read either: `"git status".split()`,
+    an f-string or a variable holding the argv (#1920 review); such a call needs the flag by hand.
+
+    Why a per-call flag and not one config setting (measured on git 2.50.1, #1920 review; `RAN` = the submodule's filter ran):
+
+        command               plain   --ignore-submodules=dirty   --ignore-submodules=all   -c diff.ignoreSubmodules=all
+        status [-uall]        RAN     clean                       clean                     clean
+        diff HEAD / diff <c>  RAN     clean                       clean                     clean
+        commit -a             RAN     clean                       clean                     clean
+        diff-files            RAN     clean                       clean                     RAN
+        diff-index HEAD       RAN     clean                       clean                     RAN
+        add -u                RAN     (no such option)            (no such option)          RAN
+        diff --cached / A B   clean   -                           -                         -
+
+    The config misses three commands, so a helper setting it would not be a single guarantee. `=dirty`, not `=all`: both
+    stop the filter, but `=all` also hides a MOVED GITLINK (committed or not) from status and diff, so a gate such as
+    classify_door would miss a submodule bump; `=dirty` still reports it (measured, #1920 security review)."""
+    findings: list[Finding] = []
+    examined = 0
+    for f in _hook_scope(ROOT):
+        try:
+            text = f.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        rel = f.relative_to(ROOT)
+        python_like = f.suffix in (".py", ".js", ".mjs", ".ts")
+        for n, line in enumerate(text.splitlines(), 1):
+            code = line.strip()
+            if code.startswith(("#", "//")):
+                continue
+            hit = any(p.search(line) for p in _GIT_STATUS_DIFF) if python_like else bool(_SHELL_GIT_STATUS_DIFF.search(line))
+            if not hit:
+                continue
+            examined += 1
+            if "--ignore-submodules=dirty" in line or _SUBMODULE_SAFE.search(line):
+                continue
+            if "--ignore-submodules=all" in line:
+                findings.append(Finding("git-status-recurses-submodules", str(rel), n,
+                                        "--ignore-submodules=all also hides a MOVED GITLINK, committed or not, so a gate "
+                                        "reading this diff misses a submodule bump: use --ignore-submodules=dirty, which "
+                                        "stops the clean filter and still reports the gitlink (#1920 security review)"))
+                continue
+            findings.append(Finding("git-status-recurses-submodules", str(rel), n,
+                                    "git status/diff here recurses into a submodule and runs a clean filter named in ITS "
+                                    "config: pass --ignore-submodules=dirty, or mark a diff that reads no worktree "
+                                    "(`--cached`, ref to ref) `submodule-safe: <reason>` (#1919)"))
+    return findings, examined
+
+
 def check_claude_md_growth() -> tuple[list[Finding], int]:
     """CLAUDE.md must not grow past its ceiling, and the file its reasoning was routed to must exist.
 
@@ -1057,7 +1140,7 @@ def check_bare_plugin_entries() -> tuple[list[Finding], int]:
 _COUNT_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
                 "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
                 "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
-                "nineteen": 19, "twenty": 20, "twenty-one": 21}
+                "nineteen": 19, "twenty": 20, "twenty-one": 21, "twenty-two": 22, "twenty-three": 23}
 _NUMBER_WORDS = {n: w for w, n in _COUNT_WORDS.items()}
 
 
@@ -4053,6 +4136,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     findings_copy, findings_copies = check_findings_script_drift()
     rel_xplugin, rel_xplugin_examined = check_cross_plugin_relative_path()
     fixture_bypass, fixture_bypass_examined = check_fixture_git_bypass(python_sources)
+    submod, submod_examined = check_git_status_recurses_submodules()
     bare, bare_examined = check_bare_plugin_entries()
     misdesc, agent_descs_examined = check_misdescribed_agents()
     unbounded, queries_examined = check_unbounded_issue_queries()
@@ -4117,6 +4201,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "findings_script_copies": findings_copies,
         "shipped_markdown_checked_for_cross_plugin_paths": rel_xplugin_examined,
         "fixture_git_identity_lines": fixture_bypass_examined,
+        "git_status_diff_calls_in_shipped_code": submod_examined,
         "plugin_entries_checked_for_metadata": bare_examined,
         "plugin_descriptions_reconciled_against_agents": agent_descs_examined,
         "gh_list_calls_examined": queries_examined,
@@ -4168,7 +4253,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + undoc_cmds + docs_paths + growth + hook_lib + hook_start + fixture_git + schema_drift + fixture_bypass + bare + misdesc + unbounded + author_me + components + call_sites + invisible
+    return (dead + unenforced + undocumented + undoc_cmds + docs_paths + growth + hook_lib + hook_start + fixture_git + schema_drift + fixture_bypass + submod + bare + misdesc + unbounded + author_me + components + call_sites + invisible
             + markers + uncontained + nonhermetic + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + dangling + flat_role
@@ -5366,6 +5451,29 @@ def selftest() -> int:
              expect_finding=False, files={FIXTURE_GIT_COPIES[0]: 'IDENTITY = ("-c", "user.email=t@t")\n'})
     scenario("fixture-git-bypass: a file with no fixture identity is silent", rule="fixture-git-bypass",
              expect_finding=False, files={"plugins/x/scripts/x.py": 'subprocess.run(["git", "status"])\n'})
+    # #1919: a worktree git status/diff in shipped code needs --ignore-submodules=all, or a reasoned submodule-safe marker.
+    for label, path, body, want in (
+        ("a hook's `git status --porcelain`", "plugins/x/hooks/scripts/h.sh", 'd="$(git status --porcelain)"\n', True),
+        ("a hook's `git diff --name-only HEAD`", "plugins/x/hooks/scripts/h.sh", 'n="$(git -C "$r" diff --name-only HEAD)"\n', True),
+        ("a git hook's status", "plugins/x/git-hooks/pre-commit", "git status --porcelain\n", True),
+        ("a plugin script's argv status", "plugins/x/scripts/x.py", 'subprocess.run(["git", "status", "--porcelain"])\n', True),
+        ("a plugin script's git() helper diff", "plugins/x/scripts/x.py", 'names = git("diff", "--name-only", base)\n', True),
+        ("a JS hook's git($, [status])", "plugins/x/hooks/band.js", "const s = await git($, ['status', '--porcelain'])\n", True),
+        ("a `_git(` helper's status (#1920 review)", "plugins/x/scripts/x.py", '    status = _git(project, "status", "--porcelain")\n', True),
+        ("a `run_git(` helper's diff", "plugins/x/scripts/x.py", 'names = run_git(root, "diff", "--name-only", base)\n', True),
+        ("a `g(` helper's status", "plugins/x/scripts/x.py", 'if g(repo, "status", "--porcelain"):\n', True),
+        ("a diff-files call", "plugins/x/scripts/x.py", 'subprocess.run(["git", "diff-files", "--name-only"])\n', True),
+        ("CONTROL: a helper named otherwise (`log(`) is not git", "plugins/x/scripts/x.py", 'log("status", "--porcelain")\n', False),
+        ("a marker with no reason", "plugins/x/hooks/scripts/h.sh", "git status  # submodule-safe:\n", True),
+        ("CONTROL: the flag", "plugins/x/hooks/scripts/h.sh", 'd="$(git status --porcelain --ignore-submodules=dirty)"\n', False),
+        ("=all, which hides a moved gitlink from a gate", "plugins/x/scripts/x.py", 'git("diff", "--name-only", "--ignore-submodules=all", base)\n', True),
+        ("CONTROL: a reasoned marker", "plugins/x/hooks/scripts/h.sh", 'git diff --cached --name-only  # submodule-safe: --cached reads the index\n', False),
+        ("CONTROL: a test string naming git status is not a call", "plugins/x/scripts/x.py", '("git status && git push origin main", ["PUSH"]),\n', False),
+        ("CONTROL: a comment line", "plugins/x/hooks/scripts/h.sh", "# git status --porcelain would recurse\n", False),
+        ("CONTROL: a selftest builds its own repository", "plugins/x/scripts/x_selftest.py", 'subprocess.run(["git", "status"])\n', False),
+        ("CONTROL: git stash status is not git status", "plugins/x/hooks/scripts/h.sh", "echo status; git stash list\n", False),
+    ):
+        scenario(f"git-status-recurses-submodules: {label} is {'a finding' if want else 'silent'}", rule="git-status-recurses-submodules", expect_finding=want, files={path: body})
     scenario(
         "the history file CLAUDE.md points at is missing", rule="claude-md-growth", expect_finding=True,
         files={"CLAUDE.md": "@AGENTS.md\n<!-- claude-md: max-lines 10 -->\nrule\n"},

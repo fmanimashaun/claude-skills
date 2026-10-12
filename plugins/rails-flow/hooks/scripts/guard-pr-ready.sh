@@ -3,8 +3,9 @@
 #
 # A TRIPWIRE, NOT A BOUNDARY (the coordinator's ruling after three shell-adversary rounds on #1831, the same one the owner
 # approved for guard-bash, #1793): reading shell text cannot be a security boundary. This catches the plain and common
-# spellings and fails closed when python3 is missing; the guarantee moves to the gh shim (#1839, the #1804 mechanism), where
-# argv is final. DOCUMENTED LIMITS, by class, each pinned at today's behaviour by a fixture in check_hook_gates.py:
+# spellings and fails closed when python3 is missing; the guarantee is the gh shim (#1839, `git-shim/gh`, the #1804 mechanism),
+# where argv is final: it refuses each class below after the shell has expanded it (`gh_shim_selftest.py`, "six spellings").
+# DOCUMENTED LIMITS OF THIS HOOK, by class, each pinned at today's behaviour by a fixture in check_hook_gates.py:
 #   * variables, aliases and functions (`x=ready; gh pr $x 5`, `G=gh; $G …` is caught only as a `$` command word);
 #   * env and absolute wrappers (`/usr/bin/env gh pr ready 5`, `env -S`);
 #   * brace expansion (`gh pr rea{d,}y 5`);

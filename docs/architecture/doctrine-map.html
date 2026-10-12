@@ -35,14 +35,8 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <main>
 <h1>Doctrine &rarr; enforcement</h1>
 <p class="lede">One row per doctrinal claim in this repo: where it is stated, and what makes it true. <strong>The unenforced rows are the deliverable.</strong> A claim with no enforcement is not automatically a defect &mdash; plenty are judgement, and gating judgement is worse than not gating it. The value is making the distinction visible instead of discovering it by accident.</p>
-<div class="tally"><b>52 claims</b><b>36 enforced guarantees</b><b>15 advisory</b><b>1 tracked gaps</b></div>
+<div class="tally"><b>52 claims</b><b>37 enforced guarantees</b><b>15 advisory</b><b>0 tracked gaps</b></div>
 <div class="controls"><button data-k="all">all</button><button data-k="guarantee">guarantees</button><button data-k="advice">advisory</button><button data-k="gap">gaps</button></div>
-<div class="row" data-k="gap">
-<h2>No spelling of `git add -A` stages the whole tree: the refusal is made where the effect happens (the `git` wrapper on PATH, which sees the arguments after the shell has expanded them, and a `pre-commit` hook that checks what is staged), not where the command is typed.</h2>
-<div class="meta"><span class="k k-gap">gap</span><span>stated in <code>CLAUDE.md</code> &middot; #1789 &middot; #1790 &middot; #1793</span></div>
-<p class="none">Nothing enforces this.</p>
-<p class="note">Neither layer exists yet: #1790 is the wrapper and #1789 the git hooks. When they land, this row becomes a guarantee citing them, and the `validate` check `resolved gap` fails until it is reclassified.</p>
-</div>
 <div class="row" data-k="guarantee">
 <h2>A SessionStart hook&#x27;s output is charged again after every compaction, so its bytes are budgeted and ratcheted; a shipped agent states a bounded output or returns a path.</h2>
 <div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>AGENTS.md</code></span></div>
@@ -133,6 +127,17 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <li><code>gate:coverage artifact drift</code></li>
 <li><code>script:scripts/rebuild_generated.py</code></li>
 </ul>
+</div>
+<div class="row" data-k="guarantee">
+<h2>In a session with the rails-flow `git` shim first on PATH, no spelling of `git add -A` stages the whole tree: the refusal is made where the effect happens (the shim sees the arguments after the shell has expanded them), and a `pre-commit` hook, where the project has installed it, refuses a stray file in the index however the add was spelled. This is a stated-limit guarantee, not a boundary: an absolute `/usr/bin/git`, `env -i git`, a non-shell exec and a session where the SessionStart hook did not run never reach the shim (its header lists them), the hook recognises a stray file by name and size, so a secret under an unlisted name is not caught, and the server&#x27;s branch protection is the backstop.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code> &middot; #1789 &middot; #1790 &middot; #1793 &middot; #1910</span></div>
+<ul class="enf">
+<li><code>gate:git shim</code></li>
+<li><code>mutation:git_shim</code></li>
+<li><code>gate:pipeline git guards</code></li>
+<li><code>mutation:git_guard_pre_commit</code></li>
+</ul>
+<p class="note">Reclassified from gap now that both layers have merged (#1789 the git hooks, #1790 the wrapper). The shim refuses `add -A`, `--all` and every unique prefix of it, any pathspec that is not a plain relative path (the repository root in any spelling, a glob, magic) and `--pathspec-from-file`; the pre-commit hook judges the staged CONTENT (a new `.env*`, a key, a file over 5 MiB, more than 100 newly added files in one commit), so a route the shim cannot see is still caught at commit. Each layer has a selftest gate and a mutation guard.</p>
 </div>
 <div class="row" data-k="guarantee">
 <h2>Every plugin in `marketplace.json` is documented, and every entry carries more than a bare name.</h2>
