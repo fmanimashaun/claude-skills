@@ -22,6 +22,7 @@
 | hooks.json | PreToolUse[Bash] runs `/bin/bash -p release-gate.sh` (timeout 15) and SessionStart runs `qa-status.sh` (timeout 10); both under `/bin/bash -p` after `trusted-env.sh` (#1850) | held |
 | qa-status.sh | advisory and fail-open (no repo, no python3, no stamp: exit 0), one reader for the stamp, text depends only on state (no ticking value, #1886) | held, except finding 3 |
 | release-gate.sh | `git push origin main` with no stamp: exit 2 in 0.3 s; the same with 100, 1,000, 3,000, 6,000, 12,000, 20,000 and 40,000 trailing lines: exit 2 | held up to 390 KB; finding 1 beyond |
+| rails-flow hooks, same class (follow-up, 2026-10-12) | the degraded fallback of `guard-bash.sh`, `guard-claims.sh`, `guard-worktree.sh`, `guard-pr-ready.sh`, `guard-migrate.sh` and `guard-lane.sh` timed at 2, 6, 11 and 50 KB under bash 3.2, normal and with python3 missing: the slowest answer is 2.9 s (`guard-worktree.sh`, python3 missing, 50 KB); `guard-bash.sh` with a hung awk and a 1 s deadline answers in 1.1 s at every size, and its normal path takes 3.7 s at 800 KB | held, no quadratic shape (the qa-flow gate's was the one) |
 | release-gate.sh | the existing fixtures for the cases the recent issues named (#1764, #1768, #1770, #1781, #1803, #1875) were not re-run here | not checked |
 
 ## Not covered
