@@ -459,7 +459,9 @@ def selftest() -> int:
         args = witness.with_suffix(".pgargs").read_text() if witness.with_suffix(".pgargs").exists() else ""
         check("...and pg_isready got -h/-p, never the URL with its password", "-h db.internal" in args and "-p 5544" in args and "secret" not in args, args)
         (bindir / "pg_isready").unlink()
-        check("no `pg_isready` on PATH fails open: silent", hook(rspec, root, env_for())[1] == "")
+        # PATH IS THE FIXTURE'S OWN DIRECTORY ONLY: `/usr/bin:/bin` would find the HOST's `pg_isready` on a machine that has the Postgres client
+        # (the GitHub runner does), which then answers "no response" and the hook speaks, so this row would pass on a Mac and fail on the runner.
+        check("no `pg_isready` on PATH fails open: silent", hook(rspec, root, env_for(PATH=str(bindir)))[1] == "")
         stub("pg_isready", pg_down)
         # A probe that hangs is cut off at the deadline and is SILENCE: an unanswered `pg_isready` is not evidence that Postgres is down.
         stub("pg_isready", "sleep 5; exit 2")
