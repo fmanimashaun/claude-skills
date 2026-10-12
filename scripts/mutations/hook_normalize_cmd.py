@@ -110,7 +110,8 @@ GUARD = Guard(
             "eval's arguments are not read as a command",
             '      if (b == "eval") {',
             "      if (0) {",
-            "`'eval \"git add -A\"'` runs the command and is blocked",
+            # `eval "git add -A"` alone is still blocked without the eval branch (its string is lexed as a quoted string); the discriminating row is the one with separate arguments (#1472).
+            "`\"eval 'git add' '-A'\"` runs the command and is blocked",
         ),
         Mutation(
             "a $( ) inside double quotes is not read, so `echo \"$(git add -A)\"` passes",
@@ -122,7 +123,8 @@ GUARD = Guard(
             "one level of nesting only, so `bash -c \"eval '...'\"` hides the inner command",
             "  while [ \"$d\" -lt 3 ]; do",
             "  while [ \"$d\" -lt 1 ]; do",
-            "eval \\'git add -A\\'\"'` runs the command and is blocked",
+            # The old row (`bash -c "eval '...'"`) needs only one level of nesting; the row that needs three is the 3-deep positive added for it.
+            "`'bash -c \"bash -c \\\\\"bash -c \\'git add -A\\'\\\\\"\"'` runs the command and is blocked",
         ),
         Mutation(
             "heredoc bodies are lexed as commands, so a script WRITTEN by heredoc is refused",
@@ -140,7 +142,8 @@ GUARD = Guard(
             "the pre-check reads the raw text, so a quoted `e'v'al` skips the lexer",
             "    p = S; gsub(/[\\047\"\\\\]/, \"\", p)",
             "    p = S",
-            "`'e\\'v\\'al \"git add -A\"'` runs the command and is blocked",
+            # `e'v'al "git add -A"` alone is still blocked without the pre-check change; the rows that need it are the quoted `bash` spellings (#1498).
+            "`\"ba's'h -c 'git add -A'\"` runs the command and is blocked",
         ),
         Mutation(
             "an unclosed heredoc in $( ) swallows the rest of the text",
