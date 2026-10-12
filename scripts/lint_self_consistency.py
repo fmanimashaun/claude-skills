@@ -901,7 +901,8 @@ def check_git_status_recurses_submodules() -> tuple[list[Finding], int]:
     Not seen, stated: `git add -u` and `git commit -a` also hash the worktree and run the filter (measured in the #1920
     review); no shipped code runs them in a user's worktree today. The scan is per LINE: a flag or marker anywhere on the
     line passes it, and an argv list split across lines whose flag sits on a continuation line is reported (put the flag,
-    or the marker, on the line that names the subcommand).
+    or the marker, on the line that names the subcommand). A command built as text is not read either: `"git status".split()`,
+    an f-string or a variable holding the argv (#1920 review); such a call needs the flag by hand.
 
     Why a per-call flag and not one config setting (measured on git 2.50.1, #1920 review; `RAN` = the submodule's filter ran):
 
