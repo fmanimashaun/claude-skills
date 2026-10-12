@@ -361,6 +361,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("hook gates", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "a")),
     ("hook gates (release)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "b")),
     ("hook gates (worktree)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "c")),
+    ("hook gates (guard-bash)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "d")),
     # #1790. The git shim (put first on PATH by the SessionStart hook) refuses whole-tree add, reset --hard, tree checkout/restore, clean -f and
     # --no-verify by what git is asked to do; proven with real git on real repositories and a look at what MOVED.
     ("git shim", ("python3", "plugins/rails-flow/scripts/git_shim_selftest.py")),
@@ -709,6 +710,9 @@ SLOW_GATES: dict[str, int] = {
     "hook gates": 400,
     "hook gates (release)": 600,
     "hook gates (worktree)": 600,
+    # #1893 (v1.156.0 sweep): part a reached 468 s wall at load 11-27, past its 400 s, so guard_bash moved to part d rather than the
+    # budget growing. MEASURED alone: guard_bash 196 s wall (137 CPU-s) at load 19-28; part a without it 273 s. 400 s is 2x part d.
+    "hook gates (guard-bash)": 400,
     # #1667, MEASURED: the full tier took 94 s wall at a load of 35 (about 300 real-hook runs, four at a time). 600 s is 6x that.
     "guard-bash cases (full)": 600,
 }
