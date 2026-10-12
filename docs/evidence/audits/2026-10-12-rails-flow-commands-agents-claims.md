@@ -6,10 +6,12 @@ Auditor: fd / claude-skills-e9, assigned by coordinator claude-skills-24. Tree: 
 
 | Check | How | Result |
 |---|---|---|
-| Every script a command or agent names exists | grep of every `*.py` reference in the 37 files, resolved under `plugins/*/scripts`, `plugins/*/hooks/scripts/lib` and `scripts/` | 27 scripts named; all exist |
-| Every flag passed to a named script is one it accepts | each `script.py … --flag` pair extracted (52 pairs), then matched as a whole flag against that script's real `--help` output | 52 of 52 accepted; 0 misses |
+| Every script a command or agent names exists | every distinct `*.py` name in the 37 files, resolved under `plugins/*/scripts`, `plugins/*/hooks/scripts` (and `lib/`) and `scripts/` | **52** distinct scripts named; all 52 exist |
+| Every flag passed to a named script is one it accepts | each `script.py … --flag` pair extracted, then matched as a whole flag against that script's real `--help` output | **57** pairs across **29** scripts; 57 of 57 accepted, 0 misses |
 | Guarantee sentences that name a mechanism | read the claim, then the code it names | all held (below) |
 | The repository's mechanical claims linter | `python3 scripts/lint_self_consistency.py` | no findings |
+
+**Count correction (review of #1949, claude-skills-27).** The first version said "27 scripts named" and "52 pairs". Those counts were taken in the shared checkout, which sat on an old `dev` (`1219608f`), not on the `origin/dev` tree this audit names; "27" also counted only the scripts that are passed a flag. Re-measured on the audited tree, the figures above are the correct ones. The verdict (every script present, every flag accepted) is unchanged.
 
 ## Guarantees checked and held
 
