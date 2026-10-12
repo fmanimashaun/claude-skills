@@ -12,6 +12,12 @@ GUARD = Guard(
     needs=("scripts/test_preflight.py",),   # it imports the one trusted_which resolver
     mutations=(
         Mutation(
+            "submodules are ignored entirely, so a moved gitlink (a submodule bump) is neither saved nor reported",
+            '    names = g("diff", "--name-only", "-z", "--no-renames", "--ignore-submodules=dirty", "HEAD")',
+            '    names = g("diff", "--name-only", "-z", "--no-renames", "--ignore-submodules=all", "HEAD")',
+            "a moved gitlink (a submodule bump) is committed",
+        ),
+        Mutation(
             "the size limit is inclusive, so a file of exactly 10 MB is refused",
             '        if size > MAX_BYTES:',
             '        if size >= MAX_BYTES:',
@@ -25,13 +31,13 @@ GUARD = Guard(
         ),
         Mutation(
             "status recurses into submodules, so a submodule's own clean filter runs",
-            '    status = g("status", "--porcelain", "--untracked-files=no", "--ignore-submodules=all")',
+            '    status = g("status", "--porcelain", "--untracked-files=no", "--ignore-submodules=dirty")',
             '    status = g("status", "--porcelain", "--untracked-files=no")',
             "a submodule's own clean filter never runs",
         ),
         Mutation(
             "diff recurses into submodules, so a submodule's own clean filter runs",
-            '    names = g("diff", "--name-only", "-z", "--no-renames", "--ignore-submodules=all", "HEAD")',
+            '    names = g("diff", "--name-only", "-z", "--no-renames", "--ignore-submodules=dirty", "HEAD")',
             '    names = g("diff", "--name-only", "-z", "--no-renames", "HEAD")',
             "a submodule's own clean filter never runs",
         ),

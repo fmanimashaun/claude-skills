@@ -199,10 +199,11 @@ def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool 
         return "skip:not-a-lane", f"{name!r} is not a feature/* or fix/* lane branch"
     if any((gitdir / marker).exists() for marker in IN_PROGRESS):
         return "skip:operation-in-progress", "a merge, rebase, cherry-pick, revert or bisect is in progress"
-    # `--ignore-submodules=all`: without it status and diff recurse into a gitlink and spawn a child git that reads the SUBMODULE's own config,
-    # where a name-chosen `filter.<n>.clean` runs (adversary pass on e28bf06a; `-c` overrides propagate, chosen names do not). A submodule's
-    # own changes are never a WIP commit's business.
-    status = g("status", "--porcelain", "--untracked-files=no", "--ignore-submodules=all")
+    # `--ignore-submodules=dirty`: without it status and diff look INSIDE a gitlink's working tree and spawn a child git that reads the
+    # SUBMODULE's own config, where a name-chosen `filter.<n>.clean` runs (adversary pass on e28bf06a; `-c` overrides propagate, chosen
+    # names do not). `=dirty` stops that and still reports a MOVED gitlink (a submodule bump, which is the parent's own change); `=all`
+    # hid the move too, so a bump was neither saved nor reported (fd, measured on git 2.50.1; coordinator, #1915).
+    status = g("status", "--porcelain", "--untracked-files=no", "--ignore-submodules=dirty")
     if status is None or status.returncode != 0:
         return "skip:status-failed", "git status failed"
     lines = [l for l in status.stdout.splitlines() if l.strip()]
@@ -210,7 +211,7 @@ def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool 
         return "skip:clean", "no tracked change"
     if any(l[:2] in ("UU", "AA", "DD", "AU", "UA", "DU", "UD") for l in lines):
         return "skip:unmerged-paths", "unmerged paths"
-    names = g("diff", "--name-only", "-z", "--no-renames", "--ignore-submodules=all", "HEAD")
+    names = g("diff", "--name-only", "-z", "--no-renames", "--ignore-submodules=dirty", "HEAD")
     if names is None or names.returncode != 0:
         return "skip:diff-failed", "git diff HEAD failed"
     changed = [n for n in names.stdout.split("\0") if n]
@@ -221,7 +222,7 @@ def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool 
     paths = lane_paths(changed, lane)
     if paths != changed:
         # Lane filtering is by path, so a rename ACROSS the lane edge would commit one half (the add) and leave the other (the delete).
-        moves = g("diff", "--name-status", "-z", "-M", "--ignore-submodules=all", "HEAD")
+        moves = g("diff", "--name-status", "-z", "-M", "--ignore-submodules=dirty", "HEAD")
         fields = moves.stdout.split("\0") if moves is not None and moves.returncode == 0 else None
         if fields is None:
             return "skip:diff-failed", "git diff -M HEAD failed"
@@ -460,6 +461,20 @@ def selftest() -> int:
         expect("a submodule's own clean filter never runs (status and diff do not recurse into gitlinks)", not marker.exists(), (action, detail))
         expect("...and the parent lane is still committed, without the submodule", action == "committed"
                and git(host, "show", "--name-only", "--format=", "HEAD").split() == ["a.txt"], (action, detail))
+        # a MOVED gitlink (a submodule bump) is the parent's own change: it is saved, and the hostile filter still never runs
+        git(sub, "checkout", "-q", "--", ".")
+        (sub / ".gitattributes").unlink()
+        (sub / "g.txt").write_text("new\n")
+        git(sub, "add", "g.txt")
+        git(sub, "commit", "-q", "-m", "bump")
+        git(sub, "config", "filter.evil.clean", str(evil))
+        (sub / ".gitattributes").write_text("*.txt filter=evil\n")
+        (sub / "f.txt").write_text("cccc\n")
+        marker.unlink(missing_ok=True)
+        action, detail = run(host)
+        expect("a moved gitlink (a submodule bump) is committed, and the submodule's clean filter still never runs",
+               action in ("committed", "amended") and "vendor/sub" in git(host, "show", "--name-only", "--format=", "HEAD").split()
+               and not marker.exists(), (action, detail, marker.exists()))
 
         # ---- branches it must leave alone
         for branch in ("dev", "main", "master", "chore/arm-v1.0.0", "feature", "release/x", "hotfix/y"):
