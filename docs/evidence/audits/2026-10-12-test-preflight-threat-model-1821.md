@@ -54,6 +54,24 @@ the trust decision the user already makes for it. A plugin feature that runs `.c
 weaker visibility (the user approves a plugin, not the script it would run) and adds the pinning machinery the abandoned design
 needed to make it safe.
 
+### Facts carried over from the earlier record (2026-10-10)
+
+An earlier threat model for the same question was written on the #1564 branch (`docs/evidence/audits/2026-10-10-hook-environment-1821.md`
+on `feature/1564-1821-session-resilience`, by the session then building #1564; it read settings-reference, env-vars and settings
+whole). This file is the one home for #1821, so the facts that record held and this one did not are moved here:
+
+- **More of the environment is unprotected than the table above names.** A whole-page grep of the three pages found `PYTHONPATH`,
+  `NODE_OPTIONS`, `LD_PRELOAD`, `LD_LIBRARY_PATH` and `DYLD_*` nowhere, and `PATH`, `GIT_*` and `SHELL` not on the ignore list
+  either (the INCONCLUSIVE caveat on that list still applies).
+- **Git has its own code-running variables.** A project `env` can set `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_0=core.fsmonitor` (or
+  `GIT_EXTERNAL_DIFF`), so any hook that runs `git` — even `git status` — can run a program the repository chose. That is why the
+  shipped hooks scrub `GIT_*` (`lib/trusted-env.sh`, #1850).
+- hooks page, verbatim: *"Handlers run in the current directory with Claude Code's environment."*
+- **The owner's standing rule** that came out of it: a `PreToolUse` hook never executes repository- or environment-controlled code.
+  #1564 was narrowed under it (decision recorded on #1564, 2026-10-10): its WIP commit runs only at `Stop`, after the turn, with an
+  absolute `git` found outside the project, no `GIT_*`, `core.hooksPath` and `core.fsmonitor` disabled and `commit --no-verify`; the
+  `PreToolUse[Bash]` WIP commit on push/merge/ready was dropped.
+
 ## Decision
 
 **Neither feature is built.** This follows the acceptance rule the issue set before any code, not a new judgement:
