@@ -31,9 +31,15 @@ GUARD = Guard(
     mutations=(
         Mutation(
             "the date form of the evidence is gone, so the 'measured 2026-..-..' the refusal asks for keeps the PR blocked",
-            r"""|measured[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}|CONFIRMED""",
-            r"""|CONFIRMED""",
+            r"""|measured[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}|verified""",
+            r"""|verified""",
             "the evidence phrase 'measured 2026-10-11' is accepted",
+        ),
+        Mutation(
+            "the date form of 'verified' is gone, so 'Verified 2026-..-.. against ...' alone keeps the PR blocked (#1936)",
+            r"""|verified[[:space:]]+(on[[:space:]]+)?[0-9]{4}-[0-9]{2}-[0-9]{2}|CONFIRMED""",
+            r"""|CONFIRMED""",
+            "the evidence phrase 'Verified 2026-10-12 against Retask dev' is accepted",
         ),
         Mutation(
             "the optional word between 'measured' and on/against is gone, so 'measured live on dev' is not evidence",

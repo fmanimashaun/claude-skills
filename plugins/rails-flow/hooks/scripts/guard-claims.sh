@@ -247,8 +247,8 @@ n="$(printf '%s' "$claims" | sed -nE 's/^([0-9]+) load-bearing claim.*/\1/p' | h
 [ -n "${n:-}" ] && [ "$n" -gt 0 ] 2>/dev/null || exit 0
 
 # A body that already shows its working is what we are asking for, so recognise it and stand aside.
-# Every phrase the refusal below suggests must match here (#1877: 'measured 2026-..-..' did not, and the PR stayed blocked).
-if grep -qiE 'verified against|re-verified|measured[[:space:]]+([a-z]+[[:space:]]+)?(on|against)|measured[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}|CONFIRMED' "$body"; then
+# Every phrase the refusal below suggests must match here (#1877: 'measured 2026-..-..' did not, and the PR stayed blocked), and so must its date-in-the-middle twin, 'Verified 2026-..-.. against ...' (#1936).
+if grep -qiE 'verified against|re-verified|measured[[:space:]]+([a-z]+[[:space:]]+)?(on|against)|measured[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}|verified[[:space:]]+(on[[:space:]]+)?[0-9]{4}-[0-9]{2}-[0-9]{2}|CONFIRMED' "$body"; then
   exit 0
 fi
 
