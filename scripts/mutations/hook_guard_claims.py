@@ -129,8 +129,8 @@ GUARD = Guard(
             # body carrying eight unverified claims, four ISSUE COMMENTS carrying counts went out
             # unchecked -- the same artifact, durable and read by someone else, through a hole.
             "an issue comment is out of scope again, so its claims go unchecked",
-            'has "$cmd" \'\\bgh[[:space:]]+(pr[[:space:]]+(create|edit)|issue[[:space:]]+comment)\\b\' || exit 0',
-            'has "$cmd" \'\\bgh[[:space:]]+pr[[:space:]]+(create|edit)\\b\' || exit 0',
+            r'''has "$cmd" "${GH_AT_COMMAND}(pr[[:space:]]+(create|edit)|issue[[:space:]]+comment)\\b" || exit 0''',
+            r'''has "$cmd" "${GH_AT_COMMAND}pr[[:space:]]+(create|edit)\\b" || exit 0''',
             "guard-claims: an unchecked numeric claim in an ISSUE COMMENT is blocked",
         ),
         Mutation(

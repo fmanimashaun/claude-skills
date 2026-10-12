@@ -1807,6 +1807,46 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: ...and the same comment passes once it shows it was verified",
           run("gh issue comment 1141 --body-file BODY", CHECKED) == 0, said())
 
+    # WHERE THE `gh` IS (#1877). The match used to be a substring of the whole command, so `gh issue create` was blocked
+    # whenever its title or a trailing comment merely NAMED `gh pr create`. Words are not a command; a command is.
+    check("guard-claims (#1877): `gh issue create -R ... --body-file` is not a claim-carrying command and passes",
+          run("gh issue create -R a/b --title t --body-file BODY --label x", NUMERIC) == 0, said())
+    check("guard-claims (#1877): ...even when the title names `gh pr create`",
+          run("gh issue create -R a/b --title 'guard-claims blocks gh pr create' --body-file BODY", NUMERIC) == 0, said())
+    check("guard-claims (#1877): ...and when a trailing shell comment names `gh pr edit`",
+          run("gh issue create --title t --body-file BODY # gh pr edit", NUMERIC) == 0, said())
+    for label, shape in (
+        ("after a separator", "cd /tmp && gh pr create --base dev --body-file BODY"),
+        ("on a later line", "echo start\ngh pr create --base dev --body-file BODY"),
+        ("inside bash -c", "bash -c \"gh pr create --base dev --body-file BODY\""),
+        ("behind an env assignment", "GH_TOKEN=x gh pr edit 5 --body-file BODY"),
+        ("behind a quoted env assignment", "FOO=\"a b\" BAR='c d' gh pr edit 5 --body-file BODY"),
+        ("behind a double-quoted word", "env -C \"$d\" gh pr create --body-file BODY"),
+        ("behind a single-quoted word", "timeout '60' gh pr edit 3 --body-file BODY"),
+        ("behind a $(...) assignment", "FOO=$(date) gh pr create --body-file BODY"),
+        ("behind a backtick assignment", "FOO=`date` BAR=2 gh pr edit 3 --body-file BODY"),
+        ("behind a wrapper word", "env -i sudo gh issue comment 5 --body-file BODY"),
+        ("through an absolute path", "/opt/homebrew/bin/gh pr create --body-file BODY"),
+        ("after a chained issue create", "gh issue create --title t --label x && gh issue comment 5 --body-file BODY"),
+    ):
+        check(f"guard-claims (#1877): a real claim-carrying command is still blocked {label}",
+              run(shape, NUMERIC) == 2, said())
+
+    # THE EVIDENCE THE REFUSAL ASKS FOR MUST BE ACCEPTED (#1877). Its message tells the author to write 'verified against
+    # <tag>', 'measured 2026-..-..' or CONFIRMED; the pattern rejected the middle one, so following the instruction kept the
+    # PR blocked for four attempts. One fixture per phrase the message names, and per shape the pattern accepts.
+    for phrase in ("verified against v1.134.0", "re-verified on dev", "measured 2026-10-11", "measured on 2026-10-11",
+                   "measured against dev", "measured live on dev", "CONFIRMED by doctrine-verifier"):
+        check(f"guard-claims (#1877): the evidence phrase '{phrase}' is accepted",
+              run("gh pr create --base dev --body-file BODY", NUMERIC + phrase + ".\n") == 0, said())
+    check("guard-claims (#1877) control: 'measured' with no date and no on/against is not evidence",
+          run("gh pr create --base dev --body-file BODY", NUMERIC + "Measured, I think.\n") == 2, said())
+    check("guard-claims (#1877) control: a year alone ('measured 2026') is not a date",
+          run("gh pr create --base dev --body-file BODY", NUMERIC + "measured 2026.\n") == 2, said())
+    _, refusal = run("gh issue comment 5 --body-file BODY", NUMERIC, with_output=True)[:2]
+    check("guard-claims (#1877): the refusal for an issue comment says 'body', not 'PR body'",
+          "this body makes" in str(refusal) and "PR body" not in str(refusal), said())
+
     # MUST PASS -- and these are the half that keeps the guard alive. A hook that blocked every
     # `gh pr create` would be switched off within a day, and then nothing is checked at all.
     check("guard-claims: the same claim passes once the body shows it was verified",
