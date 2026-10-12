@@ -1185,32 +1185,43 @@ def check_misdescribed_agents() -> tuple[list[Finding], int]:
         if not shipped:
             continue
         examined += 1
-        description = plugin.get("description") or ""
         name = plugin.get("name", "(unnamed)")
 
-        named = [agent for agent in shipped if agent in description]
-        if named:
-            missing = [agent for agent in shipped if agent not in named]
-            if missing:
-                findings.append(Finding(
-                    "misdescribed-agents", ".claude-plugin/marketplace.json", 0,
-                    f"plugin {name!r} names {len(named)} of its {len(shipped)} agents and omits "
-                    f"{', '.join(missing)} -- a user choosing whether to install cannot see them. "
-                    f"Name all of them, or name none."))
+        # TWO DESCRIPTIONS OF ONE PLUGIN (#1945): the marketplace entry, and the plugin's own `.claude-plugin/plugin.json`, which is what the plugin carries once installed. The rule read only the
+        # first, so design-flow's own manifest kept naming three of five agents after the marketplace entry was fixed (#653).
+        descriptions = [(".claude-plugin/marketplace.json", plugin.get("description") or "")]
+        plugin_json = ROOT / source / ".claude-plugin" / "plugin.json"
+        if plugin_json.is_file():
+            try:
+                own = json.loads(plugin_json.read_text(encoding="utf-8"))
+            except ValueError:
+                own = {}
+            descriptions.append((f"{source.lstrip('./')}/.claude-plugin/plugin.json", own.get("description") or ""))
 
-        # A STATED COUNT IS A PROMISE. Checked whether or not the agents are enumerated, because the
-        # number is the part a reader remembers.
-        match = re.search(r"\b(\w+) specialist subagents\b", description)
-        if match:
-            claimed = _COUNT_WORDS.get(match.group(1).lower())
-            if claimed is None and match.group(1).isdigit():
-                claimed = int(match.group(1))
-            if claimed is not None and claimed != len(shipped):
-                findings.append(Finding(
-                    "misdescribed-agents", ".claude-plugin/marketplace.json", 0,
-                    f"plugin {name!r} claims {match.group(1)} specialist subagents and ships "
-                    f"{len(shipped)}. The count is what a reader remembers, and this is the text "
-                    f"they read while deciding to install."))
+        for where, description in descriptions:
+            named = [agent for agent in shipped if agent in description]
+            if named:
+                missing = [agent for agent in shipped if agent not in named]
+                if missing:
+                    findings.append(Finding(
+                        "misdescribed-agents", where, 0,
+                        f"plugin {name!r} names {len(named)} of its {len(shipped)} agents and omits "
+                        f"{', '.join(missing)} -- a user choosing whether to install cannot see them. "
+                        f"Name all of them, or name none."))
+
+            # A STATED COUNT IS A PROMISE. Checked whether or not the agents are enumerated, because the
+            # number is the part a reader remembers.
+            match = re.search(r"\b(\w+) specialist subagents\b", description)
+            if match:
+                claimed = _COUNT_WORDS.get(match.group(1).lower())
+                if claimed is None and match.group(1).isdigit():
+                    claimed = int(match.group(1))
+                if claimed is not None and claimed != len(shipped):
+                    findings.append(Finding(
+                        "misdescribed-agents", where, 0,
+                        f"plugin {name!r} claims {match.group(1)} specialist subagents and ships "
+                        f"{len(shipped)}. The count is what a reader remembers, and this is the text "
+                        f"they read while deciding to install."))
     return findings, examined
 
 
@@ -5291,6 +5302,26 @@ def selftest() -> int:
         "a wrong numeric count", rule="misdescribed-agents", expect_finding=True,
         files={".claude-plugin/marketplace.json":
                _agents_manifest("Has 5 specialist subagents."), **_TWO},
+    )
+    # #1945: the plugin's OWN manifest is a second description of the same plugin, and the marketplace entry being right does not make it right.
+    def _own_manifest(desc: str) -> str:
+        return json.dumps({"name": "p", "description": desc}) + "\n"
+
+    scenario(
+        "a plugin manifest naming some agents but not all (the marketplace entry is right)", rule="misdescribed-agents", expect_finding=True,
+        files={".claude-plugin/marketplace.json": _agents_manifest("Agents: alpha, beta."), "p/.claude-plugin/plugin.json": _own_manifest("Agents: alpha."), **_TWO},
+    )
+    scenario(
+        "a plugin manifest naming every agent", rule="misdescribed-agents", expect_finding=False,
+        files={".claude-plugin/marketplace.json": _agents_manifest("Agents: alpha, beta."), "p/.claude-plugin/plugin.json": _own_manifest("Agents: alpha, beta."), **_TWO},
+    )
+    scenario(
+        "a plugin manifest naming no agents", rule="misdescribed-agents", expect_finding=False,
+        files={".claude-plugin/marketplace.json": _agents_manifest("A flow."), "p/.claude-plugin/plugin.json": _own_manifest("A flow with no agent list."), **_TWO},
+    )
+    scenario(
+        "a plugin manifest with a wrong stated count", rule="misdescribed-agents", expect_finding=True,
+        files={".claude-plugin/marketplace.json": _agents_manifest("A flow."), "p/.claude-plugin/plugin.json": _own_manifest("Has five specialist subagents."), **_TWO},
     )
     # A plugin with NO agents directory is out of scope entirely -- rails-stack is skills only.
     scenario(

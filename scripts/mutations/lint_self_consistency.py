@@ -523,6 +523,13 @@ GUARD = Guard(
             "a wrong spelled-out count",
         ),
         Mutation(
+            # #1945: the plugin's own plugin.json is a second description of the same plugin.
+            "the plugin's own manifest description is never read, so only the marketplace entry is checked",
+            "        if plugin_json.is_file():",
+            "        if False:",
+            "a plugin manifest naming some agents but not all (the marketplace entry is right)",
+        ),
+        Mutation(
             # Naming SOME agents is the trap: it reads as the list. design-flow named three of
             # five, hiding design-critic -- the advisory lens the enforcement model rests on.
             "a description may name a subset of its agents and pass",
