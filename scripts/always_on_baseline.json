@@ -15,24 +15,24 @@
   },
   "plugins": {
     "design-flow": {
-      "chars": 5017,
-      "est_tokens": 1672
+      "chars": 4435,
+      "est_tokens": 1478
     },
     "flow-suite": {
       "chars": 0,
       "est_tokens": 0
     },
     "pipeline": {
-      "chars": 1887,
-      "est_tokens": 629
+      "chars": 1538,
+      "est_tokens": 513
     },
     "qa-flow": {
       "chars": 5558,
       "est_tokens": 1853
     },
     "rails-flow": {
-      "chars": 8994,
-      "est_tokens": 2998
+      "chars": 8496,
+      "est_tokens": 2832
     },
     "rails-stack": {
       "chars": 5416,

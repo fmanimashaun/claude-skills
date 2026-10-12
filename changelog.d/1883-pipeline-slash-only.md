@@ -1,0 +1,2 @@
+section: pipeline
+- **`/pipeline:ack` and `/pipeline:setup-cloud` leave the always-on skills listing — `plugins/pipeline/commands/ack.md`, `plugins/pipeline/commands/setup-cloud.md`** (#1883). `disable-model-invocation: true` ("Description not in context", https://code.claude.com/docs/en/skills); both are run deliberately and invoked by nothing as a step. pipeline's listing drops 1,887 → 1,538 characters (~116 tokens every session; `scripts/check_always_on_cost.py`).
