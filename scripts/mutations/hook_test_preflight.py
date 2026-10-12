@@ -43,11 +43,12 @@ GUARD = Guard(
             "with CLAUDE_PLUGIN_ROOT unset it exits 0 silently",
         ),
         Mutation(
-            # Without the redirect, a missing python3 prints `command not found` into the transcript.
-            "a missing python3 leaks `command not found` into the conversation",
+            # Without the redirect, python's own "can't open file" (the script is missing, or the plugin root is unset) prints into the transcript. A missing python3 no longer reaches
+            # the redirect at all: the hook does not call an interpreter it did not find.
+            "a script python cannot open leaks its error into the conversation",
             "test_preflight.py\" 2>/dev/null\n",
             "test_preflight.py\"\n",
-            "with no python3 on PATH it exits 0 and says nothing",
+            "with CLAUDE_PLUGIN_ROOT unset it exits 0 silently",
         ),
         # THE INTERPRETER LOOKUP IS THE LIB'S (#1850, #1893). This hook used to carry its own copy of it (skip the repository, the outermost Gemfile or .git, a link into the
         # repository, `set -f`, absolute entries only), and once `lib/trusted-env.sh` rebuilds PATH first those directory rules could never fire: four of their mutants
