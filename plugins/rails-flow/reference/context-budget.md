@@ -100,9 +100,10 @@ these:
    **The cache-hit share rides on the same line (#1884):** `context NN% · cache NN%`. A `turn.step` hook reads
    each main-conversation request's usage — `cache_read_input_tokens` over read + `cache_creation_input_tokens` +
    `input_tokens` — and passes the response through untouched; a subagent's request (`agentId` set) has its own
-   cache and is not counted. A falling figure means the prefix stopped being cached. Likely causes, inferred by us
-   and not stated in the docs or the hook types: text injected early that changes each turn, a model switch, or
-   an idle gap past the cache's lifetime. The first request of a session reads low or 0% by design: nothing is
+   cache and is not counted. A falling figure means the prefix stopped being cached. Likely causes: a model switch,
+   or an idle gap past the cache's lifetime (stated in the types for a fork, `ModelUsage.cache_read_input_tokens`
+   in Claude Code 2.1.296: "the entry had lapsed, or the model changed"; we extend it to the main conversation),
+   and text injected early that changes each turn (ours, not in the docs or the types). The first request of a session reads low or 0% by design: nothing is
    cached yet, so its prefix is written, not read. It is drawn only, so it costs
    no context; a request with no usage keeps the last reading rather than showing a false 0%.
 2. **Nudges once per climb.** When the person submits a prompt and the fill is at or past the threshold, it
