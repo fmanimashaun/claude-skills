@@ -44,14 +44,14 @@ GUARD = Guard(
         ),
         Mutation(  # #1916
             "the pointer's status recurses into a submodule and runs the submodule's own clean filter",
-            '"status", "--porcelain", "--ignore-submodules=all")[1].strip()]',
+            '"status", "--porcelain", "--ignore-submodules=dirty")[1].strip()]',
             '"status", "--porcelain")[1].strip()]',
             "a submodule's own clean filter never runs when a worktree's status is read",
             narrow=False,
         ),
         Mutation(
             'a merged worktree with uncommitted work is listed as finished',
-            '\n                and not git(w["path"], "status", "--porcelain", "--ignore-submodules=all")[1].strip()]',
+            '\n                and not git(w["path"], "status", "--porcelain", "--ignore-submodules=dirty")[1].strip()]',
             ']',
             'a merged worktree with uncommitted work is NOT listed',
             narrow=False,

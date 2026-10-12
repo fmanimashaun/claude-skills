@@ -431,10 +431,10 @@ def resume(session_id: str, cwd: str) -> int:
         if wt:
             lines.append(f"- resume in place: {wt['path']} (branch {row.get('branch', '?')}). Continue there; never create "
                          f"a new worktree for work already started.")
-    # --ignore-submodules=all (#1916): status would recurse into a submodule and run a clean filter named in ITS OWN config, at
+    # --ignore-submodules=dirty (#1916): status would recurse into a submodule and run a clean filter named in ITS OWN config, at
     # every session start. A submodule's own state is not this worktree's unsaved work.
     finished = [w for w in existing[1:] if merged(cwd, w["head"], integ)
-                and not git(w["path"], "status", "--porcelain", "--ignore-submodules=all")[1].strip()]
+                and not git(w["path"], "status", "--porcelain", "--ignore-submodules=dirty")[1].strip()]
     if finished:
         shown = ", ".join(w["path"] for w in finished[:3])
         lines.append(f"- {len(finished)} finished worktree(s) (merged, clean): {shown}{' ...' if len(finished) > 3 else ''}. "

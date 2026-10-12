@@ -43,7 +43,7 @@ GUARD = Guard(
         ),
         Mutation(  # #1916
             "status recurses into a submodule and runs the submodule's own clean filter every turn",
-            '"status", "--porcelain", "-uall", "--ignore-submodules=all")',
+            '"status", "--porcelain", "-uall", "--ignore-submodules=dirty")',
             '"status", "--porcelain", "-uall")',
             "a submodule's own clean filter never runs when the hook reads status",
         ),
