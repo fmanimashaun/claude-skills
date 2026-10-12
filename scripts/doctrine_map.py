@@ -533,15 +533,20 @@ CLAIMS: tuple[Claim, ...] = (
              "which still contains the command text, so the common spelling still matches and exits 2. The guarantee is the next row.",
     ),
     Claim(
-        claim="No spelling of `git add -A` stages the whole tree: the refusal is made where the effect happens (the `git` wrapper on PATH, "
-              "which sees the arguments after the shell has expanded them, and a `pre-commit` hook that checks what is staged), not where "
-              "the command is typed.",
+        claim="In a session with the rails-flow `git` shim first on PATH, no spelling of `git add -A` stages the whole tree: the refusal is "
+              "made where the effect happens (the shim sees the arguments after the shell has expanded them), and a `pre-commit` hook, "
+              "where the project has installed it, refuses a stray file in the index however the add was spelled. This is a stated-limit "
+              "guarantee, not a boundary: an absolute `/usr/bin/git`, `env -i git`, a non-shell exec and a session where the SessionStart "
+              "hook did not run never reach the shim (its header lists them), and the server's branch protection is the backstop.",
         stated_in="CLAUDE.md",
         anchor="**Never `git add -A`.** Stage what you authored",
-        kind=GAP,
-        refs=(1789, 1790, 1793),
-        note="Neither layer exists yet: #1790 is the wrapper and #1789 the git hooks. When they land, this row becomes a guarantee citing "
-             "them, and the `validate` check `resolved gap` fails until it is reclassified.",
+        kind=GUARANTEE,
+        enforced_by=("gate:git shim", "mutation:git_shim", "gate:pipeline git guards", "mutation:git_guard_pre_commit"),
+        refs=(1789, 1790, 1793, 1910),
+        note="Reclassified from gap now that both layers have merged (#1789 the git hooks, #1790 the wrapper). The shim refuses `add -A`, "
+             "`--all` and every unique prefix of it, any pathspec that is not a plain relative path (the repository root in any spelling, "
+             "a glob, magic) and `--pathspec-from-file`; the pre-commit hook judges the staged CONTENT (a new `.env*`, a key, a file over "
+             "5 MiB, more than 100 newly added files in one commit), so a route the shim cannot see is still caught at commit. Each layer has a selftest gate and a mutation guard.",
     ),
     Claim(
         claim="The maintainer copy of a shipped skill cannot drift from the skill it is derived from.",
