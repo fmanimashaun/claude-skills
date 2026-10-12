@@ -53,10 +53,32 @@ Guidelines:
   or at least a `member` route — never a bespoke non-REST verb sprawl.
 - `only:`/`except:` keep the route table honest. Inspect with
   `bin/rails routes -g orders` or `--expanded`.
-- Constraints: `resources :photos, constraints: { id: /[A-Z]\d{5}/ }`;
-  authenticated sections via request constraints
-  (`constraints ->(req) { req.session[:user_id] } do ... end`) or custom
-  constraint classes.
+- Constraints: `resources :photos, constraints: { id: /[A-Z]\d{5}/ }`, or a
+  lambda / an object with `matches?(request)`; either receives the request.
+  An **authenticated section** must resolve the session the way the
+  controller does. The Rails 8 authentication generator stores a signed
+  `:session_id` cookie pointing at a `Session` row and never sets
+  `session[:user_id]`, so a constraint testing `req.session[:user_id]`
+  matches no signed-in user. Read the same cookie, with the same lookup
+  the generated `Authentication` concern uses:
+
+  ```ruby
+  class AuthenticatedConstraint
+    def matches?(request)
+      Session.exists?(id: request.cookie_jar.signed[:session_id])
+    end
+  end
+
+  constraints AuthenticatedConstraint.new do
+    resources :reports
+  end
+  ```
+
+  If your `Authentication` concern adds checks (an expiry, a locked
+  account), extract the lookup into one object both call, or the route and
+  the controller disagree about who is signed in. A request the constraint
+  refuses finds no route: Rails raises `ActionController::RoutingError`,
+  which production renders as the same 404 as any unknown path.
 - Path customization: `path:`, `as:`, `param: :slug` (pair with
   `to_param`/`find_by!` in the model). Redirect routes:
   `get "/old", to: redirect("/new", status: 301)`.
