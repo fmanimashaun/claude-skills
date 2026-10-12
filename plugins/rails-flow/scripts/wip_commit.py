@@ -405,7 +405,7 @@ def selftest() -> int:
         taken = git(laned, "show", "--name-only", "--format=", "HEAD").split()
         expect("with a lane assigned, only the lane's subtree is committed (not another lane's file, not a staged file outside it)",
                action == "committed" and taken == ["app/models/m.rb"], (action, detail, taken))
-        expect("...and the other lane's change is still in the working tree", "app/views/v.erb" in git(laned, "diff", "--name-only"))
+        expect("...and the other lane's change is still in the working tree", "app/views/v.erb" in git(laned, "diff", "--name-only"))  # submodule-safe: selftest fixture repository, which has no submodule
         action, _ = run(laned, {"RAILS_FLOW_LANE": "app/controllers"})
         expect("a lane with no tracked change in it commits nothing", action == "skip:nothing-in-lane", action)
         expect("lane matching is by path component: `app/model` is not `app/models`", lane_paths(["app/models/m.rb"], "app/model") == [])

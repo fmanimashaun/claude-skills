@@ -209,9 +209,9 @@ def selftest() -> int:
         expect("the brief carries the recorded next step and pending gates", "Next Step: the full suite" in text and "Pending Gates: test-runner" in text, text)
 
         # THE CLI, end to end; and READ-ONLY: the repository is byte-identical afterwards
-        before = g("status", "--porcelain").stdout + g("rev-parse", "HEAD").stdout + "".join(sorted(p.name for p in order_dir.iterdir()))
+        before = g("status", "--porcelain").stdout + g("rev-parse", "HEAD").stdout + "".join(sorted(p.name for p in order_dir.iterdir()))  # submodule-safe: selftest fixture repository, which has no submodule
         done = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--root", str(root)], capture_output=True, text=True)
-        after = g("status", "--porcelain").stdout + g("rev-parse", "HEAD").stdout + "".join(sorted(p.name for p in order_dir.iterdir()))
+        after = g("status", "--porcelain").stdout + g("rev-parse", "HEAD").stdout + "".join(sorted(p.name for p in order_dir.iterdir()))  # submodule-safe: selftest fixture repository, which has no submodule
         expect("CLI: unfinished lanes exit 1 and say so", done.returncode == 1 and "UNFINISHED LANE(S)" in done.stdout, (done.returncode, done.stdout[:200]))
         expect("CLI: it writes nothing and moves no ref", before == after, (before, after))
         for slug in ("live", "remote", "gone", "unrecorded", "nobranch", "badgreen", "junk"):

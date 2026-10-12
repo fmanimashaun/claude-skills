@@ -7,7 +7,7 @@ GUARD = Guard(
     subject="plugins/rails-flow/hooks/scripts/guard-claims.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
     selftest_args=("--only", "submodule_filter"),
-    needs=("plugins/rails-flow/scripts/fixture_git.py", 
+    needs=("plugins/rails-flow/scripts/fixture_git.py", "plugins/rails-flow/scripts/wip_commit.py",  # wip-commit.sh runs it (#1915 x #1920)
            'plugins/qa-flow/scripts/remote_evidence.py',  # #1581 merge: run by release-gate.sh
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # session-start.sh runs all three (#1581, #1828: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362

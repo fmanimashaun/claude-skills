@@ -92,7 +92,7 @@ def names_issue(row: dict, number: int) -> bool:
 
 def test_files(root: Path, base: str) -> tuple[list[str] | None, str | None]:
     # ACMR: added, copied, modified, renamed. A DELETED spec is not a spec this change brings.
-    done = git(root, "diff", "--no-ext-diff", "--name-only", "--diff-filter=ACMR", f"{base}...HEAD")
+    done = git(root, "diff", "--no-ext-diff", "--name-only", "--diff-filter=ACMR", f"{base}...HEAD")  # submodule-safe: a diff between two refs reads no worktree
     if done.returncode != 0:
         return None, f"git diff --name-only {base}...HEAD failed: {done.stderr.strip()[:160]}"
     return [p for p in done.stdout.splitlines() if TEST_FILE.search(p) and CODE.search(p)], None
