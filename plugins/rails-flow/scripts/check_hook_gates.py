@@ -6045,7 +6045,7 @@ GROUPS = {
 }
 
 
-# The doctor runs this harness as THREE gates (`--part a`, `--part b`, `--part c`), because the whole run takes far longer than
+# The doctor runs this harness as FOUR gates (`--part a` .. `--part d`), because the whole run takes far longer than
 # the doctor's 180 s limit for a gate, and a gate that cannot finish is a SKIP on every sweep (#1581). It was two gates until
 # a measurement showed part a alone at 164 CPU-seconds and 244 s wall under load: dev's `guard_claims` had grown from 4.9 s to
 # 55.6 s since the first split, and the worktree groups came on top, so a skip would have been the normal result.
@@ -6056,13 +6056,17 @@ GROUPS = {
 # guard_claims + guard_bash + the small ones (about 96), part b the two release_gate groups (about 110), and part c the
 # repos, refs and deadline groups and the four worktree groups (about 60 CPU-s, about 80 s of wall). EVERY group must be in exactly one part: a group in none
 # would never run in the doctor, which is the vacuous gate this repository keeps finding; the selftest checks it below.
+# PART D (v1.156.0 sweep, #1893): part a grew to 468 s wall at load 11-27 against its 400 s budget, and under the sweep's own load it was
+# killed before printing. MEASURED alone on an origin/dev export: guard_bash 196 s wall (137 CPU-s), the rest of part a 273 s (115 CPU-s,
+# 623 checks). guard_bash is its own part so each fits its budget; no budget was raised.
 PARTS = {
-    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_bash_db_reset", "guard_claims", "guard_claims_pipe",
+    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash_db_reset", "guard_claims", "guard_claims_pipe",
           "ci_verdict_hint", "session_end", "timeout", "hostile_env"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
           "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding", "test_preflight",
           "guard_pr_ready"],
+    "d": ["guard_bash"],
 }
 
 
@@ -6151,9 +6155,9 @@ def meta_checks() -> None:
           and _stable("no path in this label") == "no path in this label"
           and _stable("a /tmp/tmpAbCd1234/x") != _stable("b /tmp/tmpAbCd1234/x"),
           repr([_stable("x: git worktree remove /tmp/tmpAbCd1234/a"), _stable("x /private/tmp/tmpp47g")]))
-    check("--part a, --part b and --part c name groups; any other part is refused, never an empty pass",
-          all(parse_part(k) == PARTS[k] for k in ("a", "b", "c")) and all(parse_part(x) is None for x in ("", "d", "ab", "A")),
-          repr([parse_part(x) for x in ("a", "b", "c", "", "d")]))
+    check("--part a, b, c and d name groups; any other part is refused, never an empty pass",
+          all(parse_part(k) == PARTS[k] for k in ("a", "b", "c", "d")) and all(parse_part(x) is None for x in ("", "e", "ab", "A")),
+          repr([parse_part(x) for x in ("a", "b", "c", "d", "", "e")]))
     check("CONTROL: --only release_gate,guard_bash is accepted",
           parse_only("release_gate,guard_bash") == ["release_gate", "guard_bash"], repr(parse_only("release_gate,guard_bash")))
     # ...and a selection runs exactly what it names, proved on stand-ins so the proof costs nothing.
@@ -6400,7 +6404,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--selftest", action="store_true", help="drive every hook under its stub environments")
     ap.add_argument("--only", metavar="GROUP[,GROUP]",
                     help=f"run only these fixture groups: {', '.join(GROUPS)} (#1497)")
-    ap.add_argument("--part", metavar="a|b", help="run one half of the groups: the doctor runs both as two gates (#1581)")
+    ap.add_argument("--part", metavar="a|b|c|d", help="run one part of the groups: the doctor runs each as its own gate (#1581, #1893)")
     ap.add_argument("--match", metavar="SUBSTR",
                     help="run only the checks whose label contains SUBSTR, case-insensitively (#1599)")
     ap.add_argument("--strict-timing", action="store_true",

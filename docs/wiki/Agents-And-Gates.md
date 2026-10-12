@@ -141,6 +141,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | design-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/design-flow/agents --tiers plugins/design-flow/reference/model-tiers.md` | live check |
 | git shim | `rails-flow` | `python3 plugins/rails-flow/scripts/git_shim_selftest.py` | live check |
 | hook gates | `rails-flow` | `python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest --part a` | selftest · 400s budget |
+| hook gates (guard-bash) | `rails-flow` | `python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest --part d` | selftest · 400s budget |
 | hook gates (release) | `rails-flow` | `python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest --part b` | selftest · 600s budget |
 | hook gates (worktree) | `rails-flow` | `python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest --part c` | selftest · 600s budget |
 | issue readiness | `rails-flow` | `python3 plugins/rails-flow/scripts/check_issue_ready.py --selftest` | selftest |
