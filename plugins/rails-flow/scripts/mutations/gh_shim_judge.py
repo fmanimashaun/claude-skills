@@ -17,8 +17,9 @@ GUARD = Guard(
         Mutation('a repository that does not run project_gates is judged', '    if not (root and in_force(root)):', '    if not root:', 'not in force'),
         Mutation('the sweep record is not read', '    return judge_record(root, shown)', '    return 0', 'no record'),
         Mutation('git failing for another reason is read as outside any repository', '    if status == "error":', '    if False:', 'git cannot answer'),
-        Mutation('git is asked WITH the variables that locate a repository, so GIT_DIR=/nonexistent hides a repository', '    clean = {k: v for k, v in os.environ.items() if k not in GIT_LOCATORS and not k.startswith("GIT_CONFIG")}', '    clean = dict(os.environ)', 'redirecting variable'),
+        Mutation('git is asked WITH the variables that locate a repository, so GIT_DIR=/nonexistent hides a repository', '    clean = {k: v for k, v in os.environ.items() if not k.startswith("GIT_") or k in HARMLESS_ENV or k.startswith(("GIT_AUTHOR_", "GIT_COMMITTER_"))}', '    clean = dict(os.environ)', 'redirecting variable'),
         Mutation('a gh api that marks a PR ready is not held to the record', '            return judge_record(root, "gh api (marks a PR ready)")', '            return 0', 'gh api'),
         Mutation('a gh api body read from a file is allowed', '        if any(w == "--input" or w.startswith("--input=") or "=@" in w for w in argv):', '        if False:', 'gh api'),
+        Mutation('only a list of the dangerous variables is refused, so one nobody thought of passes', '    return sorted(k for k in os.environ if k.startswith(("GIT_", "GH_")) and k not in HARMLESS_ENV and not k.startswith(("GIT_AUTHOR_", "GIT_COMMITTER_")))', '    return sorted(k for k in os.environ if k in ("GIT_DIR", "GIT_WORK_TREE", "GH_HOST") or k.startswith("GIT_CONFIG"))', 'redirecting variable'),
     ),
 )

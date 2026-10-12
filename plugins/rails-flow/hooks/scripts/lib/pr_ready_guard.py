@@ -250,13 +250,14 @@ def _next_word(args: list[str]) -> str | None:
     return None
 
 
-# Variables that make `gh` (or the `git` under it) act on a repository or host other than the checkout this shim stands in: the local sweep record cannot stand for one.
-GIT_LOCATORS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE",
-                "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM")
+# Variables that make `gh` (or the `git` under it) act on a repository or host other than the checkout this shim stands in: the local sweep record cannot stand for one. AN ALLOWLIST OF
+# THE HARMLESS, NOT A LIST OF THE DANGEROUS (the commit's security review): every other GIT_* and GH_* variable (GIT_DIR, GIT_WORK_TREE, GIT_CONFIG_*, GH_HOST, GH_ENTERPRISE_*, GH_CONFIG_DIR,
+# GH_REPO, and the ones nobody has thought of) can redirect, so each is refused where in force. These point nowhere: the editor, prompts, a credential, notifier switches.
+HARMLESS_ENV = frozenset({"GIT_EDITOR", "GIT_TERMINAL_PROMPT", "GIT_PAGER", "GH_TOKEN", "GH_PROMPT_DISABLED", "GH_NO_UPDATE_NOTIFIER", "GH_NO_EXTENSION_UPDATE_NOTIFIER", "GH_SPINNER_DISABLED"})
 
 
 def _redirecting_env() -> list[str]:
-    return sorted(k for k in os.environ if k in GIT_LOCATORS or k.startswith("GIT_CONFIG") or k == "GH_HOST")
+    return sorted(k for k in os.environ if k.startswith(("GIT_", "GH_")) and k not in HARMLESS_ENV and not k.startswith(("GIT_AUTHOR_", "GIT_COMMITTER_")))
 
 
 def _toplevel(cwd: str) -> tuple[str | None, str]:
@@ -264,7 +265,7 @@ def _toplevel(cwd: str) -> tuple[str | None, str]:
     `GIT_DIR=/nonexistent` cannot make a repository read as no repository (#1839, the review of the first head): they are judged as what they are, below."""
     if not os.path.isdir(cwd):
         return None, "none"
-    clean = {k: v for k, v in os.environ.items() if k not in GIT_LOCATORS and not k.startswith("GIT_CONFIG")}
+    clean = {k: v for k, v in os.environ.items() if not k.startswith("GIT_") or k in HARMLESS_ENV or k.startswith(("GIT_AUTHOR_", "GIT_COMMITTER_"))}
     try:
         done = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=10, env=clean)
     except (OSError, subprocess.SubprocessError):

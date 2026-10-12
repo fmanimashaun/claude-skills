@@ -125,6 +125,11 @@ elif name="$(alias_word "${ORIG[@]}")" && exp="$(alias_expansion "$name")" && [ 
     fi
     rest+=("$a")
   done
+  # PARSER DIFFERENTIAL (the commit's security review): gh splits an expansion like a shell, quotes honoured; this splits on blanks. An expansion with a quote or a backslash that also
+  # mentions `ready` or `api` is judged as an unplaceable `pr ready` (the judge refuses it), never read as innocent words.
+  case "$exp" in
+    *[\'\"\\]*) case "$exp" in *ready*|*api*) judge=1; argv=(pr ready "$exp") ;; esac ;;
+  esac
   words=($exp); expanded=(); used=0
   for w in "${words[@]}"; do
     case "$w" in
@@ -132,8 +137,10 @@ elif name="$(alias_word "${ORIG[@]}")" && exp="$(alias_expansion "$name")" && [ 
       *) expanded+=("$w") ;;
     esac
   done
-  argv=("${fresh_before[@]}" "${expanded[@]}" "${rest[@]:$used}")
-  if has_pr_ready "${argv[@]}" || has_api_ready "${argv[@]}"; then judge=1; fi
+  if [ "$judge" != 1 ]; then
+    argv=("${fresh_before[@]}" "${expanded[@]}" "${rest[@]:$used}")
+    if has_pr_ready "${argv[@]}" || has_api_ready "${argv[@]}"; then judge=1; fi
+  fi
 fi
 [ "$judge" = 1 ] || exec "$real" "${ORIG[@]}"
 

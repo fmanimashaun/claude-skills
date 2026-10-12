@@ -238,8 +238,12 @@ def _redirecting(base: Path) -> None:
         for how, cmd in (("a prefix", f"{var} gh pr ready 5"), ("env in front", f"/usr/bin/env {var} gh pr ready 5")):
             ok, why = refused(fx, cmd)
             check(f"shim: {var} as {how} is refused even with a green record (it can point gh elsewhere)", ok, why)
-    ok, why = allowed(fx, "GIT_EDITOR=true gh pr ready 5")
-    check("shim: CONTROL: GIT_EDITOR (the harness sets it) points nowhere, so it is not refused", ok, why)
+    for var in ("GH_ENTERPRISE_HOST=x", "GH_CONFIG_DIR=/x", "GIT_NAMESPACE=x", "GIT_ALTERNATE_OBJECT_DIRECTORIES=/x", "GH_SOMETHING_NEW=1"):
+        ok, why = refused(fx, f"{var} gh pr ready 5")
+        check(f"shim: {var}: an allowlist of the harmless, not a list of the dangerous: any other GIT_*/GH_* variable is refused where in force", ok, why)
+    for var in ("GIT_EDITOR=true", "GH_TOKEN=t", "GIT_AUTHOR_NAME=a", "GH_PROMPT_DISABLED=1"):
+        ok, why = allowed(fx, f"{var} gh pr ready 5")
+        check(f"shim: CONTROL: {var} points nowhere, so it is not refused", ok, why)
     nofx = Fixture(base / "nf", in_force=False)
     ok, why = allowed(nofx, "GH_REPO=o/r gh pr ready 5")
     check("shim: IN FORCE ONLY where project_gates runs: a named repository from a repository that does not run it is not checked (the stated carve-out)", ok, why)
@@ -275,6 +279,11 @@ def _alias_flags(base: Path) -> None:
     check("shim: an alias whose expansion follows the colon after a TAB is read", ok, why)
     ok, why = refused(fx, "gh rdy 5", {"STUB_ALIASES": "rdy:    pr ready"})
     check("shim: ...or after several spaces", ok, why)
+    for exp in ("'pr' ready", 'pr "ready"', "pr\\ ready"):
+        ok, why = refused(fx, "gh rdy 5", {"STUB_ALIASES": f"rdy: {exp}"})
+        check(f"shim: an alias expansion with a quote or backslash that mentions `ready` is judged, not read as innocent words (gh splits it like a shell, this splits on blanks): {exp}", ok, why)
+    ok, why = allowed(fx, "gh mine", {"STUB_ALIASES": "mine: pr list --search \"a b\""})
+    check("shim: CONTROL: a quoted alias expansion that mentions neither `ready` nor `api` is untouched", ok, why)
 
 
 @case("alias placeholder")
