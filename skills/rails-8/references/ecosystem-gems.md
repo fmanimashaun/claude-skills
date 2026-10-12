@@ -165,6 +165,30 @@ Add `rescue_from Pundit::NotAuthorizedError` → redirect with alert, and
 `after_action :verify_authorized` in ApplicationController to catch forgotten
 checks.
 
+**An area whose existence must stay hidden** (an operator console only root
+and Admin may know about) needs a different answer. A redirect to sign in, or
+a 403, tells everyone else the area exists. Answer them with the app's
+ordinary 404 instead, from two locks that ask the same question:
+
+1. **A route constraint** (see `controllers-routing.md`, Constraints). A
+   refused request finds no route, so the anonymous visitor, the wrong role,
+   the expired session and the ended account all get the same 404 as an
+   unknown path.
+2. **The area's base controller asks the same predicate** in a
+   `before_action`, and refuses the same way, so a route added outside the
+   constraint is still closed:
+
+   ```ruby
+   class SystemHealth::BaseController < ApplicationController
+     before_action { raise ActionController::RoutingError, "Not Found" unless SystemHealth::Access.allowed?(Current.user) }
+   end
+   ```
+
+Back both with a route-map spec: for every path under the area's prefix in
+`bin/rails routes`, sign in as each refused persona and expect 404, so a new
+route that escapes the constraint fails the suite. Keep Pundit's redirect for
+ordinary pages, where the area's existence is not a secret.
+
 **CanCanCan** — one central `Ability` class of `can :update, Product,
 store: { id: user.store_ids }` rules; quicker for simple role matrices,
 harder to keep tidy at scale. `authorize! :update, @product`,
