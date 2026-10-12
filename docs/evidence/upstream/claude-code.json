@@ -208,6 +208,18 @@
      "used_by": [".claude/commands/gauntlet.md"]},
     {"id": "plugin-dependency-bundle", "url": "https://code.claude.com/docs/en/plugins/dependencies",
      "quote": "A plugin manifest needs only `name`, so this is a valid plugin, and installing it installs every dependency.",
-     "used_by": ["README.md", "plugins/flow-suite/.claude-plugin/plugin.json"]}
+     "used_by": ["README.md", "plugins/flow-suite/.claude-plugin/plugin.json"]},
+    {"id": "skill-listing-every-turn", "url": "https://code.claude.com/docs/en/skills",
+     "quote": "Every skill in the skill listing adds to your context on every turn, whether or not Claude ever uses it.",
+     "used_by": ["scripts/check_always_on_cost.py"]},
+    {"id": "skill-listing-truncated-1536", "url": "https://code.claude.com/docs/en/skills",
+     "quote": "truncated at 1,536 characters in the skill listing",
+     "used_by": ["scripts/check_always_on_cost.py"]},
+    {"id": "disable-model-invocation-not-in-context", "url": "https://code.claude.com/docs/en/skills",
+     "quote": "Description not in context",
+     "used_by": ["scripts/check_always_on_cost.py"]},
+    {"id": "subagent-descriptions-take-context", "url": "https://code.claude.com/docs/en/sub-agents",
+     "quote": "Those descriptions take up context, so keep them short.",
+     "used_by": ["scripts/check_always_on_cost.py"]}
   ]
 }

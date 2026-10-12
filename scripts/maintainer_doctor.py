@@ -577,6 +577,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # each time the context is reclaimed -- exactly when it is scarcest. One hook was 98% of the
     # cost and 85% of that was one file printed verbatim. A ratchet against a fixture project, so
     # the baseline cannot drift on an unrelated commit.
+    # #1881 (slice 1 of #1683): what each shipped plugin costs every session before anything is invoked, ratcheted.
+    ("always-on cost", ("python3", "scripts/check_always_on_cost.py")),
+    ("always-on cost selftest", ("python3", "scripts/check_always_on_cost.py", "--selftest")),
     ("hook output budget", ("python3", "scripts/check_hook_output_budget.py")),
     ("hook output budget selftest",
      ("python3", "scripts/check_hook_output_budget.py", "--selftest")),
