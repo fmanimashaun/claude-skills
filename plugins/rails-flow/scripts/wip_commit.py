@@ -55,8 +55,9 @@ HARD_CONFIG = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "
                "-c", "maintenance.auto=false", "-c", "core.pager=cat", "-c", "protocol.ext.allow=never"]
 # A secret-looking path is never auto-committed: one in the change set skips the whole commit (review of 8725ef4d: a tracked `.env` and
 # `config/master.key` went into a WIP commit). Matched on the file name, case-insensitively.
-SECRET = re.compile(r"^(?:\.env(?:\..*)?|.*\.key|.*\.pem|credentials.*)$", re.I)
-IN_PROGRESS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "rebase-merge", "rebase-apply")
+SECRET = re.compile(r"^(?:\.env.*|.*\.key|.*\.pem|credentials.*|\.git-credentials|\.pgpass|\.htpasswd|\.netrc|application\.yml"
+                    r"|.*\.gpg|.*\.asc|.*\.ppk|.*\.p12|.*\.pfx|.*\.keystore|.*\.jks|kubeconfig|id_(?:rsa|dsa|ecdsa|ed25519).*)$", re.I)
+IN_PROGRESS = ("SQUASH_MSG", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "rebase-merge", "rebase-apply")
 
 
 def scrubbed_env(git: str, env=None) -> dict[str, str]:
@@ -195,7 +196,10 @@ def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool 
         return "skip:not-a-lane", f"{name!r} is not a feature/* or fix/* lane branch"
     if any((gitdir / marker).exists() for marker in IN_PROGRESS):
         return "skip:operation-in-progress", "a merge, rebase, cherry-pick, revert or bisect is in progress"
-    status = g("status", "--porcelain", "--untracked-files=no")
+    # `--ignore-submodules=all`: without it status and diff recurse into a gitlink and spawn a child git that reads the SUBMODULE's own config,
+    # where a name-chosen `filter.<n>.clean` runs (adversary pass on e28bf06a; `-c` overrides propagate, chosen names do not). A submodule's
+    # own changes are never a WIP commit's business.
+    status = g("status", "--porcelain", "--untracked-files=no", "--ignore-submodules=all")
     if status is None or status.returncode != 0:
         return "skip:status-failed", "git status failed"
     lines = [l for l in status.stdout.splitlines() if l.strip()]
@@ -203,7 +207,7 @@ def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool 
         return "skip:clean", "no tracked change"
     if any(l[:2] in ("UU", "AA", "DD", "AU", "UA", "DU", "UD") for l in lines):
         return "skip:unmerged-paths", "unmerged paths"
-    names = g("diff", "--name-only", "-z", "--no-renames", "HEAD")
+    names = g("diff", "--name-only", "-z", "--no-renames", "--ignore-submodules=all", "HEAD")
     if names is None or names.returncode != 0:
         return "skip:diff-failed", "git diff HEAD failed"
     changed = [n for n in names.stdout.split("\0") if n]
@@ -212,6 +216,22 @@ def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool 
         return "skip:secret-looking-path", "a changed file looks like a secret, so nothing is auto-committed: " + ", ".join(sorted(secrets)[:3])
     lane = parent_env.get("RAILS_FLOW_LANE", "")
     paths = lane_paths(changed, lane)
+    if paths != changed:
+        # Lane filtering is by path, so a rename ACROSS the lane edge would commit one half (the add) and leave the other (the delete).
+        moves = g("diff", "--name-status", "-z", "-M", "--ignore-submodules=all", "HEAD")
+        fields = moves.stdout.split("\0") if moves is not None and moves.returncode == 0 else None
+        if fields is None:
+            return "skip:diff-failed", "git diff -M HEAD failed"
+        i = 0
+        while i < len(fields):
+            status_code = fields[i]
+            if status_code[:1] in ("R", "C"):
+                old, new = fields[i + 1], fields[i + 2]
+                if bool(lane_paths([old], lane)) != bool(lane_paths([new], lane)):
+                    return "skip:rename-across-lane", f"{old} -> {new} crosses the lane {lane!r}; committing one half would split it"
+                i += 3
+            else:
+                i += 2
     if not paths:
         return "skip:nothing-in-lane", f"no tracked change inside the lane {lane!r}"
     if dry_run:
@@ -378,6 +398,46 @@ def selftest() -> int:
         action, _ = run(laned, {"RAILS_FLOW_LANE": "app/controllers"})
         expect("a lane with no tracked change in it commits nothing", action == "skip:nothing-in-lane", action)
         expect("lane matching is by path component: `app/model` is not `app/models`", lane_paths(["app/models/m.rb"], "app/model") == [])
+
+        for secret in (".envrc", ".git-credentials", ".pgpass", "config/application.yml", "keys/backup.gpg", "deploy.ppk", "kubeconfig"):
+            expect(f"the secret pattern names {secret!r}", bool(SECRET.match(secret.rsplit("/", 1)[-1])))
+        expect("an ordinary file is not a secret", not SECRET.match("models.rb") and not SECRET.match("keyboard.js"))
+        # a rename across the lane edge is never half-committed
+        mover = make_repo("mover")
+        (mover / "config").mkdir()
+        (mover / "config" / "prod_token.rb").write_text("x = 1\n")
+        git(mover, "add", "config/prod_token.rb")
+        git(mover, "commit", "-q", "-m", "t")
+        (mover / "app" / "models").mkdir(parents=True)
+        git(mover, "mv", "config/prod_token.rb", "app/models/moved.rb")
+        action, detail = run(mover, {"RAILS_FLOW_LANE": "app/models"})
+        expect("a rename across the lane edge is skipped, not half-committed", action == "skip:rename-across-lane" and count(mover) == 2, (action, detail))
+        # a squash merge leaves SQUASH_MSG and no MERGE_HEAD
+        squash = make_repo("squash")
+        (squash / ".git" / "SQUASH_MSG").write_text("Squashed commit\n")
+        (squash / "a.txt").write_text("changed\n")
+        expect("a `merge --squash` in progress (SQUASH_MSG) is never committed over", run(squash)[0] == "skip:operation-in-progress")
+        # a SUBMODULE's own config names a clean filter; a same-size change would make git hash it through that filter
+        subsrc = make_repo("subsrc", "dev")
+        (subsrc / "f.txt").write_text("aaaa\n")
+        git(subsrc, "add", "f.txt")
+        git(subsrc, "commit", "-q", "-m", "f")
+        host = make_repo("host")
+        git(host, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(subsrc), "vendor/sub")
+        git(host, "commit", "-q", "-m", "sub")
+        sub = host / "vendor" / "sub"
+        evil = base / "subclean.sh"
+        evil.write_text(f"#!/bin/sh\necho ran >> {marker}\ncat\n")
+        evil.chmod(0o755)
+        git(sub, "config", "filter.evil.clean", str(evil))
+        (sub / ".gitattributes").write_text("*.txt filter=evil\n")
+        (sub / "f.txt").write_text("bbbb\n")
+        (host / "a.txt").write_text("changed\n")
+        marker.unlink(missing_ok=True)
+        action, detail = run(host)
+        expect("a submodule's own clean filter never runs (status and diff do not recurse into gitlinks)", not marker.exists(), (action, detail))
+        expect("...and the parent lane is still committed, without the submodule", action == "committed"
+               and git(host, "show", "--name-only", "--format=", "HEAD").split() == ["a.txt"], (action, detail))
 
         # ---- branches it must leave alone
         for branch in ("dev", "main", "master", "chore/arm-v1.0.0", "feature", "release/x", "hotfix/y"):

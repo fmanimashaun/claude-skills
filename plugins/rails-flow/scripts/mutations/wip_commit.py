@@ -12,6 +12,30 @@ GUARD = Guard(
     needs=("scripts/test_preflight.py",),   # it imports the one trusted_which resolver
     mutations=(
         Mutation(
+            "status recurses into submodules, so a submodule's own clean filter runs",
+            '    status = g("status", "--porcelain", "--untracked-files=no", "--ignore-submodules=all")',
+            '    status = g("status", "--porcelain", "--untracked-files=no")',
+            "a submodule's own clean filter never runs",
+        ),
+        Mutation(
+            "diff recurses into submodules, so a submodule's own clean filter runs",
+            '    names = g("diff", "--name-only", "-z", "--no-renames", "--ignore-submodules=all", "HEAD")',
+            '    names = g("diff", "--name-only", "-z", "--no-renames", "HEAD")',
+            "a submodule's own clean filter never runs",
+        ),
+        Mutation(
+            "a merge --squash in progress is committed over",
+            'IN_PROGRESS = ("SQUASH_MSG", "MERGE_HEAD",',
+            'IN_PROGRESS = ("MERGE_HEAD",',
+            "SQUASH_MSG",
+        ),
+        Mutation(
+            "a rename across the lane edge is half-committed",
+            '                if bool(lane_paths([old], lane)) != bool(lane_paths([new], lane)):',
+            '                if False:',
+            "a rename across the lane edge is skipped",
+        ),
+        Mutation(
             "a secret-looking changed file no longer stops the commit, so a tracked .env or master.key is auto-committed",
             '    if secrets:\n',
             '    if False:\n',
