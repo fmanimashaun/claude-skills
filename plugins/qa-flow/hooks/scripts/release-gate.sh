@@ -17,9 +17,10 @@ IFS= read -r -d '' input || true
 # the word loop are quadratic in bash 3.2, measured with no other work in the way: a 2 KB payload took 2 s, 6 KB took 22 s, 11 KB over 40 s.
 # The hook is killed at 15 s and a killed hook lets the command run, so a deadline or a missing tool turned a promotion into an allow for any
 # command of a few KB (the audit's first probe: 683 KB, no answer in 70 s; with a 3 s deadline even 390 KB got none). Past `_coarse_bytes` the
-# answer is decided by a few linear matches that name the same two questions: does it name git with a verb that moves or publishes a branch,
-# or does it name gh at all. Cost, accepted, in the degraded paths ONLY (a deadline, a missing tool): a command past 2 KB that merely mentions
-# those words is refused ("retry it"), where before it was answered after the harness had already let it run.
+# answer is decided by a few linear matches: does the payload NAME git or gh, in any case. Not a verb list: the precise rules above refuse an alias
+# (`git p origin main`, #1617 N4), a quote-split verb (`git pu"sh"`) and a verb built by a variable (`git $V`), and a list of verbs would let each of
+# them through. Cost, accepted, in the degraded paths ONLY (a deadline, a missing tool): a command past 2 KB that merely mentions git or gh is
+# refused ("retry it"), where before it was answered after the harness had already let it run.
 _coarse_bytes=2048
 # And a payload past `_large_bytes` never enters the full path at all (195 KB took 3.1 s and 390 KB took 8.2 s on an idle machine): it is judged by
 # the same bounded rule at once, so the answer arrives in well under a second whatever the load.
@@ -28,8 +29,8 @@ _coarse_looks_promotion() {
   if [ "${#input}" -gt "$_coarse_bytes" ]; then
     _bl='(^|[^[:alnum:]_]|\\[ntr]|\\u00[0-9a-fA-F]{2})'; _e='([^[:alnum:]_]|$)'
     _looks_promotion=0
-    [[ $input =~ ${_bl}git${_e} ]] && [[ $input =~ ${_bl}(push|merge|fetch|pull|update-ref|branch|checkout|switch|reset|rebase|cherry-pick|am)${_e} ]] && _looks_promotion=1
-    [[ $input =~ ${_bl}gh${_e} ]] && _looks_promotion=1
+    [[ $input =~ ${_bl}[Gg][Ii][Tt]${_e} ]] && _looks_promotion=1
+    [[ $input =~ ${_bl}[Gg][Hh]${_e} ]] && _looks_promotion=1
     return 0
   fi
   _in="$input"
@@ -176,7 +177,7 @@ if [ "${#input}" -gt "$_large_bytes" ]; then
   _coarse_looks_promotion
   if [ "$_looks_promotion" = "1" ]; then
     [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: a ${#input}-byte command is too large to read, but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
-    echo "BLOCKED by qa-flow release gate: this command is ${#input} bytes, too large to read within the hook's time limit, and it names a git verb that moves a branch, or gh. Write the content to a file with the Write tool and run a short command instead, or set QA_ALLOW_MAIN=1 (audited)." >&2
+    echo "BLOCKED by qa-flow release gate: this command is ${#input} bytes, too large to read within the hook's time limit, and it names git or gh. Write the content to a file with the Write tool and run a short command instead, or set QA_ALLOW_MAIN=1 (audited)." >&2
     exit 2
   fi
   exit 0

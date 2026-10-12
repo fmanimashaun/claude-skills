@@ -5799,6 +5799,12 @@ def release_gate_large_fixtures() -> None:
          run("gh pr merge 5\n" + "x\n" * 200000), 2, "too large to read")
     fast("release-gate (#1952): a large command with a gh merge on a LATER line is refused within seconds (a JSON-escaped newline does not hide the verb)",
          run("echo start\ngh pr merge 5\n" + "x\n" * 200000), 2, "too large to read")
+    fast("release-gate (#1952): a large command whose push is a git ALIAS (`git p origin main`) is refused within seconds",
+         run("git p origin main\n" + "x\n" * 200000), 2, "too large to read")
+    fast("release-gate (#1952): a large command that spells the tool `Git push` (a case-insensitive filesystem runs it) is refused within seconds",
+         run("Git push origin main\n" + "x\n" * 200000), 2, "too large to read")
+    fast("release-gate (#1952): a large command whose verb is quote-split (`git pu\"sh\"`) is refused within seconds",
+         run("git pu\"sh\" origin main\n" + "x\n" * 200000), 2, "too large to read")
     fast("release-gate (#1952): CONTROL: a large command that names neither git nor gh passes within seconds",
          run("cat > f <<EOF\n" + "some words about nothing\n" * 60000 + "EOF\n"), 0)
     fast("release-gate (#1952): a large command that merely documents `git push` is refused too (the accepted cost) and says what to do",

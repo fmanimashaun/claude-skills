@@ -45,14 +45,20 @@ GUARD = Guard(
             "a 700 KB command with a push to main is refused within seconds",     # on bash 5 (Linux) the 100 KB case is fast even with the precise rules; the 700 KB one is not, on either
         ),
         Mutation(
-            "the bounded rule no longer names a push, so a large push to main is not refused",
-            """(push|merge|fetch|pull|update-ref|branch|checkout|switch|reset|rebase|cherry-pick|am)""",
-            """(merge|fetch|pull|update-ref|branch|checkout|switch|reset|rebase|cherry-pick|am)""",
-            "a 700 KB command with a push to main is refused within seconds",
+            "the bounded rule no longer refuses a large command that names git, so a push (or an alias) to main is not refused",
+            """    [[ $input =~ ${_bl}[Gg][Ii][Tt]${_e} ]] && _looks_promotion=1""",
+            """    :""",
+            "a large command whose push is a git ALIAS (`git p origin main`) is refused within seconds",
+        ),
+        Mutation(
+            "the bounded rule matches only the lower-case spelling of git, so `Git push` is not refused",
+            """${_bl}[Gg][Ii][Tt]${_e}""",
+            """${_bl}git${_e}""",
+            "a large command that spells the tool `Git push` (a case-insensitive filesystem runs it) is refused within seconds",
         ),
         Mutation(
             "the bounded rule no longer refuses a large gh merge",
-            """    [[ $input =~ ${_bl}gh${_e} ]] && _looks_promotion=1""",
+            """    [[ $input =~ ${_bl}[Gg][Hh]${_e} ]] && _looks_promotion=1""",
             """    :""",
             "a large command that merges through the gh CLI is refused within seconds",
         ),
