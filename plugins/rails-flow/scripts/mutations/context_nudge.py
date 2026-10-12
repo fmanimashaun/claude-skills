@@ -166,5 +166,11 @@ GUARD = Guard(
             "  const parts = [percent === null ? null : `context ${percent}%`, limitsText].filter(Boolean)",
             "the cache share joins the status line",
         ),
+        Mutation(
+            "the clock is not read in session.measure, so a window that has already reset is shown as a live reading (#1854, #1893)",
+            "      now = await $.clock.now()       // called, never read",
+            "      now = undefined       // called, never read",
+            "the usage view leaves out a window that has already reset",
+        ),
     ),
 )

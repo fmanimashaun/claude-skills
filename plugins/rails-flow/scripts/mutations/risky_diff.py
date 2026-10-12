@@ -15,7 +15,7 @@ GUARD = Guard(
             "a spec or test file counts as risky, so every spec that parses JSON holds the PR",
             '        if path.startswith(("spec/", "test/")) or "/spec/" in path or "/test/" in path:',
             "        if False:",
-            "CONTROL: a spec that parses JSON is not risky",
+            "CONTROL: a file under a nested /spec/ directory is not risky even when it parses JSON",
         ),
         Mutation(
             "a policy file is not on the access surface",
@@ -27,7 +27,7 @@ GUARD = Guard(
             "an initializer named author_names is read as an auth initializer (the substring, not the word)",
             "(?:[^/]*[_-])?(?:auth|authentication|devise",
             "[^/]*(?:auth|authentication|devise",
-            "author_names",
+            "coauth",
         ),
         Mutation(
             "strong parameters are not a parsing surface",
