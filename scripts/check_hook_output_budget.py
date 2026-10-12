@@ -68,6 +68,9 @@ TOLERANCE = 64
 # makes every compaction's copy differ from the last (#1886, slice 4 of #1683). A relative age ("14d ago") or a clock time
 # ticks; a DATE a threshold was crossed on ("due since 2026-01-08") does not. Counters of real state (uncommitted files,
 # open issues) change only when something changed, so they are not matched here.
+# THE LIMITS, stated (a0's review of #1909): the patterns are tied to wording ("ago" for ages, `d:dd` times, ISO stamps, ten-digit
+# epochs, "load averages"/"uptime"), so a hook printing `age: 14d`, `swept 14d`, `yesterday` or `just now` is not seen; and the scan reads
+# ONE fixture state, so a hook that ticks only in another state (a held lock, a stale branch) is not covered either.
 TICKING: tuple[tuple[str, re.Pattern], ...] = (
     ("a relative age", re.compile(r"\b\d+\s*(?:s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?|d|days?|w|weeks?|mo|months?|y|years?)\s+ago\b", re.I)),
     ("a time of day", re.compile(r"\b\d{1,2}:\d{2}(?::\d{2})?\b")),
