@@ -1,2 +1,2 @@
-section: Repository
+section: Repository hygiene
 - **The `--merge-shards` argument row reads an empty directory of its own — `scripts/mutation_check_selftest.py`** (#1921, the v1.156.0 full sweep). The row "--merge-shards without --expect-shards is refused" passed the shared system temp directory. The unmutated refusal never reads it, but the mutant that removes the refusal (`mutation_check_harness`, "--merge-shards without a count is accepted") ran `rglob("shard-*.json")` over every session's temp files and timed out at its 300 s limit on a busy maintainer machine. With its own empty directory, the mutant fails at once (no shards, exit 1 against the expected 2): caught by that row in 48 s for the whole selftest, by hand on a copy. Our own design; no framework claim.
