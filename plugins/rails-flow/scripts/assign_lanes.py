@@ -99,7 +99,7 @@ def plan(lanes: list[str], base: str, total_usd: float | None) -> dict:
                       "this.")
     check_guard_present()
     check_no_overlap(lanes)
-    if _git("status", "--porcelain"):
+    if _git("status", "--porcelain", "--ignore-submodules=all"):
         raise Refusal("the working tree is dirty. A worktree branched from an uncommitted state "
                       "hands each session a different idea of the baseline, and the handoff medium "
                       "here is git.")

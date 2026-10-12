@@ -869,8 +869,9 @@ def check_fixture_git_bypass(python_sources: dict[Path, str]) -> tuple[list[Find
 
 _SUBMODULE_SAFE = re.compile(r"submodule-safe:\s*\S")
 _GIT_STATUS_DIFF = (
-    re.compile(r"""["']git["']\s*,[^\n]*?["'](?:status|diff)["']"""),        # ["git", ..., "status", ...]
-    re.compile(r"""\bgit\([^()\n]*?["'](?:status|diff)["']"""),            # git(cwd, "status") / git($, ['status'])
+    re.compile(r"""["']git["']\s*,[^\n]*?["'](?:status|diff(?:-files|-index)?)["']"""),     # ["git", ..., "status", ...]
+    # Any git-named helper: git(, _git(, run_git(, g( -- a helper named anything else was invisible (#1920 review).
+    re.compile(r"""\b_?(?:run_)?g(?:it)?\([^()\n]*?["'](?:status|diff(?:-files|-index)?)["']"""),
 )
 _SHELL_GIT_STATUS_DIFF = re.compile(r"""(?:^|[\s;&|(`])git\b[^;&|`#\n]*?\s(?:status|diff)\b""")
 
@@ -895,7 +896,12 @@ def check_git_status_recurses_submodules() -> tuple[list[Finding], int]:
     Measured on git 2.50.1: `status` (also with `-uall` or `--no-optional-locks`) and `diff HEAD` recurse into a submodule
     and run a `filter.<name>.clean` named in THAT repository's own config when a same-size change makes git hash a file.
     `diff --cached` and a diff between two refs do not; such a line says why with `# submodule-safe: <reason>`, so the
-    lint never guesses which side of a diff is the worktree."""
+    lint never guesses which side of a diff is the worktree. `diff-files` and `diff-index HEAD` are read too.
+
+    Not seen, stated: `git add -u` and `git commit -a` also hash the worktree and run the filter (measured in the #1920
+    review); no shipped code runs them in a user's worktree today. The scan is per LINE: a flag or marker anywhere on the
+    line passes it, and an argv list split across lines whose flag sits on a continuation line is reported (put the flag,
+    or the marker, on the line that names the subcommand)."""
     findings: list[Finding] = []
     examined = 0
     for f in _hook_scope(ROOT):
@@ -5431,6 +5437,11 @@ def selftest() -> int:
         ("a plugin script's argv status", "plugins/x/scripts/x.py", 'subprocess.run(["git", "status", "--porcelain"])\n', True),
         ("a plugin script's git() helper diff", "plugins/x/scripts/x.py", 'names = git("diff", "--name-only", base)\n', True),
         ("a JS hook's git($, [status])", "plugins/x/hooks/band.js", "const s = await git($, ['status', '--porcelain'])\n", True),
+        ("a `_git(` helper's status (#1920 review)", "plugins/x/scripts/x.py", '    status = _git(project, "status", "--porcelain")\n', True),
+        ("a `run_git(` helper's diff", "plugins/x/scripts/x.py", 'names = run_git(root, "diff", "--name-only", base)\n', True),
+        ("a `g(` helper's status", "plugins/x/scripts/x.py", 'if g(repo, "status", "--porcelain"):\n', True),
+        ("a diff-files call", "plugins/x/scripts/x.py", 'subprocess.run(["git", "diff-files", "--name-only"])\n', True),
+        ("CONTROL: a helper named otherwise (`log(`) is not git", "plugins/x/scripts/x.py", 'log("status", "--porcelain")\n', False),
         ("a marker with no reason", "plugins/x/hooks/scripts/h.sh", "git status  # submodule-safe:\n", True),
         ("CONTROL: the flag", "plugins/x/hooks/scripts/h.sh", 'd="$(git status --porcelain --ignore-submodules=all)"\n', False),
         ("CONTROL: a reasoned marker", "plugins/x/hooks/scripts/h.sh", 'git diff --cached --name-only  # submodule-safe: --cached reads the index\n', False),

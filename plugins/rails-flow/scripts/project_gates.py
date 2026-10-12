@@ -717,7 +717,7 @@ def write_sweep_record(project: Path, results: list[Result], problems: list[str]
     try:
         if _git(project, "rev-parse", "--is-inside-work-tree") != "true":
             return "rails-flow: not a git worktree, so no sweep record was written."
-        status = _git(project, "status", "--porcelain")
+        status = _git(project, "status", "--porcelain", "--ignore-submodules=all")
         if status is None:
             return "WARNING: rails-flow: git status failed, so no sweep record was written."
         if status:

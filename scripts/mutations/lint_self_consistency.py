@@ -1585,5 +1585,11 @@ GUARD = Guard(
             '        if "hooks" in parts or',
             "git-status-recurses-submodules: a git hook's status is a finding",
         ),
+        Mutation(
+            "only a helper named exactly git( is read, so _git( and run_git( escape (#1920 review)",
+            'r"""\\b_?(?:run_)?g(?:it)?\\([^()\\n]*?',
+            'r"""\\bgit\\([^()\\n]*?',
+            "git-status-recurses-submodules: a `_git(` helper's status (#1920 review) is a finding",
+        ),
     ),
 )
