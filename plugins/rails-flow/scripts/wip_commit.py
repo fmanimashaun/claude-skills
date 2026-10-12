@@ -215,9 +215,11 @@ def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool 
     if names is None or names.returncode != 0:
         return "skip:diff-failed", "git diff HEAD failed"
     changed = [n for n in names.stdout.split("\0") if n]
-    secrets = [n for n in changed if SECRET.match(n.rsplit("/", 1)[-1])]
-    if secrets:
-        return "skip:secret-looking-path", "a changed file looks like a secret, so nothing is auto-committed: " + ", ".join(sorted(secrets)[:3])
+    # A COUNT, NEVER THE NAMES (CodeQL py/clear-text-logging-sensitive-data on #1924): `--dry-run` prints the detail, and a path that looks
+    # like a secret is exactly what must not reach a log or a terminal transcript. The person can run `git status` to see which file it is.
+    flagged = sum(1 for n in changed if SECRET.match(n.rsplit("/", 1)[-1]))
+    if flagged:
+        return "skip:secret-looking-path", f"skipped: {flagged} changed file(s) matching secret patterns, so nothing is auto-committed"
     lane = parent_env.get("RAILS_FLOW_LANE", "")
     paths = lane_paths(changed, lane)
     if paths != changed:
@@ -380,17 +382,21 @@ def selftest() -> int:
         expect("...and the pushed commit was not rewritten", git(repo, "rev-parse", "origin/feature/x") == git(repo, "rev-parse", "HEAD~1"))
 
         # ---- SECRETS and LANES (review of 8725ef4d): a secret-looking change skips the commit; a lane commits only its subtree
-        for secret in (".env", ".env.production", "config/master.key", "certs/server.pem", "config/credentials.yml.enc"):
-            srepo = make_repo("s-" + re.sub(r"\W", "_", secret))
-            (srepo / secret).parent.mkdir(parents=True, exist_ok=True)
-            (srepo / secret).write_text("SECRET=1\n")
-            git(srepo, "add", secret)
+        # The failure line names the fixture by its NUMBER, never its path, and the detail is checked to carry a count and no path: the selftest's
+        # own output is a log too (CodeQL py/clear-text-logging-sensitive-data on #1924).
+        for n, guarded in enumerate((".env", ".env.production", "config/master.key", "certs/server.pem", "config/credentials.yml.enc"), 1):
+            srepo = make_repo(f"s-{n}")
+            (srepo / guarded).parent.mkdir(parents=True, exist_ok=True)
+            (srepo / guarded).write_text("TOKEN=1\n")
+            git(srepo, "add", guarded)
             git(srepo, "commit", "-q", "-m", "track it")
-            (srepo / secret).write_text("SECRET=2\n")
+            (srepo / guarded).write_text("TOKEN=2\n")
             (srepo / "a.txt").write_text("changed\n")
             action, detail = run(srepo)
-            expect(f"a changed secret-looking {secret!r} skips the WIP commit", action == "skip:secret-looking-path" and count(srepo) == 2,
-                   (action, detail, count(srepo)))
+            names_it = guarded in detail or guarded.rsplit("/", 1)[-1] in detail
+            expect(f"a changed secret-looking path (fixture {n} of 5) skips the WIP commit, and the reason gives a count, not the path",
+                   action == "skip:secret-looking-path" and count(srepo) == 2 and "1 changed file(s)" in detail and not names_it,
+                   (action, count(srepo), "the detail names the path" if names_it else "no path in the detail"))
         laned = make_repo("laned")
         for rel in ("app/models/m.rb", "app/views/v.erb"):
             (laned / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -410,8 +416,9 @@ def selftest() -> int:
         expect("a lane with no tracked change in it commits nothing", action == "skip:nothing-in-lane", action)
         expect("lane matching is by path component: `app/model` is not `app/models`", lane_paths(["app/models/m.rb"], "app/model") == [])
 
-        for secret in (".envrc", ".git-credentials", ".pgpass", "config/application.yml", "keys/backup.gpg", "deploy.ppk", "kubeconfig"):
-            expect(f"the secret pattern names {secret!r}", bool(SECRET.match(secret.rsplit("/", 1)[-1])))
+        pattern_cases = (".envrc", ".git-credentials", ".pgpass", "config/application.yml", "keys/backup.gpg", "deploy.ppk", "kubeconfig")
+        for name in pattern_cases:
+            expect(f"the secret pattern names the fixture {pattern_cases.index(name) + 1} of {len(pattern_cases)}", bool(SECRET.match(name.rsplit("/", 1)[-1])))
         expect("an ordinary file is not a secret", not SECRET.match("models.rb") and not SECRET.match("keyboard.js"))
         big = make_repo("big")
         (big / "blob.bin").write_bytes(b"0")

@@ -12,6 +12,12 @@ GUARD = Guard(
     needs=("scripts/test_preflight.py",),   # it imports the one trusted_which resolver
     mutations=(
         Mutation(
+            "the skip reason names the secret-looking paths again, so --dry-run prints them (CodeQL py/clear-text-logging-sensitive-data)",
+            '        return "skip:secret-looking-path", f"skipped: {flagged} changed file(s) matching secret patterns, so nothing is auto-committed"',
+            '        return "skip:secret-looking-path", f"skipped: {flagged} changed file(s) matching secret patterns, so nothing is auto-committed: " + ", ".join(changed)',
+            "the reason gives a count, not the path",
+        ),
+        Mutation(
             "submodules are ignored entirely, so a moved gitlink (a submodule bump) is neither saved nor reported",
             '    names = g("diff", "--name-only", "-z", "--no-renames", "--ignore-submodules=dirty", "HEAD")',
             '    names = g("diff", "--name-only", "-z", "--no-renames", "--ignore-submodules=all", "HEAD")',
@@ -55,7 +61,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a secret-looking changed file no longer stops the commit, so a tracked .env or master.key is auto-committed",
-            '    if secrets:\n',
+            '    if flagged:\n',
             '    if False:\n',
             "a changed secret-looking",
         ),
