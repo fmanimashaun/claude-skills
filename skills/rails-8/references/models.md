@@ -199,6 +199,7 @@ STI (`type` column) is fine when subclasses share nearly all columns.
 ```ruby
 enum :status, { draft: 0, active: 1 }, default: :draft, validate: true
 # gives: product.active?  product.active!  Product.active  Product.not_active
+# (on Rails main, unreleased, `not_active` also returns NULL rows: references/rails-8-2-readiness.md)
 # prefix:/suffix: to avoid clashes: enum :delivery, {...}, prefix: true
 
 normalizes :email, with: ->(e) { e.strip.downcase }   # applies on assignment AND in finders/uniqueness
