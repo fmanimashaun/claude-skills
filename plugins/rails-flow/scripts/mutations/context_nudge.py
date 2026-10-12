@@ -141,5 +141,11 @@ GUARD = Guard(
             "tell the user to run /clear or /compact before new work.",
             "asks for /clear after the handoff, not /compact",
         ),
+        Mutation(
+            "the clock is not read in session.measure, so a window that has already reset is shown as a live reading (#1854, #1893)",
+            "      now = await $.clock.now()       // called, never read",
+            "      now = undefined       // called, never read",
+            "the usage view leaves out a window that has already reset",
+        ),
     ),
 )

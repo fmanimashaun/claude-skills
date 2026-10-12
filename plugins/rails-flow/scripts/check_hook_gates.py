@@ -4344,6 +4344,18 @@ def test_preflight_fixtures() -> None:
         code, out = hook(app, rspec, PYTHONPATH=str(shim))
         check("test-preflight: PYTHONPATH cannot make the script import a module the environment supplies (it runs isolated), and the hook still speaks",
               code == 0 and not (base / "ran-shim").exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
+        # #1893: PYTHONPATH no longer discriminates `-I`, because the lib unsets PYTHON* before the interpreter is chosen. What the hook adds on top of the lib is the flag itself, so
+        # it is asserted where it can be SEEN: an interpreter outside the repository that records the first word it is given, then runs the real one.
+        pyrec = base / "pyrec"
+        pyrec.mkdir()
+        first_arg = base / "py-first-arg"
+        (pyrec / "python3").write_text(f'#!/bin/sh\nprintf "%s" "$1" > {first_arg}\nexec {os.path.realpath(sys.executable)} "$@"\n')
+        (pyrec / "python3").chmod(0o755)
+        first_arg.unlink(missing_ok=True)
+        code, out = hook(app, rspec, PATH=os.pathsep.join([str(pyrec), path]))
+        check("test-preflight: the interpreter is run ISOLATED: the first word it is given is `-I`, and the hook still speaks",
+              code == 0 and first_arg.exists() and first_arg.read_text() == "-I" and "Postgres is not accepting connections" in out,
+              f"exit {code}, first arg {first_arg.read_text() if first_arg.exists() else None!r}, {out.strip()[:120]!r}")
         # #825's environment: the harness sets the variable; a person driving the script does not. A missing script is python's exit 2, which the wrapper must not pass on.
         code, out = run_hook("test-preflight.sh", cwd=app, stdin=json.dumps({"tool_name": "Bash", "tool_input": {"command": rspec}, "cwd": str(app)}),
                              env_extra={"PATH": path}, unset=("CLAUDE_PLUGIN_ROOT",))

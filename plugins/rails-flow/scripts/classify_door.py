@@ -204,6 +204,8 @@ def selftest() -> int:
             expect("a path git quotes is UNUSABLE, never silently dropped", False)
         except Unusable:
             pass
+        except Exception as exc:   # a reader that crashes on the quoted header instead of refusing it is not UNUSABLE either
+            expect("a path git quotes is UNUSABLE, never silently dropped", False, repr(exc))
         g("reset", "-q", "--hard", "HEAD~1")
         try:
             diff(root, "no-such-branch")
