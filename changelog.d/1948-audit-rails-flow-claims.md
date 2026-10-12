@@ -1,0 +1,2 @@
+section: Repository hygiene
+- **Audit evidence: rails-flow commands and agents, claims against enforcement — `docs/evidence/audits/2026-10-12-rails-flow-commands-agents-claims.md`** (#1948 for the remainder). All 27 scripts the 37 files name exist. All 52 script-and-flag pairs are accepted by the real `--help`. Every guarantee that names its mechanism held. `lint_self_consistency.py` has no findings. Not covered, and filed as #1948: guarantees that name no mechanism, and agent tool lists against agent bodies. No findings confirmed.
