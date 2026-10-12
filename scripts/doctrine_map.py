@@ -537,7 +537,8 @@ CLAIMS: tuple[Claim, ...] = (
               "made where the effect happens (the shim sees the arguments after the shell has expanded them), and a `pre-commit` hook, "
               "where the project has installed it, refuses a stray file in the index however the add was spelled. This is a stated-limit "
               "guarantee, not a boundary: an absolute `/usr/bin/git`, `env -i git`, a non-shell exec and a session where the SessionStart "
-              "hook did not run never reach the shim (its header lists them), and the server's branch protection is the backstop.",
+              "hook did not run never reach the shim (its header lists them), the hook recognises a stray file by name and size, so a secret under "
+              "an unlisted name is not caught, and the server's branch protection is the backstop.",
         stated_in="CLAUDE.md",
         anchor="**Never `git add -A`.** Stage what you authored",
         kind=GUARANTEE,

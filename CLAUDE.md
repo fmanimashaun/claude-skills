@@ -253,7 +253,7 @@ Tracked `.claude/settings.json` holds a narrow allowlist every worktree gets; fo
 Hooks are **bash + `python3`**; the flow drives `gh`. Windows: WSL or Git Bash. **Hooks do not all fail
 open.** Of the twenty-one hook scripts, fourteen are advisory and fail open — an advisory that blocks work on a
 missing dependency gets disabled. Seven **gates fail closed**, each scoped to what it guards:
-`plugins/rails-flow/hooks/scripts/guard-bash.sh` (a tripwire for the common spellings, not a boundary: the guarantee is the `git` shim and the `pre-commit` hook, #1789/#1790, #1793; falls back to the raw payload;
+`plugins/rails-flow/hooks/scripts/guard-bash.sh` (a tripwire for the common spellings, not a boundary: the stated-limit guarantee is the `git` shim and the `pre-commit` hook, #1789/#1790, #1793; falls back to the raw payload;
 the literal `git add -A` is blocked either way.), `plugins/qa-flow/hooks/scripts/release-gate.sh` (only for commands targeting `main`),
 `plugins/rails-flow/hooks/scripts/guard-lane.sh` (only when a lane is assigned), `plugins/rails-flow/hooks/scripts/guard-claims.sh` (only `gh pr create/edit` carrying a body, in a repo it can resolve),
 `plugins/rails-flow/hooks/scripts/guard-migrate.sh` (only a `Write` creating a new `db/migrate/` file), `plugins/rails-flow/hooks/scripts/guard-worktree.sh` (only a `git worktree add`; guards against accident, not impersonation), `plugins/rails-flow/hooks/scripts/guard-pr-ready.sh` (a tripwire, not a boundary: the guarantee moves to #1839; only `gh pr ready`, in a repo that runs project_gates; needs a green sweep record for HEAD, #1565). Classify a new hook
