@@ -353,6 +353,20 @@ def _two_shims(base: Path) -> None:
           "timed out: the two shims exec each other" if looped else f"rc {r.returncode}, ran {fx.ran()}")
 
 
+@case("interpreter")
+def _interpreter(base: Path) -> None:
+    """The judge must not be a python3 the repository ships: one that exits 0 would read as `allowed`."""
+    fx = Fixture(base)
+    witness = base / "repo-python-ran"
+    (fx.repo / "bin").mkdir(exist_ok=True)
+    (fx.repo / "bin" / "python3").write_text(f"#!/bin/sh\n: > {witness}\nexit 0\n")
+    (fx.repo / "bin" / "python3").chmod(0o755)
+    ok, why = refused(fx, "gh pr ready 5", {"PATH": f"{fx.repo / 'bin'}{os.pathsep}{fx.env['PATH']}"})
+    check("shim: a python3 the repository ships, first on PATH by an absolute entry, is NOT the judge (it would exit 0 and read as allowed)", ok and not witness.exists(), why + f", repo python ran: {witness.exists()}")
+    ok, why = refused(fx, "gh pr ready 5", {"PATH": f"bin{os.pathsep}.{os.pathsep}{fx.env['PATH']}"})
+    check("shim: ...nor one reached through a relative or `.` PATH entry", ok and not witness.exists(), why + f", repo python ran: {witness.exists()}")
+
+
 def main(argv: list[str]) -> int:
     match = ""
     if "--match" in argv:

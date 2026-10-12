@@ -14,7 +14,7 @@ GUARD = Guard(
         Mutation('a `pr ready` is never recognised', '      [ "$a" = ready ] && return 0', '      [ "$a" = ready ] && return 1', 'no record'),
         Mutation('the value of -R between pr and ready is read as the verb', '      case "$a" in -R|--repo) skip=1; continue ;; -*) continue ;; esac', '      case "$a" in -*) continue ;; esac', 'explicit target'),
         Mutation('a gh alias is not looked up', 'elif name="$(alias_word "${ORIG[@]}")" && exp="$(alias_expansion "$name")" && [ -n "$exp" ]; then', 'elif false; then', 'alias flags'),
-        Mutation('the judge verdict is ignored', 'if "$py" "$lib" --shim "${argv[@]}"; then', 'if true; then', 'no record'),
+        Mutation('the judge verdict is ignored', 'if "$py" -I "$lib" --shim "${argv[@]}"; then', 'if true; then', 'no record'),
         Mutation('a missing python3 lets a `pr ready` through', 'is missing, so the sweep record for HEAD cannot be checked (RAILS_FLOW_GH_OK=1 to override, audited)." >&2\n  exit 1', 'is missing, so the sweep record for HEAD cannot be checked (RAILS_FLOW_GH_OK=1 to override, audited)." >&2\n  exec "$real" "${ORIG[@]}"', 'no python3'),
         Mutation('the value of -R before an alias is read as the alias name', '    case "$a" in -R|--repo) skip=1; continue ;; -*) continue ;; esac\n    printf', '    case "$a" in -*) continue ;; esac\n    printf', 'alias flags'),
         Mutation('an alias expansion after a TAB or several spaces is not read', '      "$name":*) value=', '      "$name"": "*) value=', 'alias flags'),
@@ -23,5 +23,6 @@ GUARD = Guard(
         Mutation('a second copy of the shim is taken for the real gh', '  is_shim "$d/gh" && continue', '  :', 'two shims'),
         Mutation('an alias expansion that is not plain words is read, not refused', '    *[!A-Za-z0-9\\ \\\t_./:@=,+%\\$-]*)', '    *NEVER_MATCHES*)', 'alias flags'),
         Mutation('a quoted placeholder is not normalised, so a documented alias is refused', '  for n in 1 2 3 4 5 6 7 8 9; do', '  for n in; do', 'alias placeholder'),
+        Mutation('the judge is the first python3 on PATH, not the lib\'s', 'py="$(trusted_python)"\nif [ -z "$py" ]', 'py="$(command -v python3)"\nif [ -z "$py" ]', 'interpreter'),
     ),
 )

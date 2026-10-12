@@ -112,6 +112,13 @@ alias_word() {
   printf '%s' "$first"
 }
 
+# THE JUDGE'S INTERPRETER IS THE LIB'S, NOT THE FIRST python3 ON PATH (the push's security review): a PATH entry inside the repository would otherwise put a repository-shipped python3 in charge of
+# the verdict, and a `python3` that exits 0 reads as "allowed". `lib/trusted-env.sh` is sourced in a SUBSHELL, so its environment scrub and PATH rebuild never reach the real gh; only the
+# interpreter it chose (absolute PATH entry outside the repository, link target outside it, `*` literal) comes back. Empty when there is none, which refuses the `pr ready`.
+trusted_python() {
+  ( . "$self_dir/../hooks/scripts/lib/trusted-env.sh" >/dev/null 2>&1 && rf_trusted_python >/dev/null 2>&1 && printf '%s' "${RF_PYTHON:-}" ) 2>/dev/null
+}
+
 judge=0
 argv=("${ORIG[@]}")
 if has_pr_ready "${ORIG[@]}" || has_api_ready "${ORIG[@]}"; then
@@ -134,10 +141,8 @@ elif name="$(alias_word "${ORIG[@]}")" && exp="$(alias_expansion "$name")" && [ 
   case "$exp" in
     *[!A-Za-z0-9\ \	_./:@=,+%\$-]*)
       lib="$self_dir/../hooks/scripts/lib/pr_ready_guard.py"
-      py=""; old_ifs="$IFS"; IFS=:
-      for d in $PATH; do [ -n "$d" ] || d="."; [ -x "$d/python3" ] && [ ! -d "$d/python3" ] && { py="$d/python3"; break; }; done
-      IFS="$old_ifs"
-      if [ -n "$py" ] && [ -f "$lib" ] && "$py" "$lib" --shim-unreadable "$exp"; then exec "$real" "${ORIG[@]}"; fi
+      py="$(trusted_python)"
+      if [ -n "$py" ] && [ -f "$lib" ] && "$py" -I "$lib" --shim-unreadable "$exp"; then exec "$real" "${ORIG[@]}"; fi
       echo "gh-shim (rails-flow): refused \`gh ${ORIG[*]}\`: the alias expands to something that is not plain words (or the judge is missing). A deliberate exception: RAILS_FLOW_GH_OK=1 gh ... (audited)." >&2
       exit 1 ;;
   esac
@@ -154,15 +159,12 @@ fi
 [ "$judge" = 1 ] || exec "$real" "${ORIG[@]}"
 
 lib="$self_dir/../hooks/scripts/lib/pr_ready_guard.py"
-py=""
-old_ifs="$IFS"; IFS=:
-for d in $PATH; do [ -n "$d" ] || d="."; [ -x "$d/python3" ] && [ ! -d "$d/python3" ] && { py="$d/python3"; break; }; done
-IFS="$old_ifs"
+py="$(trusted_python)"
 if [ -z "$py" ] || [ ! -f "$lib" ]; then
   echo "gh-shim (rails-flow): refused \`gh ${ORIG[*]}\`: python3 or lib/pr_ready_guard.py is missing, so the sweep record for HEAD cannot be checked (RAILS_FLOW_GH_OK=1 to override, audited)." >&2
   exit 1
 fi
-if "$py" "$lib" --shim "${argv[@]}"; then
+if "$py" -I "$lib" --shim "${argv[@]}"; then
   exec "$real" "${ORIG[@]}"
 fi
 echo "gh-shim (rails-flow): refused \`gh ${ORIG[*]}\`. A deliberate exception: RAILS_FLOW_GH_OK=1 gh ... (audited)." >&2
