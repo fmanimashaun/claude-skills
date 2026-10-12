@@ -1597,5 +1597,31 @@ GUARD = Guard(
             '            if "--ignore-submodules=" in line or _SUBMODULE_SAFE.search(line):',
             "git-status-recurses-submodules: =all, which hides a moved gitlink from a gate is a finding",
         ),
+        # #1939. A fail-closed gate denies by exiting 2, but only while it runs: without `"onFailure": "block"` a gate that cannot start, crashes or times out lets the action through.
+        Mutation(
+            "a gate with no onFailure stops being a finding",
+            '            if hook.get("onFailure") != "block":',
+            "            if False:",
+            "a named gate on PreToolUse with no onFailure is a finding",
+        ),
+        Mutation(
+            "any onFailure value passes, so `continue` (the default, spelled out) counts as a block",
+            '            if hook.get("onFailure") != "block":',
+            '            if hook.get("onFailure") is None:',
+            "a named gate whose onFailure is continue is a finding",
+        ),
+        Mutation(
+            # SCOPE: only the gates CLAUDE.md names; flagging an advisory hook would teach people to ignore the rule, and an advisory hook must keep failing open.
+            "every PreToolUse hook is held to onFailure, not only the named gates",
+            '            if not script or script.group(1) not in named:',
+            "            if not script:",
+            "a hook CLAUDE.md does not name as a gate needs no onFailure: silent",
+        ),
+        Mutation(
+            "a gate on an event where the field has no effect (Stop) is held to it too",
+            'data.get("hooks", {}).get("PreToolUse", [])',
+            'data.get("hooks", {}).get("Stop", []) + data.get("hooks", {}).get("PreToolUse", [])',
+            "a named gate on a Stop hook is out of scope (the field has no effect there): silent",
+        ),
     ),
 )

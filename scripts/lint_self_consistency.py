@@ -36,6 +36,8 @@ WHAT IT CHECKS
                               this runs it and `build_project_wiki.py`'s over the same fixture trees and refuses a difference (#1698)
   hook-start-hardened         a hook command in plugins/*/hooks/hooks.json that does not start with `/bin/bash -p`, a hook script whose first executable line is
                               not the source of lib/trusted-env.sh, or a plugin whose copy of that lib is missing or differs from rails-flow's (#1850)
+  gate-without-onfailure      a fail-closed gate CLAUDE.md names, wired as a PreToolUse hook in plugins/*/hooks/hooks.json without `"onFailure": "block"`: a gate that cannot
+                              start, crashes or times out is then a non-blocking error and the action goes through (#1939)
   hook-lib-drift              the two shipped copies of hooks/scripts/lib/normalize_cmd.sh, or of lib/deadline.sh,
                               differ, or one is missing -- one normaliser is a claim only while they are identical
   fixture-git-drift           the three shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
@@ -761,6 +763,39 @@ def check_hook_start_hardened() -> tuple[list[Finding], int]:
         elif text != canonical[1]:
             findings.append(Finding("hook-start-hardened", lib_rel, 0,
                                     f"differs from {canonical[0]} -- one lib, one copy per plugin: a fix landed in one and not the others. Make them identical (cp) and re-run"))
+    return findings, examined
+
+
+# Rule: gate-without-onfailure (#1939)
+# A fail-closed gate denies by exiting 2, but only if it runs. Claude Code treats a hook that cannot start (a missing script or `bash`), crashes with another
+# status, or times out as a NON-BLOCKING error, so the action went through. Claude Code 2.1.295 added `"onFailure": "block"` on a command hook: the same
+# failure then does what exit 2 does (doctrine-verifier CONFIRMED the field, its values and the v2.1.295 floor on code.claude.com/docs/en/hooks.md;
+# measured here: a plugin's hooks/hooks.json accepts it, an older binary (2.1.292) ignores it and loads the plugin, 2.1.296 refuses the call). WHICH hooks are gates
+# is the decision CLAUDE.md records (the sentence `hook-count-drift` reads), so this reads the same sentence: a gate named there and wired on PreToolUse
+# must carry the field. It has no effect on Stop, SubagentStop or async hooks, so only PreToolUse is held to it.
+def check_gate_without_onfailure() -> tuple[list[Finding], int]:
+    doc = ROOT / "CLAUDE.md"
+    if not doc.is_file():
+        return [], 0
+    gate_block = re.search(r"\*\*gates fail closed\*\*(.*?)Classify a new hook", read(doc), re.S)
+    named = set(re.findall(r"`[^`]*hooks/scripts/([a-z0-9_-]+\.sh)`", gate_block.group(1))) if gate_block else set()
+    findings: list[Finding] = []
+    examined = 0
+    for manifest in sorted((ROOT / "plugins").glob("*/hooks/hooks.json")):
+        rel = manifest.relative_to(ROOT).as_posix()
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+        except ValueError:
+            continue  # hook-start-hardened reports an unreadable manifest
+        for hook in (h for entry in data.get("hooks", {}).get("PreToolUse", []) for h in entry.get("hooks", []) if h.get("type") == "command"):
+            script = re.search(r"hooks/scripts/([\w.-]+\.sh)", hook.get("command", ""))
+            if not script or script.group(1) not in named:
+                continue
+            examined += 1
+            if hook.get("onFailure") != "block":
+                findings.append(Finding("gate-without-onfailure", rel, 0,
+                                        f"the fail-closed gate {script.group(1)} is a PreToolUse hook without `\"onFailure\": \"block\"` (it has {hook.get('onFailure')!r}): if it cannot start, "
+                                        "crashes or times out, Claude Code runs the action anyway. Add the field (Requires Claude Code v2.1.295 or later; older versions ignore it) (#1939)"))
     return findings, examined
 
 
@@ -4133,6 +4168,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     fixture_git, fixture_git_copies = check_fixture_git_drift()
     schema_drift, schema_drift_examined = check_schema_reader_drift()
     hook_start, hook_start_examined = check_hook_start_hardened()
+    gate_onfail, gate_onfail_examined = check_gate_without_onfailure()
     findings_copy, findings_copies = check_findings_script_drift()
     rel_xplugin, rel_xplugin_examined = check_cross_plugin_relative_path()
     fixture_bypass, fixture_bypass_examined = check_fixture_git_bypass(python_sources)
@@ -4198,6 +4234,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "fixture_git_copies": fixture_git_copies,
         "schema_trees_compared": schema_drift_examined,
         "hook_commands_checked_for_a_hardened_start": hook_start_examined,
+        "gate_hooks_checked_for_onfailure": gate_onfail_examined,
         "findings_script_copies": findings_copies,
         "shipped_markdown_checked_for_cross_plugin_paths": rel_xplugin_examined,
         "fixture_git_identity_lines": fixture_bypass_examined,
@@ -4253,7 +4290,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + undoc_cmds + docs_paths + growth + hook_lib + hook_start + fixture_git + schema_drift + fixture_bypass + submod + bare + misdesc + unbounded + author_me + components + call_sites + invisible
+    return (dead + unenforced + undocumented + undoc_cmds + docs_paths + growth + hook_lib + hook_start + gate_onfail + fixture_git + schema_drift + fixture_bypass + submod + bare + misdesc + unbounded + author_me + components + call_sites + invisible
             + markers + uncontained + nonhermetic + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + dangling + flat_role
@@ -5570,6 +5607,24 @@ def selftest() -> int:
              files={"plugins/p/hooks/hooks.json": '{"hooks": {}}\n'})
     scenario("two plugins with identical copies of the lib are silent", rule=HS, expect_finding=False, only=check_hook_start_hardened,
              files={**HS_FILES, "plugins/q/hooks/hooks.json": HS_JSON, "plugins/q/hooks/scripts/a.sh": HS_OK, "plugins/q/hooks/scripts/lib/trusted-env.sh": HS_LIB})
+
+    # -- gate-without-onfailure (#1939) -----------------------------------
+    GO = "gate-without-onfailure"
+    GO_DOC = "**gates fail closed**, each scoped to what it guards:\n`plugins/p/hooks/scripts/gate.sh` (a tripwire). Classify a new hook with the test.\n"
+    GO_CMD = '"command": "/bin/bash -p \\"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/%s\\"", "timeout": 10'
+
+    def go_hooks(event: str, script: str, extra: str = "") -> str:
+        return '{"hooks": {"%s": [{"matcher": "Bash", "hooks": [{"type": "command", %s%s}]}]}}\n' % (event, GO_CMD % script, extra)
+    GO_OK = {"CLAUDE.md": GO_DOC, "plugins/p/hooks/hooks.json": go_hooks("PreToolUse", "gate.sh", ', "onFailure": "block"')}
+    scenario("a named gate on PreToolUse with onFailure block: silent", rule=GO, expect_finding=False, only=check_gate_without_onfailure, files=GO_OK)
+    scenario("a named gate on PreToolUse with no onFailure is a finding", rule=GO, expect_finding=True, only=check_gate_without_onfailure,
+             files={**GO_OK, "plugins/p/hooks/hooks.json": go_hooks("PreToolUse", "gate.sh")})
+    scenario("a named gate whose onFailure is continue is a finding", rule=GO, expect_finding=True, only=check_gate_without_onfailure,
+             files={**GO_OK, "plugins/p/hooks/hooks.json": go_hooks("PreToolUse", "gate.sh", ', "onFailure": "continue"')})
+    scenario("a hook CLAUDE.md does not name as a gate needs no onFailure: silent", rule=GO, expect_finding=False, only=check_gate_without_onfailure,
+             files={**GO_OK, "plugins/p/hooks/hooks.json": go_hooks("PreToolUse", "advisory.sh")})
+    scenario("a named gate on a Stop hook is out of scope (the field has no effect there): silent", rule=GO, expect_finding=False, only=check_gate_without_onfailure,
+             files={**GO_OK, "plugins/p/hooks/hooks.json": go_hooks("Stop", "gate.sh")})
 
     # -- undocumented-command (#835) --------------------------------------
     # Four shipped commands were in neither README; design-flow's listed six of twelve.
