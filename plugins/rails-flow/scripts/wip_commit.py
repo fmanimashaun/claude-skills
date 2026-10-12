@@ -217,13 +217,6 @@ def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool 
     secrets = [n for n in changed if SECRET.match(n.rsplit("/", 1)[-1])]
     if secrets:
         return "skip:secret-looking-path", "a changed file looks like a secret, so nothing is auto-committed: " + ", ".join(sorted(secrets)[:3])
-    for n in changed:
-        try:
-            size = os.lstat(toplevel / n).st_size      # lstat: a symlink is its link text; a deleted file is no size at all
-        except OSError:
-            continue
-        if size > MAX_BYTES:
-            return "skip:file-too-large", f"{n} is {size // (1024 * 1024)} MB, over the {MAX_BYTES // (1024 * 1024)} MB WIP-commit limit"
     lane = parent_env.get("RAILS_FLOW_LANE", "")
     paths = lane_paths(changed, lane)
     if paths != changed:
@@ -244,6 +237,13 @@ def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool 
                 i += 2
     if not paths:
         return "skip:nothing-in-lane", f"no tracked change inside the lane {lane!r}"
+    for n in paths:          # only what this commit would take: a large file in another lane is not ours to judge
+        try:
+            size = os.lstat(toplevel / n).st_size      # lstat: a symlink is its link text; a deleted file is no size at all
+        except OSError:
+            continue
+        if size > MAX_BYTES:
+            return "skip:file-too-large", f"{n} is {size:,} bytes, over the {MAX_BYTES:,}-byte (10 MB) WIP-commit limit"
     if dry_run:
         return "skip:dry-run", f"{len(lines)} tracked change(s) on {name}"
     stamp = time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime(now if now is not None else time.time()))

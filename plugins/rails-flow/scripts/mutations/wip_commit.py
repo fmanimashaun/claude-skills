@@ -12,6 +12,12 @@ GUARD = Guard(
     needs=("scripts/test_preflight.py",),   # it imports the one trusted_which resolver
     mutations=(
         Mutation(
+            "the size limit is inclusive, so a file of exactly 10 MB is refused",
+            '        if size > MAX_BYTES:',
+            '        if size >= MAX_BYTES:',
+            "CONTROL: exactly 10 MB is still committed",
+        ),
+        Mutation(
             "a file over the size limit is committed anyway",
             '        if size > MAX_BYTES:',
             '        if False:',
