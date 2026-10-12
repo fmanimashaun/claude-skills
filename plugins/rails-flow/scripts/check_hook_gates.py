@@ -4973,6 +4973,28 @@ def guard_worktree_pointer_fixtures() -> None:
         (done_wt / "scratch.txt").write_text("uncommitted\n")
         check("resume pointer: a merged worktree with uncommitted work is NOT listed as finished",
               str(done_wt) not in start(repo)[1])
+        # #1916: a SUBMODULE'S OWN clean filter never runs when the pointer reads a worktree's status. The gitlink is merged into dev,
+        # so the worktree stays finished; the sub's config names `filter.evil.clean`, and a same-size change makes git hash the file.
+        (done_wt / "scratch.txt").unlink()
+        sub = done_wt / "vendor" / "sub"
+        sub.mkdir(parents=True)
+        git(sub, "init", "-q")
+        (sub / "f.txt").write_text("aaaa\n")
+        git(sub, "add", "f.txt")
+        git(sub, "commit", "-q", "-m", "f")
+        git(done_wt, "add", "vendor/sub")
+        git(done_wt, "commit", "-q", "-m", "gitlink")
+        git(repo, "branch", "-f", "dev", "feature/done")
+        marker, clean = Path(td) / "filter-ran", Path(td) / "clean.sh"
+        clean.write_text(f"#!/bin/sh\necho ran >> {marker}\ncat\n")
+        clean.chmod(0o755)
+        git(sub, "config", "filter.evil.clean", str(clean))
+        (sub / ".gitattributes").write_text("*.txt filter=evil\n")
+        time.sleep(1.1)                               # a new mtime, so git cannot trust the cached stat
+        (sub / "f.txt").write_text("bbbb\n")          # SAME SIZE: only hashing tells it apart
+        out = start(repo)[1]
+        check("resume pointer: a submodule's own clean filter never runs when a worktree's status is read (#1916)",
+              not marker.exists(), marker.read_text() if marker.exists() else out[-200:])
         # Zombies: a real one, parented to this process, then reaped.
         child = subprocess.Popen(["sh", "-c", "exit 0"])
         time.sleep(0.5)

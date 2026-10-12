@@ -90,7 +90,9 @@ def facts(cwd: Path) -> dict | None:
     if head and has_remote:
         n = git(cwd, "rev-list", "--count", "HEAD", "--not", "--remotes")
         unpushed = int(n) if n and n.isdigit() else None
-    status = git(cwd, "status", "--porcelain", "-uall")
+    # --ignore-submodules=dirty (#1916): status would recurse into a submodule and run a clean filter named in ITS OWN config, every
+    # turn. A submodule's state is not unsaved work in this worktree that the hook can act on.
+    status = git(cwd, "status", "--porcelain", "-uall", "--ignore-submodules=dirty")
     # UNKNOWN, NEVER CLEAN (#1643 review N2): a `git status` that failed or timed out has said nothing about the tree, and
     # reading its silence as "0 uncommitted files" is the false all-clear this file exists to prevent.
     dirty = None if status is None else [line[3:] for line in status.splitlines()]
@@ -329,6 +331,28 @@ def selftest() -> int:
         except Exception as e:  # noqa: BLE001
             check("an unwritable handoff directory does not raise", False, repr(e))
         check("not a JSON payload: treated as empty", stop(outside, "not json") == "")
+
+        # #1916: a SUBMODULE'S OWN clean filter never runs. Its config names `filter.evil.clean`; a same-size change makes git hash
+        # the file, which is when a recursing `status` would run it.
+        host, sub, marker = root / "subhost", root / "subhost" / "vendor" / "sub", root / "filter-ran"
+        _sh(root, "init", "-q", "-b", "dev", str(host))
+        sub.mkdir(parents=True)
+        _sh(root, "init", "-q", "-b", "dev", str(sub))
+        (sub / "f.txt").write_text("aaaa\n")
+        _sh(sub, "add", "f.txt")
+        _sh(sub, "commit", "-q", "-m", "f")
+        _sh(host, "add", "vendor/sub")
+        _sh(host, "commit", "-q", "-m", "gitlink")
+        clean = root / "clean.sh"
+        clean.write_text(f"#!/bin/sh\necho ran >> {marker}\ncat\n")
+        clean.chmod(0o755)
+        _sh(sub, "config", "filter.evil.clean", str(clean))
+        (sub / ".gitattributes").write_text("*.txt filter=evil\n")
+        time.sleep(1.1)                                 # a new mtime, so git cannot trust the cached stat
+        (sub / "f.txt").write_text("bbbb\n")           # SAME SIZE: only hashing tells it apart
+        facts(host)
+        check("a submodule's own clean filter never runs when the hook reads status (#1916)", not marker.exists(),
+              marker.read_text() if marker.exists() else "")
     print(f"{len(failures)} failure(s)")
     return 1 if failures else 0
 
