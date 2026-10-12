@@ -27,6 +27,7 @@ GUARD = Guard(
         "scripts/derive_mandated_gems.py",
         "scripts/derive_tenancy_cop.py",          # registered in BUILDERS by #1403
         "scripts/extract_release_notes.py",
+        "scripts/changelog_fragments.py",         # registered as not-a-generator by #1825; the selftest asserts it exists (#1893)
         "docs/evidence/coverage.html",
         "docs/wiki/",
         "docs/architecture/doctrine-map.html",

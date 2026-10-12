@@ -150,7 +150,7 @@ GUARD = Guard(
             "any program called ci is read as bin/ci",
             '    if program == "ci" and "bin/ci" in tokens[0]:\n',
             '    if program == "ci":\n',
-            "`gh ci status` is not a suite run",
+            "`ci status` is not a suite run",
         ),
         Mutation(
             "`cypress open` is read as a suite run",
@@ -169,7 +169,7 @@ GUARD = Guard(
             "a program is looked up inside the project's own tree",
             "        if real == base or real.startswith(base + os.sep):\n            continue\n",
             "        if False:\n            continue\n",
-            "a pg_isready the repository ships inside its own tree is never run, even FIRST on PATH",
+            "a PATH directory inside the repository is skipped even when its program links OUT of it",
         ),
         Mutation(
             # FOUND BY REVIEW OF #1826: the root was the nearest Gemfile alone, so from `web/` the repository's own `bin/` read as OUTSIDE the project.

@@ -195,8 +195,17 @@ def selftest() -> int:
         case("CONTROL: an ordinary model change is not risky", {"app/models/invoice.rb": "class Invoice\n  def total = 1\nend\n"}, None)
         case("CONTROL: an initializer whose name merely contains `auth` (author_names) is not risky",
              {"config/initializers/author_names.rb": "x\n"}, None)
+        case("CONTROL: an initializer ending in `auth` with no separator (coauth) is not risky", {"config/initializers/coauth.rb": "x\n"}, None)
+        case("an initializer with an auth prefix word (app_auth) is risky", {"config/initializers/app_auth.rb": "x\n"}, "auth")
+        case("an initializer with an auth suffix word (auth_settings) is risky", {"config/initializers/auth_settings.rb": "x\n"}, "auth")
         case("CONTROL: app/models/session_replay.rb is not the Session model", {"app/models/session_replay.rb": "x\n"}, None)
         case("CONTROL: a spec that parses JSON is not risky", {"spec/services/feed_spec.rb": "JSON.parse(body)\n"}, None)
+        # the paths below are on a risky surface or parse JSON, so only the spec/test skip keeps them out
+        case("CONTROL: a file under a nested /spec/ directory is not risky even when it parses JSON",
+             {"lib/spec/feed.rb": "JSON.parse(body)\n"}, None)
+        case("CONTROL: a file under a nested /test/ directory is not risky even when it parses JSON",
+             {"lib/test/feed.rb": "JSON.parse(body)\n"}, None)
+        case("CONTROL: a policy-surface path under /spec/ is not risky", {"app/policies/spec/helper.rb": "x\n"}, None)
         case("CONTROL: a test that uses authorize is not risky", {"test/controllers/x_test.rb": "authorize @x\n"}, None)
         case("CONTROL: a comment-free non-code file mentioning JSON.parse is not risky", {"docs/notes.md": "JSON.parse\n"}, None)
         case("CONTROL: `authorized_users` is not `authorize`", {"app/services/report.rb": "authorized_users.map(&:name)\n"}, None)
@@ -251,7 +260,7 @@ def selftest() -> int:
         recorded("a record for another commit is stale (exit 1)", f"Head: {'0' * 40}\nVERDICT: CLEAN\n", 1, "stale")
         recorded("a record with no Head line is refused (exit 1)", "VERDICT: CLEAN\n", 1, "no-head")
         recorded("a record with no verdict line is refused (exit 1)", f"Head: {head}\nlooks fine\n", 1, "no-verdict")
-        recorded("a verdict quoted inside a sentence is not a verdict line", f"Head: {head}\nthe pass said VERDICT: CLEAN here\n", 1, "no-verdict")
+        recorded("a verdict quoted inside a sentence is not a verdict line", f"Head: {head}\nthe pass said VERDICT: CLEAN\n", 1, "no-verdict")
         recorded("an empty record is refused (exit 1)", "", 1)
         code, lines = decide([], rec, head)
         expect("a diff that is not risky needs no record (exit 0), even with a bad one on disk", code == 0, (code, lines))
