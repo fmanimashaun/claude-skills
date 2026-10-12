@@ -20,7 +20,7 @@ GUARD = Guard(
         "plugins/qa-flow/hooks/hooks.json",
         "plugins/qa-flow/hooks/scripts/qa-status.sh",
         "plugins/rails-flow/hooks/hooks.json",
-        "plugins/rails-flow/hooks/scripts/session-start.sh",
+        "plugins/rails-flow/hooks/scripts",   # session-start.sh and lib/where_stopped.py, which the fixture's pointer line needs (#1886)
     ),
     mutations=(
         Mutation(
@@ -59,6 +59,54 @@ GUARD = Guard(
             "            proc = subprocess.run([\"bash\", str(path)], cwd=project, env=env,",
             "            proc = subprocess.run([\"bash\", str(path)], cwd=REPO, env=env,",
             "the hook reads the FIXTURE, not this repo",
+        ),
+        Mutation(
+            "a relative age is no longer a ticking value, so `last swept 14d ago` is injected unnoticed (#1886)",
+            '("a relative age", re.compile(r"\\b\\d+',
+            '("a relative age", re.compile(r"\\bNEVER\\d+',
+            "a ticking value is reported: brain-review due: last swept 14d ago",
+        ),
+        Mutation(
+            "an ISO timestamp is no longer a ticking value",
+            '("an ISO timestamp", re.compile(r"\\b\\d{4}',
+            '("an ISO timestamp", re.compile(r"\\bNEVER\\d{4}',
+            "a ticking value is reported: stopped (last turn, 2026-10-11T22:48Z)",
+        ),
+        Mutation(
+            "a time of day is no longer a ticking value",
+            '("a time of day", re.compile(r"\\b\\d{1,2}',
+            '("a time of day", re.compile(r"\\bNEVER\\d{1,2}',
+            "a ticking value is reported: measured at 14:03",
+        ),
+        Mutation(
+            "an epoch is no longer a ticking value",
+            '("an epoch", re.compile(r"\\b1[5-9]',
+            '("an epoch", re.compile(r"\\bNEVER1[5-9]',
+            "a ticking value is reported: stamp 1700000000",
+        ),
+        Mutation(
+            "a load reading is no longer a ticking value",
+            '("a load or uptime reading", re.compile(r"\\b(?:load',
+            '("a load or uptime reading", re.compile(r"\\bNEVER(?:load',
+            "a ticking value is reported: load averages: 24.30 24.52",
+        ),
+        Mutation(
+            "the scan matches every line, so a stable date reads as ticking",
+            '            if pattern.search(line):',
+            '            if True:',
+            "a stable value is not reported: brain-review due since 2026-01-08 (cadence 7d)",
+        ),
+        Mutation(
+            "the fixture drops the aged review stamp, so the line whose age ticked is never printed or scanned",
+            '    (project / "docs/brain/.last-review").write_text("1700000000\\n", encoding="utf-8")',
+            '    pass',
+            "the fixture makes the aged review line and the where-stopped pointer print, so the scan reads them",
+        ),
+        Mutation(
+            "the fixture leaves no unsaved work, so the where-stopped pointer is never printed or scanned",
+            '        (project / "unsaved.txt").write_text("work in progress\\n", encoding="utf-8")   # so the pointer prints (#1886)',
+            '        pass',
+            "the fixture makes the aged review line and the where-stopped pointer print, so the scan reads them",
         ),
     ),
 )
