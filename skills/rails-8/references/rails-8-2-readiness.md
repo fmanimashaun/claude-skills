@@ -128,16 +128,17 @@ runs a released Rails.
 
 ## `load_defaults "8.2"` (and two options that are not defaults)
 
-Set by the 8.2 defaults (`railties/lib/rails/application/configuration.rb`, `when "8.2"`; `configuring.md`):
+Set by the 8.2 defaults (`railties/lib/rails/application/configuration.rb`, `when "8.2"`; `configuring.md`). This table is the round-2 subset: round 1 above holds the block's other entries (the CSRF strategy, `enqueue_after_transaction_commit`, Herb). The "before 8.2" column is what a released Rails does:
 
-| setting | what it does | default before 8.2 | 8.2 default |
+| setting | what it does | before 8.2 | 8.2 default |
 |---|---|---|---|
-| `ActiveSupport.raise_on_invalid_time_zone_parse` (a module setting, not under `config.`; #57211) | `TimeZone#parse` raises `ArgumentError` for a string with no recognisable date (`"foobar"` was `nil`) | `false` | `true` |
-| `config.action_dispatch.strict_accept_header` (#57579) | an `Accept` that also holds `*/*` keeps its specific types (`application/json, */*` returns JSON) instead of forcing HTML | `false` | `true` |
+| `ActiveSupport.raise_on_invalid_time_zone_parse` (a module setting, not under `config.`; #57211) | `TimeZone#parse` raises `ArgumentError` for a string with no recognisable date (`"foobar"` was `nil`) | the option does not exist in a released Rails (8.1.4 has none; `false` on `main` without the 8.2 defaults) | `true` |
+| `config.action_dispatch.strict_accept_header` (#57579) | an `Accept` that also holds `*/*` keeps its specific types (`application/json, */*` returns JSON) instead of forcing HTML | the option does not exist in a released Rails (8.1.4 has none; `false` on `main` without the 8.2 defaults) | `true` |
 | `config.active_record.postgresql_adapter_decode_bytea` / `..._decode_money` | manual queries (`select_value`) return bytea as a binary String and money as `BigDecimal` instead of a UTF-8 String | `false` | `true` |
 | `config.active_storage.analyze` | `:immediately` analyses before validation (metadata such as width is available to validations); `:later`, `:lazily` | not set | `:immediately` |
 | `config.active_storage.s3_public_uploads_via_acl` | S3 sets `public-read` on `public: true` uploads | `true` | `false`: declare `upload: { acl: "public-read" }` on the service where you rely on it |
 | `config.action_dispatch.default_headers` (#56564) | `X-XSS-Protection` is no longer in the defaults | sent as `"0"` since 7.0 | absent |
+| `config.action_controller.rescue_from_event_backtrace` (#56426) | the `event_backtrace` of the `rescue_from_handled.action_controller` notification and structured event: `:array` carries the full backtrace array, any other value (the default `nil`) only the first line with `Rails.root` stripped | the option does not exist in a released Rails (8.1.4 has none; `nil` on `main` without the 8.2 defaults) | `:array` |
 
 - **Not `load_defaults` items:** `config.active_record.shuffle_unordered_selects` (#58548) is opt-in and `false`; when on
   (meant for test and development) it shuffles the rows of generated `SELECT`s that have no `ORDER BY`, best effort:
