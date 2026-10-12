@@ -5,15 +5,21 @@ Read from DECLARATIONS, never from a run (coordinator's decision on #1931: deter
 convention is the app's, generalised from Retask; it is not `mcp` gem API (gem 1.7.0 has `MCP::Tool.output_schema` and nothing
 naming sources):
 
-  * a TOOL is a class-form MCP tool as check_mcp_annotations.py finds it (under `app/` or `lib/`, inheriting `MCP::Tool`
-    directly or through an app class) that calls `tool_name`; the `define` and `Class.new` forms declare no `sources` here;
+  * a TOOL is every class-form MCP tool check_mcp_annotations.py finds (under `app/` or `lib/`, inheriting `MCP::Tool`
+    directly or through an app class), named by its `tool_name` or, as `mcp` 1.7.0 names it when there is none, by its class
+    name demodulized and underscored (`lib/mcp/tool.rb` `name_value`, `string_utils.rb` `handle_from_class_name`). The one
+    class not judged is an ABSTRACT BASE: the parent of another tool, with no `tool_name` and no `sources`. A tool
+    built by `MCP::Tool.define`, `define_tool` or `Class.new(MCP::Tool)` cannot carry a `sources` declaration here, so each
+    is a finding of its own rather than silently unjudged;
   * its own file declares what its result is built from: `sources: %w[table.column ...]` or `sources: ["table.column", ...]`.
-    `count(...)` and `derived(...)` carry no row value and are skipped. A bare `table.column` reaches the result, and so does
+    `count(...)` carries no row value and is skipped; `derived(...)` is skipped on the AUTHOR'S WORD that what it returns is
+    not a row value -- the gate does not read inside it. A bare `table.column` reaches the result, and so does
     `sum(...)`, `avg(...)`, `min(...)` or `max(...)` of one: those are held to the inner column's category.
 
 Each tool is held to `config/privacy_inventory.yml` (read by check_privacy_inventory.py's own reader):
   1. a tool that declares no `sources` is a finding -- an undeclared tool can return anything;
-  2. a `table.column` the inventory does not list is a finding -- a column with no category cannot be shown safe;
+  2. a `table.column` the inventory does not list, or lists with no category, is a finding -- a column with no category cannot
+     be shown safe;
   3. a `table.column` whose category is not `none` is a finding, unless `.rails-flow/mcp.json` allows that category for that
      tool: `{"allow": {"<tool_name>": ["<category>", ...]}}`.
 
@@ -79,25 +85,58 @@ def _read(path: Path) -> str:
         raise CouldNotCheck(f"{path.name} could not be read ({exc})") from exc
 
 
+def gem_name(class_name: str) -> str:
+    """The name mcp 1.7.0 gives a tool with no `tool_name`: StringUtils.handle_from_class_name (demodulize, then underscore)."""
+    word = class_name.split("::")[-1]
+    word = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", "_", word)
+    word = re.sub(r"(?<=[a-z\d])(?=[A-Z])", "_", word)
+    return word.replace("-", "_").lower()
+
+
+def unjudged_forms(root: Path) -> list[str]:
+    """One line per tool built by `define`, `define_tool` or `Class.new(MCP::Tool)`: it has no class body to declare sources in."""
+    try:
+        parsed = annotations._parsed(root)
+    except annotations.Unusable as exc:
+        raise CouldNotCheck(str(exc)) from exc
+    tools_set, _bases = annotations._tool_names(parsed)
+    out = []
+    for path, text, _lines in parsed:
+        rel = path.relative_to(root)
+        for m in annotations.CALL.finditer(text):
+            if m["recv"] and not annotations._is_tool(m["recv"], tools_set):
+                continue
+            out.append(f"{rel}:{annotations._line_of(text, m.start())}: a tool built by {m.group(0).strip('( ')} declares no "
+                       "`sources` a gate can read; define it as a class with `sources:` so its result can be held to the inventory")
+        for m in annotations.CLASS_NEW.finditer(text):
+            if annotations._is_tool(m["base"], tools_set):
+                out.append(f"{rel}:{annotations._line_of(text, m.start())}: a tool built by Class.new({m['base']}) declares no "
+                           "`sources` a gate can read; define it as a named class with `sources:`")
+    return out
+
+
 def tools(root: Path) -> list[tuple[str, Path, list[str]]]:
-    """[(tool_name, file, [source tokens])] for every concrete class-form MCP tool (check_mcp_annotations.class_tools) that
-    calls `tool_name`. An abstract base (no `tool_name`) declares nothing of its own and is not judged."""
+    """[(name, file, [source tokens])] for EVERY concrete class-form MCP tool check_mcp_annotations.class_tools returns, named
+    by its `tool_name` or, failing that, as the gem names it (gem_name). None is skipped: a tool with no `tool_name` is served."""
     try:
         found = annotations.class_tools(root)
     except annotations.Unusable as exc:
         raise CouldNotCheck(str(exc)) from exc
+    # A PARENT of another tool that names itself nowhere and declares nothing is an abstract base (Retask's Mcp::Tools::Report,
+    # which defines a template `call` but is not in the served list): not judged. A leaf with no tool_name IS judged.
+    parents = {annotations.CLASS.match(body.splitlines()[0])["base"].split("::")[-1] for _p, _l, _n, body in found}
     out = []
-    for path, _line, _name, body in found:
+    for path, _line, class_name, body in found:
         code = code_only(body)
         tn = TOOL_NAME.search(code)
-        if not tn:
+        if not tn and class_name.split("::")[-1] in parents and not (SOURCES_W.search(code) or SOURCES_A.search(code)):
             continue
         tokens: list[str] = []
         for m in SOURCES_W.finditer(code):
             tokens += m.group("body").split()
         for m in SOURCES_A.finditer(code):
             tokens += re.findall(r"""["']([^"']+)["']""", m.group("body"))
-        out.append((tn.group("name"), path, tokens))
+        out.append((tn.group("name") if tn else gem_name(class_name), path, tokens))
     return out
 
 
@@ -119,9 +158,10 @@ def check(root: Path) -> tuple[int, list[str]]:
             except (json.JSONDecodeError, AttributeError) as exc:
                 raise CouldNotCheck(f"{DECLARATION} is not a JSON object ({exc})") from exc
         found_tools = tools(root)
+        unjudged = unjudged_forms(root)
     except CouldNotCheck as exc:
         return 2, [f"could not check: {exc}"]
-    findings = []
+    findings = list(unjudged)
     for name, f, tokens in found_tools:
         rel = f.relative_to(root)
         if not tokens:
@@ -143,7 +183,10 @@ def check(root: Path) -> tuple[int, list[str]]:
                 findings.append(f"{name} ({rel}): {tok} is not in {INVENTORY}, so its category is unknown")
                 continue
             category = entry.get("category", "")
-            if category and category != "none" and category not in allowed:
+            if not category:
+                findings.append(f"{name} ({rel}): {tok} is in {INVENTORY} with no category, so it cannot be shown safe")
+                continue
+            if category != "none" and category not in allowed:
                 findings.append(f"{name} ({rel}): {tok} is `{category}`; allow it for this tool in {DECLARATION} "
                                 f'({{"allow": {{"{name}": ["{category}"]}}}}) or stop returning it')
     findings = list(dict.fromkeys(findings))          # one line per tool and column, however many fields read it
@@ -194,6 +237,22 @@ def selftest() -> int:
         ("CONTROL: a sum of a `none` column is clean", {**base, T: tool("countries", "%w[sum(requests.country)]")}, 0),
         ("CONTROL: a trailing comment's sources are not a declaration",
          {**base, T: 'class Countries < Mcp::Report\n  tool_name "countries"\n  fields("a" => { sources: %w[requests.country] }) # was sources: %w[users.email_address]\nend\n'}, 0),
+        # #1935 review: a tool with no tool_name is served under its class name, so it is judged too.
+        ("a tool with no tool_name returning a personal column is a finding",
+         {**base, T: 'class Countries < Mcp::Report\n  fields("a" => { sources: %w[users.email_address] })\nend\n'}, 1),
+        ("CONTROL: a tool with no tool_name returning only none columns is clean",
+         {**base, T: 'class Countries < Mcp::Report\n  fields("a" => { sources: %w[requests.country] })\nend\n'}, 0),
+        ("CONTROL: the allow-list names a tool with no tool_name as the gem does (ClientCost -> client_cost)",
+         {**base, T: 'class ClientCost < Mcp::Report\n  fields("a" => { sources: %w[users.email_address] })\nend\n',
+          ".rails-flow/mcp.json": '{"allow": {"client_cost": ["contact"]}}'}, 0),
+        ("CONTROL: an abstract base (parent of a tool, no tool_name, no sources) is not judged",
+         {**base, "app/models/mcp/report.rb": 'module Mcp\n  class Report < MCP::Tool\n    def self.call(**) = nil\n  end\nend\n'}, 0),
+        ("a tool built by MCP::Tool.define is a finding (no sources a gate can read)",
+         {**base, "app/models/defined.rb": 'Lookup = MCP::Tool.define(name: "lookup", description: "x") { |**| nil }\n'}, 1),
+        ("a tool built by Class.new(MCP::Tool) is a finding",
+         {**base, "app/models/anon.rb": 'ANON = Class.new(MCP::Tool) do\n  tool_name "anon"\nend\n'}, 1),
+        ("an inventory entry with no category is a finding",
+         {**base, "config/privacy_inventory.yml": inv + "  kind: { basis: contract }\n", T: tool("countries", "%w[requests.kind]")}, 1),
         ("a column the inventory does not list is a finding", {**base, T: tool("countries", "%w[requests.secret]")}, 1),
         ("a source that is not table.column is a finding", {**base, T: tool("countries", "%w[country]")}, 1),
         ("CONTROL: a class that is not a tool (no MCP::Tool ancestor) is not checked",
