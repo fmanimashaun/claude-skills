@@ -6293,7 +6293,7 @@ def meta_checks() -> None:
           not is_starved(hot, 5.0, 40.0, 10), "starved")
     check("starved: only a hook script's run sets the CPU a verdict is judged by, never the git or gh a fixture ran after it",
           _runs_a_hook((["bash", "/x/plugins/qa-flow/hooks/scripts/release-gate.sh"],)) and _runs_a_hook((["bash", "/x/hooks/scripts/guard-bash.sh"],))
-          and not _runs_a_hook((["git", "status"],)) and not _runs_a_hook((["gh", "pr", "view"],)), "misclassified")
+          and not _runs_a_hook((["git", "status"],)) and not _runs_a_hook((["gh", "pr", "view"],)), "misclassified")  # submodule-safe: an argv classified, not run
     check("starved: ...and a machine under its cores never excuses a deadline denial", not is_starved(hot, 0.4, 3.0, 10), "starved")
     check("starved: with --strict-timing the same deadline denial is a FAILURE, never a skip (a mutant that stalls a hook is a catch)",
           not is_starved("the gate took longer than 13s", 0.3, 40.0, 4, "release_gate_repos", strict=True)

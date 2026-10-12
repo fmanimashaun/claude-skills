@@ -90,7 +90,9 @@ def facts(cwd: Path) -> dict | None:
     if head and has_remote:
         n = git(cwd, "rev-list", "--count", "HEAD", "--not", "--remotes")
         unpushed = int(n) if n and n.isdigit() else None
-    status = git(cwd, "status", "--porcelain", "-uall")
+    # --ignore-submodules=all (#1916): status would recurse into a submodule and run a clean filter named in ITS OWN config, every
+    # turn. A submodule's state is not unsaved work in this worktree that the hook can act on.
+    status = git(cwd, "status", "--porcelain", "-uall", "--ignore-submodules=all")
     # UNKNOWN, NEVER CLEAN (#1643 review N2): a `git status` that failed or timed out has said nothing about the tree, and
     # reading its silence as "0 uncommitted files" is the false all-clear this file exists to prevent.
     dirty = None if status is None else [line[3:] for line in status.splitlines()]
@@ -287,7 +289,7 @@ def selftest() -> int:
         _deadline[0] = time.monotonic() - 1
         TIMED_OUT[0] = False
         t0 = time.monotonic()
-        none = git(repo, "status")
+        none = git(repo, "status")                    # submodule-safe: the selftest's own temp repo, which has no submodule
         check("past the overall deadline git is not called at all, and the run is marked timed out",
               none is None and TIMED_OUT[0] and time.monotonic() - t0 < 0.5)
         _deadline[0] = saved

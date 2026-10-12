@@ -62,8 +62,8 @@ def changed_files(root: Path, base: str) -> set[str]:
             raise Unusable(f"git {' '.join(args)} failed: {out.stderr.strip()}")
         return out.stdout
     git("rev-parse", "--verify", "-q", f"{base}^{{commit}}")
-    files = set(git("diff", "--name-only", f"{base}...HEAD").split("\n"))
-    files |= set(git("diff", "--name-only", "HEAD").split("\n"))
+    files = set(git("diff", "--name-only", f"{base}...HEAD")  # submodule-safe: base...HEAD compares commits, no worktree read.split("\n"))
+    files |= set(git("diff", "--name-only", "--ignore-submodules=all", "HEAD").split("\n"))
     files |= set(git("ls-files", "--others", "--exclude-standard").split("\n"))
     return {f for f in files if f}
 

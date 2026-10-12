@@ -481,7 +481,7 @@ def tree_state(project: Path) -> dict[str, str] | None:
     change, but not the path the reader needs.
     """
     try:
-        done = subprocess.run(["git", "status", "--porcelain", "-uall"], cwd=project,
+        done = subprocess.run(["git", "status", "--porcelain", "-uall", "--ignore-submodules=all"], cwd=project,
                               capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.SubprocessError):
         return None

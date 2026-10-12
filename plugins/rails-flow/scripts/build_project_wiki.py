@@ -496,7 +496,7 @@ def dirty_sources(root: Path) -> list[str]:
     # `db/schema.rb` stands for every schema file the page reads (#1698): a second database's dump is a source too
     extra = [p.relative_to(root).as_posix() for p in app_schema_files(root) if p.relative_to(root).as_posix() != SCHEMA_RB]
     try:
-        done = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--", *SOURCES, *extra],
+        done = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--ignore-submodules=all", "--", *SOURCES, *extra],
                               capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.SubprocessError):
         return []

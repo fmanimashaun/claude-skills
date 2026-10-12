@@ -209,9 +209,9 @@ fi
 skills_in_diff() {
   local names
   if [ "$root" = "$session_root" ]; then
-    names="$(git -C "$root" diff --name-only HEAD 2>/dev/null; git -C "$root" diff --name-only --cached HEAD 2>/dev/null)"
+    names="$(git -C "$root" diff --name-only --ignore-submodules=all HEAD 2>/dev/null; git -C "$root" diff --name-only --ignore-submodules=all --cached HEAD 2>/dev/null)"
   else
-    names="$(GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only --cached HEAD 2>/dev/null)"
+    names="$(GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only --cached HEAD 2>/dev/null)"  # submodule-safe: --cached reads the index, never the worktree (measured, #1919)
   fi
   case $'\n'"$names" in *$'\n'skills/*) return 0 ;; esac
   return 1
