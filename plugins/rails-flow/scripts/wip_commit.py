@@ -57,6 +57,9 @@ HARD_CONFIG = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "
 # `config/master.key` went into a WIP commit). Matched on the file name, case-insensitively.
 SECRET = re.compile(r"^(?:\.env.*|.*\.key|.*\.pem|credentials.*|\.git-credentials|\.pgpass|\.htpasswd|\.netrc|application\.yml"
                     r"|.*\.gpg|.*\.asc|.*\.ppk|.*\.p12|.*\.pfx|.*\.keystore|.*\.jks|kubeconfig|id_(?:rsa|dsa|ecdsa|ed25519).*)$", re.I)
+# A changed tracked file larger than this skips the WIP commit (coordinator decision on #1915, 2026-10-12): a large artifact is not work a
+# cut-off loses, and committing it bloats history that a push would carry.
+MAX_BYTES = 10 * 1024 * 1024
 IN_PROGRESS = ("SQUASH_MSG", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "rebase-merge", "rebase-apply")
 
 
@@ -214,6 +217,13 @@ def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool 
     secrets = [n for n in changed if SECRET.match(n.rsplit("/", 1)[-1])]
     if secrets:
         return "skip:secret-looking-path", "a changed file looks like a secret, so nothing is auto-committed: " + ", ".join(sorted(secrets)[:3])
+    for n in changed:
+        try:
+            size = os.lstat(toplevel / n).st_size      # lstat: a symlink is its link text; a deleted file is no size at all
+        except OSError:
+            continue
+        if size > MAX_BYTES:
+            return "skip:file-too-large", f"{n} is {size // (1024 * 1024)} MB, over the {MAX_BYTES // (1024 * 1024)} MB WIP-commit limit"
     lane = parent_env.get("RAILS_FLOW_LANE", "")
     paths = lane_paths(changed, lane)
     if paths != changed:
@@ -402,6 +412,18 @@ def selftest() -> int:
         for secret in (".envrc", ".git-credentials", ".pgpass", "config/application.yml", "keys/backup.gpg", "deploy.ppk", "kubeconfig"):
             expect(f"the secret pattern names {secret!r}", bool(SECRET.match(secret.rsplit("/", 1)[-1])))
         expect("an ordinary file is not a secret", not SECRET.match("models.rb") and not SECRET.match("keyboard.js"))
+        big = make_repo("big")
+        (big / "blob.bin").write_bytes(b"0")
+        git(big, "add", "blob.bin")
+        git(big, "commit", "-q", "-m", "blob")
+        with open(big / "blob.bin", "wb") as fh:
+            fh.truncate(MAX_BYTES + 1)
+        action, detail = run(big)
+        expect("a changed tracked file over 10 MB skips the WIP commit and names the file",
+               action == "skip:file-too-large" and "blob.bin" in detail and count(big) == 2, (action, detail))
+        with open(big / "blob.bin", "wb") as fh:
+            fh.truncate(MAX_BYTES)
+        expect("CONTROL: exactly 10 MB is still committed", run(big)[0] == "committed")
         # a rename across the lane edge is never half-committed
         mover = make_repo("mover")
         (mover / "config").mkdir()

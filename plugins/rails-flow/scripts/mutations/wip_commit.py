@@ -12,6 +12,12 @@ GUARD = Guard(
     needs=("scripts/test_preflight.py",),   # it imports the one trusted_which resolver
     mutations=(
         Mutation(
+            "a file over the size limit is committed anyway",
+            '        if size > MAX_BYTES:',
+            '        if False:',
+            "a changed tracked file over 10 MB skips",
+        ),
+        Mutation(
             "status recurses into submodules, so a submodule's own clean filter runs",
             '    status = g("status", "--porcelain", "--untracked-files=no", "--ignore-submodules=all")',
             '    status = g("status", "--porcelain", "--untracked-files=no")',
