@@ -2873,7 +2873,12 @@ def release_gate_fixtures() -> None:
             only.mkdir()
             for tool in tools:
                 (only / tool).symlink_to(shutil.which(tool))
-            done = _run([str(only / "bash"), str(QA_HOOK)], cwd=td,
+            # The hook starts by rebuilding PATH from absolute entries OUTSIDE the repository (#1850), and with no .git or Gemfile above it the repository is the working directory
+            # itself: a tool directory INSIDE it is dropped, so `only` made every tool look missing and "python3 and git present" was the same test as "only bash" (the v1.156.0 sweep's
+            # survivor). The hook runs in a sibling directory.
+            work = Path(td) / "work"
+            work.mkdir()
+            done = _run([str(only / "bash"), str(QA_HOOK)], cwd=work,
                                   input=json.dumps({"tool_input": {"command": cmd}}),
                                   env={"PATH": str(only)}, capture_output=True, text=True, timeout=60)
             return done.returncode, done.stdout + done.stderr
