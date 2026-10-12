@@ -1,2 +1,0 @@
-section: rails-flow
-- **`guard_bash`'s `NEGATIVES_1706` named `git add -u` twice, so the CONTROL check `git add -u passes` ran and counted twice — `plugins/rails-flow/scripts/check_hook_gates.py`** (#1925). The second entry is dropped: every label in the group is distinct (537 of 537, was 537 of 538) and `--only guard_bash` counts 592 checks, not 593. Found while reviewing #1923; no check was lost, because the two entries were the same command.
