@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import pwd
 import re
 import subprocess
 import sys
@@ -198,6 +199,11 @@ def main() -> int:
     root = git(where, "rev-parse", "--show-toplevel")
     if not root or not in_force(root):
         return 0
+    return judge_record(root, args)
+
+
+def judge_record(root: str, args: str) -> int:
+    """The sweep record for the HEAD of `root`: 0 when it is green with zero skips, else a refusal. One judgement for the hook and for the `gh` shim (#1839)."""
     head = git(root, "rev-parse", "HEAD")
     if not head:
         return refuse(f"HEAD of {root} could not be read.", args)
@@ -227,5 +233,138 @@ def main() -> int:
     return 0
 
 
+SHIM_FLAGS = ("-R", "--repo")
+
+
+def _next_word(args: list[str]) -> str | None:
+    """The first word of `args` that is not a flag, where `-R`/`--repo` also take the word after them: the one command-line shape that puts a value between `pr` and `ready`."""
+    skip = False
+    for w in args:
+        if skip:
+            skip = False
+            continue
+        if w in SHIM_FLAGS:
+            skip = True
+            continue
+        if not w.startswith("-"):
+            return w
+    return None
+
+
+# Variables that make `gh` (or the `git` under it) act on a repository or host other than the checkout this shim stands in: the local sweep record cannot stand for one. AN ALLOWLIST OF
+# THE HARMLESS, NOT A LIST OF THE DANGEROUS (the commit's security review): every other GIT_* and GH_* variable (GIT_DIR, GIT_WORK_TREE, GIT_CONFIG_*, GH_HOST, GH_ENTERPRISE_*, GH_CONFIG_DIR,
+# GH_REPO, and the ones nobody has thought of) can redirect, so each is refused where in force. These point nowhere: the editor, prompts, a credential, notifier switches.
+HARMLESS_ENV = frozenset({"GIT_EDITOR", "GIT_TERMINAL_PROMPT", "GIT_PAGER", "GIT_SSH_COMMAND", "GIT_SSH", "GIT_ASKPASS", "GH_TOKEN", "GH_PAGER", "GH_DEBUG", "GH_BROWSER", "GH_EDITOR",
+                          "GH_PROMPT_DISABLED", "GH_NO_UPDATE_NOTIFIER", "GH_NO_EXTENSION_UPDATE_NOTIFIER", "GH_SPINNER_DISABLED", "GH_FORCE_TTY"})
+
+
+def _redirecting_env() -> list[str]:
+    """Names (each once) of the variables that can point gh or git at another repository, host or config: every GIT_*/GH_* outside HARMLESS_ENV (GIT_TRACE* and the author/committer identity
+    are inert too), HOME when it is not the account's own home, and XDG_CONFIG_HOME when it is set and not `<home>/.config` (git and gh read their config from them; a `url.insteadOf`
+    there retargets a push or a PR)."""
+    names = {k for k in os.environ if k.startswith(("GIT_", "GH_")) and k not in HARMLESS_ENV and not k.startswith(("GIT_AUTHOR_", "GIT_COMMITTER_", "GIT_TRACE"))}
+    try:
+        account = os.path.realpath(pwd.getpwuid(os.getuid()).pw_dir)
+    except (KeyError, OSError):
+        account = ""
+    home = os.environ.get("HOME")
+    if home is not None and account and os.path.realpath(home) != account:
+        names.add("HOME")
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg and account and os.path.realpath(xdg) != os.path.join(account, ".config"):
+        names.add("XDG_CONFIG_HOME")
+    return sorted(names)
+
+
+def _toplevel(cwd: str) -> tuple[str | None, str]:
+    """(top level, status): "ok", "none" (git answered: not a repository) or "error" (git could not answer). git is asked WITHOUT the variables that locate a repository, so
+    `GIT_DIR=/nonexistent` cannot make a repository read as no repository (#1839, the review of the first head): they are judged as what they are, below."""
+    if not os.path.isdir(cwd):
+        return None, "none"
+    clean = {k: v for k, v in os.environ.items() if not k.startswith("GIT_") or k in HARMLESS_ENV or k.startswith(("GIT_AUTHOR_", "GIT_COMMITTER_"))}
+    try:
+        done = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=10, env=clean)
+    except (OSError, subprocess.SubprocessError):
+        return None, "error"
+    if done.returncode == 0 and done.stdout.strip():
+        return done.stdout.strip(), "ok"
+    return None, "none" if "not a git repository" in done.stderr else "error"
+
+
+def shim_judge(argv: list[str], cwd: str, gh_repo: str = "") -> int:
+    """Judge one `gh pr ready` (or a `gh api` that marks a PR ready) from its FINAL argv, which is what `git-shim/gh` receives after the shell has expanded the command (#1839, the
+    guarantee behind #1565's tripwire).
+
+    `argv` is everything after `gh`. The directory is where gh will run (the shim's own cwd), so no `cd` has to be followed and nothing is parsed from shell text. In force only where
+    project_gates runs: a directory outside any repository, or in one that does not run it, is not checked, a named repository included (stated in the shim's header and in CLAUDE.md).
+    Where it is in force: a variable that redirects gh or git (GIT_DIR, GIT_WORK_TREE, GIT_CONFIG_*, GH_HOST, GH_REPO), a repository named by flag or URL, and any word that is not a plain PR
+    number or branch are refused; `--undo` passes after every other argument is judged; then the record for HEAD must be green with zero skips. When git cannot say whether the directory is a
+    repository the answer is a refusal, not a pass. Returns 0 to allow, 2 to refuse (the reason is on stderr)."""
+    root, status = _toplevel(cwd)
+    shown = " ".join(argv)
+    if status == "error":
+        return refuse(f"git could not say whether {cwd} is a repository, so this `gh pr ready` cannot be judged.", shown)
+    if not (root and in_force(root)):
+        return 0
+    first = _next_word(argv)
+    i = next((k for k, w in enumerate(argv) if w == "pr" and _next_word(argv[k + 1:]) == "ready"), None)
+    if i is not None:
+        rest = argv[i + 1:]
+        j = next(k for k, w in enumerate(rest) if w == "ready")
+        after = rest[j + 1:]
+        cut_at = after.index("--") if "--" in after else len(after)
+        if "--undo" in after[:cut_at] and all(plain_word(w) for w in after if w not in ("--undo", "--")):
+            return 0          # marking a PR draft again needs no sweep, and harms no repository: judged before the redirecting-variable and explicit-target refusals (the review of b09e947f, N6)
+    redirect = _redirecting_env()
+    if redirect or gh_repo:
+        return refuse(f"{', '.join(redirect + (['GH_REPO'] if gh_repo else []))} is set, and it can point gh or git at another repository, host or config than this checkout: its local sweep "
+                      "record cannot stand for that. Unset it and run `gh pr ready` from the PR's own checkout, after its sweep.", shown)
+    if first == "api":
+        if any(w in SHIM_FLAGS or w.startswith(("--repo=", "-R", "--hostname")) or w == "--hostname" for w in argv):
+            return refuse(EXPLICIT + " (a `gh api` naming a repository or host).", shown)
+        text = " ".join(argv)
+        if "markPullRequestReadyForReview" in text:
+            return judge_record(root, "gh api (marks a PR ready)")
+        if any(w == "--input" or w.startswith("--input=") or "=@" in w for w in argv):
+            return refuse("a `gh api` whose body is read from a file or stdin cannot be judged here (it may mark a PR ready).", shown)
+        return 0
+    if i is None:
+        return refuse("a `gh pr ready` this shim could not place in its arguments.", shown)
+    before, rest = argv[:i], argv[i + 1:]
+    j = next(k for k, w in enumerate(rest) if w == "ready")
+    between, after = rest[:j], rest[j + 1:]
+    shown = " ".join(after)
+    words = before + between + after
+    if any(w in SHIM_FLAGS or w.startswith(("--repo=", "-R")) or "/pull/" in w for w in words):
+        return refuse(EXPLICIT + ".", shown)
+    cut = False
+    for w in between + after:
+        if w == "--" and not cut and w in after:
+            cut = True
+            continue
+        if w == "--undo" and not cut:
+            continue
+        if not plain_word(w):
+            return refuse(f"argument {w} is not a plain PR number or branch; run `gh pr ready <number>` from the PR's own checkout, after its sweep.", shown)
+    return judge_record(root, shown)
+
+
+def shim_unreadable_alias(expansion: str, cwd: str) -> int:
+    """A gh alias whose expansion is not plain words (a quote, a backslash, a substitution, a glob...) cannot be classified from its text, and is NOT un-quoted here: a second split that can
+    differ from gh's is how a quoted `pr "rea"dy` hid (the review of b09e947f, N1; the coordinator's design change: an allowlist shape, not a parser). Where in force it is refused; where it
+    is not, it runs. The audited escape is RAILS_FLOW_GH_OK=1."""
+    root, status = _toplevel(cwd)
+    if status == "error":
+        return refuse(f"git could not say whether {cwd} is a repository, so this gh alias cannot be judged.", expansion)
+    if not (root and in_force(root)):
+        return 0
+    return refuse("this gh alias expands to something that is not plain words, so it cannot be classified and is refused rather than guessed at (a repository that runs project_gates; "
+                  "write the alias with plain words, or run the command directly).", expansion)
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 2 and sys.argv[1] == "--shim-unreadable":
+        sys.exit(shim_unreadable_alias(sys.argv[2], os.getcwd()))
+    if len(sys.argv) > 1 and sys.argv[1] == "--shim":
+        sys.exit(shim_judge(sys.argv[2:], os.getcwd(), os.environ.get("RF_INHERITED_GH_REPO") or os.environ.get("GH_REPO", "")))
     sys.exit(main())

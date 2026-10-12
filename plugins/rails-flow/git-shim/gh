@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+# rails-flow gh shim (#1839, the guarantee behind #1565's tripwire; the owner's ruling on #1793). Put FIRST on PATH for the Bash tool by the SessionStart hook, beside the git shim,
+# so it sees gh's arguments AFTER the shell has expanded them: `x=ready; gh pr $x 5`, `/usr/bin/env gh pr ready 5`, `gh pr rea{d,}y 5`, `echo 'gh pr ready 5' | sh`,
+# `bash <<< 'gh pr ready 5'` and `git -c alias.x='!gh pr ready 5' x` all arrive here as the same argv. The text match in `guard-pr-ready.sh` cannot settle those spellings and is a
+# tripwire; this is where the effect happens. Everything it does not guard is exec'd with its argv unchanged.
+#
+# REFUSES `gh pr ready` (not `--undo`) unless the sweep record for the HEAD of the checkout it runs in is green with zero skips, by the SAME judgement as the hook
+# (`hooks/scripts/lib/pr_ready_guard.py`, called with `--shim`): in force only where project_gates runs; a repository named by -R/--repo, a URL or GH_REPO is refused (a local
+# record cannot stand for it); any argument that is not a plain PR number or branch is refused.
+# ALIASES: a gh alias (`gh alias set`) hides `pr ready` behind a name gh expands itself, so an argument that is not a gh command is resolved with `gh alias list` and judged.
+#
+# FAILS CLOSED, for `pr ready` only: where python3 or the judge is missing the command is refused, because a guarantee that cannot be checked is not a pass. Every other
+# gh command is exec'd untouched, so a missing python3 never blocks `gh pr list`.
+# ALSO REFUSED where in force: a variable that redirects gh or git (GIT_DIR, GIT_WORK_TREE, GIT_CONFIG_*, GH_HOST, GH_REPO), and a `gh api` that marks a PR ready (the GraphQL mutation
+# `markPullRequestReadyForReview`, judged like `pr ready`) or whose body comes from a file or stdin (it cannot be read here). Where git cannot say whether the directory is a repository, a
+# `pr ready` is refused. Aliases with `$1`... placeholders are expanded as gh expands them before they are judged.
+# LIMITS, stated (a tripwire, not a boundary; the server's required checks are the backstop): an absolute /usr/bin/gh, `env -i gh` or a non-shell exec of gh never reach this file (PATH is
+# not consulted); a session where the SessionStart hook did not run; any process that is not the Bash tool; GitHub's own web UI and any API call this shim does not read. IN FORCE ONLY where
+# project_gates runs: from a directory outside any repository, or in one that does not run it, nothing is checked, a repository named by -R or GH_REPO included.
+# AUDITED ESCAPE: RAILS_FLOW_GH_OK=1 runs the real gh and says so.
+# THIS IS A TRIPWIRE WITH AN ALLOWLIST SHAPE, NOT A PARSER: what it recognises it judges, and what it cannot read as plain words (an alias expansion with a quote or a substitution) it refuses
+# where in force instead of un-quoting it.
+# bash 3.2 compatible; needs only bash (and python3 for a `pr ready`).
+set -f
+ORIG=("$@")      # the arguments as given
+
+# The shim's own directory, without `dirname`.
+self="${BASH_SOURCE[0]}"
+case "$self" in */*) self_dir="$(cd "${self%/*}" 2>/dev/null && pwd -P)" ;; *) self_dir="$(pwd -P)" ;; esac
+
+# Is this file a copy of this shim? Two copies on PATH would exec each other forever, so a candidate that carries the shim's own marker is not the real gh.
+is_shim() {
+  local l1 l2 l3
+  { IFS= read -r l1; IFS= read -r l2; IFS= read -r l3; } < "$1" 2>/dev/null
+  case "$l2$l3" in *"rails-flow gh shim"*) return 0 ;; esac
+  return 1
+}
+
+# The checkout this command runs in, found by walking up from the physical directory to the first `.git` (no external command: git itself could be the one a repository ships).
+repo_top=""
+walk="$(pwd -P)"
+while [ -n "$walk" ]; do
+  [ -e "$walk/.git" ] && { repo_top="$walk"; break; }
+  walk="${walk%/*}"
+done
+
+# The real gh: the first executable `gh` on PATH that is not this directory and not a copy of this shim, and that the repository cannot have put there (the push's security review): an
+# empty or relative entry means the working directory, and an absolute entry inside the checkout is the repository's own, so a `gh` shipped there would answer `gh alias list` and
+# run for every command this shim does not judge. Both are skipped, as `rf_trusted_python` skips them for the interpreter.
+real=""
+old_ifs="$IFS"; IFS=:
+for d in $PATH; do
+  case "$d" in /*) ;; *) continue ;; esac
+  [ -x "$d/gh" ] && [ ! -d "$d/gh" ] || continue
+  dd="$(cd "$d" 2>/dev/null && pwd -P)" || continue
+  [ "$dd" = "$self_dir" ] && continue
+  if [ -n "$repo_top" ]; then case "$dd/" in "$repo_top"/*) continue ;; esac; fi
+  is_shim "$d/gh" && continue
+  real="$d/gh"; break
+done
+IFS="$old_ifs"
+[ -n "$real" ] || { echo "gh-shim (rails-flow): no real gh found on PATH" >&2; exit 127; }
+
+if [ "${RAILS_FLOW_GH_OK:-}" = 1 ]; then
+  echo "gh-shim (rails-flow): RAILS_FLOW_GH_OK=1, so this gh command is not checked." >&2
+  exec "$real" "${ORIG[@]}"
+fi
+
+# The first word of an argv that is not a flag, where `-R`/`--repo` also take the word after them (they are the one flag with a separate value that can come first).
+first_word() {
+  local skip=0 a
+  for a in "$@"; do
+    if [ "$skip" = 1 ]; then skip=0; continue; fi
+    case "$a" in -R|--repo) skip=1; continue ;; -*) continue ;; esac
+    printf '%s' "$a"; return 0
+  done
+  return 1
+}
+
+# Does this argv run `pr ready`? `pr`, then (past any flags, and the value of -R/--repo) `ready`.
+has_pr_ready() {
+  local seen_pr=0 skip=0 a
+  for a in "$@"; do
+    if [ "$seen_pr" = 1 ]; then
+      if [ "$skip" = 1 ]; then skip=0; continue; fi
+      case "$a" in -R|--repo) skip=1; continue ;; -*) continue ;; esac
+      [ "$a" = ready ] && return 0
+      seen_pr=0
+    fi
+    [ "$a" = pr ] && seen_pr=1
+  done
+  return 1
+}
+
+# A `gh api` that marks a PR ready for review (the GraphQL mutation), or whose body comes from a file or stdin and so cannot be read here.
+has_api_ready() {
+  [ "$(first_word "$@")" = api ] || return 1
+  local a
+  for a in "$@"; do
+    case "$a" in *markPullRequestReadyForReview*|--input|--input=*|*=@*) return 0 ;; esac
+  done
+  return 1
+}
+
+# The expansion of the alias `$1` ("name: expansion" from `gh alias list`, a tab or spaces after the colon), or nothing. `gh alias list` prints YAML: a multi-line expansion comes as `name: |-`
+# and then indented lines (the review of 1d2151c9, M1), so an INDENTED LINE after the alias line makes the expansion unreadable, and a `|` is appended that the plain-words check refuses.
+alias_expansion() {
+  local name="$1" line value="" found=0
+  while IFS= read -r line; do
+    if [ "$found" = 1 ]; then
+      case "$line" in " "*|"	"*) value="$value |" ;; *) break ;; esac
+      continue
+    fi
+    case "$line" in
+      "$name":*) found=1; value="${line#"$name":}"; value="${value#"${value%%[![:space:]]*}"}" ;;
+    esac
+  done < <("$real" alias list 2>/dev/null)
+  [ "$found" = 1 ] || return 1
+  printf '%s' "$value"
+}
+
+# The first argument that is not a flag, when it is not one of gh's own commands, is an alias if `gh alias list` says so.
+alias_word() {
+  local first
+  first="$(first_word "$@")" || return 1
+  case "$first" in
+    pr|issue|repo|release|run|workflow|api|auth|config|alias|browse|codespace|completion|extension|gist|gpg-key|label|org|project|search|secret|ssh-key|status|variable|cache|attestation|agent-task|licenses|preview|ruleset|help|version) return 1 ;;
+  esac
+  printf '%s' "$first"
+}
+
+# THE JUDGE'S INTERPRETER IS THE LIB'S, NOT THE FIRST python3 ON PATH (the push's security review): a PATH entry inside the repository would otherwise put a repository-shipped python3 in charge of
+# the verdict, and a `python3` that exits 0 reads as "allowed". `lib/trusted-env.sh` is sourced in a SUBSHELL, so its environment scrub and PATH rebuild never reach the real gh; only the
+# interpreter it chose (absolute PATH entry outside the repository, link target outside it, `*` literal) comes back. Empty when there is none, which refuses the `pr ready`.
+trusted_python() {
+  ( . "$self_dir/../hooks/scripts/lib/trusted-env.sh" >/dev/null 2>&1 && rf_trusted_python >/dev/null 2>&1 && printf '%s' "${RF_PYTHON:-}" ) 2>/dev/null
+}
+
+judge=0
+argv=("${ORIG[@]}")
+if has_pr_ready "${ORIG[@]}" || has_api_ready "${ORIG[@]}"; then
+  judge=1
+elif name="$(alias_word "${ORIG[@]}")" && exp="$(alias_expansion "$name")" && [ -n "$exp" ]; then
+  # An alias hides the verb: judge what gh will RUN. gh substitutes `$1`, `$2`... in a non-shell alias from the arguments after the alias name and appends the rest.
+  rest=(); fresh_before=(); seen=0; skip=0
+  for a in "${ORIG[@]}"; do
+    if [ "$seen" = 0 ]; then
+      if [ "$skip" = 1 ]; then skip=0; fresh_before+=("$a"); continue; fi
+      case "$a" in -R|--repo) skip=1; fresh_before+=("$a"); continue ;; -*) fresh_before+=("$a"); continue ;; esac
+      seen=1; continue                        # the alias name itself
+    fi
+    rest+=("$a")
+  done
+  # AN ALLOWLIST, NOT A PARSER (the coordinator's design change after two review rounds): an expansion is read only when it is PLAIN words, split on blanks; a quoted placeholder
+  # (`"$1"`) is the placeholder. Anything else (a quote, a backslash, a substitution, a glob, a brace) is not un-quoted here, because a second split that can differ from gh's is how
+  # `pr "rea"dy` hid; where in force it is refused by the judge (and runs where it is not).
+  for n in 1 2 3 4 5 6 7 8 9; do exp="${exp//\"\$$n\"/\$$n}"; exp="${exp//\'\$$n\'/\$$n}"; done
+  case "$exp" in
+    *[!A-Za-z0-9\ \	_./:@=,+%\$-]*)
+      lib="$self_dir/../hooks/scripts/lib/pr_ready_guard.py"
+      py="$(trusted_python)"
+      if [ -n "$py" ] && [ -f "$lib" ] && "$py" -I "$lib" --shim-unreadable "$exp"; then exec "$real" "${ORIG[@]}"; fi
+      echo "gh-shim (rails-flow): refused \`gh ${ORIG[*]}\`: the alias expands to something that is not plain words (or the judge is missing). A deliberate exception: RAILS_FLOW_GH_OK=1 gh ... (audited)." >&2
+      exit 1 ;;
+  esac
+  words=($exp); expanded=(); used=0
+  for w in "${words[@]}"; do
+    case "$w" in
+      \$[1-9]) n="${w#\$}"; expanded+=("${rest[$((n - 1))]:-}"); [ "$n" -gt "$used" ] && used="$n" ;;
+      *) expanded+=("$w") ;;
+    esac
+  done
+  argv=("${fresh_before[@]}" "${expanded[@]}" "${rest[@]:$used}")
+  if has_pr_ready "${argv[@]}" || has_api_ready "${argv[@]}"; then judge=1; fi
+fi
+[ "$judge" = 1 ] || exec "$real" "${ORIG[@]}"
+
+lib="$self_dir/../hooks/scripts/lib/pr_ready_guard.py"
+py="$(trusted_python)"
+if [ -z "$py" ] || [ ! -f "$lib" ]; then
+  echo "gh-shim (rails-flow): refused \`gh ${ORIG[*]}\`: python3 or lib/pr_ready_guard.py is missing, so the sweep record for HEAD cannot be checked (RAILS_FLOW_GH_OK=1 to override, audited)." >&2
+  exit 1
+fi
+if "$py" -I "$lib" --shim "${argv[@]}"; then
+  exec "$real" "${ORIG[@]}"
+fi
+echo "gh-shim (rails-flow): refused \`gh ${ORIG[*]}\`. A deliberate exception: RAILS_FLOW_GH_OK=1 gh ... (audited)." >&2
+exit 1

@@ -5660,6 +5660,9 @@ def guard_pr_ready_fixtures() -> None:
         # DOCUMENTED LIMITS (#1831's third adversary round; the coordinator's ruling, as for guard-bash, #1793): this hook is a
         # TRIPWIRE, not a boundary. Each class below is pinned at TODAY's behaviour, so a change in either direction is seen. The
         # guarantee moves to the gh shim, where argv is final. NOT a statement that these are acceptable forever.
+        # (#1839: it HAS moved. `git-shim/gh` refuses each of these classes after the shell has expanded them, pinned by `gh_shim_selftest.py`'s "six spellings"
+        # case, which runs the hook alone (still 0: the text match does not see them) AND the shim (refused). The expectations below stay at 0 on purpose: they
+        # describe the TRIPWIRE, which is still only a tripwire.)
         expect("guard-pr-ready LIMIT (degraded): a quote-split word is not seen: gh pr re\"\"ady 5", degraded('gh pr re""ady 5'), 0)
         # A FRESH repo, in force with NO record: here exit 0 can only mean "not seen" (with a green record a seen command passes too).
         lim = new_repo(td, "limits")
