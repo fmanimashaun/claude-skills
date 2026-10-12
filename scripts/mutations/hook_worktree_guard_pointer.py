@@ -44,15 +44,15 @@ GUARD = Guard(
         ),
         Mutation(
             'a merged worktree with uncommitted work is listed as finished',
-            ' and not git(w["path"], "status", "--porcelain")[1].strip()]',
+            '\n                and not git(w["path"], "status", "--porcelain", "--ignore-submodules=all")[1].strip()]',
             ']',
             'a merged worktree with uncommitted work is NOT listed',
             narrow=False,
         ),
         Mutation(
             'an unmerged worktree is listed as finished',
-            'finished = [w for w in existing[1:] if merged(cwd, w["head"], integ) and',
-            'finished = [w for w in existing[1:] if True and',
+            'finished = [w for w in existing[1:] if merged(cwd, w["head"], integ)\n',
+            'finished = [w for w in existing[1:] if True\n',
             'the session that holds a lane is told where to resume',
             narrow=False,
         ),

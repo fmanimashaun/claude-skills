@@ -6027,6 +6027,43 @@ def hostile_env_fixtures() -> None:
         check("hostile environment: rf_trusted_python finds nothing when the only python3 links into the repository", none == "[]", f"RF_PYTHON {none!r}")
 
 
+def submodule_filter_fixtures() -> None:
+    """#1919: no hook runs a SUBMODULE'S own clean filter. Measured on git 2.50.1, `status` and `diff HEAD` recurse into a submodule
+    and hash a same-size change through a `filter.<name>.clean` that THAT repository's config names, a command it chose, before the
+    user is asked anything. Each hook runs in a host whose submodule names a marker-writing filter; the marker must never appear."""
+    def host_with_filter(td: str) -> tuple[Path, Path]:
+        root = Path(td)
+        host, sub = root / "host", root / "host" / "vendor" / "sub"
+        _git_repo(host)
+        sub.mkdir(parents=True)
+        _git_repo(sub)
+        (sub / "f.txt").write_text("aaaa\n")
+        _fixture_git(sub, "add", "f.txt")
+        _fixture_git(sub, "commit", "-q", "-m", "f")
+        _fixture_git(host, "add", "vendor/sub")
+        _fixture_git(host, "commit", "-q", "-m", "gitlink")
+        (host / "spec").mkdir()                                 # stop-gate reads status only in a project with spec/
+        marker, clean = root / "filter-ran", root / "clean.sh"
+        clean.write_text(f"#!/bin/sh\necho ran >> {marker}\ncat\n")
+        clean.chmod(0o755)
+        _fixture_git(sub, "config", "filter.evil.clean", str(clean))
+        (sub / ".gitattributes").write_text("*.txt filter=evil\n")
+        time.sleep(1.1)                                         # a new mtime, so git cannot trust the cached stat
+        (sub / "f.txt").write_text("bbbb\n")                   # SAME SIZE: only hashing tells it apart
+        return host, marker
+
+    for hook, payload in (("session-start.sh", lambda td: json.dumps({"session_id": "S"})),
+                          ("stop-gate.sh", lambda td: "{}"),
+                          ("guard-claims.sh", lambda td: json.dumps({"tool_input": {"command": f"gh pr create --base dev --body-file {td}/body.md"}}))):
+        with scratch_dir() as td:
+            host, marker = host_with_filter(td)
+            (Path(td) / "body.md").write_text("Tidy up the wording in the README.\n", encoding="utf-8")
+            run_hook(hook, cwd=host, stdin=payload(td), env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])},
+                     unset=("CLAUDE_PROJECT_DIR", "CLAUDE_ENV_FILE"))
+            check(f"submodule filter: {hook} never runs a submodule's own clean filter (#1919)", not marker.exists(),
+                  marker.read_text() if marker.exists() else "")
+
+
 GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
@@ -6038,6 +6075,7 @@ GROUPS = {
     "release_gate_adversary": release_gate_adversary_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "test_preflight": test_preflight_fixtures, "session_end": session_end_fixtures, "timeout": timeout_fixtures,
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
+    "submodule_filter": submodule_filter_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
     "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures, "tools_missing": tools_missing_fixtures,
     "fixture_git_binding": fixture_git_binding_fixtures, "guard_pr_ready": guard_pr_ready_fixtures,
@@ -6062,7 +6100,7 @@ PARTS = {
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
           "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding", "test_preflight",
-          "guard_pr_ready"],
+          "guard_pr_ready", "submodule_filter"],
 }
 
 
