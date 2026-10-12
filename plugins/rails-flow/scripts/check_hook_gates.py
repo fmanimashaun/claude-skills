@@ -899,7 +899,7 @@ POSITIVES_1706 = ["git add /abs/path", "git add :/src/x.rb", "git add ':(top)src
                   "git push -fu origin dev", "git push origin +dev", "git checkout HEAD .", "git branch -d -f x", "git branch -df x",
                   "git add -- .", "git add --verbose -A", "git reset HEAD~1 --hard", "git push --force-with-lease origin HEAD:main"]
 NEGATIVES_1706 = ["git push --force-if-includes origin x", "git push --force-with-lease --force-if-includes origin x", "git add -u", "git add -p src/x.rb", "git add -N new.rb", "git add -v -- src/x.rb", "git add '*.md'", "git add src/x.rb", "git add ./src/x.rb", "git add src/../lib/y.rb", "git add src/*.rb", "git add app/.env.example",
-                  "git push origin :feature/old", "git push origin --delete feature/old", "git push origin HEAD:feature/x", "git add -u", "git add app/*.rb", "git checkout -b feature/x", "git push --all origin",
+                  "git push origin :feature/old", "git push origin --delete feature/old", "git push origin HEAD:feature/x", "git add app/*.rb", "git checkout -b feature/x", "git push --all origin",
                   "git add file.rb", "git add -- app/x.rb", "git branch -d x", "git push origin feature", "git checkout feature/x",
                   "git reset HEAD~1", "git push -u origin feature/x", "git push --force-with-lease origin feature/main-menu"]
 # ANSI-C bodies whose decoding must equal bash's own, byte for byte (compared when the result is one plain word, the only kind kept).
