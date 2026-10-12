@@ -19,7 +19,8 @@ fi
 
 branch="$(git branch --show-current 2>/dev/null)"
 if [ -f "$top/qa/CERTIFICATION" ]; then
-  csha="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("sha","")[:12])' "$top/qa/CERTIFICATION" 2>/dev/null || true)"
+  # `-I`: python3 -c puts the working directory first on sys.path, and the working directory is the repository, so a committed json.py would be imported and run here.
+  csha="$(python3 -I -c 'import json,sys;print(json.load(open(sys.argv[1])).get("sha","")[:12])' "$top/qa/CERTIFICATION" 2>/dev/null || true)"
   devsha="$(git rev-parse origin/dev 2>/dev/null | cut -c1-12 || true)"
   [ -n "$devsha" ] && [ "$csha" = "$devsha" ] && echo "- pipeline: dev ($devsha) certified — /pipeline:release to build the image."
 fi

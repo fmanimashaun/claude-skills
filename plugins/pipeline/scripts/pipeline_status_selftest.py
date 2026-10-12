@@ -60,6 +60,16 @@ def main() -> int:
         for where, cwd in (("the root", repo), ("a subdirectory", repo / "sub")):
             r = run_hook(cwd)
             check(f"pipeline-status: the 'dev is certified' line is printed from {where}", f"dev ({head[:12]}) certified" in r.stdout, f"out {r.stdout[:200]!r}")
+    # The interpreter must not import from the repository: `python3 -c` puts the working directory first on sys.path, and a committed json.py would run in the hook (the push's security review).
+    with TemporaryDirectory(prefix="pipeline-status-") as td:
+        base = Path(td)
+        repo, head = build(base)
+        witness = base / "repo-json-ran"
+        (repo / "json.py").write_text(f"open({str(witness)!r}, 'w').close()\nloads = load = dumps = dump = lambda *a, **k: {{}}\n")
+        (repo / "qa").mkdir()
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps({"sha": head}))
+        r = run_hook(repo)
+        check("pipeline-status: a json.py committed in the repository is not imported by the hook (python3 -I)", not witness.exists(), f"the repository's json.py ran; out {r.stdout[:120]!r}")
     # Controls: a repository with no pipeline.yml says nothing, from anywhere; so does a directory that is no repository.
     with TemporaryDirectory(prefix="pipeline-status-") as td:
         base = Path(td)

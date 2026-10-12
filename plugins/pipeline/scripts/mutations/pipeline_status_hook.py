@@ -22,6 +22,12 @@ GUARD = Guard(
             "the 'dev is certified' line is printed from a subdirectory",
         ),
         Mutation(
+            "the interpreter imports from the working directory again, so a committed json.py runs",
+            "python3 -I -c 'import json,sys;",
+            "python3 -c 'import json,sys;",
+            "a json.py committed in the repository is not imported by the hook",
+        ),
+        Mutation(
             "a repository with no pipeline.yml is nudged anyway",
             '[ -f "$top/pipeline.yml" ] || exit 0',
             ":",
