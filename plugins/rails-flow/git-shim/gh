@@ -36,14 +36,25 @@ is_shim() {
   return 1
 }
 
-# The real gh: the first executable `gh` on PATH that is not this directory and not a copy of this shim.
+# The checkout this command runs in, found by walking up from the physical directory to the first `.git` (no external command: git itself could be the one a repository ships).
+repo_top=""
+walk="$(pwd -P)"
+while [ -n "$walk" ]; do
+  [ -e "$walk/.git" ] && { repo_top="$walk"; break; }
+  walk="${walk%/*}"
+done
+
+# The real gh: the first executable `gh` on PATH that is not this directory and not a copy of this shim, and that the repository cannot have put there (the push's security review): an
+# empty or relative entry means the working directory, and an absolute entry inside the checkout is the repository's own, so a `gh` shipped there would answer `gh alias list` and
+# run for every command this shim does not judge. Both are skipped, as `rf_trusted_python` skips them for the interpreter.
 real=""
 old_ifs="$IFS"; IFS=:
 for d in $PATH; do
-  [ -n "$d" ] || d="."
+  case "$d" in /*) ;; *) continue ;; esac
   [ -x "$d/gh" ] && [ ! -d "$d/gh" ] || continue
   dd="$(cd "$d" 2>/dev/null && pwd -P)" || continue
   [ "$dd" = "$self_dir" ] && continue
+  if [ -n "$repo_top" ]; then case "$dd/" in "$repo_top"/*) continue ;; esac; fi
   is_shim "$d/gh" && continue
   real="$d/gh"; break
 done

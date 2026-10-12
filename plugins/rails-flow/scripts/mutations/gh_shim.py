@@ -23,6 +23,8 @@ GUARD = Guard(
         Mutation('a second copy of the shim is taken for the real gh', '  is_shim "$d/gh" && continue', '  :', 'two shims'),
         Mutation('an alias expansion that is not plain words is read, not refused', '    *[!A-Za-z0-9\\ \\\t_./:@=,+%\\$-]*)', '    *NEVER_MATCHES*)', 'alias flags'),
         Mutation('a quoted placeholder is not normalised, so a documented alias is refused', '  for n in 1 2 3 4 5 6 7 8 9; do', '  for n in; do', 'alias placeholder'),
+        Mutation('a relative or empty PATH entry can be the real gh', '  case "$d" in /*) ;; *) continue ;; esac\n', '  [ -n "$d" ] || d="."\n', 'real gh path'),
+        Mutation('a gh inside the checkout can be the real gh', '  if [ -n "$repo_top" ]; then case "$dd/" in "$repo_top"/*) continue ;; esac; fi\n', '', 'real gh path'),
         Mutation('the judge is the first python3 on PATH, not the lib\'s', 'py="$(trusted_python)"\nif [ -z "$py" ]', 'py="$(command -v python3)"\nif [ -z "$py" ]', 'interpreter'),
     ),
 )

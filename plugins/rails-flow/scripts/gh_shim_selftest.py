@@ -367,6 +367,30 @@ def _interpreter(base: Path) -> None:
     check("shim: ...nor one reached through a relative or `.` PATH entry", ok and not witness.exists(), why + f", repo python ran: {witness.exists()}")
 
 
+@case("real gh path")
+def _real_gh_path(base: Path) -> None:
+    """The real gh must not be one the repository ships, by an absolute entry inside it or a relative/empty one: it would answer `alias list` and run for every unjudged command."""
+    fx = Fixture(base)
+    witness = base / "repo-gh-ran"
+    plant = f"#!/bin/sh\n: > {witness}\nexit 0\n"
+    (fx.repo / "bin").mkdir(exist_ok=True)
+    for where in (fx.repo / "bin" / "gh", fx.repo / "gh"):
+        where.write_text(plant)
+        where.chmod(0o755)
+    sep = os.pathsep
+    outside = base / "outside"  # a directory that is no checkout, so only the relative-entry rule (not the in-checkout one) can refuse its gh
+    (outside / "bin").mkdir(parents=True)
+    for where in (outside / "bin" / "gh", outside / "gh"):
+        where.write_text(plant)
+        where.chmod(0o755)
+    for label, entries, cwd in (("an absolute PATH entry inside the checkout", f"{fx.repo / 'bin'}{sep}", None),
+                                ("a relative PATH entry", f"bin{sep}", outside), ("an empty PATH entry", f"{sep}", outside), ("a `.` PATH entry", f".{sep}", outside)):
+        env = {"PATH": f"{SHIM_DIR}{sep}{entries}{fx.bin}{sep}{os.environ['PATH']}"}
+        ok, why = allowed(fx, "gh pr list", env, cwd)
+        check(f"shim: a gh the repository ships, reached by {label}, is not the real gh (the real one runs)", ok and fx.ran() == ["pr list"] and not witness.exists(), why + f", repo gh ran: {witness.exists()}")
+        witness.unlink(missing_ok=True)
+
+
 def main(argv: list[str]) -> int:
     match = ""
     if "--match" in argv:
