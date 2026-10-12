@@ -20,10 +20,26 @@ Auditor: fd / claude-skills-e9, assigned by coordinator claude-skills-24. Tree: 
 - `commands/fix.md:131,146`: the exit codes named for `check_mockup_gate.py` and `classify_door.py` match the scripts. Held.
 - `agents/claim-verifier.md`: its guarantee-shaped wording is examples of claims to check, not guarantees.
 
-## Not covered (stated, not implied clean)
+## Addendum: the remaining half (#1948), same day
 
-- **Unanchored guarantees:** "never" and "always" sentences that name no script, hook or gate were not traced line by line. A full read is still owed before calling these 37 files clean: #1948.
-- **Agent obedience:** whether each agent's tool list allows what its body says it does.
+**Guarantees with no named mechanism.**
+- A sentence filter over the 37 files (outside code blocks) found 323 sentences with guarantee words and no named mechanism.
+- Dropping instructions to the model (sentences starting "Never", "Always", "Do not", "Must") and pure explanation left 28 sentences that assert how the SYSTEM behaves.
+- Each was read in context, and the mechanism its paragraph names was read in code. Where it was cheap, the mechanism's selftest or a probe was run:
+  - selftests: `check_spec_review`, `session_coordinator` (16 write verbs refused), `escalation_selftest` (38), `retro`, `claude_md_structure`, `check_slices`, `check_spec`, `toolchain_version_selftest` (51), `wrap_round`, `check_handoff_selftest` (112), `check_memory_systems` (21), `check_mandated_gems` (22), `check_tenancy_cop` (47), `check_coverage_ratchet` (14);
+  - probes: guard-bash in a scratch repo blocks `bin/rails db:reset` (exit 2) and an unlabelled `gh issue create` (exit 2), and passes a labelled one (exit 0).
+- **Result:** 26 HELD, 2 ADVICE, 0 broken, 0 unanchored. Each claim's file:line evidence is in the working notes.
+- **The two ADVICE items** are rules the model follows, with no script behind them; neither claims a mechanism:
+  - `commands/report.md:15`: the reporter refuses an observation about your own app;
+  - `commands/toolchain-audit.md:129`: "not installed is reported as not installed".
+- **One HELD with an outside dependency:** `commands/setup-flow.md:1015` (the coverage floor is "never red on day one, cannot slide"). That behaviour is SimpleCov's `refuse_coverage_drop`. Our `check_coverage_ratchet.py` only requires the line; SimpleCov's own behaviour was not checked against its docs here.
+
+**Agent tool lists against agent bodies.** All 13 agents were compared.
+- Every agent told to run a command has `Bash`.
+- No agent described as read-only holds `Edit` or `Write`: the reviewers, verifiers, adversary, test-runner and security-auditor hold neither.
+- The one string match ("Never edit blind", `agents/rails-developer.md:20`) is about reading before editing, not a read-only claim.
+
+**With this addendum the 37 files are audited end to end: no claims-vs-enforcement findings.**
 
 ## Findings
 
