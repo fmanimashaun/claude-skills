@@ -439,6 +439,16 @@ def selftest() -> int:
         ok = code == want
         failed += not ok
         print(f"{'ok  ' if ok else 'FAIL'} {label}" + ("" if ok else f" -> exit {code}"))
+    # #1873: the exit-3 site, driven through main(): a project with no MCP tool is NOT APPLICABLE (3), which the gate runner grades as n/a and never fails.
+    with tempfile.TemporaryDirectory(prefix="mcp-annotations-") as d:
+        (Path(d) / "app").mkdir()
+        (Path(d) / "app" / "user.rb").write_text("class User < ApplicationRecord\nend\n", encoding="utf-8")
+        code = _quiet_main(["--root", d])
+    if code != 3:
+        print(f"FAIL no MCP tool in app/ or lib/ is not applicable (exit 3, n/a), never a pass: exit {code}")
+        failed += 1
+    else:
+        print("ok   no MCP tool in app/ or lib/ is not applicable (exit 3, n/a)")
     with tempfile.TemporaryDirectory(prefix="mcp-annotations-") as d:
         (Path(d) / "app").mkdir()
         (Path(d) / "app" / "bad.rb").write_bytes(b"\xff\xfe")
@@ -448,7 +458,7 @@ def selftest() -> int:
             print("FAIL an unreadable source file is unusable")
         except Unusable:
             print("ok   an unreadable source file is unusable")
-    total = len(CASES) + 3
+    total = len(CASES) + 4
     print(f"{total - failed}/{total} passed")
     return 1 if failed else 0
 

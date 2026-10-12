@@ -76,6 +76,12 @@ GUARD = Guard(
             "    if unchecked and found:\n",
             "an unchecked tool list with no tool found exits 2, not 3",
         ),
+        Mutation(  # #1873: the n/a row reaches its site
+            "a project with no MCP tool is a pass instead of not applicable",
+            '(no MCP tool in app/ or lib/)")\n        return 3',
+            '(no MCP tool in app/ or lib/)")\n        return 0',
+            "no MCP tool in app/ or lib/ is not applicable (exit 3, n/a)",
+        ),
         Mutation(
             "whole-line comments are scanned as code",
             '        lines = ["" if ln.lstrip().startswith("#") else ln for ln in text.split("\\n")]',
