@@ -86,9 +86,9 @@ class Fixture:
         d.mkdir(parents=True, exist_ok=True)
         (d / f"{self.head}.json").write_text(json.dumps({"head": head or self.head, "verdict": verdict, "skips": skips, "failed": 0, "errored": 0}))
 
-    def sh(self, command: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
-        """A command line, through a real bash, in the checkout, with the shim first on PATH."""
-        return subprocess.run(["bash", "-c", command], cwd=self.repo, env={**self.env, **(env or {})}, capture_output=True, text=True, timeout=60)
+    def sh(self, command: str, env: dict[str, str] | None = None, cwd: Path | None = None) -> subprocess.CompletedProcess:
+        """A command line, through a real bash, in the checkout (or `cwd`), with the shim first on PATH."""
+        return subprocess.run(["bash", "-c", command], cwd=cwd or self.repo, env={**self.env, **(env or {})}, capture_output=True, text=True, timeout=60)
 
     def ran(self) -> list[str]:
         return self.log.read_text().splitlines() if self.log.exists() else []
@@ -98,15 +98,15 @@ class Fixture:
             self.log.unlink()
 
 
-def refused(fx: Fixture, command: str, env: dict[str, str] | None = None) -> tuple[bool, str]:
+def refused(fx: Fixture, command: str, env: dict[str, str] | None = None, cwd: Path | None = None) -> tuple[bool, str]:
     fx.reset()
-    r = fx.sh(command, env)
+    r = fx.sh(command, env, cwd)
     return (r.returncode != 0 and fx.ran() == []), f"rc {r.returncode}, stub ran {fx.ran()}, {(r.stdout + r.stderr).strip()[-200:]!r}"
 
 
-def allowed(fx: Fixture, command: str, env: dict[str, str] | None = None) -> tuple[bool, str]:
+def allowed(fx: Fixture, command: str, env: dict[str, str] | None = None, cwd: Path | None = None) -> tuple[bool, str]:
     fx.reset()
-    r = fx.sh(command, env)
+    r = fx.sh(command, env, cwd)
     return (r.returncode == 0 and len(fx.ran()) == 1), f"rc {r.returncode}, stub ran {fx.ran()}, {(r.stdout + r.stderr).strip()[-200:]!r}"
 
 
@@ -227,6 +227,103 @@ def _no_python(base: Path) -> None:
     fx.reset()
     r = subprocess.run([str(bare / "bash"), "-c", "gh pr list"], cwd=fx.repo, env=env, capture_output=True, text=True, timeout=60)
     check("shim: ...but `gh pr list` still runs with no python3", r.returncode == 0 and fx.ran() == ["pr list"], f"rc {r.returncode}, ran {fx.ran()}")
+
+
+@case("redirecting variable")
+def _redirecting(base: Path) -> None:
+    """A GIT_* / GH_HOST / GH_REPO variable can point gh or git at another repository, and used to make the shim fail OPEN (git could not find a repository, so it read as none)."""
+    fx = Fixture(base)
+    fx.record()                      # a GREEN record: only the variable can explain a refusal
+    for var in ("GIT_CONFIG_COUNT=0", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_DIR=/nonexistent", "GIT_WORK_TREE=/tmp", "GH_HOST=ghe.example.com", "GH_REPO=o/r"):
+        for how, cmd in (("a prefix", f"{var} gh pr ready 5"), ("env in front", f"/usr/bin/env {var} gh pr ready 5")):
+            ok, why = refused(fx, cmd)
+            check(f"shim: {var} as {how} is refused even with a green record (it can point gh elsewhere)", ok, why)
+    ok, why = allowed(fx, "GIT_EDITOR=true gh pr ready 5")
+    check("shim: CONTROL: GIT_EDITOR (the harness sets it) points nowhere, so it is not refused", ok, why)
+    nofx = Fixture(base / "nf", in_force=False)
+    ok, why = allowed(nofx, "GH_REPO=o/r gh pr ready 5")
+    check("shim: IN FORCE ONLY where project_gates runs: a named repository from a repository that does not run it is not checked (the stated carve-out)", ok, why)
+    outside = base / "outside"
+    outside.mkdir()
+    ok, why = allowed(fx, "GH_REPO=o/r gh pr ready 5", cwd=outside)
+    check("shim: ...nor from a directory outside any repository", ok, why)
+
+
+@case("git cannot answer")
+def _git_down(base: Path) -> None:
+    fx = Fixture(base)
+    fx.record()
+    broken = base / "brokengit"
+    broken.mkdir()
+    (broken / "git").write_text("#!/bin/sh\necho 'fatal: something git could not explain' >&2\nexit 128\n")
+    (broken / "git").chmod(0o755)
+    ok, why = refused(fx, "gh pr ready 5", {"PATH": f"{broken}{os.pathsep}{fx.env['PATH']}"})
+    check("shim: where git cannot answer (it fails for a reason that is not `not a git repository`) a `pr ready` is refused, not read as outside any repository, even with a green record", ok, why)
+    outside = base / "outside2"
+    outside.mkdir()
+    ok, why = allowed(fx, "gh pr ready 5", cwd=outside)
+    check("shim: CONTROL: outside any repository (git says so) a `pr ready` is not this shim's business", ok, why)
+
+
+@case("alias flags")
+def _alias_flags(base: Path) -> None:
+    fx = Fixture(base)
+    for cmd in ("gh -R o/r rdy 5", "gh --repo o/r rdy 5", "gh --repo=o/r rdy 5"):
+        ok, why = refused(fx, cmd, {"STUB_ALIASES": "rdy: pr ready"})
+        check(f"shim: `{cmd}`: an alias after a flag with a value is still resolved and judged", ok, why)
+    ok, why = refused(fx, "gh rdy 5", {"STUB_ALIASES": "rdy:\tpr ready"})
+    check("shim: an alias whose expansion follows the colon after a TAB is read", ok, why)
+    ok, why = refused(fx, "gh rdy 5", {"STUB_ALIASES": "rdy:    pr ready"})
+    check("shim: ...or after several spaces", ok, why)
+
+
+@case("alias placeholder")
+def _alias_placeholder(base: Path) -> None:
+    fx = Fixture(base)
+    fx.record()
+    ok, why = allowed(fx, "gh rdy 5", {"STUB_ALIASES": "rdy: pr ready $1"})
+    check("shim: an alias with a `$1` placeholder is judged by what gh will RUN (`pr ready 5`): a green record lets it through", ok, why)
+    ok, why = refused(fx, "gh rdy 5 -R o/r", {"STUB_ALIASES": "rdy: pr ready $1"})
+    check("shim: ...and the arguments after the placeholder are appended and judged (`-R o/r` is refused)", ok, why)
+    fx2 = Fixture(base / "nr")
+    ok, why = refused(fx2, "gh rdy 5", {"STUB_ALIASES": "rdy: pr ready $1"})
+    check("shim: ...and with no record the same alias is refused", ok, why)
+
+
+@case("gh api")
+def _api(base: Path) -> None:
+    fx = Fixture(base)
+    mutation = "gh api graphql -f query='mutation{markPullRequestReadyForReview(input:{pullRequestId:\"x\"}){clientMutationId}}'"
+    ok, why = refused(fx, mutation)
+    check("shim: a `gh api graphql` that marks a PR ready is refused with no sweep record", ok, why)
+    ok, why = refused(fx, "gh api graphql --input q.json")
+    check("shim: a `gh api` whose body comes from a file cannot be judged, so it is refused where in force", ok, why)
+    ok, why = refused(fx, "gh api graphql -F query=@q.graphql")
+    check("shim: ...also as `-F field=@file`", ok, why)
+    ok, why = allowed(fx, "gh api user")
+    check("shim: CONTROL: `gh api user` is untouched", ok, why)
+    ok, why = allowed(fx, "gh api repos/o/r/pulls/5 -f title=x")
+    check("shim: CONTROL: another `gh api` call with a field is untouched", ok, why)
+    fx.record()
+    ok, why = allowed(fx, mutation)
+    check("shim: ...and the mutation passes with a green record for HEAD", ok, why)
+
+
+@case("two shims")
+def _two_shims(base: Path) -> None:
+    fx = Fixture(base)
+    copy_dir = base / "copy"
+    copy_dir.mkdir()
+    shutil.copy(SHIM_DIR / "gh", copy_dir / "gh")
+    env = {"PATH": f"{SHIM_DIR}{os.pathsep}{copy_dir}{os.pathsep}{fx.bin}{os.pathsep}{os.environ['PATH']}"}
+    fx.reset()
+    try:
+        r = subprocess.run(["bash", "-c", "gh pr list"], cwd=fx.repo, env={**fx.env, **env}, capture_output=True, text=True, timeout=8)
+        looped = False
+    except subprocess.TimeoutExpired:
+        r, looped = None, True
+    check("shim: a second copy of the shim on PATH is not taken for the real gh (it would exec itself forever)", not looped and r is not None and r.returncode == 0 and fx.ran() == ["pr list"],
+          "timed out: the two shims exec each other" if looped else f"rc {r.returncode}, ran {fx.ran()}")
 
 
 def main(argv: list[str]) -> int:

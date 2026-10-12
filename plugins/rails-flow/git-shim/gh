@@ -11,8 +11,12 @@
 #
 # FAILS CLOSED, for `pr ready` only: where python3 or the judge is missing the command is refused, because a guarantee that cannot be checked is not a pass. Every other
 # gh command is exec'd untouched, so a missing python3 never blocks `gh pr list`.
-# LIMITS, stated (a tripwire, not a boundary; the server's required checks are the backstop): an absolute /usr/bin/gh, `command gh`, `env -i gh` or a non-shell exec of gh
-# never reach this file (PATH is not consulted); a session where the SessionStart hook did not run; any process that is not the Bash tool; GitHub's own web UI and API.
+# ALSO REFUSED where in force: a variable that redirects gh or git (GIT_DIR, GIT_WORK_TREE, GIT_CONFIG_*, GH_HOST, GH_REPO), and a `gh api` that marks a PR ready (the GraphQL mutation
+# `markPullRequestReadyForReview`, judged like `pr ready`) or whose body comes from a file or stdin (it cannot be read here). Where git cannot say whether the directory is a repository, a
+# `pr ready` is refused. Aliases with `$1`... placeholders are expanded as gh expands them before they are judged.
+# LIMITS, stated (a tripwire, not a boundary; the server's required checks are the backstop): an absolute /usr/bin/gh, `env -i gh` or a non-shell exec of gh never reach this file (PATH is
+# not consulted); a session where the SessionStart hook did not run; any process that is not the Bash tool; GitHub's own web UI and any API call this shim does not read. IN FORCE ONLY where
+# project_gates runs: from a directory outside any repository, or in one that does not run it, nothing is checked, a repository named by -R or GH_REPO included.
 # AUDITED ESCAPE: RAILS_FLOW_GH_OK=1 runs the real gh and says so.
 # bash 3.2 compatible; needs only bash (and python3 for a `pr ready`).
 set -f
@@ -22,7 +26,15 @@ ORIG=("$@")      # the arguments as given
 self="${BASH_SOURCE[0]}"
 case "$self" in */*) self_dir="$(cd "${self%/*}" 2>/dev/null && pwd -P)" ;; *) self_dir="$(pwd -P)" ;; esac
 
-# The real gh: the first executable `gh` on PATH that is not this directory.
+# Is this file a copy of this shim? Two copies on PATH would exec each other forever, so a candidate that carries the shim's own marker is not the real gh.
+is_shim() {
+  local l1 l2 l3
+  { IFS= read -r l1; IFS= read -r l2; IFS= read -r l3; } < "$1" 2>/dev/null
+  case "$l2$l3" in *"rails-flow gh shim"*) return 0 ;; esac
+  return 1
+}
+
+# The real gh: the first executable `gh` on PATH that is not this directory and not a copy of this shim.
 real=""
 old_ifs="$IFS"; IFS=:
 for d in $PATH; do
@@ -30,6 +42,7 @@ for d in $PATH; do
   [ -x "$d/gh" ] && [ ! -d "$d/gh" ] || continue
   dd="$(cd "$d" 2>/dev/null && pwd -P)" || continue
   [ "$dd" = "$self_dir" ] && continue
+  is_shim "$d/gh" && continue
   real="$d/gh"; break
 done
 IFS="$old_ifs"
@@ -40,7 +53,18 @@ if [ "${RAILS_FLOW_GH_OK:-}" = 1 ]; then
   exec "$real" "${ORIG[@]}"
 fi
 
-# Does this argv run `pr ready`? `pr`, then (past any flags) `ready`.
+# The first word of an argv that is not a flag, where `-R`/`--repo` also take the word after them (they are the one flag with a separate value that can come first).
+first_word() {
+  local skip=0 a
+  for a in "$@"; do
+    if [ "$skip" = 1 ]; then skip=0; continue; fi
+    case "$a" in -R|--repo) skip=1; continue ;; -*) continue ;; esac
+    printf '%s' "$a"; return 0
+  done
+  return 1
+}
+
+# Does this argv run `pr ready`? `pr`, then (past any flags, and the value of -R/--repo) `ready`.
 has_pr_ready() {
   local seen_pr=0 skip=0 a
   for a in "$@"; do
@@ -55,35 +79,63 @@ has_pr_ready() {
   return 1
 }
 
-# The first argument that is not a flag, when it is not one of gh's own commands: it may be an alias. Its expansion is read from `gh alias list` ("name: expansion").
-alias_hides_pr_ready() {
-  local first="" a
-  for a in "$@"; do case "$a" in -*) ;; *) first="$a"; break ;; esac; done
-  [ -n "$first" ] || return 1
+# A `gh api` that marks a PR ready for review (the GraphQL mutation), or whose body comes from a file or stdin and so cannot be read here.
+has_api_ready() {
+  [ "$(first_word "$@")" = api ] || return 1
+  local a
+  for a in "$@"; do
+    case "$a" in *markPullRequestReadyForReview*|--input|--input=*|*=@*) return 0 ;; esac
+  done
+  return 1
+}
+
+# The expansion of the alias `$1` ("name: expansion" from `gh alias list`, a tab or spaces after the colon), or nothing.
+alias_expansion() {
+  local name="$1" line value
+  while IFS= read -r line; do
+    case "$line" in
+      "$name":*) value="${line#"$name":}"; value="${value#"${value%%[![:space:]]*}"}"; printf '%s' "$value"; return 0 ;;
+    esac
+  done < <("$real" alias list 2>/dev/null)
+  return 1
+}
+
+# The first argument that is not a flag, when it is not one of gh's own commands, is an alias if `gh alias list` says so.
+alias_word() {
+  local first
+  first="$(first_word "$@")" || return 1
   case "$first" in
     pr|issue|repo|release|run|workflow|api|auth|config|alias|browse|codespace|completion|extension|gist|gpg-key|label|org|project|search|secret|ssh-key|status|variable|cache|attestation|agent-task|licenses|preview|ruleset|help|version) return 1 ;;
   esac
-  local line expansion
-  while IFS= read -r line; do
-    case "$line" in "$first: "*) expansion="${line#"$first": }"; break ;; esac
-  done < <("$real" alias list 2>/dev/null)
-  [ -n "${expansion:-}" ] || return 1
-  # shellcheck disable=SC2086
-  has_pr_ready $expansion
+  printf '%s' "$first"
 }
 
 judge=0
-if has_pr_ready "${ORIG[@]}" || alias_hides_pr_ready "${ORIG[@]}"; then judge=1; fi
-[ "$judge" = 1 ] || exec "$real" "${ORIG[@]}"
-
-# An alias's own arguments are not in ORIG: judge the EXPANDED words when the shim came through an alias.
 argv=("${ORIG[@]}")
-if ! has_pr_ready "${ORIG[@]}"; then
-  first=""; for a in "${ORIG[@]}"; do case "$a" in -*) ;; *) first="$a"; break ;; esac; done
-  while IFS= read -r line; do case "$line" in "$first: "*) argv=(${line#"$first": }); break ;; esac; done < <("$real" alias list 2>/dev/null)
-  rest=("${ORIG[@]}"); for i in "${!rest[@]}"; do [ "${rest[$i]}" = "$first" ] && { unset "rest[$i]"; break; }; done
-  argv=("${argv[@]}" "${rest[@]}")
+if has_pr_ready "${ORIG[@]}" || has_api_ready "${ORIG[@]}"; then
+  judge=1
+elif name="$(alias_word "${ORIG[@]}")" && exp="$(alias_expansion "$name")" && [ -n "$exp" ]; then
+  # An alias hides the verb: judge what gh will RUN. gh substitutes `$1`, `$2`... in a non-shell alias from the arguments after the alias name and appends the rest.
+  rest=(); fresh_before=(); seen=0; skip=0
+  for a in "${ORIG[@]}"; do
+    if [ "$seen" = 0 ]; then
+      if [ "$skip" = 1 ]; then skip=0; fresh_before+=("$a"); continue; fi
+      case "$a" in -R|--repo) skip=1; fresh_before+=("$a"); continue ;; -*) fresh_before+=("$a"); continue ;; esac
+      seen=1; continue                        # the alias name itself
+    fi
+    rest+=("$a")
+  done
+  words=($exp); expanded=(); used=0
+  for w in "${words[@]}"; do
+    case "$w" in
+      \$[1-9]) n="${w#\$}"; expanded+=("${rest[$((n - 1))]:-}"); [ "$n" -gt "$used" ] && used="$n" ;;
+      *) expanded+=("$w") ;;
+    esac
+  done
+  argv=("${fresh_before[@]}" "${expanded[@]}" "${rest[@]:$used}")
+  if has_pr_ready "${argv[@]}" || has_api_ready "${argv[@]}"; then judge=1; fi
 fi
+[ "$judge" = 1 ] || exec "$real" "${ORIG[@]}"
 
 lib="$self_dir/../hooks/scripts/lib/pr_ready_guard.py"
 py=""

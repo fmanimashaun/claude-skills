@@ -250,24 +250,66 @@ def _next_word(args: list[str]) -> str | None:
     return None
 
 
-def shim_judge(argv: list[str], cwd: str, gh_repo: str = "") -> int:
-    """Judge one `gh pr ready` from its FINAL argv, which is what `git-shim/gh` receives after the shell has expanded the command (#1839, the guarantee behind #1565's tripwire).
+# Variables that make `gh` (or the `git` under it) act on a repository or host other than the checkout this shim stands in: the local sweep record cannot stand for one.
+GIT_LOCATORS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE",
+                "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM")
 
-    `argv` is everything after `gh`. The directory is where gh will run (the shim's own cwd), so no `cd` has to be followed and nothing is parsed from shell text. The rules are the
-    hook's: in force only where project_gates runs; `--undo` passes; a repository named by flag, URL or GH_REPO cannot be matched to a local record; every other word must be a plain PR
-    number or branch; then the record for HEAD must be green with zero skips. Returns 0 to allow, 2 to refuse (the reason is on stderr)."""
-    root = git(cwd, "rev-parse", "--show-toplevel") if os.path.isdir(cwd) else None
+
+def _redirecting_env() -> list[str]:
+    return sorted(k for k in os.environ if k in GIT_LOCATORS or k.startswith("GIT_CONFIG") or k == "GH_HOST")
+
+
+def _toplevel(cwd: str) -> tuple[str | None, str]:
+    """(top level, status): "ok", "none" (git answered: not a repository) or "error" (git could not answer). git is asked WITHOUT the variables that locate a repository, so
+    `GIT_DIR=/nonexistent` cannot make a repository read as no repository (#1839, the review of the first head): they are judged as what they are, below."""
+    if not os.path.isdir(cwd):
+        return None, "none"
+    clean = {k: v for k, v in os.environ.items() if k not in GIT_LOCATORS and not k.startswith("GIT_CONFIG")}
+    try:
+        done = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=10, env=clean)
+    except (OSError, subprocess.SubprocessError):
+        return None, "error"
+    if done.returncode == 0 and done.stdout.strip():
+        return done.stdout.strip(), "ok"
+    return None, "none" if "not a git repository" in done.stderr else "error"
+
+
+def shim_judge(argv: list[str], cwd: str, gh_repo: str = "") -> int:
+    """Judge one `gh pr ready` (or a `gh api` that marks a PR ready) from its FINAL argv, which is what `git-shim/gh` receives after the shell has expanded the command (#1839, the
+    guarantee behind #1565's tripwire).
+
+    `argv` is everything after `gh`. The directory is where gh will run (the shim's own cwd), so no `cd` has to be followed and nothing is parsed from shell text. In force only where
+    project_gates runs: a directory outside any repository, or in one that does not run it, is not checked, a named repository included (stated in the shim's header and in CLAUDE.md).
+    Where it is in force: a variable that redirects gh or git (GIT_DIR, GIT_WORK_TREE, GIT_CONFIG_*, GH_HOST, GH_REPO), a repository named by flag or URL, and any word that is not a plain PR
+    number or branch are refused; `--undo` passes after every other argument is judged; then the record for HEAD must be green with zero skips. When git cannot say whether the directory is a
+    repository the answer is a refusal, not a pass. Returns 0 to allow, 2 to refuse (the reason is on stderr)."""
+    root, status = _toplevel(cwd)
+    shown = " ".join(argv)
+    if status == "error":
+        return refuse(f"git could not say whether {cwd} is a repository, so this `gh pr ready` cannot be judged.", shown)
     if not (root and in_force(root)):
+        return 0
+    redirect = _redirecting_env()
+    if redirect or gh_repo:
+        return refuse(f"{', '.join(redirect + (['GH_REPO'] if gh_repo else []))} is set, and it can point gh or git at another repository or host than this checkout: its local sweep record "
+                      "cannot stand for that. Unset it and run `gh pr ready` from the PR's own checkout, after its sweep.", shown)
+    first = _next_word(argv)
+    if first == "api":
+        text = " ".join(argv)
+        if "markPullRequestReadyForReview" in text:
+            return judge_record(root, "gh api (marks a PR ready)")
+        if any(w == "--input" or w.startswith("--input=") or "=@" in w for w in argv):
+            return refuse("a `gh api` whose body is read from a file or stdin cannot be judged here (it may mark a PR ready).", shown)
         return 0
     i = next((k for k, w in enumerate(argv) if w == "pr" and _next_word(argv[k + 1:]) == "ready"), None)
     if i is None:
-        return refuse("a `gh pr ready` this shim could not place in its arguments.", " ".join(argv))
+        return refuse("a `gh pr ready` this shim could not place in its arguments.", shown)
     before, rest = argv[:i], argv[i + 1:]
     j = next(k for k, w in enumerate(rest) if w == "ready")
     between, after = rest[:j], rest[j + 1:]
     shown = " ".join(after)
     words = before + between + after
-    if any(w in SHIM_FLAGS or w.startswith(("--repo=", "-R")) or "/pull/" in w for w in words) or gh_repo:
+    if any(w in SHIM_FLAGS or w.startswith(("--repo=", "-R")) or "/pull/" in w for w in words):
         return refuse(EXPLICIT + ".", shown)
     undo = cut = False
     for w in between + after:
