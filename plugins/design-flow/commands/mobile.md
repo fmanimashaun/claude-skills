@@ -1,6 +1,7 @@
 ---
 description: Scaffold Hotwire Native parity (Phase 2) into a Rails 8 + Hotwire app — native-app detection + body flags, JSON path configuration, bridge components (button/menu/tab-bar), safe-area + min-h-touch wiring, and table->summary cards. Reuses the existing design system; the native shells stay in their own repos.
 argument-hint: "[surface: ios | android | both]"
+disable-model-invocation: true
 ---
 
 # /design-flow:mobile — $ARGUMENTS

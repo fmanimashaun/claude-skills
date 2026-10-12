@@ -1,0 +1,2 @@
+section: design-flow
+- **`/design-flow:mobile` and `/design-flow:tokens` leave the always-on skills listing — `plugins/design-flow/commands/mobile.md`, `plugins/design-flow/commands/tokens.md`** (#1883). `disable-model-invocation: true` ("Description not in context", https://code.claude.com/docs/en/skills); both are one-time scaffolds a person runs, referenced only by docs. design-flow's listing drops 5,017 → 4,435 characters (~194 tokens every session; `scripts/check_always_on_cost.py`).

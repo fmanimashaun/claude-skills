@@ -1,6 +1,7 @@
 ---
 description: Export native design tokens (Phase 3) from the Rails app's Tailwind @theme — generate Android (colors.xml + Theme.Fidara) and iOS (SwiftUI Color) token files so fully-native screens match the web by construction. Writes to tmp/; does NOT modify native app repos.
 argument-hint: "[android | ios | both]"
+disable-model-invocation: true
 ---
 
 # /design-flow:tokens — $ARGUMENTS
