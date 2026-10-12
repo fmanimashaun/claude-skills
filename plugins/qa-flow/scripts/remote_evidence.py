@@ -476,7 +476,13 @@ def selftest() -> int:
         slow_kid = d / "slow-kid.py"
         slow_kid.write_text(f"import subprocess, time\nk = subprocess.Popen(['sleep', '30'])\nopen({str(kid)!r}, 'w').write(str(k.pid))\ntime.sleep(30)\n",
                             encoding="utf-8")
-        rc, _, se = judged(sha, str(src), slow_kid, budget=4)
+        # #1893: under a loaded machine the step may not reach its stub before the budget ends, so there is no child to leak and
+        # nothing was tested. Retry with a larger budget until the stub records its child; a child left RUNNING still fails.
+        for budget in (4, 8, 15):
+            kid.unlink(missing_ok=True)
+            rc, _, se = judged(sha, str(src), slow_kid, budget=budget)
+            if kid.exists() and kid.read_text().strip():
+                break
         gone, why = child_gone(kid)
         check("a judge that times out leaves no child running", rc == EXIT_UNUSABLE and gone, f"rc={rc} {why} {se!r}")
         shim = d / "shimbin"
@@ -488,7 +494,11 @@ def selftest() -> int:
         (shim / "git").chmod(0o755)
         saved_path, os.environ["PATH"] = os.environ["PATH"], f"{shim}{os.pathsep}{os.environ['PATH']}"
         try:
-            rc, _, se = judged(sha, str(src), fake, budget=3)
+            for budget in (3, 8, 15):                 # #1893: as above, the fetch must be REACHED before its timeout means anything
+                fkid.unlink(missing_ok=True)
+                rc, _, se = judged(sha, str(src), fake, budget=budget)
+                if fkid.exists() and fkid.read_text().strip():
+                    break
         finally:
             os.environ["PATH"] = saved_path
         gone, why = child_gone(fkid)

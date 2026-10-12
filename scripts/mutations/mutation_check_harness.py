@@ -533,5 +533,17 @@ GUARD = Guard(
             "target = COST_BASELINE",
             "--rebaseline --host outside CI must write a local record and NOT the committed one",
         ),
+        Mutation(
+            "a staged needs file loses its mode, so an executable script is staged without its executable bit",
+            "            shutil.copymode(source, target)\n",
+            "            pass\n",
+            "a staged `needs` file that is executable in the repo is not executable once staged",
+        ),
+        Mutation(
+            "a staged subject, selftest or dep loses its mode",
+            "        shutil.copymode(REPO / guard.base / relative, target)",
+            "        pass",
+            "a staged subject that is executable in the repo is not executable once staged",
+        ),
     ),
 )

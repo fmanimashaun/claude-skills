@@ -43,58 +43,28 @@ GUARD = Guard(
             "with CLAUDE_PLUGIN_ROOT unset it exits 0 silently",
         ),
         Mutation(
-            # Without the redirect, a missing python3 prints `command not found` into the transcript.
-            "a missing python3 leaks `command not found` into the conversation",
+            # Without the redirect, python's own "can't open file" (the script is missing, or the plugin root is unset) prints into the transcript. A missing python3 no longer reaches
+            # the redirect at all: the hook does not call an interpreter it did not find.
+            "a script python cannot open leaks its error into the conversation",
             "test_preflight.py\" 2>/dev/null\n",
             "test_preflight.py\"\n",
-            "with no python3 on PATH it exits 0 and says nothing",
+            "with CLAUDE_PLUGIN_ROOT unset it exits 0 silently",
+        ),
+        # THE INTERPRETER LOOKUP IS THE LIB'S (#1850, #1893). This hook used to carry its own copy of it (skip the repository, the outermost Gemfile or .git, a link into the
+        # repository, `set -f`, absolute entries only), and once `lib/trusted-env.sh` rebuilds PATH first those directory rules could never fire: four of their mutants
+        # survived because they were EQUIVALENT, not because a fixture was missing. The lookup is now `rf_trusted_python`, whose rules are proven by the `hook_trusted_env`
+        # guard and the hostile-environment group; the fixtures here still run the real hook against each shape. What the hook adds on top is `-I`.
+        Mutation(
+            "python3 is not run isolated, so the working directory and the script's directory are on its import path",
+            '"$RF_PYTHON" -I "${CLAUDE_PLUGIN_ROOT:-}/scripts/test_preflight.py"',
+            '"$RF_PYTHON" "${CLAUDE_PLUGIN_ROOT:-}/scripts/test_preflight.py"',
+            "the interpreter is run ISOLATED",
         ),
         Mutation(
-            # FOUND BY REVIEW OF #1826: a python3 found through PATH can be one the repository ships.
-            "a python3 inside the repository is run, because the interpreter lookup no longer skips the repository",
-            '  case "$real/" in "$root"/*) continue ;; esac\n',
-            "  :\n",
-            "a python3 and a pg_isready the repository ships in its bin/ are NOT run",
-        ),
-        Mutation(
-            "the repository root is the nearest Gemfile alone, so a subdirectory without one is its own root",
-            '  if [ -e "$probe/Gemfile" ] || [ -e "$probe/.git" ]; then root="$probe"; fi\n',
-            '  if [ -e "$probe/Gemfile" ]; then root="$probe"; fi\n',
-            "a python3 and a pg_isready the repository ships in its bin/ are NOT run",
-        ),
-        Mutation(
-            # The hook must work on a PATH holding nothing but a bash and a python3: an external `dirname` in the root walk is "command not found" there, and (unbounded) it spun forever.
-            "the root walk needs an external dirname, which a minimal PATH does not have",
-            '  probe="${probe%/*}"\n',
-            '  probe="$(dirname "$probe")"\n',
-            "a python3 and a pg_isready the repository ships in its bin/ are NOT run",
-        ),
-        Mutation(
-            # The directory is outside the repository; the interpreter FILE in it is a link into the checkout.
-            "an interpreter that is a link into the repository is run, because only its directory was checked",
-            '    case "$target" in "$root"/*) continue ;; esac\n',
-            "    :\n",
-            "a python3 that is a symlink into the repository is NOT run, even from a directory outside it",
-        ),
-        Mutation(
-            # A `*` in a PATH entry would be expanded against the filesystem by an unquoted `for dir in $PATH`.
-            "PATH entries are globbed, so one can expand into a directory outside the repository",
-            "set -f    # PATH entries are LITERAL: an unquoted expansion would glob a `*` in an entry against the filesystem\n",
-            "set +f\n",
-            "a PATH entry that is a glob is taken literally",
-        ),
-        Mutation(
-            # A relative entry means whatever the working directory makes it: one that resolves OUTSIDE the repository is not caught by the rule above.
-            "a relative PATH entry is searched for the interpreter",
-            '  case "$dir" in /*) ;; *) continue ;; esac\n',
-            "  :\n",
-            "a python3 reachable through a RELATIVE PATH entry is NOT run, even when it resolves outside the repository",
-        ),
-        Mutation(
-            "python3 is not run isolated, so PYTHONPATH and the working directory are on its import path",
-            '"$python" -I "${CLAUDE_PLUGIN_ROOT:-}/scripts/test_preflight.py"',
-            '"$python" "${CLAUDE_PLUGIN_ROOT:-}/scripts/test_preflight.py"',
-            "PYTHONPATH cannot make the script import a module the environment supplies",
+            "the interpreter is the shell's own lookup, not the lib's, so a python3 the repository ships can be run",
+            "rf_trusted_python\n",
+            "RF_PYTHON=\"$(type -P python3)\"\n",
+            "a python3 that is a symlink into the repository is NOT run",
         ),
         Mutation(
             # AN ADVISORY MUST NEVER BLOCK. Exit 2 on PreToolUse blocks the command it was only meant to comment on.
