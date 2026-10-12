@@ -141,7 +141,7 @@ GUARD = Guard(
         ),
         Mutation(
             'the host clock is ignored',
-            "    return typeof $.clock?.now === 'function' ? await $.clock.now() : Date.now()",
+            "    return await $.clock.now()",
             '    return Date.now()',
             'a working workflow is refused at the hard limit',
         ),

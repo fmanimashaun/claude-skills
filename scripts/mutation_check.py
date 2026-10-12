@@ -205,6 +205,7 @@ def stage(guard: Guard, workdir: Path) -> Path:
         target = workdir / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text((REPO / guard.base / relative).read_text(encoding="utf-8"), encoding="utf-8")
+        shutil.copymode(REPO / guard.base / relative, target)     # a subject, selftest or dep that is executable in the repo is executable staged (#1893, the same defect as `needs`)
     for relative in guard.needs:
         source, target = REPO / guard.base / relative, workdir / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -215,6 +216,9 @@ def stage(guard: Guard, workdir: Path) -> Path:
             shutil.copytree(source, target, dirs_exist_ok=True)
         else:
             shutil.copyfile(source, target)
+            # `copyfile` copies the BYTES and nothing else: a script a fixture runs by path (`git-shim/git`, a hook) would lose its executable bit, and a fixture that tests for
+            # `-x` or execs it reads that as "the thing is absent". git_shim and git_shim_hook went INERT in the v1.156.0 sweep for exactly this (#1893).
+            shutil.copymode(source, target)
     return workdir / guard.selftest
 
 
