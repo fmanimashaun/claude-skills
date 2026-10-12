@@ -6374,6 +6374,13 @@ def meta_checks() -> None:
         name = group.__name__.replace("_fixtures", "").replace("_", "-")
         check(f"{name} fixtures: no check that runs the hook carries a bare constant `exit N` as its detail (it must carry what the hook said)",
               not bare, f"{len(bare)} left, e.g. {bare[:2]}")
+    # #1810 (the v1.156.0 sweep's survivor): the release-gate groups' detail comes from `_said_recorder`, and the guard of this harness runs only THIS group, so the proof that the recorder
+    # keeps the process's output has to live here. The release-gate group's own check of it is not reached by `--only timeout`.
+    import types
+    record, said = _said_recorder()
+    record(types.SimpleNamespace(returncode=2, stdout="BLOCKED by qa-flow release gate", stderr="why: no certification"))
+    check("release-gate (#1810): the detail of a failed check carries what the hook said (the recorder keeps stdout and stderr, not only the exit code)",
+          said().startswith("exit 2: ") and "BLOCKED by qa-flow release gate" in said() and "why: no certification" in said(), said())
 
 
 def selftest(groups: list[str] | None = None, match: str | None = None, fail_fast: bool = False) -> int:
