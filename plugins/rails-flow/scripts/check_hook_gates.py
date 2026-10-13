@@ -5788,7 +5788,7 @@ def release_gate_large_fixtures() -> None:
 
     big_push = PUSH + "echo line\n" * 70000                       # ~770 KB of payload: the full path gave no answer in 70 s
     fast("release-gate (#1952): a 700 KB command with a push to main is refused within seconds, not left to the harness's timeout",
-         run(big_push), 2, "too large to read")
+         run(big_push), 2, "too large for the gate to read")
     fast("release-gate (#1952): a 60 KB command through the DEADLINE fallback (1 s deadline) is refused within seconds",
          run(PUSH + "echo line\n" * 6000, {"RAILS_FLOW_HOOK_DEADLINE": "1"}), 2)
     fast("release-gate (#1952): a 100 KB command through the DEADLINE fallback (1 s deadline) is refused within seconds, not after minutes",
@@ -5796,33 +5796,38 @@ def release_gate_large_fixtures() -> None:
     fast("release-gate (#1952): python3 missing, a 6 KB command with a push to main is refused by the fallback within seconds (it took 22 s)",
          run(PUSH + "echo line\n" * 600, path_without_python=True), 2)
     fast("release-gate (#1952): a large command that merges through the gh CLI is refused within seconds",
-         run("gh pr merge 5\n" + "x\n" * 200000), 2, "too large to read")
+         run("gh pr merge 5\n" + "x\n" * 200000), 2, "too large for the gate to read")
     fast("release-gate (#1952): a large command with a gh merge on a LATER line is refused within seconds (a JSON-escaped newline does not hide the verb)",
-         run("echo start\ngh pr merge 5\n" + "x\n" * 200000), 2, "too large to read")
+         run("echo start\ngh pr merge 5\n" + "x\n" * 200000), 2, "too large for the gate to read")
     fast("release-gate (#1952): a large command whose push is a git ALIAS (`git p origin main`) is refused within seconds",
-         run("git p origin main\n" + "x\n" * 200000), 2, "too large to read")
+         run("git p origin main\n" + "x\n" * 200000), 2, "too large for the gate to read")
     fast("release-gate (#1952): a large command that spells the tool `Git push` (a case-insensitive filesystem runs it) is refused within seconds",
-         run("Git push origin main\n" + "x\n" * 200000), 2, "too large to read")
+         run("Git push origin main\n" + "x\n" * 200000), 2, "too large for the gate to read")
     fast("release-gate (#1952): a large command whose verb is quote-split (`git pu\"sh\"`) is refused within seconds",
-         run("git pu\"sh\" origin main\n" + "x\n" * 200000), 2, "too large to read")
+         run("git pu\"sh\" origin main\n" + "x\n" * 200000), 2, "too large for the gate to read")
     for label, head in (("`g\"it\" push` (a quote splits the word)", 'g"it" push origin main'),
                         ("`g\'\'it push` (an empty quote pair splits the word)", "g''it push origin main"),
                         ("`g\\it push` (a backslash splits the word)", "g\\it push origin main"),
                         ("`g\"h\" pr merge 5` (the gh word split)", 'g"h" pr merge 5')):
-        fast(f"release-gate (#1952): a large command spelling the tool {label} is refused within seconds", run(head + "\n" + "x\n" * 200000), 2, "too large to read")
+        fast(f"release-gate (#1952): a large command spelling the tool {label} is refused within seconds", run(head + "\n" + "x\n" * 200000), 2, "too large for the gate to read")
     for label, head in (("a variable-built tool (`G=gi; ${G}t push origin main`)", "G=gi; ${G}t push origin main"),
                         ("a command-substitution-built tool (`$(printf gi)t push origin main`)", "$(printf gi)t push origin main"),
                         ("a backtick-built tool (`` `printf gi`t push origin main ``)", "`printf gi`t push origin main")):
-        fast(f"release-gate (#1952): a large command with {label} is refused within seconds (an expansion can build any word)", run(head + "\n" + "x\n" * 200000), 2, "too large to read")
-    fast("release-gate (#1952): CONTROL: a large command that names neither git nor gh passes within seconds",
-         run("cat > f <<EOF\n" + "some words about nothing\n" * 60000 + "EOF\n"), 0)
-    fast("release-gate (#1952): a large command that merely documents `git push` is refused too (the accepted cost) and says what to do",
+        fast(f"release-gate (#1952): a large command with {label} is refused within seconds (an expansion can build any word)", run(head + "\n" + "x\n" * 200000), 2, "too large for the gate to read")
+    for label, head in (("an ANSI-C-quoted tool (`$'\\x67it' push origin main`)", "$'\\x67it' push origin main"),
+                        ("a glob-spelled tool (`/usr/bin/g?t push origin main`)", "/usr/bin/g?t push origin main"),
+                        ("a brace-spelled tool (`g{i,}t push origin main`)", "g{i,}t push origin main")):
+        fast(f"release-gate (#1952): a large command with {label} is refused within seconds (no list of spellings is complete)",
+             run(head + "\n" + "x\n" * 200000), 2, "too large for the gate")
+    fast("release-gate (#1952): a large command that names neither git nor gh is refused TOO: the gate does not read a command this large, and says what to do",
+         run("cat > f <<EOF\n" + "some words about nothing\n" * 60000 + "EOF\n"), 2, "Write tool")
+    fast("release-gate (#1952): a large command that merely documents `git push` is refused (as every large command is) and says what to do",
          run("cat > f <<EOF\n" + "git push origin main in a doc\n" * 40000 + "EOF\n"), 2, "Write tool")
     fast("release-gate (#1952): QA_ALLOW_MAIN=1 is honoured for a large command and audited",
          run(big_push, {"QA_ALLOW_MAIN": "1"}), 0, "audited")
     rc, secs, err = run("git push origin main")
     check("release-gate (#1952): CONTROL: a small push to main is still refused by the full path (its own reason, not the size rule)",
-          rc == 2 and secs <= SECONDS_MAX and "BLOCKED by qa-flow release gate" in err and "too large to read" not in err,
+          rc == 2 and secs <= SECONDS_MAX and "BLOCKED by qa-flow release gate" in err and "too large for the gate to read" not in err,
           f"exit {rc} in {secs:.1f}s: {err!r}")
     fast("release-gate (#1952): CONTROL: a small read-only command still passes", run("git status"), 0)
 
