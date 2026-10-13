@@ -34,7 +34,9 @@ COULD NOT CHECK, never a pass (exit 2): a place this scan cannot read.
     be defined ONCE in app/ or lib/ as exactly a literal list of constants (`ALL = [A, B].freeze`: a splat, an empty list, a computed definition, a call
     or `+ EXTRA` after the `]` is could-not-check, as is any `<<`, push, concat, `+=` ... on the constant anywhere in the scanned code), every entry to
     be a tool class it found (judged like any other), and every concrete tool class it found to be in the list (an unlisted class is a finding). The
-    mark is read as a COMMENT only: the same words inside a string literal declare nothing. What it cannot see: that the server's `tools:` value really comes from that registry. The declaration
+    mark is read as a COMMENT only: the same words inside a string literal declare nothing.
+    Stated limit: a mutation the scan cannot follow statically passes, namely `Mcp::Tools.const_get(:ALL) << Rogue` and `list = Mcp::Tools::ALL; list << Rogue`
+    (an alias or a reflective lookup of the constant, then a change through it). Only a change written against the constant's own name is read. What it cannot see: that the server's `tools:` value really comes from that registry. The declaration
     is a stated, checked claim about the registry, not a proof about the server; a tool added any other way is still caught by the next bullet.
   * A tool added after construction. `Server#tools` is an `attr_accessor` over a HASH keyed by tool name (`@tools = tools.to_h { |t| [t.name_value, t] }`,
     server.rb:217/222; `@tools[tool_name] = tool`, :302/307; `@tools.values`, :555/560), so the late forms are Hash forms:
