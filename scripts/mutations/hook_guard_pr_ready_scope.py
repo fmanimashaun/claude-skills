@@ -29,6 +29,18 @@ GUARD = Guard(
     needs=_NEEDS,
     mutations=(
         Mutation(
+            "the line walk slices the string again, so 150 KB of plain lines is quadratic and runs past the hook's timeout (#1980)",
+            'while IFS= read -r line || [ -n "$line" ]; do\n  if [[ $line =~ $re ]]; then\n    m="${BASH_REMATCH[0]}"',
+            'rest="$seg"$\'\\n\'\nwhile [ -n "$rest" ]; do\n  line="${rest%%$\'\\n\'*}"; rest="${rest#*$\'\\n\'}"\n  if [[ $line =~ $re ]]; then\n    m="${BASH_REMATCH[0]}"',
+            'a 170 KB command of plain lines is let through',
+        ),
+        Mutation(
+            'no size cap: a command past it is read, runs into the 15 s timeout and is denied without a reason (#1980)',
+            'if [ "${#cmd}" -gt "$_large_chars" ]; then\n',
+            'if false; then\n',
+            'a command past the size cap is refused at once',
+        ),
+        Mutation(
             "a command word built by the shell is not refused",
             "    if [[ $w == *'$'* || $w == *'`'* ]]; then",
             "    if false; then",

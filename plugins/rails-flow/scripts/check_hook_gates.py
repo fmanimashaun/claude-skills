@@ -184,6 +184,7 @@ EXIT_STARVED = 3
 STARVED_MAX_CPU_S = 2.0
 STARVED_MARKERS = ("took longer than", "no time left in this hook", "git did not answer in time", "time budget")
 STARVED_EXEMPT_GROUPS = frozenset({"deadline", "timeout"})
+LARGE_SECONDS_MAX = 8.0     # #1980: the bound a large-command answer must come within; the quadratic walk took 16 s at 150 KB, a fixed cost is about 1 s
 STARVED: list[str] = []
 # `--strict-timing`: never STARVED. The mutation harness runs a guard whose mutants STALL a hook on purpose (an unbounded fetch or gh): the
 # stalled hook is idle (low CPU) on a loaded machine, which is exactly the STARVED signature, so the catch would be read as a skip and a
@@ -4710,6 +4711,18 @@ def guard_worktree_fixtures() -> None:
     with scratch_dir() as td:
         repo = new_repo(td)
         allowed("guard-worktree: a session that owns nothing may add a worktree", guard(repo, "git worktree add ../fresh -b feature/fresh dev"))
+        # #1980: a large command of plain lines is answered within seconds, and one past the size cap is refused at once with its reason (a timeout is a DENY with none).
+        for label, cmd, code, says in (
+                ("a 170 KB command of plain lines is let through", "echo start\n" + ("echo " + "x" * 60 + "\n") * 2600, 0, ""),
+                ("a command past the size cap is refused at once, and says why", "echo start\n" + ("echo " + "x" * 60 + "\n") * 6900, 2, "too large for the gate to read")):
+            t0 = time.monotonic()
+            try:
+                res = guard(repo, cmd)
+            except subprocess.TimeoutExpired:
+                res = (-1, "timed out after 60 s")
+            secs = time.monotonic() - t0
+            check(f"guard-worktree (#1980): {label}, within {LARGE_SECONDS_MAX:.0f}s", res[0] == code and says in res[1] and secs <= LARGE_SECONDS_MAX,
+                  f"exit {res[0]} in {secs:.1f}s (want {code} within {LARGE_SECONDS_MAX:.0f}s): {res[1][:200]!r}")
 
     # 1. This session owns an unmerged worktree: a second one is DENIED.
     with scratch_dir() as td:
@@ -5986,6 +5999,22 @@ def guard_pr_ready_fixtures() -> None:
                guard(repo, "gh pr ready 5 -- --undo"), 2, "argument --undo is not a plain PR number or branch")
         for cmd in ("gh pr view 12", "gh pr create --title x --body y", "ls", 'echo "gh pr ready 12"'):
             expect(f"guard-pr-ready: NOT a pr ready, left alone: {cmd[:40]}", guard(repo, cmd), 0)
+        # #1980: the gate ANSWERS a large command of plain lines within seconds. Measured on dev before the fix (bash 3.2): 150 KB took 16 s and 210 KB 83 s, because the
+        # line walk sliced `${rest#*$'\n'}` (quadratic); the hook's timeout is 15 s and a timeout is a DENY since #1968. The bound is far above the fixed cost and far below that.
+        def timed(cmd: str) -> tuple[tuple[int, str], float]:
+            t0 = time.monotonic()
+            try:
+                res = guard(repo, cmd)
+            except subprocess.TimeoutExpired:
+                res = (-1, "timed out after 60 s")
+            return res, time.monotonic() - t0
+        for label, cmd, code, says in (
+                ("a 170 KB command of plain lines is let through (it is not a `gh pr ready`)", "echo start\n" + ("echo " + "x" * 60 + "\n") * 2600, 0, ""),
+                ("a 170 KB command of plain lines then a `gh pr ready` is judged: it is not its own command", "echo start\n" + ("echo " + "x" * 60 + "\n") * 2600 + "gh pr ready 12", 2, "must be its own command"),
+                ("a command past the size cap is refused at once, and says why", "echo start\n" + ("echo " + "x" * 60 + "\n") * 6900, 2, "too large for the gate to read")):
+            res, secs = timed(cmd)
+            check(f"guard-pr-ready (#1980): {label}, within {LARGE_SECONDS_MAX:.0f}s", res[0] == code and says in res[1] and secs <= LARGE_SECONDS_MAX,
+                  f"exit {res[0]} in {secs:.1f}s (want {code} within {LARGE_SECONDS_MAX:.0f}s): {blocked_lines(res[1])!r}")
         record(repo, "f" * 40)
         expect("guard-pr-ready: a green record for ANOTHER HEAD is stale and refused", guard(repo, "gh pr ready 12"), 2, head[:12])
         f = record(repo, head, verdict="red", failed=2)
