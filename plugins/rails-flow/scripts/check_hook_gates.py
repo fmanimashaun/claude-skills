@@ -5805,6 +5805,15 @@ def release_gate_large_fixtures() -> None:
          run("Git push origin main\n" + "x\n" * 200000), 2, "too large to read")
     fast("release-gate (#1952): a large command whose verb is quote-split (`git pu\"sh\"`) is refused within seconds",
          run("git pu\"sh\" origin main\n" + "x\n" * 200000), 2, "too large to read")
+    for label, head in (("`g\"it\" push` (a quote splits the word)", 'g"it" push origin main'),
+                        ("`g\'\'it push` (an empty quote pair splits the word)", "g''it push origin main"),
+                        ("`g\\it push` (a backslash splits the word)", "g\\it push origin main"),
+                        ("`g\"h\" pr merge 5` (the gh word split)", 'g"h" pr merge 5')):
+        fast(f"release-gate (#1952): a large command spelling the tool {label} is refused within seconds", run(head + "\n" + "x\n" * 200000), 2, "too large to read")
+    for label, head in (("a variable-built tool (`G=gi; ${G}t push origin main`)", "G=gi; ${G}t push origin main"),
+                        ("a command-substitution-built tool (`$(printf gi)t push origin main`)", "$(printf gi)t push origin main"),
+                        ("a backtick-built tool (`` `printf gi`t push origin main ``)", "`printf gi`t push origin main")):
+        fast(f"release-gate (#1952): a large command with {label} is refused within seconds (an expansion can build any word)", run(head + "\n" + "x\n" * 200000), 2, "too large to read")
     fast("release-gate (#1952): CONTROL: a large command that names neither git nor gh passes within seconds",
          run("cat > f <<EOF\n" + "some words about nothing\n" * 60000 + "EOF\n"), 0)
     fast("release-gate (#1952): a large command that merely documents `git push` is refused too (the accepted cost) and says what to do",

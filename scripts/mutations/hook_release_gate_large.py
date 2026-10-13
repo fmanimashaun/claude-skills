@@ -46,21 +46,39 @@ GUARD = Guard(
         ),
         Mutation(
             "the bounded rule no longer refuses a large command that names git, so a push (or an alias) to main is not refused",
-            """    [[ $input =~ ${_bl}[Gg][Ii][Tt]${_e} ]] && _looks_promotion=1""",
+            """    [[ $input =~ ${_bl}[Gg]${_q}[Ii]${_q}[Tt]${_e} ]] && _looks_promotion=1""",
             """    :""",
             "a large command whose push is a git ALIAS (`git p origin main`) is refused within seconds",
         ),
         Mutation(
             "the bounded rule matches only the lower-case spelling of git, so `Git push` is not refused",
-            """${_bl}[Gg][Ii][Tt]${_e}""",
-            """${_bl}git${_e}""",
+            """${_bl}[Gg]${_q}[Ii]${_q}[Tt]${_e}""",
+            """${_bl}g${_q}i${_q}t${_e}""",
             "a large command that spells the tool `Git push` (a case-insensitive filesystem runs it) is refused within seconds",
         ),
         Mutation(
+            "quotes or backslashes between the letters of git are not tolerated, so `g\"it\" push` is not refused",
+            """[Gg]${_q}[Ii]${_q}[Tt]""",
+            """[Gg][Ii][Tt]""",
+            "a large command spelling the tool `g\"it\" push` (a quote splits the word) is refused within seconds",
+        ),
+        Mutation(
+            "quotes or backslashes between the letters of gh are not tolerated, so `g\"h\" pr merge` is not refused",
+            """[Gg]${_q}[Hh]""",
+            """[Gg][Hh]""",
+            "a large command spelling the tool `g\"h\" pr merge 5` (the gh word split) is refused within seconds",
+        ),
+        Mutation(
             "the bounded rule no longer refuses a large gh merge",
-            """    [[ $input =~ ${_bl}[Gg][Hh]${_e} ]] && _looks_promotion=1""",
+            """    [[ $input =~ ${_bl}[Gg]${_q}[Hh]${_e} ]] && _looks_promotion=1""",
             """    :""",
             "a large command that merges through the gh CLI is refused within seconds",
+        ),
+        Mutation(
+            "an expansion is not refused, so a variable- or substitution-built tool name passes",
+            """    case $input in *'$('*|*'${'*|*'`'*) _looks_promotion=1 ;; esac""",
+            """    :""",
+            "a large command with a variable-built tool (`G=gi; ${G}t push origin main`) is refused within seconds (an expansion can build any word)",
         ),
         Mutation(
             "a large command is refused whatever it says, so a benign large heredoc is blocked",
