@@ -184,6 +184,7 @@ EXIT_STARVED = 3
 STARVED_MAX_CPU_S = 2.0
 STARVED_MARKERS = ("took longer than", "no time left in this hook", "git did not answer in time", "time budget")
 STARVED_EXEMPT_GROUPS = frozenset({"deadline", "timeout"})
+LARGE_SECONDS_MAX = 8.0     # #1980: the bound a large-command answer must come within; the quadratic walk took 16 s at 150 KB, a fixed cost is about 1 s
 STARVED: list[str] = []
 # `--strict-timing`: never STARVED. The mutation harness runs a guard whose mutants STALL a hook on purpose (an unbounded fetch or gh): the
 # stalled hook is idle (low CPU) on a loaded machine, which is exactly the STARVED signature, so the catch would be read as a skip and a
@@ -4745,6 +4746,26 @@ def guard_worktree_fixtures() -> None:
     with scratch_dir() as td:
         repo = new_repo(td)
         allowed("guard-worktree: a session that owns nothing may add a worktree", guard(repo, "git worktree add ../fresh -b feature/fresh dev"))
+        # #1980: a large command is answered within seconds, whatever its shape (see guard-pr-ready's fixtures): plain lines, ONE long line, many quoted words (bash 3.2's
+        # `${cmd//[...]/}` took 4 s on 1,000 of them, 35 s on 2,000 and 110 s on 3,000: worse than quadratic), and one past the size cap that mentions `worktree` is refused at once with its reason (a timeout is a DENY with none).
+        wt_lines = lambda n: "echo start\n" + ("echo " + "x" * 60 + "\n") * n
+        for label, cmd, code, says in (
+                ("a 170 KB command of plain lines is let through", wt_lines(2600), 0, ""),
+                ("ONE 300 KB line is let through", "echo " + "x" * 300000, 0, ""),
+                ("a 6 KB command of 1,500 quoted words is let through (bash 3.2 took 15 s over it)", "echo " + "'a' " * 1500, 0, ""),
+                ("a 390 KB command just under the cap, with `worktree` in it, is judged (not refused as too large)", wt_lines(5900) + "echo worktree", 0, ""),
+                ("a command past the cap that mentions `worktree` is refused at once, and says why", wt_lines(6900) + "echo worktree", 2, "too large for the gate to read"),
+                ("a command past the cap that does NOT mention `worktree` is let through", wt_lines(6900), 0, ""),
+                ("a padded command with `git $'\\x77orktree' add` (an ANSI-C spelling of worktree) is refused: past the cap a `$'` fails closed", wt_lines(6900) + "git $'\\x77orktree' add ../x", 2, "too large for the gate to read"),
+                ("a padded command with `git $'\\167orktree' add` (the octal spelling of worktree) is refused: past the cap a `$'` fails closed", wt_lines(6900) + "git $'\\167orktree' add ../x", 2, "too large for the gate to read")):
+            t0 = time.monotonic()
+            try:
+                res = guard(repo, cmd)
+            except subprocess.TimeoutExpired:
+                res = (-1, "timed out after 60 s")
+            secs = time.monotonic() - t0
+            check(f"guard-worktree (#1980): {label}, within {LARGE_SECONDS_MAX:.0f}s", res[0] == code and says in res[1] and secs <= LARGE_SECONDS_MAX,
+                  f"exit {res[0]} in {secs:.1f}s (want {code} within {LARGE_SECONDS_MAX:.0f}s): {res[1][:200]!r}")
 
     # 1. This session owns an unmerged worktree: a second one is DENIED.
     with scratch_dir() as td:
@@ -6021,6 +6042,31 @@ def guard_pr_ready_fixtures() -> None:
                guard(repo, "gh pr ready 5 -- --undo"), 2, "argument --undo is not a plain PR number or branch")
         for cmd in ("gh pr view 12", "gh pr create --title x --body y", "ls", 'echo "gh pr ready 12"'):
             expect(f"guard-pr-ready: NOT a pr ready, left alone: {cmd[:40]}", guard(repo, cmd), 0)
+        # #1980: the gate ANSWERS a large command within seconds, whatever its shape. Measured on dev before the fix (bash 3.2, BWK awk): 150 KB of plain lines took 16 s and
+        # 210 KB 83 s (the line walk sliced `${rest#*$'\n'}`), and ONE 300 KB line took 13 s and 399 KB 16 s, past the hook's 15 s timeout, which is a DENY since #1968
+        # (the normaliser read a line with `substr` per character, quadratic in BWK awk). The bound is far above the fixed cost and far below that.
+        def timed(cmd: str) -> tuple[tuple[int, str], float]:
+            t0 = time.monotonic()
+            try:
+                res = guard(repo, cmd)
+            except subprocess.TimeoutExpired:
+                res = (-1, "timed out after 60 s")
+            return res, time.monotonic() - t0
+        plain_lines = lambda n: "echo start\n" + ("echo " + "x" * 60 + "\n") * n
+        for label, cmd, code, says in (
+                ("a 170 KB command of plain lines is let through (it is not a `gh pr ready`)", plain_lines(2600), 0, ""),
+                ("a 170 KB command of plain lines then a `gh pr ready` is judged: it is not its own command", plain_lines(2600) + "gh pr ready 12", 2, "must be its own command"),
+                ("ONE 300 KB line is let through (the normaliser is linear in a line's length)", "echo " + "x" * 300000, 0, ""),
+                ("ONE 300 KB line of quoted words is let through", "echo " + "'a' " * 75000, 0, ""),
+                ("ONE 300 KB line of short words is let through", "echo " + "ab " * 100000, 0, ""),
+                ("a 390 KB command just under the cap, with `ready` in it, is judged (not refused as too large)", plain_lines(5900) + "echo ready", 0, ""),
+                ("a command past the cap that mentions `ready` is refused at once, and says why", plain_lines(6900) + "echo ready", 2, "too large for the gate to read"),
+                ("a command past the cap that does NOT mention `ready` is let through: it cannot be a `gh pr ready`", plain_lines(6900), 0, ""),
+                ("a padded command with `gh pr $'\\x72eady'` (an ANSI-C spelling of ready) is refused: past the cap a `$'` fails closed", plain_lines(6900) + "gh pr $'\\x72eady' 5", 2, "too large for the gate to read"),
+                ("a padded command with `gh pr $'\\162eady'` (the octal spelling of ready) is refused: past the cap a `$'` fails closed", plain_lines(6900) + "gh pr $'\\162eady' 5", 2, "too large for the gate to read")):
+            res, secs = timed(cmd)
+            check(f"guard-pr-ready (#1980): {label}, within {LARGE_SECONDS_MAX:.0f}s", res[0] == code and says in res[1] and secs <= LARGE_SECONDS_MAX,
+                  f"exit {res[0]} in {secs:.1f}s (want {code} within {LARGE_SECONDS_MAX:.0f}s): {blocked_lines(res[1])!r}")
         record(repo, "f" * 40)
         expect("guard-pr-ready: a green record for ANOTHER HEAD is stale and refused", guard(repo, "gh pr ready 12"), 2, head[:12])
         f = record(repo, head, verdict="red", failed=2)
@@ -6483,6 +6529,45 @@ def submodule_filter_fixtures() -> None:
                   marker.read_text() if marker.exists() else "")
 
 
+def normalizer_linear_fixtures() -> None:
+    """#1980: the shared normaliser (`lib/normalize_cmd.sh`) is LINEAR in the length of a line, and still right at the seams of the pieces it builds output in.
+    BWK awk (macOS) makes `substr(s, i, 1)` cost the length of `s` and copies the string on every `out = out x`, so the lexer, the peel and the prefilter were
+    quadratic: ONE 300 KB line took 13 s through a gate whose hook timeout is 15 s. The check is a RATIO of the time at 400 KB to the time at 100 KB (a linear
+    pass costs 4 times as much, a quadratic one up to 16, less what is fixed), taken as the best of two runs, so the load of the machine cancels instead of flaking it. The
+    correctness cases sit on the boundaries of the 2 KB output pieces (an odd count of pieces is the pairwise join's tail) and of the 256-character slice."""
+    lib = HOOKS / "lib" / "normalize_cmd.sh"
+    if not lib.is_file():
+        check("normalize_cmd.sh present (linear)", False, str(lib))
+        return
+
+    def norm(cmd: str) -> tuple[str, float]:
+        """(the normalised text, the CPU seconds the pipeline used). CPU time, not wall: a busy machine stretches wall time by a factor that changes between two
+        runs, and that is the noise a ratio of two runs cannot afford (measured: an honest linear shape read 7.3 where its CPU ratio was 4.1)."""
+        before = resource.getrusage(resource.RUSAGE_CHILDREN)
+        done = _run(["bash", "-c", f'source "{lib}"; normalize_segments'], input=cmd, capture_output=True, text=True, timeout=120)
+        after = resource.getrusage(resource.RUSAGE_CHILDREN)
+        return done.stdout, (after.ru_utime - before.ru_utime) + (after.ru_stime - before.ru_stime)
+
+    x = lambda k: ("0123456789abcdefghijklmnopqrstuvwxyz" * (k // 36 + 1))[:k]     # distinguishable content: an order swap or a dropped piece shows
+    for cmd, want, why in (
+            *[("echo " + x(k), "echo " + x(k), f"one plain word of {k} characters") for k in (255, 256, 257, 2047, 2048, 2049, 4100, 5000, 10300)],
+            *[("echo '" + x(k) + "' tail", "echo " + x(k) + " tail", f"a single-quoted span of {k} characters") for k in (255, 256, 257, 4100)],
+            *[('echo "' + x(k) + '$V" tail', "echo tail", f"a double-quoted span of {k} characters holding an expansion is deleted") for k in (255, 256, 257, 4100)],
+            *[("echo $'" + x(k) + "' tail", "echo " + x(k) + " tail", f"an ANSI-C span of {k} characters") for k in (255, 256, 257, 4100)],
+            ("echo " + "ab " * 2000, "echo" + " ab" * 2000, "2000 short words, which the peel joins in pieces")):
+        got = norm(cmd)[0].rstrip("\n")
+        check(f"normaliser (#1980): {why} comes out whole", got == want, f"{len(got)} characters, wanted {len(want)}: {got[:60]!r}...{got[-30:]!r}")
+    for label, make in (("ONE line of plain characters", lambda kb: "echo " + "x" * (kb * 1000)),
+                        ("ONE line of short words", lambda kb: "echo " + "ab " * (kb * 1000 // 3)),
+                        ("ONE line of quoted words", lambda kb: "echo " + "'a' " * (kb * 1000 // 4)),
+                        ("ONE ANSI-C span", lambda kb: "echo $'" + "x" * (kb * 1000) + "'")):
+        small = min(norm(make(100))[1] for _ in range(2))
+        large = min(norm(make(400))[1] for _ in range(2))
+        ratio = large / max(small, 0.05)
+        check(f"normaliser (#1980): {label} costs about 4 times as much at 400 KB as at 100 KB, not 16", ratio < 7.0 and large < 30.0,
+              f"100 KB {small:.2f} CPU-s, 400 KB {large:.2f} CPU-s, ratio {ratio:.1f} (linear is 4, quadratic is 16 less what is fixed)")
+
+
 GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
@@ -6498,7 +6583,7 @@ GROUPS = {
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
     "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures, "wip_commit": wip_commit_fixtures, "tools_missing": tools_missing_fixtures,
     "fixture_git_binding": fixture_git_binding_fixtures, "guard_pr_ready": guard_pr_ready_fixtures,
-    "hostile_env": hostile_env_fixtures,
+    "hostile_env": hostile_env_fixtures, "normalizer_linear": normalizer_linear_fixtures,
 }
 
 
@@ -6523,7 +6608,7 @@ PARTS = {
     "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
           "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "wip_commit", "tools_missing", "fixture_git_binding", "test_preflight",
           "guard_pr_ready", "submodule_filter"],
-    "d": ["guard_bash"],
+    "d": ["guard_bash", "normalizer_linear"],
 }
 
 

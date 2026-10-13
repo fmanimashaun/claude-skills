@@ -38,6 +38,23 @@ cmd="$(printf '%s' "$input" | python3 -c 'import json,sys
 d=json.loads(sys.stdin.buffer.read().decode("utf-8","surrogateescape"))
 sys.stdout.buffer.write(str(d.get("tool_input",{}).get("command","")).encode("utf-8","replace"))' 2>/dev/null)" || { parsed=0; cmd="$input"; }
 
+# The text with its quotes and backslashes dropped, for the size cap just below and for the quoted-word match further down. `tr`, not `${cmd//[...]/}`: bash
+# 3.2's global substitution is quadratic in the number of matches (#1980: 50,000 quoted words took over 100 s). A missing `tr` leaves the text as it was, which
+# errs toward judging it.
+plain="$(printf '%s' "$cmd" | tr -d "\047\"\\\\" 2>/dev/null)" || plain="$cmd"
+# #1980: a command past `_large_chars` that MENTIONS `worktree` is refused at once, not read. The reading is linear now (about 1 s for 200 KB), but a
+# megabyte of it would still run into the hook's 15 s timeout, which is a DENY (`onFailure: block`, #1968) with no reason given; this says why, in well under a
+# second. A large command that does not mention the word cannot be a `git worktree add` (a word the normaliser builds out of an ANSI-C `$'...'` escape is the one
+# spelling this would miss, so a `$'` anywhere in it is refused too, as the one spelling the dropped quotes cannot show) and is let through AT ONCE, unread. The caps count CHARACTERS, `${#cmd}`, which is what the cost follows (qa-flow's release gate, #1952).
+_large_chars=400000
+if [ "${#cmd}" -gt "$_large_chars" ]; then
+  if [[ $plain == *worktree* || $cmd == *"\$'"* ]]; then
+    echo "BLOCKED by rails-flow worktree guard: this command is ${#cmd} characters and mentions \`worktree\` or holds an ANSI-C \`\$'...'\` string (which can spell it), too large for the gate to read within the hook's time limit, so it is refused rather than guessed at. Write the content to a file with the Write tool and run a short command instead." >&2
+    exit 2
+  fi
+  exit 0
+fi
+
 _dir="${BASH_SOURCE[0]%/*}"
 _lib="$_dir/lib/normalize_cmd.sh"
 _py="$_dir/lib/worktree_guard.py"
@@ -64,7 +81,6 @@ done <<< "$seg"
 # mention (`echo "git worktree add"`) through.
 raw=0
 if [ "$hit" = 0 ] && [ "$parsed" = 1 ]; then
-  plain="${cmd//[\'\"\\]/}"
   if [[ $plain =~ (^|[^[:alnum:]_])git[[:space:]]([^\;\&\|]*[[:space:]])?worktree[[:space:]]+add([[:space:]]|$) ]]; then hit=1; raw=1; fi
 fi
 [ "$hit" = 1 ] || exit 0

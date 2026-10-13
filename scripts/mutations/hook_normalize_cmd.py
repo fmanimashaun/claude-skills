@@ -45,19 +45,19 @@ GUARD = Guard(
         # ---- #1568 / #1613: the words the shell presents to the command ------------------------------
         Mutation(
             "a plain single-quoted word is deleted, not read as the word, so `git 'add' -A` presents as `git -A`",
-            "w = substr(s, i + 1, j - 1); if (simple(w)) out = out w",
-            "w = substr(s, i + 1, j - 1)",
+            "w = slice(i + 1, i + j - 1); if (simple(w)) app(w)",
+            "w = slice(i + 1, i + j - 1)",
             "git 'add' -A",
         ),
         Mutation(
             "a plain double-quoted word is deleted, not read as the word, so `git add \"-A\"` presents as `git add`",
-            "w = substr(s, i + 1, j - i - 1); if (simple(w)) out = out w",
-            "w = substr(s, i + 1, j - i - 1)",
+            "w = slice(i + 1, j - 1); if (simple(w)) app(w)",
+            "w = slice(i + 1, j - 1)",
             'git push "--force" origin main',   # a bare `git add` is refused by the allowlist now (#1783), so this fixture shows it
         ),
         Mutation(
             "an ANSI-C word is never kept, so `git add $'\\x2dA'` presents as `git add`",
-            "if (simple(ANSIV)) out = out ANSIV",
+            "if (simple(ANSIV)) app(ANSIV)",
             "",
             "(#1613): ANSI-C",
             # The 26 checks this selects build their labels from what bash decodes, and on Linux the survey and the run pass reach a different one (`$'a\\u0062c'` vs `$'ab\\0cd'`), so `--match` refuses the group: it runs the whole group instead (#1599).
@@ -65,8 +65,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a backslash before a plain character stays, so `g\\it add -A` is not git",
-            "        out = out d; i += 2; continue",
-            "        out = out c d; i += 2; continue",
+            "        app(d); i += 2; continue",
+            "        app(c d); i += 2; continue",
             "gi\\\\t add -A",
         ),
         Mutation(
@@ -77,7 +77,7 @@ GUARD = Guard(
         ),
         Mutation(
             "an arithmetic `<<` opens a heredoc, so `echo $((1<<2))` hides the command after it",
-            'if (AR > 0) { out = out "< <"; i += 2; continue }',
+            'if (AR > 0) { app("< <"); i += 2; continue }',
             "if (0) { i += 2; continue }",
             "echo $((1<<2))",
         ),
@@ -221,8 +221,8 @@ GUARD = Guard(
         ),
         Mutation(
             "an inline alias is not resolved, so `git -c alias.p=push p --force` passes",
-            "      if (j <= n) { w = t[j]; if (tolower(w) in al) w = al[tolower(w)]; out = out \" \" w; j++ }",
-            "      if (j <= n) { w = t[j]; out = out \" \" w; j++ }",
+            "      if (j <= n) { w = t[j]; if (tolower(w) in al) w = al[tolower(w)]; app(\" \" w); j++ }",
+            "      if (j <= n) { w = t[j]; app(\" \" w); j++ }",
             "`'git -c alias.p=push p --force origin main'` runs the command and is blocked",
         ),
         Mutation(
