@@ -35,10 +35,16 @@ GUARD = Guard(
             'a 170 KB command of plain lines is let through',
         ),
         Mutation(
-            'no size cap: a command past it is read, runs into the 15 s timeout and is denied without a reason (#1980)',
+            'no size cap: a command past it that mentions ready is read, runs into the 15 s timeout and is denied without a reason (#1980)',
             'if [ "${#cmd}" -gt "$_large_chars" ]; then\n',
             'if false; then\n',
-            'a command past the size cap is refused at once',
+            'a command past the cap that mentions `ready` is refused at once',
+        ),
+        Mutation(
+            'the size cap is not gated on a mention, so every large command is refused, an unrelated heredoc included (#1980)',
+            '  if [[ $plain == *ready* ]]; then\n',
+            '  if true; then\n',
+            'a command past the cap that does NOT mention `ready` is let through',
         ),
         Mutation(
             "a command word built by the shell is not refused",

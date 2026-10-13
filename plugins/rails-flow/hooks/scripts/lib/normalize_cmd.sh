@@ -497,11 +497,9 @@ _inner_strings() {
   END {
     # Cost: the lexer walks the text a character at a time, so skip it when nothing it looks for is
     # there. Judged with quotes and backslashes removed, because the lexer dequotes words before it
-    # matches them (`e'v'al`, `bas\h -c`; #1498 review). split and join, not a bash pattern substitution (superlinear on bash 3.2: an 8 KB PR body cost
-    # 32 s in guard-bash, #1504) and not a gsub (BWK awk is quadratic in the number of matches, #1980).
-    np2 = split(S, Q, /[\047"\\]/); OB = ""; NP = 0
-    for (k = 1; k <= np2; k++) app(Q[k])
-    p = joined()
+    # matches them (`e'v'al`, `bas\h -c`; #1498 review). gsub, not a bash pattern substitution: that
+    # is superlinear on bash 3.2 and made an 8 KB PR body cost 32 s in guard-bash (#1504).
+    p = S; gsub(/[\047"\\]/, "", p)
     if (p !~ /\$\(|`|<\(|eval|sh/) exit
     # Only a BATCH (depth > 0) is split: a raw command holding a \002 line must not be cut mid-string
     # (#1519 review). _join_strings removes \002 from every string, so content never fakes a boundary.
