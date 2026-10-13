@@ -1,0 +1,2 @@
+section: Repository hygiene
+- **The gates job prints whether the runner has `zsh`, `perl` and `shasum` — `.github/workflows/gates.yml`** (#1973). This is reported, not asserted: one `command -v` line in the "Interpreters the gates shell out to" step. The Linux check installs zsh (#1971), and selftests reach perl and shasum, but whether `ubuntu-latest` ships them was never measured. A selftest that skips a row without them reads the same as a pass, so the CI log now says which is true. The coordinator's call.

@@ -232,6 +232,18 @@ def _post(slug: str, body: str, gh: Runner) -> tuple[int, str]:
 # ----------------------------------------------------------------------------- selftest
 
 def selftest() -> int:
+    """The selftest, with `gh` DECLARED PRESENT (#1973). Every API-path fixture injects its own `gh` runner, but `main()` first asks
+    `shutil.which("gh")` and refuses before the runner is reached, so the fixtures passed only on a machine that happened to have a real `gh`
+    (5 of 24 failed in the Linux check). The one row about a missing `gh` overrides this and restores it."""
+    real_which = shutil.which
+    shutil.which = lambda name, *a, **k: "/stub/bin/gh" if name == "gh" else real_which(name, *a, **k)
+    try:
+        return _selftest()
+    finally:
+        shutil.which = real_which
+
+
+def _selftest() -> int:
     import tempfile
     n, failures = 0, []
 
@@ -340,10 +352,13 @@ def selftest() -> int:
             if args[1].endswith("/rulesets/9"): return (0, json.dumps(squash))
             return (1, "unexpected")
         buf = io.StringIO()
+        # A RECORDING post, never the real one (#1973): if --apply wrongly posts, the post is recorded and this check fails by name. With the
+        # default `_post` a broken --apply would run `gh api -X POST` for real (a live write on a machine with gh, a crash on one without).
+        partial_posts: list = []
         with contextlib.redirect_stdout(buf):
-            rc = main(["--apply", "--repo", "o/n"], gh=gh_partial)
+            rc = main(["--apply", "--repo", "o/n"], gh=gh_partial, post=lambda slug, body, gh: partial_posts.append(body) or (0, "{}"))
         check("--apply never edits someone else's ruleset: a partial one is reported, exit 1, nothing posted",
-              rc == 1 and "not editing" in buf.getvalue())
+              rc == 1 and "not editing" in buf.getvalue() and not partial_posts, f"exit {rc}, {len(partial_posts)} post(s)")
         posted: list[str] = []
         state = {"rulesets": []}
         def gh_live(args):
