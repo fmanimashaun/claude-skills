@@ -237,7 +237,7 @@ focus) and a wholesale swap would reset it.
 `<turbo-stream action="refresh" method="morph" scroll="preserve">`. They win
 over the page's `turbo-refresh-method` / `turbo-refresh-scroll` meta tags for
 that one refresh, so a broadcast can morph a page whose default is `replace`
-(this precedence has not been independently traced through Turbo's source).
+(traced in 8.0.23: `visit?.refresh?.method || this.snapshot.refreshMethod`).
 Omit them and the meta tags decide — and their default is `replace`, not
 morph, so `refresh` is only a morph when something says so.
 
@@ -469,13 +469,14 @@ form, the empty state replaces the frame's children. Neither touches the form's 
 
 ## 9. turbo-rails helper cheat sheet
 
-`turbo_frame_tag(record_or_id, src:, loading:, target:)` ·
+`turbo_frame_tag(*ids, src: nil, target: nil, **attributes)` (`loading:` passes through `**attributes`) ·
 `turbo_stream_from(*streamables)` · `turbo_stream.append/prepend/replace/
 update/remove/before/after(target, content = nil, &block)` (also
 `_all` variants for `targets=`) · model macros `broadcasts_to`,
 `broadcasts`, `broadcasts_refreshes` (+ `broadcast_*_later_to` instance
 methods) · `turbo_refreshes_with(method:, scroll:)` ·
-`provide meta tags via yield` · request predicates `turbo_frame_request?`,
-`turbo_stream_request?` · test matchers via `assert_turbo_stream` /
+`provide meta tags via yield` · request predicate `turbo_frame_request?` (there is no
+`turbo_stream_request?`; use `request.format.turbo_stream?`, true when Turbo's `Accept` header leads with
+turbo-stream: non-GET form submissions, or a GET carrying `data-turbo-stream`) · test matchers via `assert_turbo_stream` /
 `assert_turbo_stream_broadcasts`. Everything renders through normal
 partials — there is no special template language to learn.

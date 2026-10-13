@@ -7,9 +7,13 @@ GUARD = Guard(
     name="hook_normalize_cmd",
     subject="plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
-    # Only the fixture groups that drive this subject (#1497): the whole harness per
-    # mutant was ~70% of the mutation-coverage budget.
-    selftest_args=("--only", "guard_bash,release_gate"),
+    # Only the fixture group that names every mutant's `expects` (#1497): the whole harness per
+    # mutant was ~70% of the mutation-coverage budget. `release_gate` is not listed: no `expects` below
+    # names one of its rows (measured: all 36 select a guard_bash check), and the harness refuses a
+    # catch by any other fixture, so running it per mutant only cost time (v1.156.0 release.yml: this
+    # guard took 4911 s in one shard). Each mutant now runs ONLY the check its `expects` names (#1599).
+    selftest_args=("--only", "guard_bash"),
+    narrow_with="--match",
     needs=("plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # session-start.sh runs all three (#1581, #1828: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
@@ -56,6 +60,8 @@ GUARD = Guard(
             "if (simple(ANSIV)) out = out ANSIV",
             "",
             "(#1613): ANSI-C",
+            # The 26 checks this selects build their labels from what bash decodes, and on Linux the survey and the run pass reach a different one (`$'a\\u0062c'` vs `$'ab\\0cd'`), so `--match` refuses the group: it runs the whole group instead (#1599).
+            narrow=False,
         ),
         Mutation(
             "a backslash before a plain character stays, so `g\\it add -A` is not git",
