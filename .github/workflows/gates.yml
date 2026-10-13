@@ -73,6 +73,16 @@ jobs:
           gem install --user-install --no-document kamal -v 2.12.0
           ruby -e 'require "kamal"; puts "kamal: #{Kamal::VERSION}"'
 
+      # zsh for `git_shim_selftest.py`'s zsh row. The runner image has no zsh (measured, PR #1974's run: `host tool zsh: ABSENT`), so the row only
+      # ever ran on a maintainer's machine and in the Linux check; without it here it is SKIPPED, said, not counted. Installed, then asserted:
+      # an install that silently failed would put the skip back.
+      - name: zsh for the git shim's zsh row
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+          command -v zsh >/dev/null || { echo "::error::zsh did not install: git_shim_selftest's zsh row would be skipped"; exit 1; }
+          echo "zsh: $(zsh --version)"
+
       # The gate sweep WITHOUT the machine diagnostics. Those ask about a maintainer's clone --
       # current branch, stale local `main` ref, `gh` auth, the licensed corpora -- none of which is
       # meaningful on a runner, and failing on them would teach people to ignore a red build.
@@ -193,6 +203,10 @@ jobs:
           done
           gem install --user-install --no-document kamal -v 2.12.0
           ruby -e 'require "kamal"; puts "kamal: #{Kamal::VERSION}"'
+          # zsh for the git shim guards, as in the gate sweep's job above: the runner image has none.
+          sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+          command -v zsh >/dev/null || { echo "::error::zsh did not install"; exit 1; }
+          echo "zsh: $(zsh --version)"
 
       - name: Mutation guards, one shard of 4
         env:
