@@ -17,9 +17,12 @@
 #   checkout-index  -f / --force            read-tree  --reset together with -u
 #   commit | push | merge | rebase | pull | am | cherry-pick | revert   --no-verify (and `commit -n`; `-n` is a dry run or --no-stat elsewhere)
 #   config     any `git config` that names core.hooksPath or include.* / includeIf.*
-#   any        -c / --config-env naming core.hooksPath, include.* or includeIf.*; any GIT_CONFIG_* variable in the environment (they can define
-#              aliases, hooks paths and includes that this shim cannot see)
-# PATHSPECS (add, checkout, restore): a PLAIN RELATIVE PATH only. Refused: an absolute path, pathspec magic (a leading `:`), a glob
+#   any        -c / --config-env, and the GIT_CONFIG_COUNT/KEY_n/VALUE_n pairs of the environment, naming any key but the ALLOWLIST (#1982): maintenance.auto, gc.auto,
+#              user.name, user.email, commit.gpgsign (what a hermetic fixture sets), exact and case-insensitive; GIT_CONFIG_PARAMETERS, and GIT_CONFIG_GLOBAL /
+#              GIT_CONFIG_SYSTEM naming anything but /dev/null. (Refusing every GIT_CONFIG_* variable on sight refused even `git init` in every hermetic fixture.)
+# PATHSPECS (add, checkout, restore): a PLAIN RELATIVE PATH only (an absolute path counts as one only when it resolves, physically, to a path
+# STRICTLY INSIDE the toplevel of the repository git runs in, #1982: a session in a linked worktree names its files that way). Refused: any other
+# absolute path (outside the repository, the root itself in any spelling, above it), pathspec magic (a leading `:`), a glob
 # (`*`, `?`, `[`), the repository root in any spelling (`.` at the root, `./.`, `src/..`), a path that leaves the repository.
 # ALIASES: resolved with `git config --get alias.<name>` (and the same global options, so `-c alias.p=... p` is seen). Refused: a `!` shell alias
 # that mentions git at all (git runs it with its own exec-path first, so the git it calls never reaches this shim), a chain deeper than 5,
@@ -76,10 +79,42 @@ refuse() {
 # Case-insensitive glob match, switched on only for the one test (a global nocasematch would make `-A` and `-a` the same option).
 ci_match() { local r; shopt -s nocasematch; [[ $1 == $2 ]]; r=$?; shopt -u nocasematch; return $r; }
 
-# GIT_CONFIG_* in the environment can define aliases, a hooks path and includes: refuse (fail closed).
+# THE CONFIG A COMMAND MAY CARRY IS AN ALLOWLIST (#1982, the coordinator's decision), in all three forms: GIT_CONFIG_KEY_n in the environment, `-c` and `--config-env`.
+# A denylist could not be completed: a key that runs a program (core.hooksPath, core.fsmonitor, core.sshCommand, core.pager, core.editor, credential.helper,
+# gpg.program, diff.external, filter.*.clean, ...) or pulls in a file (include.*) is one more entry nobody listed yet. Only the keys a hermetic fixture sets
+# pass (`scripts/fixture_git.py`: SETTINGS maintenance.auto and gc.auto; IDENTITY user.name, user.email and commit.gpgsign), matched EXACTLY and
+# case-insensitively (git folds the section and variable names): `user.name.x` and `user.namex` are not `user.name`. Anything else is refused, aliases
+# included: an alias given on the command line (`-c alias.p=push`) is a key like any other.
+CFG_ALLOWED() {
+  ci_match "$1" "maintenance.auto" || ci_match "$1" "gc.auto" || ci_match "$1" "user.name" || ci_match "$1" "user.email" || ci_match "$1" "commit.gpgsign"
+}
+CFG_ALLOWED_LIST="maintenance.auto, gc.auto, user.name, user.email, commit.gpgsign"
+# `-c name=value` and `--config-env=name=ENVVAR`: the key is what precedes the first `=`.
+CFG_DANGER() { ! CFG_ALLOWED "${1%%=*}"; }
+
+# GIT_CONFIG_* in the environment: READ the pairs and admit only the allowlisted keys (#1982). A hermetic fixture exports GIT_CONFIG_COUNT/KEY_n/VALUE_n
+# (maintenance.auto and gc.auto) to keep its git independent of the host, and refusing every GIT_CONFIG_* variable on sight refused `git init` itself in
+# each of them. Anything this shim cannot read stays refused: GIT_CONFIG_PARAMETERS, a non-/dev/null GLOBAL or SYSTEM file, an unknown GIT_CONFIG_*
+# name, a count that is not a plain number, and any pair whose key is not allowlisted.
 for v in $(compgen -e GIT_CONFIG_); do
-  RULE="$v is set: GIT_CONFIG_* can define aliases, core.hooksPath and includes that this shim cannot see"
-  refuse "${ORIG[@]}"
+  case "$v" in
+    GIT_CONFIG_NOSYSTEM|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_*|GIT_CONFIG_VALUE_*) ;;      # a switch that only turns the system file OFF; the pairs, read below
+    GIT_CONFIG_GLOBAL|GIT_CONFIG_SYSTEM)
+      [ "${!v}" = /dev/null ] || { RULE="$v names a config file (${!v}) this shim cannot read: only /dev/null passes"; refuse "${ORIG[@]}"; } ;;
+    *) RULE="$v is set: it can define aliases, core.hooksPath and includes that this shim cannot read"; refuse "${ORIG[@]}" ;;
+  esac
+done
+cfg_count="${GIT_CONFIG_COUNT:-0}"
+case "$cfg_count" in
+  ''|*[!0-9]*|??????*) RULE="GIT_CONFIG_COUNT ($cfg_count) is not a plain number of pairs this shim can read"; refuse "${ORIG[@]}" ;;
+esac
+cfg_i=0
+while [ "$cfg_i" -lt "$cfg_count" ]; do
+  cfg_var="GIT_CONFIG_KEY_$cfg_i"; cfg_key="${!cfg_var:-}"
+  if ! CFG_ALLOWED "$cfg_key"; then
+    RULE="$cfg_var=$cfg_key: only $CFG_ALLOWED_LIST may be set in the environment (any other key can run a program or pull in a file)"; refuse "${ORIG[@]}"
+  fi
+  cfg_i=$((cfg_i + 1))
 done
 
 # A path relative to the repository top: `norm <prefix> <path>` prints it ("" for the root, "OUT" when it leaves the repository).
@@ -105,6 +140,39 @@ find_top() {
   PREFIX="$("$real" "${GLOBALS[@]}" rev-parse --show-prefix 2>/dev/null)" || PREFIX=""
 }
 
+# THE FIXTURE EXEMPTION for `add` (#1982, the coordinator's decision (b)). A hermetic fixture builds its own temp repository and stages it whole (`git add -A`), which the
+# rule above refuses everywhere, so every selftest that does it failed when run from the Claude Code Bash tool (the shim is first on PATH there). `fixture_git.run`
+# names the repository exactly, with GIT_DIR and GIT_WORK_TREE. The exemption holds ONLY when ALL of these are true, each resolved PHYSICALLY (`cd ... && pwd -P`:
+# macOS /var is /private/var, and a symlink in temp that points at the project resolves to the project):
+#   1. GIT_DIR and GIT_WORK_TREE are both set, and both lie STRICTLY INSIDE the temp root (one inside and one outside refuses);
+#   2. the temp root is TMPDIR, which must be SET (an unset TMPDIR is refused, not defaulted to /tmp) and must not be `/`, HOME, or an ancestor of HOME
+#      (a crafted `TMPDIR=/` or `TMPDIR=$HOME` cannot widen it);
+#   3. the work tree is NOT the session's project toplevel and NOT an ancestor of it. The project is the toplevel the SessionStart hook recorded in
+#      RAILS_FLOW_PROJECT_TOP; where that is unset the exemption does not apply.
+# Cost, stated: a fixture whose HOME is inside TMPDIR (`HOME=$TMPDIR/x`) is not exempt, because HOME inside the temp root makes the temp root an ancestor of HOME.
+phys() { ( cd "$1" 2>/dev/null && pwd -P ); }
+FIX_DONE=0; FIX_RC=1
+fixture_repo() {
+  [ "$FIX_DONE" = 1 ] && return "$FIX_RC"
+  FIX_DONE=1
+  local gd wt tmp tp hp pj pp
+  [ -n "${GIT_DIR:-}" ] && [ -n "${GIT_WORK_TREE:-}" ] || return 1
+  [ -n "${TMPDIR:-}" ] || return 1
+  tp="$(phys "$TMPDIR")"; [ -n "$tp" ] && [ "$tp" != / ] || return 1
+  if [ -n "${HOME:-}" ]; then
+    hp="$(phys "$HOME")"
+    if [ -n "$hp" ]; then case "$hp/" in "$tp"/*) return 1 ;; esac; fi
+  fi
+  wt="$(phys "$GIT_WORK_TREE")"; gd="$(phys "$GIT_DIR")"
+  [ -n "$wt" ] && [ -n "$gd" ] || return 1
+  case "$wt" in "$tp"/?*) ;; *) return 1 ;; esac
+  case "$gd" in "$tp"/?*) ;; *) return 1 ;; esac
+  [ -n "${RAILS_FLOW_PROJECT_TOP:-}" ] || return 1
+  pp="$(phys "$RAILS_FLOW_PROJECT_TOP")"; [ -n "$pp" ] || return 1
+  case "$pp/" in "$wt"/*) return 1 ;; esac      # the work tree IS the project or contains it
+  FIX_RC=0; return 0
+}
+
 # Is this pathspec the repository root, in any spelling? (used by `rm`, which may name a glob)
 is_root_path() {
   local p="$1"
@@ -114,18 +182,41 @@ is_root_path() {
   [ "$(norm "$PREFIX" "$p")" = "" ]
 }
 
+# An absolute pathspec, made relative to the toplevel when it names a path STRICTLY INSIDE it (#1982). Prints it (top-relative, never empty) or nothing.
+# The directory part is resolved PHYSICALLY (`cd ... && pwd -P`) because git reports the toplevel physically and a temp directory is often a symlink
+# (/tmp, /var on macOS); a path whose directory does not exist, whose last component is `.` or `..`, or that does not sit under `$TOP/`, prints nothing.
+abs_inside() {
+  local p="$1" dir base phys
+  while [ "${#p}" -gt 1 ] && [ "${p%/}" != "$p" ]; do p="${p%/}"; done    # trailing slashes: `/r/dir/` is `/r/dir`
+  base="${p##*/}"; dir="${p%/*}"; [ -n "$dir" ] || dir=/
+  case "$base" in ""|.|..) return 0 ;; esac
+  phys="$(cd "$dir" 2>/dev/null && pwd -P)" || return 0
+  [ -n "$phys" ] || return 0
+  case "$phys" in /) phys="" ;; esac
+  find_top
+  [ -n "$TOP" ] || return 0
+  case "$phys/$base" in "$TOP"/?*) printf '%s' "${phys#"$TOP"}/$base" | { IFS= read -r x; printf '%s' "${x#/}"; } ;; esac
+}
+
 # Is this pathspec a PLAIN RELATIVE PATH below the root? Sets BADWHY and returns 1 when it is not.
 BADWHY=""
 plain_path() {
-  local p="$1" n
+  local p="$1" n rel
   case "$p" in
     "") BADWHY="an empty pathspec"; return 1 ;;
     :*) BADWHY="pathspec magic ($p) cannot be judged"; return 1 ;;
-    /*) BADWHY="an absolute path ($p) cannot be judged"; return 1 ;;
     *"*"*|*"?"*|*"["*) BADWHY="a glob ($p) can match the whole tree"; return 1 ;;
   esac
   find_top
   if [ -z "$TOP" ]; then BADWHY="the repository root could not be found"; return 1; fi
+  case "$p" in
+    /*)
+      rel="$(abs_inside "$p")"
+      if [ -z "$rel" ]; then BADWHY="an absolute path ($p) that is not strictly inside the repository ($TOP) cannot be judged"; return 1; fi
+      n="$(norm "" "$rel")"
+      if [ "$n" = "OUT" ] || [ -z "$n" ]; then BADWHY="$p leaves the repository or is its root"; return 1; fi
+      return 0 ;;
+  esac
   n="$(norm "$PREFIX" "$p")"
   if [ "$n" = "OUT" ]; then BADWHY="$p leaves the repository"; return 1; fi
   if [ -z "$n" ]; then BADWHY="$p is the repository root"; return 1; fi
@@ -260,6 +351,7 @@ decide() {
   case "$sub" in
     add)
       seen dry-run && return 0
+      fixture_repo && return 0
       if seen all; then RULE="git add --all stages every change in the tree, including strays (stage named files)"; return 1; fi
       seen update && return 0; seen patch && return 0; seen interactive && return 0
       paths_plain "git add" || return 1 ;;
@@ -295,8 +387,8 @@ decide() {
     config)
       local x
       for x in "$@"; do
-        if ci_match "$x" "*core.hookspath*" || ci_match "$x" "*include.path*" || ci_match "$x" "*includeif.*"; then
-          RULE="git config naming core.hooksPath or include.* can switch the #1789 git hooks off"; return 1
+        if ci_match "$x" "*core.hookspath*" || ci_match "$x" "*include.path*" || ci_match "$x" "*includeif.*" || ci_match "$x" "*core.fsmonitor*" || ci_match "$x" "*core.sshcommand*"; then
+          RULE="git config naming core.hooksPath, include.*, core.fsmonitor or core.sshCommand can switch the #1789 git hooks off"; return 1
         fi
       done ;;
     commit|push|merge|rebase|pull|am|cherry-pick|revert)
@@ -306,7 +398,6 @@ decide() {
 }
 
 GLOBALS=()
-CFG_DANGER() { ci_match "$1" "core.hookspath*" || ci_match "$1" "include.*" || ci_match "$1" "includeif.*"; }
 
 # evaluate <git arguments...>: 0 to let the command run, 1 (with RULE set) to refuse it.
 evaluate() {
@@ -322,11 +413,11 @@ evaluate() {
       -c|--config-env)
         GLOBALS[${#GLOBALS[@]}]="$a"; i=$((i + 1))
         if [ "$i" -lt "$n" ]; then
-          if CFG_DANGER "${ARGV[$i]}"; then RULE="$a ${ARGV[$i]}: core.hooksPath and include.* on the command line can switch the #1789 git hooks off"; return 1; fi
+          if CFG_DANGER "${ARGV[$i]}"; then RULE="$a ${ARGV[$i]}: only $CFG_ALLOWED_LIST may be set on the command line (any other key can run a program or pull in a file)"; return 1; fi
           GLOBALS[${#GLOBALS[@]}]="${ARGV[$i]}"; i=$((i + 1))
         fi ;;
       --config-env=*)
-        if CFG_DANGER "${a#--config-env=}"; then RULE="$a: core.hooksPath and include.* on the command line can switch the #1789 git hooks off"; return 1; fi
+        if CFG_DANGER "${a#--config-env=}"; then RULE="$a: only $CFG_ALLOWED_LIST may be set on the command line (any other key can run a program or pull in a file)"; return 1; fi
         GLOBALS[${#GLOBALS[@]}]="$a"; i=$((i + 1)) ;;
       --version|--help|-h|--exec-path|--html-path|--man-path|--info-path|--list-cmds=*) return 0 ;;
       -*) GLOBALS[${#GLOBALS[@]}]="$a"; i=$((i + 1)) ;;

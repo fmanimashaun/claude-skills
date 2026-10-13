@@ -145,10 +145,11 @@ certified feature.
 
 **Certification stamp — certify runs that pass EVERY layer only**: write
 `qa/CERTIFICATION` as JSON `{"sha":"<dev sha tested>","date":"<iso>","verdict":
-"PASS","report":"qa/reports/<file>","schema":2,"version":"<version>","first_boot":"qa/manual-tests/first-boot-<version>",
+"PASS","report":"qa/certifications/<version>.md","schema":2,"version":"<version>","first_boot":"qa/manual-tests/first-boot-<version>",
 "authz":"qa/manual-tests/authz-<version>/sweep.csv"}`, adding `"root_role"` when the app's root is
 not called root. `schema: 2` means the stamp names the two release-only layers (#1428), and
-`version` is the release it certifies: the evidence paths must carry it, and evidence byte-identical to
+`version` is the release it certifies. Copy the run report to `qa/certifications/<version>.md` and commit it:
+that exact path is the only report the release gate permits after the tested sha (#1987). The evidence paths must carry the version, and evidence byte-identical to
 another release's is refused as a copy. Then run
 `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_evidence.py" stamp`, which judges the evidence in the
 working tree, before it is committed: on any non-zero exit DELETE the stamp and report FAIL. The

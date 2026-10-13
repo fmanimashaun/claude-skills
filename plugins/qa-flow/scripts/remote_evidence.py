@@ -28,7 +28,8 @@ same code, not a copy of it. Its output and exit code are passed through unchang
 (`FAIL` lines on stderr), 2 unusable.
 
 FAIL CLOSED, AND INSIDE THE HOOK'S TIME. A PreToolUse hook that outlives its timeout does not deny, so
-this stops by itself: every step gets what is left of `--budget` (default 8 s) and a step that cannot
+this stops by itself: every step gets what is left of `--budget` (default 8 s; 180 s with `--record`, which runs
+before the promotion and outside the hook, #1987) and a step that cannot
 finish is exit 2 "unusable", which the gate turns into a denial. Anything it cannot fetch, resolve or run is
 exit 2 for the same reason; an error never reads as "the evidence is fine". A repository whose `main` cannot
 be listed is unusable too, and one that has no `main` is a repository with nothing published yet.
@@ -58,6 +59,9 @@ EXIT_OK, EXIT_FINDINGS, EXIT_UNUSABLE = 0, 1, 2
 REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SHA = re.compile(r"^[0-9a-f]{40}$")
 DEFAULT_BUDGET = 8.0      # the release gate (hook timeout 15 s) passes what it has left, never more than this
+# #1987: `--record` runs BEFORE the promotion, outside any hook, and a real evidence tree took ~40 s (git archive in a
+# blobless scratch repo ~31 s), so it gets a generous default of its own. Judging inside the gate keeps DEFAULT_BUDGET.
+RECORD_BUDGET = 180.0
 HERE = Path(__file__).resolve().parent
 VERDICT_TTL = 30 * 60     # seconds a recorded verdict is honoured (#1686)
 
@@ -236,11 +240,19 @@ def judge(clock: Clock, repo: str, sha: str, url: str | None = None, evidence_sc
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def budget_for(record_mode: bool, given: float | None) -> float:
+    """The clock's budget: what --budget gave, else 180 s to record and 8 s to judge (#1987)."""
+    if given is not None:
+        return given
+    return RECORD_BUDGET if record_mode else DEFAULT_BUDGET
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--repo")
     ap.add_argument("--sha")
-    ap.add_argument("--budget", type=float, default=DEFAULT_BUDGET)
+    ap.add_argument("--budget", type=float, default=None,
+                    help=f"seconds (default {DEFAULT_BUDGET:g} to judge, {RECORD_BUDGET:g} with --record, #1987)")
     ap.add_argument("--record", action="store_true", help="judge, then write the verdict file the release gate reads (#1686)")
     ap.add_argument("--check-verdict", action="store_true", help="read the recorded verdict; exit 0 only for a fresh matching PASS")
     ap.add_argument("--tree", help="with --check-verdict: the evidence tree id, `git rev-parse SHA:qa`")
@@ -261,8 +273,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{kind}: {detail}", file=sys.stderr)
             return EXIT_FINDINGS if kind == "FAIL" else EXIT_UNUSABLE
         if args.record:
-            return record(Clock(args.budget), args.repo, args.sha)
-        return judge(Clock(args.budget), args.repo, args.sha)
+            return record(Clock(budget_for(True, args.budget)), args.repo, args.sha)
+        return judge(Clock(budget_for(False, args.budget)), args.repo, args.sha)
     except Unusable as exc:
         print(f"unusable: {exc}", file=sys.stderr)
         return EXIT_UNUSABLE
@@ -281,6 +293,11 @@ def selftest() -> int:
     def run(*argv: str) -> tuple[int, str]:
         done = subprocess.run([sys.executable, str(Path(__file__).resolve()), *argv], capture_output=True, text=True, timeout=120)
         return done.returncode, done.stderr
+
+    # #1987: --record defaults to a generous budget (a real fetch took ~31 s against the gate's 8 s); judging keeps 8 s.
+    check("--record with no --budget gets 180 s; judging gets 8 s; a given --budget wins (#1987)",
+          (budget_for(True, None), budget_for(False, None), budget_for(True, 5.0)) == (180.0, 8.0, 5.0),
+          (budget_for(True, None), budget_for(False, None), budget_for(True, 5.0)))
 
     # Arguments are refused before anything is fetched, and BY THEIR OWN MESSAGE: a value wrongly let through would end as
     # "unusable" too (a failed network fetch), so only the validation message tells a refusal from an accident.

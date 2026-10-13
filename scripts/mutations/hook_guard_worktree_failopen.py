@@ -28,6 +28,13 @@ GUARD = Guard(
            'plugins/rails-flow/scripts/extract_claims.py',
            'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/test_preflight.py', 'plugins/rails-flow/scripts/wip_commit.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),
     mutations=(
+        # #1978: the line loop back on bash 3.2's quadratic pattern slicing, so a 150 KB command with no python3 runs past the hook's 15 s timeout.
+        Mutation(
+            "the line loop slices the text with ${rest#*\\n} again, quadratic on bash 3.2",
+            'while IFS= read -r line || [ -n "$line" ]; do\n  if [[ $line =~ $re ]]; then hit=1; break; fi\ndone <<< "$seg"',
+            'rest="$seg"$\'\\n\'\nwhile [ -n "$rest" ]; do\n  line="${rest%%$\'\\n\'*}"; rest="${rest#*$\'\\n\'}"\n  if [[ $line =~ $re ]]; then hit=1; break; fi\ndone',
+            "with no python3 a 150 KB worktree add is refused in under 5 s",
+        ),
         Mutation(
             'the degraded match stays anchored, so an unreadable payload is waved through',
             '[ "$degraded" = 1 ] && re=\'git[[:space:]]+worktree[[:space:]]+add([[:space:]]|$)\'',

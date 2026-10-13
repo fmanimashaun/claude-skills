@@ -59,6 +59,10 @@ jobs:
             command -v "$bin" >/dev/null || { echo "::error::$bin is not on PATH — the markdown code linter would report INCOMPLETE and its findings would be silently skipped."; exit 1; }
             echo "$bin: $("$bin" --version)"
           done
+          # #1973: REPORTED, not asserted, for the tools selftests reach that the runner image ships (measured present, PR #1974's run). zsh is not
+          # here: the image has none, and the "zsh for the git shim's zsh row" step below installs it and ASSERTS it, so a line here would read ABSENT
+          # on every run, before that install.
+          for bin in perl shasum; do echo "host tool $bin: $(command -v "$bin" || echo ABSENT)"; done
 
       # `kamal_destination.py --selftest` asks Kamal's own loader how a destination merges and what
       # RAILS_ENV each role resolves (#1465). Without the gem those fixtures report exit 3 (INCOMPLETE),
@@ -69,6 +73,22 @@ jobs:
           set -euo pipefail
           gem install --user-install --no-document kamal -v 2.12.0
           ruby -e 'require "kamal"; puts "kamal: #{Kamal::VERSION}"'
+
+      # zsh for `git_shim_selftest.py`'s zsh row. The runner image has no zsh (measured, PR #1974's run: `host tool zsh: ABSENT`), so the row only
+      # ever ran on a maintainer's machine and in the Linux check; without it here it is SKIPPED, said, not counted. Installed, then asserted:
+      # an install that silently failed would put the skip back.
+      - name: zsh for the git shim's zsh row
+        run: |
+          set -euo pipefail
+          { sudo apt-get update -qq && sudo apt-get install -y -qq zsh; } || { sleep 5; sudo apt-get update -qq && sudo apt-get install -y -qq zsh; }   # one retry: a mirror blip must not turn a release red
+          command -v zsh >/dev/null || { echo "::error::zsh did not install: git_shim_selftest's zsh row would be skipped"; exit 1; }
+          echo "zsh: $(zsh --version)"
+          # PROOF IN THE LOG that the row runs (the gate sweep prints only a passing gate's verdict): the hook case alone, and a refusal if it says
+          # it skipped its zsh row.
+          # `|| { echo "$out"; exit 1; }`: under set -e a failing selftest would otherwise end the step with an EMPTY log (8b's review of #1976).
+          out="$(python3 plugins/rails-flow/scripts/git_shim_selftest.py --match "the SessionStart hook puts the shim first" 2>&1)" || { echo "$out"; exit 1; }
+          echo "$out" | tail -1
+          case "$out" in *"did NOT run under zsh"*) echo "::error::git_shim_selftest skipped its zsh row with zsh installed"; exit 1 ;; esac
 
       # The gate sweep WITHOUT the machine diagnostics. Those ask about a maintainer's clone --
       # current branch, stale local `main` ref, `gh` auth, the licensed corpora -- none of which is
@@ -190,6 +210,10 @@ jobs:
           done
           gem install --user-install --no-document kamal -v 2.12.0
           ruby -e 'require "kamal"; puts "kamal: #{Kamal::VERSION}"'
+          # zsh for the git shim guards, as in the gate sweep's job above: the runner image has none.
+          { sudo apt-get update -qq && sudo apt-get install -y -qq zsh; } || { sleep 5; sudo apt-get update -qq && sudo apt-get install -y -qq zsh; }   # one retry: a mirror blip must not turn a release red
+          command -v zsh >/dev/null || { echo "::error::zsh did not install"; exit 1; }
+          echo "zsh: $(zsh --version)"
 
       - name: Mutation guards, one shard of 4
         env:

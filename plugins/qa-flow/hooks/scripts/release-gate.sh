@@ -13,7 +13,24 @@ IFS= read -r -d '' input || true
 # The COARSE promotion detector, builtins only (no grep, no python3): sets _looks_promotion from the raw payload.
 # Used when a tool is missing (below) AND when the deadline kills the real parse (#1575). Both cannot read the command,
 # so both ask the same question the same way and err on the same side.
+# #1952: THE FALLBACK IS QUADRATIC, AND IT RUNS EXACTLY WHEN THE GATE IS ALREADY LATE. Its nine-pass `${_in//x/ }`, the `${_t//[;&|()]/ ; }` and
+# the word loop are quadratic in bash 3.2, measured with no other work in the way: a 2 KB payload took 2 s, 6 KB took 22 s, 11 KB over 40 s.
+# The hook is killed at 15 s and a killed hook lets the command run, so a deadline or a missing tool turned a promotion into an allow for any
+# command of a few KB (the audit's first probe: 683 KB, no answer in 70 s; with a 3 s deadline even 390 KB got none).
+# Past `_coarse_bytes` the payload is therefore NOT JUDGED BY ITS WORDS AT ALL: it is refused. A list of words is never complete: two reviews each
+# found a spelling the list missed (a verb alias, `g"it"`, `g''it`, `g\it`, `G=gi; ${G}t push`, `$(printf gi)t push`, and then `$'\x67it'`,
+# `/usr/bin/g?t`, `g{i,}t`, an `eval`, a base64 decode), because the shell gives a command word a hundred ways to be spelled and this path cannot
+# run the shell. The one answer that cannot be wrong is the refusal, and the refusal says what to do. Cost, accepted, in the degraded paths ONLY
+# (a deadline, a missing tool): a command past 2 KB is refused ("retry it"), where before it was answered after the harness had already let it run.
+_coarse_bytes=2048
+# And a payload past `_large_bytes` never enters the full path at all (195 KB took 3.1 s and 390 KB took 8.2 s on an idle machine; the caps count CHARACTERS, `${#input}`, which is what the cost follows): it is refused at
+# once, so the answer arrives in well under a second whatever the load. A command this large is a file written through Bash; the Write tool exists.
+_large_bytes=131072
 _coarse_looks_promotion() {
+  if [ "${#input}" -gt "$_coarse_bytes" ]; then
+    _looks_promotion=1      # cannot be read in time: refused, not guessed at
+    return 0
+  fi
   _in="$input"
   for _esc in '\t' '\n' '\r' '\u0009' '\u000a' '\u000A' '\u000d' '\u000D' '\u0020'; do
     _in="${_in//"$_esc"/ }"
@@ -152,6 +169,13 @@ _coarse_looks_promotion() {
   # mutation NAMES let enablePullRequestAutoMerge, createCommitOnBranch and updatePullRequestBranch through.
   [[ $_in =~ ${_b}gh${_e} ]] && [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ ${_b}graphql${_e} ]] && [[ $_in =~ mutation ]] && _looks_promotion=1
 }
+
+# #1952: a payload past `_large_bytes` is not read by the full path at all; it is refused in well under a second (QA_ALLOW_MAIN=1 allows it, audited).
+if [ "${#input}" -gt "$_large_bytes" ]; then
+  [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: a ${#input}-character command is too large to read, but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
+  echo "BLOCKED by qa-flow release gate: this command is ${#input} characters, too large for the gate to read within the hook's time limit, so it is refused rather than guessed at. Write the content to a file with the Write tool and run a short command instead, or set QA_ALLOW_MAIN=1 (audited)." >&2
+  exit 2
+fi
 
 _missing=""
 for _t in python3 git sed awk tr grep head; do
@@ -680,14 +704,16 @@ reader="${CLAUDE_PLUGIN_ROOT:-}/scripts/read_certification.py"
 ev="${CLAUDE_PLUGIN_ROOT:-}/scripts/release_evidence.py"
 JWHY=""
 
-# extra_files <evidence paths>: reads changed paths on stdin and prints those that are neither the stamp nor
-# evidence the stamp names. ONE definition for this checkout and for another repository (#1591): the delta
+# extra_files <evidence paths>: reads changed paths on stdin and prints those that are neither the stamp, CHANGELOG.md, nor
+# evidence the stamp names (which includes the stamp's own report and the sweep's folder, #1987). ONE definition for this checkout and for another repository (#1591): the delta
 # since the certified commit may be the stamp and the evidence it names, and nothing else.
 extra_files() {
   local evidence="$1" f p ok
   while IFS= read -r f; do
     [ -z "$f" ] && continue
     [ "$f" = "qa/CERTIFICATION" ] && continue
+    # #1987: the certify flow dates the release heading in CHANGELOG.md after the certified commit; text, not code.
+    [ "$f" = "CHANGELOG.md" ] && continue
     ok=0
     while IFS= read -r p; do
       [ -n "$p" ] || continue
@@ -969,9 +995,10 @@ exit 0
 
 # THE DEADLINE (#1575). qa-flow's gate sources the same normaliser as guard-bash, and a normaliser that spins left
 # awk children behind for hours. Past the deadline the whole process group is killed. This gate refuses only a
-# main-ward promotion, so a timeout does too: the COARSE builtin detector above judges the raw payload; a command
-# that does not look like a promotion is allowed (blocking every slow command would be the failure here), and one that
-# does is denied, QA_ALLOW_MAIN=1 honoured and audited exactly as in the missing-tool path. The default is 13 s, under the
+# main-ward promotion, so a timeout does too: the COARSE builtin detector above judges the raw payload. Up to `_coarse_bytes` a command that does not
+# look like a promotion is allowed (blocking every slow command would be the failure here) and one that does is denied; PAST `_coarse_bytes` the
+# detector refuses whatever the command says (#1952), so a timeout on a large command is a refusal. QA_ALLOW_MAIN=1 is honoured and audited
+# exactly as in the missing-tool path. The default is 13 s, under the
 # hook's 15 s timeout (hooks.json), and RAILS_FLOW_HOOK_DEADLINE is clamped at 13. It was 10 until #1607: the foreign-repository judgment
 # (#1612) plans for up to about 12 s of its own and bounds each of its calls, so the deadline must sit ABOVE that budget, where it only
 # catches a call nobody bounded, and not cut a slow-but-bounded judgment off first with a less useful reason. The gate's NETWORK calls (`gh pr view`,
@@ -989,7 +1016,11 @@ if [ -f "$_dl" ] && . "$_dl" 2>/dev/null && type deadline_run >/dev/null 2>&1; t
     _coarse_looks_promotion
     if [ "$_looks_promotion" = "1" ]; then
       [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: the gate hit its ${_deadline_s}s deadline but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
-      echo "BLOCKED by qa-flow release gate: the gate took longer than ${_deadline_s}s, and this command looks like a promotion to main, so it is refused rather than guessed at. Retry it; if it keeps timing out, run /qa-flow:certify and check the repo and network." >&2
+      if [ "${#input}" -gt "$_coarse_bytes" ]; then
+        echo "BLOCKED by qa-flow release gate: the gate took longer than ${_deadline_s}s, and a command of ${#input} characters is too large for the fallback to judge (its limit is ${_coarse_bytes}), so it is refused rather than guessed at. Write the content to a file with the Write tool and run a short command instead, or set QA_ALLOW_MAIN=1 (audited)." >&2
+      else
+        echo "BLOCKED by qa-flow release gate: the gate took longer than ${_deadline_s}s, and this command looks like a promotion to main, so it is refused rather than guessed at. Retry it; if it keeps timing out, run /qa-flow:certify and check the repo and network." >&2
+      fi
       exit 2
     fi
     exit 0

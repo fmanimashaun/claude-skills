@@ -53,6 +53,19 @@ HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
 SCRATCH_PREFIX = "hookgates-"
 
 
+def repo_marker_above(path) -> str | None:
+    """The first directory at or above `path` that holds a `.git` or a `Gemfile`, or None (#1929). The hook rebuilds PATH from absolute entries OUTSIDE the repository, which it takes to be the
+    OUTERMOST such ancestor of its working directory (`lib/trusted-env.sh`, `rf_repo_root`); "/" is never the repository. A fixture whose tool directory sits under a scratch directory is therefore
+    only testing a PATH while nothing above that directory is one, and `$TMPDIR` is the machine's, not ours."""
+    probe = Path(os.path.realpath(path))
+    while True:
+        if str(probe) != "/" and ((probe / ".git").exists() or (probe / "Gemfile").exists()):
+            return str(probe)
+        if probe.parent == probe:
+            return None
+        probe = probe.parent
+
+
 @contextlib.contextmanager
 def scratch_dir():
     """A temp directory a fixture owns, removed on exit WITHOUT ever failing the run (#1800).
@@ -892,6 +905,24 @@ NEGATIVES_1568 = ['git add "app/x.rb" "spec/y.rb"', "git add 'x y' app/z.rb", 'g
                   'git add "app/models/user.rb"', "git add 'a.rb' 'b.rb'", 'git commit -m "fix"', 'git status "-s"']
 # #1706: the honest-mistake spellings beside a blocked one, each measured allowed on dev before this change; and #1708's force-with-lease
 # to a branch whose NAME contains main, which was blocked. Controls must keep their verdict.
+# #1982. Refused: the expansion sits in the words of the `git add` itself, however it is spelled.
+POSITIVES_1982 = ["V=-A; git add $V", "git add $(echo -A)", "git add f.txt $(echo -A)", "git add ~/x", "git add {a,b}", 'git add f.txt "$V"', 'git add f.txt "$(echo -A)"',
+                  'git add f.txt "`echo -A`"', "git add f.txt `echo -A`", 'git add "$@"', "git add $HOME", "git add f.txt$X", "git add f.txt && git add $V",
+                  "echo $X && git add $V", 'bash -c "git add $V"', "eval 'git add $V'", "git add f.txt\ngit add $V", "git -C /tmp add $V", "cd ~/x && git add -A",
+                  "cd ~/x && git add .", "git add -- .",
+                  # a redirect `&` is not a separator: the expansion stays in the add's own segment (a0's six on #1985)
+                  "git add top.txt 2>&1 $(echo .)", "git add -u 2>&1 $(echo -A)", "git add top.txt >&2 $V", "git add top.txt &>/dev/null $(echo :/)",
+                  "V=.; git add top.txt 2>&1 $V", "git add top.txt 2>&1 ~", "git add top.txt &>>f $V", "git add top.txt <&0 $V",
+                  # a redirect BEFORE the command does not hide it
+                  "2>&1 git add -A", ">/dev/null git add -A", "&>/dev/null git add .", "> out.txt git add -A", ">&2 git add :/"]
+# #1982. Passes: the `~`, `$`, `{` and `}` belong to ANOTHER command of the chain (a `cd ~/x`, a commit message, an echo), or to nothing that reaches the add.
+NEGATIVES_1982 = ["cd ~/x && git add -- docs/runbooks/stock-levels-deploy.md && git status --short", "cd ~/x && git add docs/runbooks/a-b.md && git status --short",
+                  "cd ~/x && python3 - <<'EOF'\nprint(1)\nEOF\ngit add -- docs/a.md; git commit -q -m \"x\"; git log --oneline -1",
+                  "git add -- f.txt && git commit -m \"$(cat <<'EOF'\nfeat: add {a,b} and ~ and $X\nEOF\n)\"", 'git add f.txt && git commit -m "$(echo wip)"',
+                  "git add f.txt; echo $(date)", "bash -c 'git add -- f.txt' && echo $(date)", "{ git add -- f.txt; }", "( cd ~/x && git add -- f.txt )",
+                  "git -C ~/x add -- f.txt", "git add f.txt\n# git add $V", "git add f.txt && echo ~ {a,b} $HOME",
+                  # a REAL `&` still separates: the expansion belongs to the other command
+                  "echo $V & git add f.txt", "git add f.txt & echo $V", "git add f.txt >o& echo ~", "echo $V 2>&1 & git add f.txt"]
 POSITIVES_1706 = ["git add /abs/path", "git add :/src/x.rb", "git add ':(top)src/x.rb'", "git add src/**/*.rb", "git add '*.*'", "git add '?'", "git add {.,x}", "git add $PWD",
                   "git add $(pwd)", "git add 'my file.rb'", "git add -f x.rb", "git add 'src/*/x.rb'", "git switch --disc dev", "git switch -fc x",
                   "git push --mir origin", "git push --prune origin", "git push origin 'refs/*:refs/*'", "git checkout --forc dev",
@@ -1006,6 +1037,34 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#1706): `{cmd}` is blocked like its plain sibling", run(cmd) == 2, said())
     for cmd in NEGATIVES_1706:
         check(f"guard-bash (#1706/#1708): CONTROL: `{cmd}` passes", run(cmd) == 0, said())
+    # #1982: THE TAINT BELONGS TO THE `git add` COMMAND'S OWN WORDS, not to the whole command. v1.156.0 refused any command holding a `git add` and a `~`, `$`, a backtick,
+    # `{` or `}` ANYWHERE, so `cd ~/wt && git add -- f` (a tilde in the cd) and `git add f && git commit -m "$(cat <<'EOF' ...)"` (the shape CLAUDE.md tells agents to commit with)
+    # were refused. The words of the add stay tainted in every spelling the normaliser can show: an unquoted `$V`, `$(...)`, a backtick, a brace, a tilde, and (through the
+    # opt-in marker view) a double-quoted span holding an expansion.
+    for cmd in POSITIVES_1982:
+        check(f"guard-bash (#1982): the expansion is IN the add's own words, `{cmd[:70]!r}` is blocked", run(cmd) == 2, said())
+    for cmd in NEGATIVES_1982:
+        check(f"guard-bash (#1982): CONTROL: the expansion belongs to ANOTHER command, `{cmd[:70]!r}` passes", run(cmd) == 0, said())
+    # An ABSOLUTE pathspec inside the repository the hook runs in is as plain as a relative one; the root, outside paths and `..` are not (needs a real repo as cwd).
+    with scratch_dir() as td:
+        repo = Path(td) / "repo"
+        fixture_git.init(repo, "-b", "main")
+        (repo / "src").mkdir()
+        (repo / "newdir").mkdir()
+        evil = Path(td) / "repo-evil"
+        evil.mkdir()
+        link = Path(td) / "linkto"
+        link.symlink_to(repo, target_is_directory=True)
+
+        def at_repo(cmd: str) -> int:
+            last["rc"], last["out"] = run_hook("guard-bash.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": cmd}}))
+            return last["rc"]
+        for cmd in (f"git add {repo}/src/a.rb", f"git add -- {repo}/newdir/f.txt", f"git add {repo}/src/", f"git add {link}/src/a.rb", f"git add -- {repo.resolve()}/src/a.rb"):
+            check(f"guard-bash (#1982): an absolute path STRICTLY INSIDE the repository passes: `{cmd[:80]}`", at_repo(cmd) == 0, said())
+        for cmd in (f"git add {repo}", f"git add {repo}/", f"git add {repo}/.", f"git add {repo}/..", f"git add {repo}/src/..", f"git add {link}", f"git add {evil}/a.txt",
+                    f"git add {td}", "git add /", "git add /etc/hosts", f"git add {repo}/*", f"git add {repo}/**", f"git add {repo}/nosuchdir/f.txt",
+                    f"git add {repo}/src/../../repo-evil/a.txt"):
+            check(f"guard-bash (#1982): an absolute path that is the root, outside it or leaves it is still blocked: `{cmd[:80]}`", at_repo(cmd) == 2, said())
     for cmd in POSITIVES_1792:
         check(f"guard-bash (#1792): the tripwire refuses `{cmd[:70]}`", run(cmd) == 2, said())
     for cmd in NEGATIVES_1792:
@@ -1842,6 +1901,20 @@ def guard_claims_fixtures() -> None:
                    "measured against dev", "measured live on dev", "CONFIRMED by doctrine-verifier"):
         check(f"guard-claims (#1877): the evidence phrase '{phrase}' is accepted",
               run("gh pr create --base dev --body-file BODY", NUMERIC + phrase + ".\n") == 0, said())
+    # #1936: `Verified <date> against ...` is the twin of 'verified against <tag>' with the date in the middle, and was refused as the ONLY evidence (a body passed only because an earlier line said
+    # "Measured <date> against"). One row per form, including the cross-repo `-R` shape the report came from, and the near misses.
+    for phrase in ("Verified 2026-10-12 against Retask dev", "verified on 2026-10-12", "verified 2026-10-12"):
+        check(f"guard-claims (#1936): the evidence phrase '{phrase}' is accepted",
+              run("gh pr create --base dev --body-file BODY", NUMERIC + phrase + ".\n") == 0, said())
+    check("guard-claims (#1936): ...and the same phrase on a cross-repo `gh issue comment -R` is accepted",
+          run("gh issue comment 1724 -R fmanimashaun/Retask-platform --body-file BODY", NUMERIC + "Verified 2026-10-12 against Retask dev.\n") == 0, said())
+    check("guard-claims (#1936) control: 'verified' with no date and no `against` is not evidence",
+          run("gh pr create --base dev --body-file BODY", NUMERIC + "Verified, I think.\n") == 2, said())
+    for phrase in ("unverified 2026-10-12", "unverified against the spec", "unverified on 2026-10-12", "re-unverified 2026-10-12"):
+        check(f"guard-claims (#1936) control: '{phrase}' is not evidence (the word must start with `verified`)",
+              run("gh pr create --base dev --body-file BODY", NUMERIC + phrase + ".\n") == 2, said())
+    check("guard-claims (#1936) control: a year alone ('verified 2026') is not a date",
+          run("gh pr create --base dev --body-file BODY", NUMERIC + "verified 2026.\n") == 2, said())
     check("guard-claims (#1877) control: 'measured' with no date and no on/against is not evidence",
           run("gh pr create --base dev --body-file BODY", NUMERIC + "Measured, I think.\n") == 2, said())
     check("guard-claims (#1877) control: a year alone ('measured 2026') is not a date",
@@ -2868,6 +2941,31 @@ def release_gate_fixtures() -> None:
         check("release-gate (#1428): a file that only starts with the sweep's name is not evidence",
               rc == 2 and "sweep.csv.rb" in err, err)
         sh("rm", "-q", "qa/manual-tests/authz-v1/sweep.csv.rb"); sh("commit", "-q", "-m", "drop it")
+        # #1987: the certify flow's own stamp step writes, after the certified commit, the report the stamp names,
+        # a README beside the sweep and the dated CHANGELOG heading. Each is permitted; code beside them is not.
+        for path, why in (("qa/certifications/v1.md", "the report the stamp names"),
+                          ("qa/manual-tests/authz-v1/README.md", "the README beside the sweep"),
+                          ("CHANGELOG.md", "the dated CHANGELOG heading")):
+            tip = sh("rev-parse", "HEAD")
+            (repo / "qa" / "CERTIFICATION").write_text(
+                json.dumps({**new_stamp, "sha": tip, "report": "qa/certifications/v1.md"}), encoding="utf-8")
+            (repo / path).parent.mkdir(parents=True, exist_ok=True)
+            (repo / path).write_text(f"{tip}\n", encoding="utf-8")
+            sh("add", "qa", path); sh("commit", "-q", "-m", f"stamp step writes {path}")
+            rc, err = gate2()
+            check(f"release-gate (#1987): {why} written after the certified sha is permitted", rc == 0, err)
+        for path, why in (("app.rb", "an app file"), ("qa/manual-tests/authz-v1/x.rb", "code beside the sweep"),
+                          ("qa/certifications/v0.md", "a report the stamp does not name")):
+            tip = sh("rev-parse", "HEAD")
+            (repo / "qa" / "CERTIFICATION").write_text(
+                json.dumps({**new_stamp, "sha": tip, "report": "qa/certifications/v1.md"}), encoding="utf-8")
+            (repo / path).parent.mkdir(parents=True, exist_ok=True)
+            (repo / path).write_text(f"{tip}\n", encoding="utf-8")
+            sh("add", "qa", path); sh("commit", "-q", "-m", f"stamp commit that also changes {path}")
+            rc, err = gate2()
+            check(f"release-gate (#1987): {why} after the certified sha is still refused, by name",
+                  rc == 2 and path in err, err)
+            sh("reset", "-q", "--hard", "HEAD~1")
         # The gate judges what dev COMMITTED: a HOLE committed on dev, fixed only in the index here.
         tip = sh("rev-parse", "HEAD")
         (repo / "qa" / "CERTIFICATION").write_text(json.dumps({**new_stamp, "sha": tip}), encoding="utf-8")
@@ -2931,6 +3029,10 @@ def release_gate_fixtures() -> None:
                                   env={"PATH": str(only)}, capture_output=True, text=True, timeout=60)
             return done.returncode, done.stdout + done.stderr
 
+    with scratch_dir() as probe_td:
+        above = repo_marker_above(probe_td)
+    check("release-gate: the degraded-PATH fixtures run where no .git or Gemfile is above their scratch directory (else the hook drops their tool directory and every tool reads as missing)",
+          above is None, f"{above} holds a .git or a Gemfile above {tempfile.gettempdir()}: set TMPDIR to a directory outside it")
     code, out = bare_gate("git push origin main")
     check("release-gate: with ONLY bash on PATH, a push to main is still blocked", code == 2, f"exit {code}: {out[:160]!r}")
     code, out = bare_gate("gh pr merge 12")
@@ -4922,6 +5024,19 @@ def guard_worktree_failopen_fixtures() -> None:
         denied("guard-worktree: with no python3 a worktree add is refused, not waved through",
                guard(repo, "git worktree add ../b -b feature/b dev", env_extra=bare), "python3")
         allowed("guard-worktree: ...and with no python3 an ordinary command is untouched", guard(repo, "git status", env_extra=bare))
+        # #1978: the no-python3 path was QUADRATIC in the command's size (bash 3.2's `${rest#*$'\n'}` slicing), 150 KB took 11.8-20.5 s, past the
+        # hook's 15 s timeout, and a killed hook lets the command run. 5 s is a third of that timeout and a tenth of nothing a linear read needs.
+        big = "git worktree add ../b -b feature/b dev # " + "x" * 150_000
+        started = time.monotonic()
+        res = guard(repo, big, env_extra=bare)
+        took = time.monotonic() - started
+        check("guard-worktree (#1978): with no python3 a 150 KB worktree add is refused in under 5 s, not run past the hook's timeout",
+              res[0] == 2 and "python3" in res[1] and took < 5.0, f"exit {res[0]} after {took:.1f}s: {res[1][:160]}")
+        started = time.monotonic()
+        res = guard(repo, "echo " + "x" * 150_000, env_extra=bare)
+        took = time.monotonic() - started
+        check("guard-worktree (#1978): ...and a 150 KB ordinary command is answered in under 5 s, and allowed",
+              res[0] == 0 and took < 5.0, f"exit {res[0]} after {took:.1f}s: {res[1][:160]}")
 
     # A helper that crashes must fail CLOSED: any exit but 0 or 2 would let the command run.
     with scratch_dir() as td:
@@ -5745,6 +5860,113 @@ def release_gate_fallback_fixtures() -> None:
               done.returncode == 0 and "audited" in done.stderr, done.stderr[:200])
 
 
+# ---- release-gate.sh on a large command, and its fallback (#1952) -----------------------------------------------------
+def release_gate_large_fixtures() -> None:
+    """#1952: the release gate ANSWERS a large command quickly, and so does its fallback. Measured on dev before the fix: 195 KB took 3.1 s, 390 KB
+    8.2 s, 683 KB gave no answer in 70 s, and the fallback alone took 2 s at 2 KB, 22 s at 6 KB and over 40 s at 11 KB (bash 3.2: the `${x//a/b}`
+    passes are quadratic). The hook is killed at 15 s and a killed hook lets the command run, so a slow answer is no answer. Every answer here
+    must arrive within SECONDS, whatever the size; the limit is far above the fixed cost and far below the old behaviour."""
+    if not QA_HOOK.is_file():
+        check("release-gate present beside rails-flow (large)", False, str(QA_HOOK))
+        return
+    SECONDS_MAX = 8.0
+    PUSH = "git push origin main\n"
+
+    def run(cmd: str, extra_env: dict[str, str] | None = None, path_without_python: bool = False, marketplace: bool = False,
+            hung_awk: bool = False) -> tuple[int | None, float, str]:
+        """(exit code or None when it timed out, seconds, stderr). The gate in a repository with an origin and no certification."""
+        with scratch_dir() as td, scratch_dir() as nopy:
+            _git_repo(Path(td))
+            if marketplace:
+                # What MAKES a tree the marketplace repository (the gate normally exempts it): the file AND the repository's identity.
+                (Path(td) / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+                (Path(td) / ".claude-plugin" / "marketplace.json").write_text('{"name": "x", "plugins": []}', encoding="utf-8")
+                _run(["git", "remote", "add", "origin", "https://github.com/fmanimashaun/claude-skills.git"], cwd=td, check=True, capture_output=True)
+            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
+            env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2]); env.update(extra_env or {})
+            if hung_awk:
+                # An awk that never returns: the full path hangs, the DEADLINE fires and the fallback answers (the deadline fixtures' own stub).
+                (Path(nopy) / "awk").write_text("#!/bin/bash\nsleep 300 &\nwait\n")
+                (Path(nopy) / "awk").chmod(0o755)
+                env["PATH"] = nopy + os.pathsep + env["PATH"]
+            if path_without_python:
+                # python3 missing: the builtins-only fallback judges alone. The tools below stay; python3 does not.
+                for tool in ("git", "cat", "sed", "grep", "awk", "tr", "cut", "head", "dirname", "basename", "env", "mktemp", "rm", "wc", "sort",
+                             "printf", "date", "uname", "ls", "readlink", "pwd", "stat", "sleep", "bash"):
+                    src = shutil.which(tool)
+                    if src and not (Path(nopy) / tool).exists():
+                        os.symlink(src, Path(nopy) / tool)
+                env["PATH"] = nopy
+            t0 = time.monotonic()
+            # Its OWN session, killed as a whole on a timeout: the hook starts child groups of its own (`set -m`), and a plain kill of the
+            # shell leaves them burning, with the pipes open, so a mutant that makes every case slow would hold this fixture for minutes.
+            proc = subprocess.Popen(["/bin/bash", str(QA_HOOK)], cwd=td, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True, start_new_session=True)
+            try:
+                _out, err = proc.communicate(json.dumps({"tool_input": {"command": cmd}}), timeout=12)   # the answer is well under 1 s
+            except subprocess.TimeoutExpired:
+                _run(["pkill", "-KILL", "-s", str(proc.pid)], capture_output=True)            # by SESSION id: only what this fixture started
+                proc.kill()
+                proc.communicate()
+                return None, time.monotonic() - t0, "timed out after 12 s"
+            return proc.returncode, time.monotonic() - t0, (err or "").strip()[:400]
+
+    def fast(label: str, got: tuple[int | None, float, str], want_rc: int, says: str = "") -> None:
+        rc, secs, err = got
+        check(label, rc == want_rc and secs <= SECONDS_MAX and says in err, f"exit {rc} in {secs:.1f}s (want {want_rc} within {SECONDS_MAX:.0f}s): {err!r}")
+
+    big_push = PUSH + "echo line\n" * 70000                       # ~770 KB of payload: the full path gave no answer in 70 s
+    fast("release-gate (#1952): a 700 KB command with a push to main is refused within seconds, not left to the harness's timeout",
+         run(big_push), 2, "too large for the gate to read")
+    fast("release-gate (#1952): a 60 KB command through the DEADLINE fallback (1 s deadline) is refused within seconds",
+         run(PUSH + "echo line\n" * 6000, {"RAILS_FLOW_HOOK_DEADLINE": "1"}), 2)
+    fast("release-gate (#1952): a 100 KB command through the DEADLINE fallback (1 s deadline) is refused within seconds, not after minutes",
+         run(PUSH + "echo line\n" * 9000, {"RAILS_FLOW_HOOK_DEADLINE": "1"}), 2)
+    fast("release-gate (#1952): python3 missing, a 6 KB command with a push to main is refused by the fallback within seconds (it took 22 s)",
+         run(PUSH + "echo line\n" * 600, path_without_python=True), 2)
+    fast("release-gate (#1952): python3 missing, a 6 KB command that is NOT a promotion is refused too: the fallback does not judge a command past 2 KB by its words",
+         run("git status\n" + "echo line\n" * 600, path_without_python=True), 2, "BLOCKED")
+    fast("release-gate (#1952): a large command that merges through the gh CLI is refused within seconds",
+         run("gh pr merge 5\n" + "x\n" * 200000), 2, "too large for the gate to read")
+    fast("release-gate (#1952): a large command with a gh merge on a LATER line is refused within seconds (a JSON-escaped newline does not hide the verb)",
+         run("echo start\ngh pr merge 5\n" + "x\n" * 200000), 2, "too large for the gate to read")
+    fast("release-gate (#1952): a large command whose push is a git ALIAS (`git p origin main`) is refused within seconds",
+         run("git p origin main\n" + "x\n" * 200000), 2, "too large for the gate to read")
+    fast("release-gate (#1952): a large command that spells the tool `Git push` (a case-insensitive filesystem runs it) is refused within seconds",
+         run("Git push origin main\n" + "x\n" * 200000), 2, "too large for the gate to read")
+    fast("release-gate (#1952): a large command whose verb is quote-split (`git pu\"sh\"`) is refused within seconds",
+         run("git pu\"sh\" origin main\n" + "x\n" * 200000), 2, "too large for the gate to read")
+    for label, head in (("`g\"it\" push` (a quote splits the word)", 'g"it" push origin main'),
+                        ("`g\'\'it push` (an empty quote pair splits the word)", "g''it push origin main"),
+                        ("`g\\it push` (a backslash splits the word)", "g\\it push origin main"),
+                        ("`g\"h\" pr merge 5` (the gh word split)", 'g"h" pr merge 5')):
+        fast(f"release-gate (#1952): a large command spelling the tool {label} is refused within seconds", run(head + "\n" + "x\n" * 200000), 2, "too large for the gate to read")
+    for label, head in (("a variable-built tool (`G=gi; ${G}t push origin main`)", "G=gi; ${G}t push origin main"),
+                        ("a command-substitution-built tool (`$(printf gi)t push origin main`)", "$(printf gi)t push origin main"),
+                        ("a backtick-built tool (`` `printf gi`t push origin main ``)", "`printf gi`t push origin main")):
+        fast(f"release-gate (#1952): a large command with {label} is refused within seconds (an expansion can build any word)", run(head + "\n" + "x\n" * 200000), 2, "too large for the gate to read")
+    for label, head in (("an ANSI-C-quoted tool (`$'\\x67it' push origin main`)", "$'\\x67it' push origin main"),
+                        ("a glob-spelled tool (`/usr/bin/g?t push origin main`)", "/usr/bin/g?t push origin main"),
+                        ("a brace-spelled tool (`g{i,}t push origin main`)", "g{i,}t push origin main")):
+        fast(f"release-gate (#1952): a large command with {label} is refused within seconds (no list of spellings is complete)",
+             run(head + "\n" + "x\n" * 200000), 2, "too large for the gate")
+    fast("release-gate (#1952): a large command that names neither git nor gh is refused TOO: the gate does not read a command this large, and says what to do",
+         run("cat > f <<EOF\n" + "some words about nothing\n" * 60000 + "EOF\n"), 2, "Write tool")
+    fast("release-gate (#1952): a large command that merely documents `git push` is refused (as every large command is) and says what to do",
+         run("cat > f <<EOF\n" + "git push origin main in a doc\n" * 40000 + "EOF\n"), 2, "Write tool")
+    fast("release-gate (#1952): a large command is refused INSIDE the marketplace repository too (the size rule comes before its exemption)",
+         run(big_push, marketplace=True), 2, "too large for the gate to read")
+    fast("release-gate (#1952): a command past the fallback's 2 KB limit that hits the deadline says it is too large to judge, not that it looks like a promotion",
+         run("git status\n" + "echo line\n" * 600, {"RAILS_FLOW_HOOK_DEADLINE": "1"}, hung_awk=True), 2, "too large for the fallback to judge")
+    fast("release-gate (#1952): QA_ALLOW_MAIN=1 is honoured for a large command and audited",
+         run(big_push, {"QA_ALLOW_MAIN": "1"}), 0, "audited")
+    rc, secs, err = run("git push origin main")
+    check("release-gate (#1952): CONTROL: a small push to main is still refused by the full path (its own reason, not the size rule)",
+          rc == 2 and secs <= SECONDS_MAX and "BLOCKED by qa-flow release gate" in err and "too large for the gate to read" not in err,
+          f"exit {rc} in {secs:.1f}s: {err!r}")
+    fast("release-gate (#1952): CONTROL: a small read-only command still passes", run("git status"), 0)
+
+
 # ---- guard-pr-ready.sh (#1565) ------------------------------------------------------------------
 @real_setup     # #1906: the repository, its HEAD and each sweep record are built by code that runs BEFORE the check that reads them; under `--match` that code is stubbed unless it is real setup
 def guard_pr_ready_fixtures() -> None:
@@ -6256,7 +6478,7 @@ GROUPS = {
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
     "guard_bash_db_reset": guard_bash_db_reset_fixtures,
-    "guard_claims": guard_claims_fixtures, "guard_claims_pipe": guard_claims_pipe_fixtures, "release_gate": release_gate_fixtures,
+    "guard_claims": guard_claims_fixtures, "guard_claims_pipe": guard_claims_pipe_fixtures, "release_gate": release_gate_fixtures, "release_gate_large": release_gate_large_fixtures,
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
     "release_gate_refs": release_gate_refs_fixtures, "release_gate_fallback": release_gate_fallback_fixtures,
     "release_gate_adversary": release_gate_adversary_fixtures,
@@ -6287,7 +6509,7 @@ GROUPS = {
 PARTS = {
     "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash_db_reset", "guard_claims", "guard_claims_pipe",
           "ci_verdict_hint", "session_end", "timeout", "hostile_env"],
-    "b": ["release_gate", "release_gate_effects"],
+    "b": ["release_gate", "release_gate_effects", "release_gate_large"],
     "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
           "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "wip_commit", "tools_missing", "fixture_git_binding", "test_preflight",
           "guard_pr_ready", "submodule_filter"],
@@ -6364,6 +6586,16 @@ def meta_checks() -> None:
     """The checks about `--only` and `--match` themselves. Cheap, but not free (about 2.5 s), so a `--match` run
     skips them: the baseline run of the same file has already shown them pass (#1599)."""
     global CHECKS, LAST_CPU_S, _CURRENT_GROUP, machine_load
+    # #1929: the degraded-PATH precondition is decided by `repo_marker_above`, so it is driven with each marker above a scratch directory, and with none.
+    with scratch_dir() as marker_td:
+        deep = Path(marker_td) / "a" / "b"
+        deep.mkdir(parents=True)
+        check("bare_gate precondition: a scratch directory with no .git or Gemfile above it is clear", repo_marker_above(deep) is None, str(repo_marker_above(deep)))
+        (Path(marker_td) / ".git").mkdir()
+        check("bare_gate precondition: a .git above the scratch directory is found", repo_marker_above(deep) == os.path.realpath(marker_td), str(repo_marker_above(deep)))
+        (Path(marker_td) / ".git").rmdir()
+        (Path(marker_td) / "Gemfile").write_text("")
+        check("bare_gate precondition: a Gemfile above the scratch directory is found", repo_marker_above(deep) == os.path.realpath(marker_td), str(repo_marker_above(deep)))
     # --only REFUSES what it cannot run (#1497), checked on every run whatever the selection: a
     # silently empty selection is how a mutant would "survive" with no fixture ever consulted.
     for bad in ("nope", "", ",", "release_gate,nope", "release_gate,", " release_gate", "timeout,timeout"):

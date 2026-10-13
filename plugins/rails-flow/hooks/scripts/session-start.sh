@@ -13,6 +13,13 @@ _payload=""
 if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -x "${CLAUDE_PLUGIN_ROOT}/git-shim/git" ]; then
   _shim_line="$(printf 'export PATH=%q:"$PATH"' "${CLAUDE_PLUGIN_ROOT}/git-shim")"
   grep -qxF -- "$_shim_line" "$CLAUDE_ENV_FILE" 2>/dev/null || printf '%s\n' "$_shim_line" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true
+  # #1982: THE SESSION'S PROJECT, recorded for the shim's fixture exemption (a hermetic fixture may stage its own temp repository whole, never this one). `git rev-parse
+  # --show-toplevel` is already physical. Unset outside a repository, and the exemption then does not apply (the shim fails closed).
+  _top="$(git rev-parse --show-toplevel 2>/dev/null)"
+  if [ -n "$_top" ]; then
+    _top_line="$(printf 'export RAILS_FLOW_PROJECT_TOP=%q' "$_top")"
+    grep -qxF -- "$_top_line" "$CLAUDE_ENV_FILE" 2>/dev/null || printf '%s\n' "$_top_line" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true
+  fi
 fi
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 

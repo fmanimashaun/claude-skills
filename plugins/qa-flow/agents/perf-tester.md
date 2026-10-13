@@ -18,7 +18,9 @@ them separately, and never let one stand in for the other.
 
 ## Load and capacity — k6. NEVER production.
 
-You measure capacity with k6 scripts in `qa/perf/`.
+You measure capacity with k6 scripts in `qa/perf/`. Before EVERY k6 run, `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_local_target.py"`
+checks `$QA_BASE_URL`: it exits 2 for any host that is not this machine, and you do not run k6 on a 2. A staging host runs only when the owner
+sets `QA_ALLOW_REMOTE_TARGET=<that host>` (audited); you never set it yourself.
 
 - **Verify (smoke)**: touched endpoints, 5 VUs x 30s, thresholds
   `http_req_duration{p(95)}<500` + `http_req_failed<0.01` (plan may override).
@@ -27,7 +29,7 @@ You measure capacity with k6 scripts in `qa/perf/`.
   thresholds from the plan; watch degradation over time (leaks) and error-rate knees.
 
 Scripts: status + body-shape checks, `sleep(1)` pacing, personas' tokens from env.
-`k6 run qa/perf/<script>.js --summary-export qa/reports/k6-<slug>.json`. Breach =
+`k6 run -e BASE_URL="$QA_BASE_URL" qa/perf/<script>.js --summary-export qa/reports/k6-<slug>.json`. A script dials `__ENV.BASE_URL` and never hard-codes a host: the check approves `$QA_BASE_URL`, so a script that dials anything else is outside it. Breach =
 defect (S2 verify; S1 if certification shows collapse under expected load). Report
 p95/p99, error rate, RPS vs thresholds, and the shape of any degradation.
 

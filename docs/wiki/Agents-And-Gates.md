@@ -6,11 +6,11 @@
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
-| `design-flow` | 1.46.0 | 5 | 12 | 5 |
+| `design-flow` | 1.46.1 | 5 | 12 | 5 |
 | `flow-suite` | 1.0.0 | — | — | — |
-| `pipeline` | 1.5.0 | 2 | 9 | 2 |
-| `qa-flow` | 1.37.0 | 11 | 8 | 11 |
-| `rails-flow` | 1.59.0 | 13 | 24 | 13 |
+| `pipeline` | 1.5.1 | 2 | 9 | 2 |
+| `qa-flow` | 1.38.0 | 11 | 8 | 11 |
+| `rails-flow` | 1.60.0 | 13 | 24 | 13 |
 
 ## Agents
 
@@ -115,6 +115,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | pipeline kamal destination | `pipeline` | `python3 plugins/pipeline/scripts/kamal_destination.py --selftest` | selftest |
 | pipeline release build | `pipeline` | `python3 plugins/pipeline/scripts/release_build.py --selftest` | selftest |
 | pipeline status board | `pipeline` | `python3 plugins/pipeline/scripts/status_board.py --selftest` | selftest |
+| pipeline status hook | `pipeline` | `python3 plugins/pipeline/scripts/pipeline_status_selftest.py` | live check |
 | pipeline stop conditions | `pipeline` | `python3 plugins/pipeline/scripts/breaker.py --selftest` | selftest |
 | qa-flow blast radius | `qa-flow` | `python3 plugins/qa-flow/scripts/blast_radius.py --selftest` | selftest |
 | qa-flow boot classifier | `qa-flow` | `python3 plugins/qa-flow/scripts/classify_boot_failure.py --selftest` | selftest |
@@ -127,11 +128,13 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | qa-flow interaction sweep | `qa-flow` | `python3 plugins/qa-flow/scripts/interaction_report.py --selftest` | selftest |
 | qa-flow layout fit | `qa-flow` | `python3 plugins/qa-flow/scripts/layout_fit.py --selftest` | selftest |
 | qa-flow link audit | `qa-flow` | `python3 plugins/qa-flow/scripts/link_audit.py --selftest` | selftest |
+| qa-flow local target | `qa-flow` | `python3 plugins/qa-flow/scripts/check_local_target.py --selftest` | selftest |
 | qa-flow requirements gate | `qa-flow` | `python3 plugins/qa-flow/scripts/check_requirements.py --selftest` | selftest |
 | qa-flow robot descriptor | `qa-flow` | `python3 plugins/qa-flow/scripts/robot_descriptor.py --selftest` | selftest |
 | qa-flow robot helpers | `qa-flow` | `python3 plugins/qa-flow/scripts/scaffold_ts_tests.py --selftest` | selftest |
 | qa-flow route coverage | `qa-flow` | `python3 plugins/qa-flow/scripts/route_coverage.py --selftest` | selftest |
 | qa-flow route crawl | `qa-flow` | `python3 plugins/qa-flow/scripts/crawl_report.py --selftest` | selftest |
+| qa-flow status banner | `qa-flow` | `python3 plugins/qa-flow/scripts/qa_status_selftest.py` | live check |
 | qa-flow text resize | `qa-flow` | `python3 plugins/qa-flow/scripts/text_resize.py --selftest` | selftest |
 | qa-flow theme parity | `qa-flow` | `python3 plugins/qa-flow/scripts/theme_parity.py --selftest` | selftest |
 | qa-flow ts strict | `qa-flow` | `python3 plugins/qa-flow/scripts/check_ts_strict.py --selftest` | selftest |
@@ -168,6 +171,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | rails-flow issue mock-up declaration | `rails-flow` | `python3 plugins/rails-flow/scripts/check_issue_mockup.py --selftest` | selftest |
 | rails-flow lane assigner selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/assign_lanes.py --selftest` | selftest |
 | rails-flow mandated gems | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mandated_gems.py --selftest` | selftest |
+| rails-flow mcp end to end | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mcp_end_to_end.py --selftest` | selftest |
+| rails-flow mcp personal fields | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mcp_personal_fields.py --selftest` | selftest |
 | rails-flow mock-up gate | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mockup_gate.py --selftest` | selftest |
 | rails-flow one-way door classifier | `rails-flow` | `python3 plugins/rails-flow/scripts/classify_door.py --selftest` | selftest |
 | rails-flow product brief | `rails-flow` | `python3 plugins/rails-flow/scripts/check_brief.py --selftest` | selftest |

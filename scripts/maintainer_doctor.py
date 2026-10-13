@@ -347,6 +347,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/derive_tenancy_cop.py", "--selftest")),
     ("rails-flow tenancy cop",
      ("python3", "plugins/rails-flow/scripts/check_tenancy_cop.py", "--selftest")),
+    ("rails-flow mcp end to end",                                                    # #1930
+     ("python3", "plugins/rails-flow/scripts/check_mcp_end_to_end.py", "--selftest")),
+    ("rails-flow mcp personal fields",                                               # #1931
+     ("python3", "plugins/rails-flow/scripts/check_mcp_personal_fields.py", "--selftest")),
     # #762's neighbour. The curated-doc drift signal is ADVISORY -- it blocks nothing -- and that is
     # exactly why its silent-false-clean survived: nothing ran it. The selftest drives the real hook
     # under a working, absent, broken and shasum-only hasher.
@@ -410,6 +414,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/check_changelog_coverage.py", "--selftest")),
     ("qa-flow certification reader",
      ("python3", "plugins/qa-flow/scripts/read_certification.py", "--selftest")),
+    # #1955. The SessionStart banner says "cleared for main" only when the release gate, run in a child on dev's tip, permits it.
+    ("qa-flow status banner", ("python3", "plugins/qa-flow/scripts/qa_status_selftest.py")),
     ("qa-flow tiers", ("python3", "plugins/rails-flow/scripts/check_handoff.py",
                        "--agents", "plugins/qa-flow/agents",
                        "--tiers", "plugins/qa-flow/reference/model-tiers.md")),
@@ -431,6 +437,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1204. The installer reported success and wrote a hook git never runs under core.hooksPath
     # or from a linked worktree; the selftest proves each case with a real merge, not a file check.
     ("pipeline hook install", ("python3", "plugins/pipeline/scripts/install_git_hooks_selftest.py")),
+    # #1946. The SessionStart nudge finds pipeline.yml and qa/CERTIFICATION from any directory inside the repository, not only its root.
+    ("pipeline status hook", ("python3", "plugins/pipeline/scripts/pipeline_status_selftest.py")),
     # #1789. The pre-push and pre-commit guards (a protected branch is only fast-forwarded; the staged content is checked) are proven with real
     # pushes into a bare remote and real commits, and then a look at what MOVED, not at an exit code.
     ("pipeline git guards", ("python3", "plugins/pipeline/scripts/git_guard_selftest.py")),
@@ -477,6 +485,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("qa-flow robot helpers", ("python3", "plugins/qa-flow/scripts/scaffold_ts_tests.py", "--selftest")),
     # #1837. The robot descriptor's rules, and the image runner driven end to end with stub curl/npx (fails closed).
     ("qa-flow robot descriptor", ("python3", "plugins/qa-flow/scripts/robot_descriptor.py", "--selftest")),
+    # #1954. k6 and ZAP are refused for any host that is not this machine, unless the owner names that host.
+    ("qa-flow local target", ("python3", "plugins/qa-flow/scripts/check_local_target.py", "--selftest")),
     # #1447. A TypeScript e2e suite is strict, type-checked in CI, and has no explicit `any`.
     ("qa-flow ts strict", ("python3", "plugins/qa-flow/scripts/check_ts_strict.py", "--selftest")),
     ("qa-flow route crawl", ("python3", "plugins/qa-flow/scripts/crawl_report.py", "--selftest")),

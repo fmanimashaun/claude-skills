@@ -24,10 +24,10 @@ One line each, from the command's own description; the command file is the autho
 
 ## Platform note
 
-This plugin's hooks are **bash + python3** scripts. On Windows, run Claude Code inside
-**WSL or Git Bash** with `python3` available, or the hooks (including the blocking
-release gate) can't execute. macOS/Linux need no action. The release-gate and other
-guards fail safe if their interpreter is missing, but a missing interpreter means the
-gate does not run — so ensure the toolchain is present where enforcement matters.
+This plugin's hooks are **bash** scripts, and the two advisory ones (the SessionStart nudge and the Stop board refresh) also use **python3**. On Windows, run Claude Code inside
+**WSL or Git Bash**. macOS/Linux need no action.
+
+Without `python3`, those two advisories skip and say nothing. The git guards that `/pipeline:install-hooks` installs (`pre-push`, `pre-commit`) need only bash and git, and fail closed. The blocking
+release gate is **qa-flow's**, not this plugin's: its platform note is in the qa-flow README.
 
 **The Python floor is 3.9**, the `python3` stock macOS ships: every script this plugin ships parses there, and a change that needs newer syntax is refused before it ships.

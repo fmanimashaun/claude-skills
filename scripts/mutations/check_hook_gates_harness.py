@@ -90,6 +90,18 @@ GUARD = Guard(
             'release-gate (#1810): the detail of a failed check carries what the hook said',
         ),
         Mutation(
+            'the bare_gate precondition ignores a Gemfile above the scratch directory (#1929)',
+            '((probe / ".git").exists() or (probe / "Gemfile").exists())',
+            '((probe / ".git").exists() or False)',
+            'bare_gate precondition: a Gemfile above the scratch directory is found',
+        ),
+        Mutation(
+            'the bare_gate precondition ignores a .git above the scratch directory (#1929)',
+            '((probe / ".git").exists() or (probe / "Gemfile").exists())',
+            '(False or (probe / "Gemfile").exists())',
+            'bare_gate precondition: a .git above the scratch directory is found',
+        ),
+        Mutation(
             'a deadline fixture carries a bare constant detail again (#1810)',
             '              nosleep("git add -A") == 2, said())',
             '              nosleep("git add -A") == 2, "exit 0")',
@@ -275,8 +287,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a fixture group is left out of every part, so the doctor would never run it",
-            '"b": ["release_gate", "release_gate_effects"],',
-            '"b": ["release_gate"],',
+            '"b": ["release_gate", "release_gate_effects", "release_gate_large"],',
+            '"b": ["release_gate", "release_gate_large"],',
             "every fixture group is in exactly one PART",
         ),
         Mutation(
