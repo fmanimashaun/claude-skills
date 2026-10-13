@@ -13,7 +13,24 @@ IFS= read -r -d '' input || true
 # The COARSE promotion detector, builtins only (no grep, no python3): sets _looks_promotion from the raw payload.
 # Used when a tool is missing (below) AND when the deadline kills the real parse (#1575). Both cannot read the command,
 # so both ask the same question the same way and err on the same side.
+# #1952: THE FALLBACK IS QUADRATIC, AND IT RUNS EXACTLY WHEN THE GATE IS ALREADY LATE. Its nine-pass `${_in//x/ }`, the `${_t//[;&|()]/ ; }` and
+# the word loop are quadratic in bash 3.2, measured with no other work in the way: a 2 KB payload took 2 s, 6 KB took 22 s, 11 KB over 40 s.
+# The hook is killed at 15 s and a killed hook lets the command run, so a deadline or a missing tool turned a promotion into an allow for any
+# command of a few KB (the audit's first probe: 683 KB, no answer in 70 s; with a 3 s deadline even 390 KB got none).
+# Past `_coarse_bytes` the payload is therefore NOT JUDGED BY ITS WORDS AT ALL: it is refused. A list of words is never complete: two reviews each
+# found a spelling the list missed (a verb alias, `g"it"`, `g''it`, `g\it`, `G=gi; ${G}t push`, `$(printf gi)t push`, and then `$'\x67it'`,
+# `/usr/bin/g?t`, `g{i,}t`, an `eval`, a base64 decode), because the shell gives a command word a hundred ways to be spelled and this path cannot
+# run the shell. The one answer that cannot be wrong is the refusal, and the refusal says what to do. Cost, accepted, in the degraded paths ONLY
+# (a deadline, a missing tool): a command past 2 KB is refused ("retry it"), where before it was answered after the harness had already let it run.
+_coarse_bytes=2048
+# And a payload past `_large_bytes` never enters the full path at all (195 KB took 3.1 s and 390 KB took 8.2 s on an idle machine): it is refused at
+# once, so the answer arrives in well under a second whatever the load. A command this large is a file written through Bash; the Write tool exists.
+_large_bytes=131072
 _coarse_looks_promotion() {
+  if [ "${#input}" -gt "$_coarse_bytes" ]; then
+    _looks_promotion=1      # cannot be read in time: refused, not guessed at
+    return 0
+  fi
   _in="$input"
   for _esc in '\t' '\n' '\r' '\u0009' '\u000a' '\u000A' '\u000d' '\u000D' '\u0020'; do
     _in="${_in//"$_esc"/ }"
@@ -152,6 +169,17 @@ _coarse_looks_promotion() {
   # mutation NAMES let enablePullRequestAutoMerge, createCommitOnBranch and updatePullRequestBranch through.
   [[ $_in =~ ${_b}gh${_e} ]] && [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ ${_b}graphql${_e} ]] && [[ $_in =~ mutation ]] && _looks_promotion=1
 }
+
+# #1952: a payload past `_large_bytes` is not read by the full path at all; it is refused in well under a second (QA_ALLOW_MAIN=1 allows it, audited).
+if [ "${#input}" -gt "$_large_bytes" ]; then
+  _coarse_looks_promotion
+  if [ "$_looks_promotion" = "1" ]; then
+    [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: a ${#input}-byte command is too large to read, but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
+    echo "BLOCKED by qa-flow release gate: this command is ${#input} bytes, too large for the gate to read within the hook's time limit, so it is refused rather than guessed at. Write the content to a file with the Write tool and run a short command instead, or set QA_ALLOW_MAIN=1 (audited)." >&2
+    exit 2
+  fi
+  exit 0
+fi
 
 _missing=""
 for _t in python3 git sed awk tr grep head; do
