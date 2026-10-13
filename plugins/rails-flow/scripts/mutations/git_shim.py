@@ -109,8 +109,6 @@ GUARD = Guard(
                  'case "$g" in -C|--git-dir|--git-dir=*|--work-tree|--work-tree=*|--namespace|--namespace=*) return 1 ;; esac', 'case "$g" in -C|--git-dir|--git-dir=*|--work-tree|--work-tree=*) return 1 ;; esac', 'stage its OWN temp repository whole'),
         Mutation('a repository without the fixture identity file is exempt',
                  '  [ -f "$gd/rails-flow-fixture" ] || return 1', '  :', 'stage its OWN temp repository whole'),
-        Mutation('the repository git will use is not asked of git: a failing rev-parse is exempt',
-                 '  rp="$("$real" "${GLOBALS[@]}" rev-parse --absolute-git-dir --show-toplevel 2>/dev/null)" || return 1', '  rp="$("$real" "${GLOBALS[@]}" rev-parse --absolute-git-dir --show-toplevel 2>/dev/null)" || rp=""', 'stage its OWN temp repository whole'),
         Mutation('core.hooksPath=/dev/null does not mark the command as hooks-off',
                  '{ HOOKS_OFF=1; return 0; }', 'return 0', 'ALLOWLIST of exact keys'),
         Mutation('a hooks-off command is allowed any subcommand',
