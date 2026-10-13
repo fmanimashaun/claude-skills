@@ -94,6 +94,8 @@ ci_match() { local r; shopt -s nocasematch; [[ $1 == $2 ]]; r=$?; shopt -u nocas
 # pre-commit or pre-push hook. The rule is that and nothing wider; the list below (HOOK_FREE) is every subcommand admitted, and each is read-only or touches no commit or push: status, diff,
 # diff-index, diff-tree, log, show, shortlog, ls-files, ls-tree, ls-remote, rev-parse, rev-list, merge-base, for-each-ref, cat-file, show-ref, symbolic-ref, describe, blame, var, fetch, config,
 # remote, branch, tag, init, check-ignore, name-rev, count-objects, grep. Adding a name to it needs the same justification (it must not run the pre-commit or pre-push hook).
+# Accepted cost (the coordinator's ruling on #1994): `scripts/wip_commit.py` commits with `-c core.hooksPath=/dev/null` and is therefore refused when run by hand from the Bash tool; its
+# normal path, the Stop hook, runs without the shim on PATH and is unaffected, and an agent turning hooks off by hand is what this rule is for.
 # How it works: CFG_PAIR_ALLOWED sets HOOKS_OFF when it admits the pair, `decide` refuses the command unless its subcommand is on HOOK_FREE, and a GIT_CONFIG_GLOBAL file may not carry it at
 # all (#1994: `git -c core.hooksPath=/dev/null commit` and `push` skipped the guards, and so did a global file naming it).
 HOOKS_OFF=0
