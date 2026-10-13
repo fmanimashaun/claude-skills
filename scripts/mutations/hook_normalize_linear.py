@@ -2,7 +2,8 @@
 
 The shared normaliser is LINEAR in the length of a line (it was quadratic in BWK awk, macOS: ONE 300 KB line took 13 s through a gate with a 15 s timeout) and
 still right at the seams of the 2 KB pieces its output is built in. Each mutation puts one quadratic habit back, or breaks one seam; the fixtures that catch them
-are the `normalizer_linear` group of check_hook_gates.py. (`hook_normalize_cmd` holds the mutations of what the normaliser DECIDES.)
+are the `normalizer_linear` group of check_hook_gates.py. (`hook_normalize_cmd` holds the mutations of what the normaliser DECIDES.) There is no mutant that puts the per-character `substr` back: it is quadratic
+only in BWK awk (macOS), and the harness runs on Linux too, where mawk makes `substr` O(1) and such a mutant would SURVIVE. The ratio fixtures still catch it on macOS.
 """
 from mutation_types import Guard, Mutation  # noqa: F401
 
@@ -29,10 +30,10 @@ GUARD = Guard(
            'plugins/rails-flow/scripts/self_consistency.py'),
     mutations=(
         Mutation(
-            'the lexer reads each character with substr again, quadratic in BWK awk (#1980)',
-            '      c = ch[i]\n      if (c == "\\\\") {\n        d = ch[i + 1]',
-            '      c = substr(s, i, 1)\n      if (c == "\\\\") {\n        d = ch[i + 1]',
-            'ONE line of plain characters costs about 4 times',
+            'the ANSI-C decoder takes one character at a time again, quadratic in BWK awk: a 300 KB span took 5.8 s (#1980)',
+            '    if (c != "\\\\") { r = substr(s, i); match(r, /^[^\\\\\\047]+/); if (!cut) v = v substr(r, 1, RLENGTH); i += RLENGTH; continue }',
+            '    if (c != "\\\\") { if (!cut) v = v c; i++; continue }',
+            'ONE ANSI-C span costs about 4 times',
         ),
         Mutation(
             'the output buffer never starts a new piece, so every character is appended to one growing string (#1980)',

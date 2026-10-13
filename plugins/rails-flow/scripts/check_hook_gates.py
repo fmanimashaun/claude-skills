@@ -6520,7 +6520,8 @@ def normalizer_linear_fixtures() -> None:
         check(f"normaliser (#1980): {why} comes out whole", got == want, f"{len(got)} characters, wanted {len(want)}: {got[:60]!r}...{got[-30:]!r}")
     for label, make in (("ONE line of plain characters", lambda kb: "echo " + "x" * (kb * 1000)),
                         ("ONE line of short words", lambda kb: "echo " + "ab " * (kb * 1000 // 3)),
-                        ("ONE line of quoted words", lambda kb: "echo " + "'a' " * (kb * 1000 // 4))):
+                        ("ONE line of quoted words", lambda kb: "echo " + "'a' " * (kb * 1000 // 4)),
+                        ("ONE ANSI-C span", lambda kb: "echo $'" + "x" * (kb * 1000) + "'")):
         small = min(norm(make(100))[1] for _ in range(2))
         large = min(norm(make(400))[1] for _ in range(2))
         ratio = large / max(small, 0.05)

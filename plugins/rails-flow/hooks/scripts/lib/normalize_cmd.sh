@@ -111,12 +111,13 @@ function utf8(cp) {
   if (cp < 65536) return sprintf("%c%c%c", 224 + int(cp / 4096), 128 + int(cp / 64) % 64, 128 + cp % 64)
   return sprintf("%c%c%c%c", 240 + int(cp / 262144), 128 + int(cp / 4096) % 64, 128 + int(cp / 64) % 64, 128 + cp % 64)
 }
-function ansic(s, i,    n, c, d, v, k, h, cp, cut, w, m) {
+function ansic(s, i,    n, c, d, v, k, h, cp, cut, w, m, r) {
   n = length(s); v = ""; cut = 0
   while (i <= n) {
     c = substr(s, i, 1)
     if (c == "\047") { ANSIV = v; ANSIEND = i + 1; ANSIOK = 1; return }
-    if (c != "\\") { if (!cut) v = v c; i++; continue }
+    # A run of ordinary characters is taken at once (#1980): one `substr` per character is quadratic in BWK awk, so a 300 KB span took 5.8 s.
+    if (c != "\\") { r = substr(s, i); match(r, /^[^\\\047]+/); if (!cut) v = v substr(r, 1, RLENGTH); i += RLENGTH; continue }
     d = substr(s, i + 1, 1); i += 2; w = ""
     if (d == "") { ANSIV = v; ANSIEND = n + 1; ANSIOK = 0; return }
     m = index("abefnrtvE", d)
