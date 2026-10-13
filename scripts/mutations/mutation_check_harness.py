@@ -556,7 +556,7 @@ GUARD = Guard(
             "every failure is taken for a timeout, so a real failure reads STARVED",
             "    return not any(_FAILURE_LINE.search(line) for line in rest)",
             "    return True",
-            "must stay INERT, never STARVED",
+            "never STARVED",             # both the pure-failure fixture (#2000) and the mixed one (#2014) say it
         ),
         Mutation(
             "a real failure row beside a timeout row reads STARVED, so INERT is hidden (the substring test, #2014)",
