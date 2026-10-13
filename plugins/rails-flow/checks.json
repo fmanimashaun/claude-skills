@@ -383,6 +383,20 @@
       ]
     },
     {
+      "id": "mcp-end-to-end",
+      "why": "An app with an MCP server (the `mcp` gem) names, in .rails-flow/mcp.json, the request-level spec that drives the server end to end: it reaches tools/list and tools/call over the real endpoint, literally or through a spec/support helper. A tool that loads in a unit spec can still fail at the transport, the auth or the JSON-RPC layer (#1930, gate 4 of #1885). No mcp gem is n/a; the gem with no declaration is a finding.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_mcp_end_to_end.py"
+      ],
+      "applies_when": [
+        "Gemfile"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "privacy-inventory",
       "why": "Every column in db/schema.rb, and in every other db/*_schema.rb a second database dumps (not the Solid trio, except that a Solid table the inventory NAMES is read and its listed entries judged, its unlisted columns exempt, #1732), is classified in config/privacy_inventory.yml (table -> column -> {category, basis, retention}; `category: none` for not personal). The privacy policy is drafted from this file, so an unclassified personal column is one the policy silently omits (#1310).",
       "command": [
