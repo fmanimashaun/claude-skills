@@ -13,6 +13,7 @@ Global and system git config are isolated: a maintainer's own aliases or `core.h
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -488,6 +489,90 @@ def _(base):
         check(label, k.lower() in ALLOWED_KEYS, f"fixture_git.IDENTITY passes {k!r} with -c, which the shim's allowlist does not admit")
 
 
+@case("shim: a hermetic fixture may stage its OWN temp repository whole, under every condition of the exemption (#1982, decision (b))")
+def _(base):
+    label = "shim: a hermetic fixture may stage its OWN temp repository whole, under every condition of the exemption (#1982, decision (b))"
+    proj = Repo(base, "proj")                       # the session's project: outside the temp root used below
+    tmproot = base / "tmproot"
+    tmproot.mkdir()
+    fx = tmproot / "fx"
+    fixture_git.init(fx, "-b", "main")
+    (fx / "stray.txt").write_text("s\n")
+    outside = base / "outside"
+    fixture_git.init(outside, "-b", "main")
+    evil = base / "tmproot-evil"                    # a sibling whose name merely STARTS with the temp root's
+    evil.mkdir()
+    fixture_git.init(evil / "fx", "-b", "main")
+    (evil / "fx" / "stray.txt").write_text("s\n")
+    (tmproot / "link").symlink_to(proj.work, target_is_directory=True)
+    (outside / "stray.txt").write_text("s\n")
+    anc = base / "anc"                              # a repository that CONTAINS the project
+    fixture_git.init(anc, "-b", "main")
+    (anc / "stray.txt").write_text("s\n")
+    anc_proj = anc / "inner-proj"
+    anc_proj.mkdir()
+    home = base / "exempt-home"
+    home.mkdir()
+
+    def env_for(wt: Path, gd: Path | None = None, **over: str | None) -> dict[str, str]:
+        e = {"GIT_DIR": str(gd if gd is not None else wt / ".git"), "GIT_WORK_TREE": str(wt), "TMPDIR": str(tmproot), "HOME": str(home),
+             "RAILS_FLOW_PROJECT_TOP": str(proj.work)}
+        e.update({k: v for k, v in over.items() if v is not None})
+        for k, v in over.items():
+            if v is None:
+                e.pop(k, None)
+        return e
+
+    def staged(wt: Path) -> str:
+        return subprocess.run([REAL_GIT, "-C", str(wt), "diff", "--cached", "--name-only"], env=fixture_git.hermetic(proj.env), capture_output=True, text=True).stdout
+
+    def attempt(what: str, wt: Path, env: dict[str, str], *, ok: bool, args: tuple[str, ...] = ("add", "-A")) -> None:
+        subprocess.run([REAL_GIT, "-C", str(wt), "reset", "-q"], env=fixture_git.hermetic(proj.env), capture_output=True, text=True)
+        e = dict(proj.path_env)
+        for k in ("GIT_DIR", "GIT_WORK_TREE", "TMPDIR", "RAILS_FLOW_PROJECT_TOP"):
+            e.pop(k, None)
+        e.update(env)
+        p = subprocess.run(["git", *args], cwd=wt, env=e, capture_output=True, text=True, timeout=20)
+        if ok:
+            check(label, p.returncode == 0 and "git-shim" not in p.stderr and "stray.txt" in staged(wt), f"{what}: refused or not staged: exit {p.returncode}: {p.stderr.strip()[:140]}")
+        else:
+            check(label, p.returncode != 0 and "git-shim" in p.stderr and "stray.txt" not in staged(wt), f"{what}: was NOT refused: exit {p.returncode}: {p.stderr.strip()[:140]}")
+
+    # the exemption
+    attempt("a fixture repo named by GIT_DIR and GIT_WORK_TREE inside TMPDIR", fx, env_for(fx), ok=True)
+    attempt("`add .` in the same repo", fx, env_for(fx), ok=True, args=("add", "."))
+    # every condition, each broken alone
+    attempt("only GIT_WORK_TREE set", fx, env_for(fx, GIT_DIR=None), ok=False)
+    attempt("only GIT_DIR set", fx, env_for(fx, GIT_WORK_TREE=None), ok=False)
+    attempt("GIT_WORK_TREE inside TMPDIR but GIT_DIR outside it", fx, env_for(fx, gd=outside / ".git"), ok=False)
+    attempt("GIT_DIR inside TMPDIR but GIT_WORK_TREE outside it", outside, env_for(outside, gd=fx / ".git"), ok=False)
+    attempt("the repository is outside TMPDIR", outside, env_for(outside), ok=False)
+    attempt("a sibling directory whose name merely starts with TMPDIR's", evil / "fx", env_for(evil / "fx"), ok=False)
+    attempt("the work tree is a sibling named like TMPDIR's, with GIT_DIR properly inside", evil / "fx", env_for(evil / "fx", gd=fx / ".git"), ok=False)
+    attempt("GIT_DIR is a sibling named like TMPDIR's, with the work tree properly inside", fx, env_for(fx, gd=evil / "fx" / ".git"), ok=False)
+    attempt("TMPDIR unset", fx, env_for(fx, TMPDIR=None), ok=False)
+    attempt("TMPDIR empty", fx, env_for(fx, TMPDIR=""), ok=False)
+    attempt("TMPDIR=/", fx, env_for(fx, TMPDIR="/"), ok=False)
+    attempt("TMPDIR is HOME", fx, env_for(fx, TMPDIR=str(home), HOME=str(home)), ok=False)
+    hfx = home / "fx"
+    fixture_git.init(hfx, "-b", "main")
+    (hfx / "stray.txt").write_text("s\n")
+    attempt("TMPDIR=$HOME with a repository under it", hfx, env_for(hfx, TMPDIR=str(home), HOME=str(home)), ok=False)
+    (tmproot / "h").mkdir()
+    attempt("TMPDIR is an ancestor of HOME (documented cost: HOME inside the temp root)", fx, env_for(fx, HOME=str(tmproot / "h")), ok=False)
+    attempt("RAILS_FLOW_PROJECT_TOP unset", fx, env_for(fx, RAILS_FLOW_PROJECT_TOP=None), ok=False)
+    attempt("RAILS_FLOW_PROJECT_TOP names a directory that does not exist", fx, env_for(fx, RAILS_FLOW_PROJECT_TOP=str(base / "nope")), ok=False)
+    attempt("the work tree IS the session's project", fx, env_for(fx, RAILS_FLOW_PROJECT_TOP=str(fx)), ok=False)
+    attempt("the work tree CONTAINS the session's project", anc, env_for(anc, TMPDIR=str(base), RAILS_FLOW_PROJECT_TOP=str(anc_proj)), ok=False)
+    attempt("a symlink in TMPDIR that points at the project (GIT_WORK_TREE through the link)", proj.work, env_for(tmproot / "link"), ok=False)
+    attempt("the same with TMPDIR widened over the project", proj.work, env_for(tmproot / "link", TMPDIR=str(base)), ok=False)
+    attempt("the project itself, with TMPDIR over it", proj.work, env_for(proj.work, TMPDIR=str(base)), ok=False)
+    # outside a fixture the whole-tree add is still refused, and the other rules still hold INSIDE the exempt repository
+    attempt("no GIT_DIR/GIT_WORK_TREE at all", fx, {}, ok=False)
+    attempt("`reset --hard` is not part of the exemption", fx, env_for(fx), ok=False, args=("reset", "--hard"))
+    attempt("`clean -fd` is not part of the exemption", fx, env_for(fx), ok=False, args=("clean", "-fd"))
+
+
 @case("shim: a git alias is expanded before the rules are applied")
 def _(base):
     label = "shim: a git alias is expanded before the rules are applied"
@@ -629,6 +714,29 @@ def _(base):
         zsh_row("a probe row", base / "no-env-file", base, which=lambda _name: None)
     check(label, 'skip: zsh is not on PATH, so "a probe row" did NOT run under zsh -- not a pass.' in err.getvalue(), f"stderr was {err.getvalue()!r}")
     check(label, CHECKS == before + 1, f"the skipped row counted {CHECKS - before - 1} check(s) of its own")
+
+
+@case("hook: the SessionStart hook records the session's project toplevel for the shim's fixture exemption, once, and nothing outside a repository (#1982)")
+def _(base):
+    label = "hook: the SessionStart hook records the session's project toplevel for the shim's fixture exemption, once, and nothing outside a repository (#1982)"
+    root = copy_plugin(base / "plugin-top")
+    r = Repo(base, "ssproj")
+    env_file = base / "claude-env-top"
+    for _ in range(3):
+        run_hook(env_file, root, r.work)
+    text = env_file.read_text()
+    top = str(r.work.resolve())
+    check(label, text.count("RAILS_FLOW_PROJECT_TOP=") == 1, f"the line should be written once: {text!r}")
+    check(label, f"export RAILS_FLOW_PROJECT_TOP={shlex.quote(top)}" in text or f"RAILS_FLOW_PROJECT_TOP={top}" in text, f"it should name the physical toplevel {top}: {text!r}")
+    e2 = base / "claude-env-top2"
+    out = base / "not-a-repo-top"
+    out.mkdir()
+    run_hook(e2, root, out)
+    check(label, "RAILS_FLOW_PROJECT_TOP" not in e2.read_text(), "outside a repository no project toplevel may be recorded (the shim then fails closed)")
+    sub = r.work / "src"
+    e3 = base / "claude-env-top3"
+    run_hook(e3, root, sub)
+    check(label, f"RAILS_FLOW_PROJECT_TOP={shlex.quote(top)}" in e3.read_text() or f"RAILS_FLOW_PROJECT_TOP={top}" in e3.read_text(), "from a subdirectory the TOPLEVEL is recorded, not the subdirectory")
 
 
 @case("hook: running the SessionStart hook again does not repeat the line")

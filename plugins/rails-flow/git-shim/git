@@ -140,6 +140,39 @@ find_top() {
   PREFIX="$("$real" "${GLOBALS[@]}" rev-parse --show-prefix 2>/dev/null)" || PREFIX=""
 }
 
+# THE FIXTURE EXEMPTION for `add` (#1982, the coordinator's decision (b)). A hermetic fixture builds its own temp repository and stages it whole (`git add -A`), which the
+# rule above refuses everywhere, so every selftest that does it failed when run from the Claude Code Bash tool (the shim is first on PATH there). `fixture_git.run`
+# names the repository exactly, with GIT_DIR and GIT_WORK_TREE. The exemption holds ONLY when ALL of these are true, each resolved PHYSICALLY (`cd ... && pwd -P`:
+# macOS /var is /private/var, and a symlink in temp that points at the project resolves to the project):
+#   1. GIT_DIR and GIT_WORK_TREE are both set, and both lie STRICTLY INSIDE the temp root (one inside and one outside refuses);
+#   2. the temp root is TMPDIR, which must be SET (an unset TMPDIR is refused, not defaulted to /tmp) and must not be `/`, HOME, or an ancestor of HOME
+#      (a crafted `TMPDIR=/` or `TMPDIR=$HOME` cannot widen it);
+#   3. the work tree is NOT the session's project toplevel and NOT an ancestor of it. The project is the toplevel the SessionStart hook recorded in
+#      RAILS_FLOW_PROJECT_TOP; where that is unset the exemption does not apply.
+# Cost, stated: a fixture whose HOME is inside TMPDIR (`HOME=$TMPDIR/x`) is not exempt, because HOME inside the temp root makes the temp root an ancestor of HOME.
+phys() { ( cd "$1" 2>/dev/null && pwd -P ); }
+FIX_DONE=0; FIX_RC=1
+fixture_repo() {
+  [ "$FIX_DONE" = 1 ] && return "$FIX_RC"
+  FIX_DONE=1
+  local gd wt tmp tp hp pj pp
+  [ -n "${GIT_DIR:-}" ] && [ -n "${GIT_WORK_TREE:-}" ] || return 1
+  [ -n "${TMPDIR:-}" ] || return 1
+  tp="$(phys "$TMPDIR")"; [ -n "$tp" ] && [ "$tp" != / ] || return 1
+  if [ -n "${HOME:-}" ]; then
+    hp="$(phys "$HOME")"
+    if [ -n "$hp" ]; then case "$hp/" in "$tp"/*) return 1 ;; esac; fi
+  fi
+  wt="$(phys "$GIT_WORK_TREE")"; gd="$(phys "$GIT_DIR")"
+  [ -n "$wt" ] && [ -n "$gd" ] || return 1
+  case "$wt" in "$tp"/?*) ;; *) return 1 ;; esac
+  case "$gd" in "$tp"/?*) ;; *) return 1 ;; esac
+  [ -n "${RAILS_FLOW_PROJECT_TOP:-}" ] || return 1
+  pp="$(phys "$RAILS_FLOW_PROJECT_TOP")"; [ -n "$pp" ] || return 1
+  case "$pp/" in "$wt"/*) return 1 ;; esac      # the work tree IS the project or contains it
+  FIX_RC=0; return 0
+}
+
 # Is this pathspec the repository root, in any spelling? (used by `rm`, which may name a glob)
 is_root_path() {
   local p="$1"
@@ -318,6 +351,7 @@ decide() {
   case "$sub" in
     add)
       seen dry-run && return 0
+      fixture_repo && return 0
       if seen all; then RULE="git add --all stages every change in the tree, including strays (stage named files)"; return 1; fi
       seen update && return 0; seen patch && return 0; seen interactive && return 0
       paths_plain "git add" || return 1 ;;

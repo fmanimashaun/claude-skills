@@ -81,5 +81,23 @@ GUARD = Guard(
         Mutation('the allowlist admits every key', 'CFG_ALLOWED() {', 'CFG_ALLOWED() { return 0;', 'ALLOWLIST of exact keys'),
         Mutation('the allowlist drops commit.gpgsign, which a hermetic fixture passes with -c',
                  ' || ci_match "$1" "commit.gpgsign"', '', 'ALLOWLIST of exact keys'),
+        # #1982 (decision (b)): the fixture exemption for `add`, one mutant per condition. "GIT_DIR and GIT_WORK_TREE both set" is enforced twice (by the physical resolutions and by the
+        # strictly-inside checks), so it has no mutant of its own; `TMPDIR=/` is refused by the same strictly-inside pattern (`//?*` matches nothing), so it has none either.
+        Mutation('the exemption is never consulted, so a fixture cannot stage its own repository', '      fixture_repo && return 0\n', '', 'stage its OWN temp repository whole'),
+        Mutation('GIT_DIR need not lie inside the temp root', 'case "$gd" in "$tp"/?*) ;; *) return 1 ;; esac', ':', 'stage its OWN temp repository whole'),
+        Mutation('the work tree need not lie inside the temp root', 'case "$wt" in "$tp"/?*) ;; *) return 1 ;; esac', ':', 'stage its OWN temp repository whole'),
+        Mutation('"inside the temp root" is a string prefix, so a sibling directory named like it passes',
+                 'case "$wt" in "$tp"/?*) ;; *) return 1 ;; esac', 'case "$wt" in "$tp"*) ;; *) return 1 ;; esac', 'stage its OWN temp repository whole'),
+        Mutation('"inside the temp root" is a string prefix for GIT_DIR, so a sibling directory named like it passes',
+                 'case "$gd" in "$tp"/?*) ;; *) return 1 ;; esac', 'case "$gd" in "$tp"*) ;; *) return 1 ;; esac', 'stage its OWN temp repository whole'),
+        Mutation('an unset TMPDIR defaults to something that widens the temp root',
+                 '  [ -n "${TMPDIR:-}" ] || return 1\n  tp="$(phys "$TMPDIR")";', '  tp="$(phys "${TMPDIR:-$GIT_WORK_TREE/..}")";', 'stage its OWN temp repository whole'),
+        Mutation('TMPDIR may be HOME or an ancestor of it', 'if [ -n "$hp" ]; then case "$hp/" in "$tp"/*) return 1 ;; esac; fi', ':', 'stage its OWN temp repository whole'),
+        Mutation('the work tree may be the session project or contain it', 'case "$pp/" in "$wt"/*) return 1 ;; esac', ':', 'stage its OWN temp repository whole'),
+        Mutation('an unset RAILS_FLOW_PROJECT_TOP is not a refusal',
+                 '  [ -n "${RAILS_FLOW_PROJECT_TOP:-}" ] || return 1\n  pp="$(phys "$RAILS_FLOW_PROJECT_TOP")"; [ -n "$pp" ] || return 1',
+                 '  pp="$(phys "${RAILS_FLOW_PROJECT_TOP:-/nonexistent-x}")"', 'stage its OWN temp repository whole'),
+        Mutation('the paths are resolved logically, so a symlink in temp that points at the project is not seen',
+                 'phys() { ( cd "$1" 2>/dev/null && pwd -P ); }', 'phys() { ( cd "$1" 2>/dev/null && pwd ); }', 'stage its OWN temp repository whole'),
     ),
 )
