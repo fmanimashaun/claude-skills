@@ -92,6 +92,8 @@ GUARD = Guard(
         Mutation('a shim directory is not skipped by the name it is written with', 'case "$d" in */git-shim|*/git-shim/) continue ;; esac', ':', 'do not call each other forever'),
         Mutation('a shim is not recognised by its header line', 'case "$first" in *"# rails-flow git shim"*) continue ;; esac', ':', 'do not call each other forever'),
         Mutation('the re-entry counter never refuses', 'if [ "$depth" -ge 16 ]; then', 'if [ "$depth" -ge 160000 ]; then', 'do not call each other forever'),
+        Mutation('a candidate named git need not be a regular file, so a FIFO is read and blocks', '  [ -x "$d/git" ] && [ -f "$d/git" ] || continue', '  [ -x "$d/git" ] && [ ! -d "$d/git" ] || continue', 'do not call each other forever'),
+        Mutation('a counter of 7 or more digits is judged as a number', "case \"$depth\" in ''|*[!0-9]*|???????*) depth=0 ;; esac", "case \"$depth\" in ''|*[!0-9]*) depth=0 ;; esac", 'do not call each other forever'),
         Mutation('the audited escape does not pass the counter on', '  RAILS_FLOW_GIT_SHIM_DEPTH=$((depth + 1)) exec "$real" "${ORIG[@]}"\nfi', '  exec "$real" "${ORIG[@]}"\nfi', 'do not call each other forever'),
         Mutation('the final exec does not pass the counter on', '\nRAILS_FLOW_GIT_SHIM_DEPTH=$((depth + 1)) exec "$real" "${ORIG[@]}"\n', '\nexec "$real" "${ORIG[@]}"\n', 'do not call each other forever'),
         # the adversary pass on #1994 (atk1994.sh, atk1994b.sh): one mutant per bypass, and per variable / flag.

@@ -833,14 +833,14 @@ def _(base):
     clean = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "RAILS_FLOW_"))}
     headerless = OLD_SHIM.replace("# rails-flow git shim (#1790, the owner's decision on #1793). An EARLIER version:", "# an earlier shim, with no signature line:")
 
-    def run(what: str, dirs: list[Path | str], *args: str, rc: int = 0, want: str | None = None, **extra: str) -> None:
+    def run(what: str, dirs: list[Path | str], *args: str, rc: int = 0, want: str | None = None, unwanted: str | None = None, **extra: str) -> None:
         env = dict(clean, PATH=os.pathsep.join([str(x) for x in dirs] + [os.environ["PATH"]]), **extra)
         try:
             p = subprocess.run(["git", *args], env=env, capture_output=True, text=True, timeout=15)
         except subprocess.TimeoutExpired:
             check(label, False, f"{what}: git HUNG (no answer in 15 s): the shims call each other")
             return
-        ok = p.returncode == rc and (want is None or want in (p.stdout + p.stderr))
+        ok = p.returncode == rc and (want is None or want in (p.stdout + p.stderr)) and (unwanted is None or unwanted not in p.stderr)
         check(label, ok, f"{what}: exit {p.returncode} (want {rc}){'' if want is None else f', wanted {want!r}'}: {(p.stdout + p.stderr).strip()[:160]}")
 
     new = make("v2")
@@ -865,6 +865,12 @@ def _(base):
     # the re-entry counter
     run("a chain that has entered a shim 16 times is refused, not run", [new], "--version", rc=127, want="re-entered 16 times", RAILS_FLOW_GIT_SHIM_DEPTH="16")
     run("a chain that has entered a shim 15 times still runs", [new], "--version", want="git version", RAILS_FLOW_GIT_SHIM_DEPTH="15")
+    run("a counter of 20 digits counts as zero, without a bash error (#2005)", [new], "--version", want="git version", unwanted="integer expression", RAILS_FLOW_GIT_SHIM_DEPTH="1" + "0" * 19)
+    fifo = tmp / "fifo"
+    fifo.mkdir()
+    os.mkfifo(fifo / "git")
+    (fifo / "git").chmod(0o755)
+    run("a FIFO named git ahead of the real git on PATH is skipped, not read (#2005)", [new, fifo], "--version", want="git version")
     run("a counter that is not a number counts as zero", [new], "--version", want="git version", RAILS_FLOW_GIT_SHIM_DEPTH="abc")
     stub = tmp / "stubreal"
     stub.mkdir()
