@@ -51,13 +51,13 @@ fi
 
 re='^git[[:space:]]+worktree[[:space:]]+add([[:space:]]|$)'
 [ "$degraded" = 1 ] && re='git[[:space:]]+worktree[[:space:]]+add([[:space:]]|$)'
-# Line by line, in memory, with bash's own `=~`: no grep is needed to decide the scope.
+# Line by line, with bash's own `=~`: no grep is needed to decide the scope. `read` from a here-string, NOT `${rest#*$'\n'}` slicing: bash 3.2's
+# pattern expansion is quadratic in the string's length (#1978: 150 KB took 16 s for one `${rest#*$'\n'}` and 4 s for one `${rest%%$'\n'*}`, so the
+# gate ran past the hook's 15 s timeout and a killed hook lets the command run). `read` walks the text once.
 hit=0
-rest="$seg"$'\n'
-while [ -n "$rest" ]; do
-  line="${rest%%$'\n'*}"; rest="${rest#*$'\n'}"
+while IFS= read -r line || [ -n "$line" ]; do
   if [[ $line =~ $re ]]; then hit=1; break; fi
-done
+done <<< "$seg"
 # QUOTED WORDS (ae's review of #1596). The normaliser strips quoted spans, so `'git' worktree add`, `git 'worktree' add` and
 # `git worktree "add"` normalise to something else and never matched. Test the raw text with its quotes and backslashes dropped
 # too: a match there that the normaliser did not make goes to the helper as RAW, which reads the real tokens and lets a plain
