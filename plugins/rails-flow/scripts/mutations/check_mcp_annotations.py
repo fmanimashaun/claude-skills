@@ -11,6 +11,54 @@ GUARD = Guard(
     selftest="scripts/check_mcp_annotations.py",
     mutations=(
         Mutation(
+            'a declared registry stops being checked against the tool classes found (#1988)',
+            'fs, us = _registry(parsed, mark["const"], tools, concrete)',
+            'fs, us = [], []',
+            'registry: a listed class that is not a tool is a finding, not a pass',
+        ),
+        Mutation(
+            'a tool class the registry does not list passes (#1988)',
+            'for x in sorted(concrete - listed)]',
+            'for x in sorted(concrete - concrete)]',
+            'registry: a tool class the registry does not list is a finding',
+        ),
+        Mutation(
+            'a registry entry that is no tool class is accepted (#1988)',
+            'for x in sorted(listed - tools)]',
+            'for x in sorted(listed - listed)]',
+            'registry: a listed class that is not a tool is a finding, not a pass',
+        ),
+        Mutation(
+            'a splat in the registry is read as a constant (#1988)',
+            '    if bad or not items:',
+            '    if not items:',
+            'registry: a splat in the registry is could-not-check',
+        ),
+        Mutation(
+            'an empty registry is a pass (#1988)',
+            '    if bad or not items:',
+            '    if bad:',
+            'registry: an empty registry is could-not-check',
+        ),
+        Mutation(
+            'a registry defined twice is read as one (#1988)',
+            '    if len(defs) != 1:',
+            '    if len(defs) < 1:',
+            'registry: a registry defined twice is could-not-check',
+        ),
+        Mutation(
+            'a declaration anywhere above the call counts (#1988)',
+            'raw[max(first - 1, 0) : last + 1]',
+            'raw[0 : last + 1]',
+            'registry: a declaration three lines above the call is not beside it',
+        ),
+        Mutation(
+            'a declaration trailing the call is not read (#1988)',
+            'raw[max(first - 1, 0) : last + 1]',
+            'raw[max(first - 1, 0) : first]',
+            "registry: the declaration may trail the call's line",
+        ),
+        Mutation(
             "a tool with no annotations passes",
             '        return "declares no annotations, so a client reads it as destructive and open-world"',
             '        return ""',
