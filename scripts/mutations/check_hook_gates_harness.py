@@ -260,9 +260,16 @@ GUARD = Guard(
         Mutation(
             # #1596
             "a label's temp path is not masked, so a group that surveys clean on a Mac is refused on the Linux runner",
-            '    return _TEMP_PATH.sub("<tmp>", label)',
-            '    return label',
+            '_TEMP_PATH.sub("<tmp>", label)',
+            'label',
             "a label's temp path is masked",
+        ),
+        Mutation(
+            # #1980
+            "a label's timing text is not masked, so under load the survey and the run pass disagree and a mutation guard reads every mutant as 'cannot be narrowed'",
+            '    return _TIMING.sub("<t>s of at most <m>s", _TEMP_PATH.sub("<tmp>", label))',
+            '    return _TEMP_PATH.sub("<tmp>", label)',
+            "a label's timing text is masked",
         ),
         Mutation(
             # #1893
