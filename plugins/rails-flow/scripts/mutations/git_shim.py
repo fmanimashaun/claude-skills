@@ -125,6 +125,6 @@ GUARD = Guard(
         Mutation('the exemption is never consulted, so a fixture cannot stage its own repository',
                  'case "$sub" in add) fixture_repo && return 0 ;; esac', 'case "$sub" in add) : ;; esac', 'stage its OWN temp repository whole'),
         Mutation('the exemption also covers the working-tree rules (reset, clean, checkout, stash ...)',
-                 'case "$sub" in add) fixture_repo && return 0 ;; esac', 'case "$sub" in add|reset|checkout|switch|restore|clean|rm|stash|checkout-index|read-tree) fixture_repo && return 0 ;; esac', 'is not exempt in the fixture'),
+                 'case "$sub" in add) fixture_repo && return 0 ;; esac', 'case "$sub" in add|reset|checkout|switch|restore|clean|rm|stash|checkout-index|read-tree) fixture_repo && return 0 ;; esac', 'stage its OWN temp repository whole'),
     ),
 )
