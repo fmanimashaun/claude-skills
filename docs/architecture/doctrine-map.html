@@ -217,13 +217,13 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </ul>
 </div>
 <div class="row" data-k="guarantee">
-<h2>k6 load tests and ZAP scans are never aimed at a host that is not this machine unless the owner names that host in QA_ALLOW_REMOTE_TARGET.</h2>
+<h2>On the documented path, k6 load tests and ZAP scans are not aimed at a host that is not this machine unless the owner names that host in QA_ALLOW_REMOTE_TARGET.</h2>
 <div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/qa-flow/agents/perf-tester.md</code> &middot; #1954</span></div>
 <ul class="enf">
 <li><code>script:plugins/qa-flow/scripts/check_local_target.py</code></li>
 <li><code>mutation:check_local_target</code></li>
 </ul>
-<p class="note">The agents run the check before k6 or ZAP; it is a step an agent can skip, so this is a tripwire on the documented path and not a boundary. The model never sets the opt-in itself (said in both agents).</p>
+<p class="note">The agents run the check before k6 or ZAP; it is a step an agent can skip, so this is a tripwire on the documented path and not a boundary. ZAP is tied to the checked value (-t &quot;$QA_BASE_URL&quot;); k6 is tied by -e BASE_URL=&quot;$QA_BASE_URL&quot; and a script that reads __ENV.BASE_URL and never hard-codes a host (said in perf-tester.md; a script that does hard-code one is outside the check). The model never sets the opt-in itself (said in both agents).</p>
 </div>
 <div class="row" data-k="guarantee">
 <h2>A qa-flow certification cannot unlock main without a passing first-boot operator walkthrough and a forged-request authorization sweep, both committed at dev and named for the release the stamp certifies.</h2>

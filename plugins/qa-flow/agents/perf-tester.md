@@ -29,7 +29,7 @@ sets `QA_ALLOW_REMOTE_TARGET=<that host>` (audited); you never set it yourself.
   thresholds from the plan; watch degradation over time (leaks) and error-rate knees.
 
 Scripts: status + body-shape checks, `sleep(1)` pacing, personas' tokens from env.
-`k6 run qa/perf/<script>.js --summary-export qa/reports/k6-<slug>.json`. Breach =
+`k6 run -e BASE_URL="$QA_BASE_URL" qa/perf/<script>.js --summary-export qa/reports/k6-<slug>.json`. A script dials `__ENV.BASE_URL` and never hard-codes a host: the check approves `$QA_BASE_URL`, so a script that dials anything else is outside it. Breach =
 defect (S2 verify; S1 if certification shows collapse under expected load). Report
 p95/p99, error rate, RPS vs thresholds, and the shape of any degradation.
 
