@@ -17,7 +17,7 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -x "${
   # --show-toplevel` is already physical. Unset outside a repository, and the exemption then does not apply (the shim fails closed).
   _top="$(git rev-parse --show-toplevel 2>/dev/null)"
   if [ -n "$_top" ]; then
-    _top_line="$(printf 'export RAILS_FLOW_PROJECT_TOP=%q' "$_top")"
+    _top_line="$(printf 'export CLAUDE_SESSION_PROJECT_TOP=%q' "$_top")"
     grep -qxF -- "$_top_line" "$CLAUDE_ENV_FILE" 2>/dev/null || printf '%s\n' "$_top_line" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true
   fi
 fi

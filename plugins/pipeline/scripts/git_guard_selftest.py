@@ -54,6 +54,13 @@ def _env(home: Path) -> dict[str, str]:
     return env
 
 
+def set_hooks_path(repo: Path) -> None:
+    """`core.hooksPath .githooks` in the fixture's OWN repository, written to its config FILE, not through `git config`: run from the Claude Code Bash tool, rails-flow's git
+    shim refuses `git config core.hooksPath` anywhere, and this repository is a temp fixture's, not the session's (#1982)."""
+    cfg = repo / ".git" / "config"
+    cfg.write_text(cfg.read_text() + "[core]\n\thooksPath = .githooks\n")
+
+
 class World:
     """A work clone, optionally with a bare remote, with the guards installed by the real installer."""
 
@@ -504,7 +511,7 @@ def _(base):
     w.write(".githooks/post-merge", "#!/usr/bin/env bash\nexit 0\n")
     w.git("add", ".githooks/post-merge")
     w.git("commit", "-q", "-m", "team hook")
-    w.git("config", "core.hooksPath", ".githooks")
+    set_hooks_path(w.work)
     p = w.install()
     check(label, p.returncode == 0 and (w.work / ".githooks" / "pre-commit").exists(), f"exit {p.returncode}: {p.stdout.strip()[:200]}")
     before = w.head()
@@ -537,7 +544,7 @@ def _(base):
     w.write(".githooks/pre-push", team)
     w.git("add", ".githooks/pre-push")
     w.git("commit", "-q", "-m", "team hook")
-    w.git("config", "core.hooksPath", ".githooks")
+    set_hooks_path(w.work)
     p = w.install()
     check(label, p.returncode == 1 and (w.work / ".githooks" / "pre-push").read_text() == team and not w.git("status", "--porcelain").stdout.strip(),
           f"exit {p.returncode}; the committed hook {'CHANGED' if (w.work / '.githooks' / 'pre-push').read_text() != team else 'is unchanged'}")
@@ -552,7 +559,7 @@ def _(base):
     w.write(".githooks/pre-commit", team)
     w.git("add", ".githooks/pre-commit")
     w.git("commit", "-q", "-m", "team copy of the guard")
-    w.git("config", "core.hooksPath", ".githooks")
+    set_hooks_path(w.work)
     p = w.install()
     check(label, p.returncode == 1 and (w.work / ".githooks" / "pre-commit").read_text() == team and "is tracked by git" in p.stdout,
           f"exit {p.returncode}; the committed guard {'CHANGED' if (w.work / '.githooks' / 'pre-commit').read_text() != team else 'is unchanged'}: {p.stdout.strip()[:160]}")

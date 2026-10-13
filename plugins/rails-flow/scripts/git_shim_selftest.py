@@ -325,7 +325,7 @@ def _(base):
     for tool in ("tr", "dirname"):
         check(label, shutil.which(tool, path=r.path_env["PATH"]) is None, f"{tool} is still on the test PATH")
     refused(r, label, "reset", "--hard")
-    refused(r, label, "-c", "core.hooksPath=/dev/null", "status")
+    refused(r, label, "-c", "core.hooksPath=/tmp/hooks", "status")
     # ci_match is what reads these two, and it must not depend on tr: a shell alias that names git, and `git config core.hooksPath` (#1982: the -c form is an
     # allowlist now and fails CLOSED when ci_match cannot run, so it no longer shows the fail-open by itself)
     r.real("config", "alias.shellgit", "!git reset --hard")
@@ -403,8 +403,8 @@ def _(base):
         refused(r, label, *args, why="may be set on the command line" if args[0].startswith("-") else "can switch the #1789 git hooks off")
     # #1982: the pairs are READ, not refused on sight. What can switch the hooks off, or the shim cannot read, is refused; the rest passes.
     for env in ({"GIT_CONFIG_PARAMETERS": "'user.name'='x'"}, {"GIT_CONFIG_GLOBAL": "/tmp/cfg"}, {"GIT_CONFIG_SYSTEM": "/tmp/cfg"}, {"GIT_CONFIG_FOO": "1"},
-                {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.hooksPath", "GIT_CONFIG_VALUE_0": "/dev/null"},
-                {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "CORE.HOOKSPATH", "GIT_CONFIG_VALUE_0": "/dev/null"},
+                {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.hooksPath", "GIT_CONFIG_VALUE_0": "/tmp/hooks"},
+                {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "CORE.HOOKSPATH", "GIT_CONFIG_VALUE_0": "/tmp/hooks"},
                 {"GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "user.name", "GIT_CONFIG_VALUE_0": "x", "GIT_CONFIG_KEY_1": "include.path", "GIT_CONFIG_VALUE_1": "/tmp/x"},
                 {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "includeIf.gitdir:/x/.path", "GIT_CONFIG_VALUE_0": "y"},
                 {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "/tmp/x"},
@@ -439,7 +439,7 @@ def _(base):
     label = "shim: -c core.hooksPath on the command line is refused"
     r = Repo(base, "hookspath")
     r.real("add", "a.txt")
-    for args in (("-c", "core.hooksPath=/dev/null", "commit", "-m", "x"), ("-c", "core.hookspath=/dev/null", "status"),
+    for args in (("-c", "core.hooksPath=/tmp/hooks", "commit", "-m", "x"), ("-c", "core.hookspath=/tmp/hooks", "status"),
                  ("--config-env=core.hooksPath=X", "status")):
         refused(r, label, *args, why="may be set on the command line")
     runs(r, label, "-c", "user.name=u", "-c", "user.email=u@u", "commit", "-m", "y")  # fixture-git: exempt (the shim under test finds the repository from its cwd; fixture_git's GIT_DIR binding would hide that)
@@ -456,6 +456,14 @@ def _(base):
 
 
 ALLOWED_KEYS = ("maintenance.auto", "gc.auto", "user.name", "user.email", "commit.gpgsign")
+PAIRS_OK = (("core.fsmonitor", "false"), ("core.hooksPath", "/dev/null"), ("core.quotePath", "false"), ("tag.gpgSign", "false"), ("credential.helper", ""),
+            ("credential.helper", "!gh auth git-credential"), ("CORE.FSMONITOR", "false"), ("Core.HooksPath", "/dev/null"), ("TAG.GPGSIGN", "false"))
+PAIRS_REFUSED = (("core.fsmonitor", "true"), ("core.fsmonitor", "/tmp/x"), ("core.fsmonitor", "False"), ("core.fsmonitor", "false "), ("core.fsmonitor", ""), ("core.fsmonitor", "0"),
+                 ("core.hooksPath", "/dev/null/"), ("core.hooksPath", "/dev/nulL"), ("core.hooksPath", ""), ("core.hooksPath", ".git/hooks"), ("core.hooksPath", "/dev/null "),
+                 ("core.quotePath", "true"), ("core.quotePath", "false "), ("core.quotePath", ""), ("tag.gpgSign", "true"), ("tag.gpgSign", ""),
+                 ("credential.helper", "x"), ("credential.helper", "!gh auth git-credential --evil"), ("credential.helper", "!gh auth git-credential "),
+                 ("credential.helper", "! gh auth git-credential"), ("credential.helper", "!GH auth git-credential"), ("credential.helper", " "),
+                 ("credential.helper", "!gh auth git-credential; touch /tmp/x"), ("core.pager", "cat"), ("core.editor", "true"), ("core.sshCommand", "false"))
 REFUSED_KEYS = ("core.pager", "core.editor", "credential.helper", "gpg.program", "core.fsmonitor", "core.sshCommand", "core.hooksPath", "include.path", "includeIf.gitdir:/x/.path",
                 "diff.external", "core.autocrlf", "alias.p", "filter.evil.clean", "core.askPass", "sequence.editor", "user.name.x", "user.namex", "user.nam", "xuser.name",
                 "gc.autoDetach", "commit.gpgsign.x", "user.email ", " user.email")
@@ -479,6 +487,28 @@ def _(base):
         for form, args, env in forms(key):
             p = r.g(*args, env=env)
             check(label, p.returncode == 0 and "git-shim" not in p.stderr, f"{key!r} through {form} was refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
+    # THE EXACT (key, value) PAIRS shipped code passes (#1982): the hardening overrides, with exactly that value, key case-insensitive
+    def pair_forms(key: str, value: str) -> list[tuple[str, tuple[str, ...], dict[str, str]]]:
+        return [("GIT_CONFIG_KEY_0", ("status",), {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": key, "GIT_CONFIG_VALUE_0": value}),
+                ("-c", ("-c", f"{key}={value}", "status"), {}),
+                ("--config-env=", (f"--config-env={key}=CFGV", "status"), {"CFGV": value}),
+                ("--config-env", ("--config-env", f"{key}=CFGV", "status"), {"CFGV": value})]
+    for key, value in PAIRS_OK:
+        for form, args, env in pair_forms(key, value):
+            p = r.g(*args, env=env)
+            check(label, p.returncode == 0 and "git-shim" not in p.stderr, f"{key}={value!r} through {form} was refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
+    for key, value in PAIRS_REFUSED:
+        for form, args, env in pair_forms(key, value):
+            p = r.g(*args, env=env)
+            check(label, p.returncode != 0 and "git-shim" in p.stderr, f"{key}={value!r} through {form} was not refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
+    for key in ("core.fsmonitor", "core.hooksPath", "credential.helper", "tag.gpgSign"):
+        p = r.g("-c", key, "status")
+        check(label, p.returncode != 0 and "git-shim" in p.stderr, f"`-c {key}` with no value (the value true) was not refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
+    for key in ("core.fsmonitor", "credential.helper"):
+        for args in (("--config-env", f"{key}=NOSUCHVAR", "status"), (f"--config-env={key}=NOSUCHVAR", "status")):
+            p = r.g(*args)
+            # BY THE PAIR RULE: git's own alias lookup also fails on an unset variable, which would hide a dead check
+            check(label, p.returncode != 0 and "may be set on the command line" in p.stderr, f"{args} naming an UNSET variable was not refused as a pair: exit {p.returncode}: {p.stderr.strip()[:120]}")
     # every key a hermetic fixture sets must pass, or the fixture cannot run under the shim: read them from the helper, not from this file
     env = fixture_git.hermetic({})
     for i in range(int(env["GIT_CONFIG_COUNT"])):
@@ -516,7 +546,7 @@ def _(base):
 
     def env_for(wt: Path, gd: Path | None = None, **over: str | None) -> dict[str, str]:
         e = {"GIT_DIR": str(gd if gd is not None else wt / ".git"), "GIT_WORK_TREE": str(wt), "TMPDIR": str(tmproot), "HOME": str(home),
-             "RAILS_FLOW_PROJECT_TOP": str(proj.work)}
+             "CLAUDE_SESSION_PROJECT_TOP": str(proj.work)}
         e.update({k: v for k, v in over.items() if v is not None})
         for k, v in over.items():
             if v is None:
@@ -526,17 +556,17 @@ def _(base):
     def staged(wt: Path) -> str:
         return subprocess.run([REAL_GIT, "-C", str(wt), "diff", "--cached", "--name-only"], env=fixture_git.hermetic(proj.env), capture_output=True, text=True).stdout
 
-    def attempt(what: str, wt: Path, env: dict[str, str], *, ok: bool, args: tuple[str, ...] = ("add", "-A")) -> None:
+    def attempt(what: str, wt: Path, env: dict[str, str], *, ok: bool, args: tuple[str, ...] = ("add", "-A"), stray_check: bool = True) -> None:
         subprocess.run([REAL_GIT, "-C", str(wt), "reset", "-q"], env=fixture_git.hermetic(proj.env), capture_output=True, text=True)
         e = dict(proj.path_env)
-        for k in ("GIT_DIR", "GIT_WORK_TREE", "TMPDIR", "RAILS_FLOW_PROJECT_TOP"):
+        for k in ("GIT_DIR", "GIT_WORK_TREE", "TMPDIR", "CLAUDE_SESSION_PROJECT_TOP"):
             e.pop(k, None)
         e.update(env)
         p = subprocess.run(["git", *args], cwd=wt, env=e, capture_output=True, text=True, timeout=20)
         if ok:
-            check(label, p.returncode == 0 and "git-shim" not in p.stderr and "stray.txt" in staged(wt), f"{what}: refused or not staged: exit {p.returncode}: {p.stderr.strip()[:140]}")
+            check(label, p.returncode == 0 and "git-shim" not in p.stderr and (not stray_check or "stray.txt" in staged(wt)), f"{what}: refused or not staged: exit {p.returncode}: {p.stderr.strip()[:140]}")
         else:
-            check(label, p.returncode != 0 and "git-shim" in p.stderr and "stray.txt" not in staged(wt), f"{what}: was NOT refused: exit {p.returncode}: {p.stderr.strip()[:140]}")
+            check(label, p.returncode != 0 and "git-shim" in p.stderr and (not stray_check or "stray.txt" not in staged(wt)), f"{what}: was NOT refused: exit {p.returncode}: {p.stderr.strip()[:140]}")
 
     # the exemption
     attempt("a fixture repo named by GIT_DIR and GIT_WORK_TREE inside TMPDIR", fx, env_for(fx), ok=True)
@@ -559,18 +589,82 @@ def _(base):
     (hfx / "stray.txt").write_text("s\n")
     attempt("TMPDIR=$HOME with a repository under it", hfx, env_for(hfx, TMPDIR=str(home), HOME=str(home)), ok=False)
     (tmproot / "h").mkdir()
-    attempt("TMPDIR is an ancestor of HOME (documented cost: HOME inside the temp root)", fx, env_for(fx, HOME=str(tmproot / "h")), ok=False)
-    attempt("RAILS_FLOW_PROJECT_TOP unset", fx, env_for(fx, RAILS_FLOW_PROJECT_TOP=None), ok=False)
-    attempt("RAILS_FLOW_PROJECT_TOP names a directory that does not exist", fx, env_for(fx, RAILS_FLOW_PROJECT_TOP=str(base / "nope")), ok=False)
-    attempt("the work tree IS the session's project", fx, env_for(fx, RAILS_FLOW_PROJECT_TOP=str(fx)), ok=False)
-    attempt("the work tree CONTAINS the session's project", anc, env_for(anc, TMPDIR=str(base), RAILS_FLOW_PROJECT_TOP=str(anc_proj)), ok=False)
+    attempt("HOME inside the temp root is fine: only a TMPDIR that IS HOME or CONTAINS the project is refused", fx, env_for(fx, HOME=str(tmproot / "h")), ok=True)
+    attempt("TMPDIR contains the project", fx, env_for(fx, TMPDIR=str(base)), ok=False)
+    attempt("CLAUDE_SESSION_PROJECT_TOP unset", fx, env_for(fx, CLAUDE_SESSION_PROJECT_TOP=None), ok=False)
+    attempt("CLAUDE_SESSION_PROJECT_TOP names a directory that does not exist", fx, env_for(fx, CLAUDE_SESSION_PROJECT_TOP=str(base / "nope")), ok=False)
+    attempt("the work tree IS the session's project", fx, env_for(fx, CLAUDE_SESSION_PROJECT_TOP=str(fx)), ok=False)
+    attempt("the work tree CONTAINS the session's project", anc, env_for(anc, TMPDIR=str(base), CLAUDE_SESSION_PROJECT_TOP=str(anc_proj)), ok=False)
     attempt("a symlink in TMPDIR that points at the project (GIT_WORK_TREE through the link)", proj.work, env_for(tmproot / "link"), ok=False)
     attempt("the same with TMPDIR widened over the project", proj.work, env_for(tmproot / "link", TMPDIR=str(base)), ok=False)
     attempt("the project itself, with TMPDIR over it", proj.work, env_for(proj.work, TMPDIR=str(base)), ok=False)
     # outside a fixture the whole-tree add is still refused, and the other rules still hold INSIDE the exempt repository
     attempt("no GIT_DIR/GIT_WORK_TREE at all", fx, {}, ok=False)
-    attempt("`reset --hard` is not part of the exemption", fx, env_for(fx), ok=False, args=("reset", "--hard"))
-    attempt("`clean -fd` is not part of the exemption", fx, env_for(fx), ok=False, args=("clean", "-fd"))
+    # the exemption covers the rules that protect a WORKING TREE from data loss, in the fixture's own repository (and refuses them everywhere else, above) ...
+    attempt("`reset --hard` in the fixture", fx, env_for(fx), ok=True, args=("reset", "--hard"), stray_check=False)
+    attempt("`clean -fd` in the fixture", fx, env_for(fx), ok=True, args=("clean", "-fd"), stray_check=False)
+    attempt("`reset --hard` with the work tree outside TMPDIR", outside, env_for(outside), ok=False, args=("reset", "--hard"), stray_check=False)
+    attempt("`clean -fd` in a sibling named like TMPDIR's", evil / "fx", env_for(evil / "fx"), ok=False, args=("clean", "-fd"), stray_check=False)
+    # ... and NOT the rules about hooks, config and --no-verify, even there
+    attempt("`commit --no-verify` is not exempt in the fixture", fx, env_for(fx), ok=False, args=("commit", "--no-verify", "-m", "x", "--allow-empty"), stray_check=False)
+    attempt("`config core.hooksPath` is not exempt in the fixture", fx, env_for(fx), ok=False, args=("config", "core.hooksPath", "/tmp/h"), stray_check=False)
+
+
+@case("shim: GIT_CONFIG_GLOBAL is /dev/null, or a file inside the temp root whose every entry is allowlisted (#1982)")
+def _(base):
+    label = "shim: GIT_CONFIG_GLOBAL is /dev/null, or a file inside the temp root whose every entry is allowlisted (#1982)"
+    proj = Repo(base, "gproj")
+    tmproot = base / "gtmproot"
+    tmproot.mkdir()
+    home = base / "ghome"
+    home.mkdir()
+    outside = base / "goutside"
+    outside.mkdir()
+
+    def cfgfile(where: Path, name: str, text: str) -> Path:
+        f = where / name
+        f.write_text(text)
+        return f
+    good = cfgfile(tmproot, "good.cfg", "[user]\n\tname = t\n\temail = t@t\n[core]\n\tfsmonitor = false\n[gc]\n\tauto = 0\n")
+    base_env = {"TMPDIR": str(tmproot), "HOME": str(home), "CLAUDE_SESSION_PROJECT_TOP": str(proj.work)}
+
+    def go(what: str, glob: str, *, ok: bool, **over: str | None) -> None:
+        env = dict(base_env, GIT_CONFIG_GLOBAL=glob)
+        for k, v in over.items():
+            if v is None:
+                env.pop(k, None)
+            else:
+                env[k] = v
+        e = dict(proj.path_env)
+        e.pop("TMPDIR", None)
+        e.update(env)
+        p = subprocess.run(["git", "status"], cwd=proj.work, env=e, capture_output=True, text=True, timeout=20)
+        if ok:
+            check(label, p.returncode == 0 and "git-shim" not in p.stderr, f"{what}: refused: exit {p.returncode}: {p.stderr.strip()[:140]}")
+        else:
+            check(label, p.returncode != 0 and "git-shim" in p.stderr, f"{what}: was NOT refused: exit {p.returncode}: {p.stderr.strip()[:140]}")
+    go("/dev/null", "/dev/null", ok=True)
+    go("a temp file whose entries are all allowlisted", str(good), ok=True)
+    go("an empty temp file", str(cfgfile(tmproot, "empty.cfg", "")), ok=True)
+    for name, text in (("hooks.cfg", "[core]\n\thooksPath = /tmp/h\n"), ("hooks-null.cfg", "[core]\n\thooksPath = /dev/null\n[core]\n\tpager = cat\n"),
+                       ("inc.cfg", "[include]\n\tpath = /tmp/x\n"), ("incif.cfg", "[includeIf \"gitdir:/x/\"]\n\tpath = /tmp/x\n"), ("pager.cfg", "[core]\n\tpager = less\n"),
+                       ("alias.cfg", "[alias]\n\tp = push\n"), ("fsm.cfg", "[core]\n\tfsmonitor = true\n"), ("mixed.cfg", "[user]\n\tname = t\n[core]\n\teditor = vi\n"),
+                       ("ml.cfg", "[user]\n\tname = \"a\\nuser.name\"\n")):
+        go(f"a temp file with {name}", str(cfgfile(tmproot, name, text)), ok=False)
+    go("a missing file", str(tmproot / "missing.cfg"), ok=False)
+    go("a directory", str(tmproot), ok=False)
+    go("a file OUTSIDE the temp root", str(cfgfile(outside, "o.cfg", "[user]\n\tname = t\n")), ok=False)
+    go("a file inside the session PROJECT", str(cfgfile(proj.work, "p.cfg", "[user]\n\tname = t\n")), ok=False)
+    (tmproot / "link.cfg").symlink_to(outside / "o.cfg")
+    go("a symlink in the temp root that points outside it", str(tmproot / "link.cfg"), ok=False)
+    go("TMPDIR unset", str(good), ok=False, TMPDIR=None)
+    go("TMPDIR is /", str(good), ok=False, TMPDIR="/")
+    go("TMPDIR is HOME", str(good), ok=False, TMPDIR=str(home), HOME=str(home))
+    go("TMPDIR contains the project", str(good), ok=False, TMPDIR=str(base))
+    go("CLAUDE_SESSION_PROJECT_TOP unset", str(good), ok=False, CLAUDE_SESSION_PROJECT_TOP=None)
+    go("a relative path", "good.cfg", ok=False)
+    p = proj.g("status", env={"GIT_CONFIG_SYSTEM": str(good), **base_env})
+    check(label, p.returncode != 0 and "git-shim" in p.stderr, f"GIT_CONFIG_SYSTEM naming a temp file must stay refused: exit {p.returncode}")
 
 
 @case("shim: a git alias is expanded before the rules are applied")
@@ -726,17 +820,17 @@ def _(base):
         run_hook(env_file, root, r.work)
     text = env_file.read_text()
     top = str(r.work.resolve())
-    check(label, text.count("RAILS_FLOW_PROJECT_TOP=") == 1, f"the line should be written once: {text!r}")
-    check(label, f"export RAILS_FLOW_PROJECT_TOP={shlex.quote(top)}" in text or f"RAILS_FLOW_PROJECT_TOP={top}" in text, f"it should name the physical toplevel {top}: {text!r}")
+    check(label, text.count("CLAUDE_SESSION_PROJECT_TOP=") == 1, f"the line should be written once: {text!r}")
+    check(label, f"export CLAUDE_SESSION_PROJECT_TOP={shlex.quote(top)}" in text or f"CLAUDE_SESSION_PROJECT_TOP={top}" in text, f"it should name the physical toplevel {top}: {text!r}")
     e2 = base / "claude-env-top2"
     out = base / "not-a-repo-top"
     out.mkdir()
     run_hook(e2, root, out)
-    check(label, "RAILS_FLOW_PROJECT_TOP" not in e2.read_text(), "outside a repository no project toplevel may be recorded (the shim then fails closed)")
+    check(label, "CLAUDE_SESSION_PROJECT_TOP" not in e2.read_text(), "outside a repository no project toplevel may be recorded (the shim then fails closed)")
     sub = r.work / "src"
     e3 = base / "claude-env-top3"
     run_hook(e3, root, sub)
-    check(label, f"RAILS_FLOW_PROJECT_TOP={shlex.quote(top)}" in e3.read_text() or f"RAILS_FLOW_PROJECT_TOP={top}" in e3.read_text(), "from a subdirectory the TOPLEVEL is recorded, not the subdirectory")
+    check(label, f"CLAUDE_SESSION_PROJECT_TOP={shlex.quote(top)}" in e3.read_text() or f"CLAUDE_SESSION_PROJECT_TOP={top}" in e3.read_text(), "from a subdirectory the TOPLEVEL is recorded, not the subdirectory")
 
 
 @case("hook: running the SessionStart hook again does not repeat the line")
