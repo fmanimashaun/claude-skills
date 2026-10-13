@@ -138,6 +138,11 @@ def main() -> int:
             said = w.banner(plugin_root=root)
             check(f"qa-status: {label}", want in said and "cleared for main\" is not claimed" in said and "CERTIFIED" not in said and "would refuse" not in said, f"banner: {said!r}")
 
+    # 3c. The banner recognises the gate's deadline by its words, so the gate must keep saying them: a rewording there would silently make the banner fall back to "would refuse" (59's review).
+    gate_text = (PLUGIN / "hooks" / "scripts" / "release-gate.sh").read_text()
+    check("qa-status: release-gate.sh still says \"BLOCKED by qa-flow release gate: the gate took longer than\", the words the banner reads as a deadline",
+          "BLOCKED by qa-flow release gate: the gate took longer than" in gate_text, "the gate's deadline message was reworded; update qa-status.sh's case pattern and this row together")
+
     # 4. Controls: no stamp, and a stamp that is not PASS, keep the messages they always had.
     with TemporaryDirectory(prefix="qa-status-") as td:
         w = World(Path(td))
