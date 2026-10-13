@@ -7,6 +7,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-10-13 (release v1.157.2)
+
+- **v1.157.2 is a patch of rails-flow 1.60.2 — `.claude-plugin/marketplace.json`.** It carries one P1 fix: the git shim no longer calls another version's shim forever when two rails-flow versions' shim directories are both on PATH after a session resume (#2003). Our own design.
+
 ### 2026-10-13 (release v1.157.1)
 
 - **v1.157.1 is a patch of three plugins: rails-flow 1.60.1, pipeline 1.5.2 and qa-flow 1.38.1 — `.claude-plugin/marketplace.json`.** It carries the git shim's fixture-exemption security fix (#1994, reaching the `add` exemption that shipped in v1.157.0), the guard-bash label rule after `cd <other repo> &&` (#1990), the linear-time command normaliser (#1980) and the pipeline and qa-flow selftests that now run under the shim (#1982). Our own design.
@@ -3760,6 +3764,10 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### 1.60.2 (release v1.157.2) — 2026-10-13
+
+- **The git shim no longer calls another version's shim forever: every git call hung when two rails-flow versions' shim directories were both on PATH — `plugins/rails-flow/git-shim/git`, `plugins/rails-flow/scripts/git_shim_selftest.py`** (#2003, P1, found after a session resume left 1.59.0 and 1.60.0 on PATH). The shim found "the real git" by skipping only ITS OWN directory, so it resolved the other version's shim, which resolved it back. It now skips every candidate that is a shim: a `*/git-shim` directory by its physical name or by the name it is written with (a symlink to one counts), and any file that opens with the shim's own header line (another name, and every earlier version, which all carry it). A re-entry counter (`RAILS_FLOW_GIT_SHIM_DEPTH`, passed to the real git on both exec paths, the audited `RAILS_FLOW_GIT_OK=1` included) refuses with exit 127 and a message at 16 nested entries instead of hanging. A selftest case with a 15 s limit per call runs both orders, two copies, each recognition rule alone and the counter; it hangs 13 of 13 on the previous shim, and six mutants hold the rules. Our own design; the coordinator's assignment on #2003 (skip every `*/git-shim` directory and add a re-entry guard). The selftest's GIT_CONFIG_GLOBAL rows also drop this session's own `CLAUDE_SESSION_PROJECT_TOP` before they set theirs, so "unset" is unset when the selftest runs inside a Claude Code session.
 
 ### 1.60.1 (release v1.157.1) — 2026-10-13
 
