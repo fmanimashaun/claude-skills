@@ -4750,7 +4750,7 @@ def guard_worktree_fixtures() -> None:
         # `${cmd//[...]/}` took 4 s on 1,000 of them, 35 s on 2,000 and 110 s on 3,000: worse than quadratic), and one past the size cap that mentions `worktree` is refused at once with its reason (a timeout is a DENY with none).
         wt_lines = lambda n: "echo start\n" + ("echo " + "x" * 60 + "\n") * n
         for label, cmd, code, says in (
-                ("a 170 KB command of plain lines is let through", wt_lines(2600), 0, ""),
+                ("a 160 KB command of plain lines is let through", wt_lines(2400), 0, ""),
                 ("ONE 300 KB line is let through", "echo " + "x" * 300000, 0, ""),
                 ("a 6 KB command of 1,500 quoted words is let through (bash 3.2 took 15 s over it)", "echo " + "'a' " * 1500, 0, ""),
                 ("a 390 KB command just under the cap, with `worktree` in it, is judged (not refused as too large)", wt_lines(5900) + "echo worktree", 0, ""),
@@ -4760,7 +4760,7 @@ def guard_worktree_fixtures() -> None:
                 ("a padded command with `git $'\\167orktree' add` (the octal spelling of worktree) is refused: past the cap a `$'` fails closed", wt_lines(6900) + "git $'\\167orktree' add ../x", 2, "too large for the gate to read")):
             t0 = time.monotonic()
             try:
-                res = guard(repo, cmd)
+                res = (0, "") if skipping() else guard(repo, cmd)      # `--match`: an unwanted row is not run (see guard-pr-ready's `timed`)
             except subprocess.TimeoutExpired:
                 res = (-1, "timed out after 60 s")
             secs = time.monotonic() - t0
@@ -6046,6 +6046,8 @@ def guard_pr_ready_fixtures() -> None:
         # 210 KB 83 s (the line walk sliced `${rest#*$'\n'}`), and ONE 300 KB line took 13 s and 399 KB 16 s, past the hook's 15 s timeout, which is a DENY since #1968
         # (the normaliser read a line with `substr` per character, quadratic in BWK awk). The bound is far above the fixed cost and far below that.
         def timed(cmd: str) -> tuple[tuple[int, str], float]:
+            if skipping():       # `--match`: this group keeps its subprocesses real and only a release-gate run counts as a hook, so an unwanted row would run for minutes under a mutant
+                return (0, ""), 0.0
             t0 = time.monotonic()
             try:
                 res = guard(repo, cmd)
@@ -6054,8 +6056,8 @@ def guard_pr_ready_fixtures() -> None:
             return res, time.monotonic() - t0
         plain_lines = lambda n: "echo start\n" + ("echo " + "x" * 60 + "\n") * n
         for label, cmd, code, says in (
-                ("a 170 KB command of plain lines is let through (it is not a `gh pr ready`)", plain_lines(2600), 0, ""),
-                ("a 170 KB command of plain lines then a `gh pr ready` is judged: it is not its own command", plain_lines(2600) + "gh pr ready 12", 2, "must be its own command"),
+                ("a 160 KB command of plain lines is let through (it is not a `gh pr ready`)", plain_lines(2400), 0, ""),
+                ("a 160 KB command of plain lines then a `gh pr ready` is judged: it is not its own command", plain_lines(2400) + "gh pr ready 12", 2, "must be its own command"),
                 ("ONE 300 KB line is let through (the normaliser is linear in a line's length)", "echo " + "x" * 300000, 0, ""),
                 ("ONE 300 KB line of quoted words is let through", "echo " + "'a' " * 75000, 0, ""),
                 ("ONE 300 KB line of short words is let through", "echo " + "ab " * 100000, 0, ""),

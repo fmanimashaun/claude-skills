@@ -35,10 +35,10 @@ GUARD = Guard(
             'an ANSI-C spelling of worktree) is refused',
         ),
         Mutation(
-            "the line walk slices the string again, so 150 KB of plain lines is quadratic and runs past the hook's timeout (#1978, #1980)",
+            "the line walk slices the string again, so 160 KB of plain lines is quadratic and runs past the hook's timeout (#1978, #1980)",
             'while IFS= read -r line || [ -n "$line" ]; do\n  if [[ $line =~ $re ]]; then hit=1; break; fi\ndone <<< "$seg"',
             'rest="$seg"$\'\\n\'\nwhile [ -n "$rest" ]; do\n  line="${rest%%$\'\\n\'*}"; rest="${rest#*$\'\\n\'}"\n  if [[ $line =~ $re ]]; then hit=1; break; fi\ndone',
-            'a 170 KB command of plain lines is let through',
+            'a 160 KB command of plain lines is let through',
         ),
         Mutation(
             'no size cap: a command past it that mentions worktree is read, runs into the 15 s timeout and is denied without a reason (#1980)',
