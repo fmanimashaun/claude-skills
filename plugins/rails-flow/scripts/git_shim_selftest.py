@@ -671,7 +671,7 @@ def _(base):
     label = "shim: a downstream project's own spec fixtures, run from the repository's directory, may stage their temp repositories once marked (#1999)"
     # MODELLED ON RETASK'S SPECS (#1845: 41 examples in spec/lib/qa/release_certification_spec.rb, spec/lib/githooks/pre_push_spec.rb and four more): `Dir.mktmpdir` for the repository, git run
     # through the shim with `chdir: repo` (no GIT_DIR, no GIT_WORK_TREE), a hermetic environment (GIT_CONFIG_GLOBAL=/dev/null, GIT_CONFIG_NOSYSTEM=1, GIT_AUTHOR_*), `git init -q -b dev`, a
-    # bare origin made with `-c init.defaultBranch=main init --bare`, then `git add -A`, `git add .` and `git -C dir -c user.name=t -c user.email=t@t add .`. The project's helper writes the
+    # bare origin made with `-c init.defaultBranch=main init --bare`, then `git add -A`, `git add .` and `git -C dir -c user.name=t -c user.email=t@t add .`. The project's helper writes the  # fixture-git: exempt (the shim under test finds the repository from its cwd, as a downstream spec does; fixture_git's GIT_DIR binding would hide that)
     # identity file (`.git/rails-flow-fixture`) right after `git init`: the documented contract (plugins/rails-flow/reference/downstream-spec-fixtures.md).
     proj = Repo(base, "p1999")                       # the session's project, which the SessionStart hook marked
     (proj.work / ".git" / "claude-session-project").write_text("")
@@ -685,8 +685,8 @@ def _(base):
     def env(**over: str | None) -> dict[str, str]:
         e = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "RAILS_FLOW_", "CLAUDE_SESSION")) and k not in {"HOME", "TMPDIR"}}
         e.update(PATH=f"{SHIM_DIR}{os.pathsep}{os.environ['PATH']}", HOME=str(home), TMPDIR=str(tmproot), CLAUDE_SESSION_PROJECT_TOP=str(proj.work),
-                 GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1", GIT_AUTHOR_NAME="Spec", GIT_AUTHOR_EMAIL="spec@example.com",
-                 GIT_COMMITTER_NAME="Spec", GIT_COMMITTER_EMAIL="spec@example.com", GIT_TERMINAL_PROMPT="0", GIT_EDITOR=":")
+                 GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1", GIT_AUTHOR_NAME="Spec", GIT_AUTHOR_EMAIL="spec@example.com",  # fixture-git: exempt (the shim under test finds the repository from its cwd, as a downstream spec does; fixture_git's GIT_DIR binding would hide that)
+                 GIT_COMMITTER_NAME="Spec", GIT_COMMITTER_EMAIL="spec@example.com", GIT_TERMINAL_PROMPT="0", GIT_EDITOR=":")  # fixture-git: exempt (the shim under test finds the repository from its cwd, as a downstream spec does; fixture_git's GIT_DIR binding would hide that)
         for k, v in over.items():
             e.pop(k, None) if v is None else e.__setitem__(k, v)
         return e
@@ -727,7 +727,7 @@ def _(base):
     (primary / ".git" / "rails-flow-fixture").write_text("")
     works("`add -A` in the marked repository, from its own directory", ("add", "-A"), primary, primary)
     works("`add .` in the marked repository", ("add", "."), primary, primary)
-    works("`git -C <dir> -c user.name=t -c user.email=t@t add .` (the spelling release_spec.rb uses)", ("-C", str(primary), "-c", "user.name=t", "-c", "user.email=t@t", "add", "."), tmproot, primary)
+    works("`git -C <dir> -c user.name=t -c user.email=t@t add .` (the spelling release_spec.rb uses)", ("-C", str(primary), "-c", "user.name=t", "-c", "user.email=t@t", "add", "."), tmproot, primary)  # fixture-git: exempt (the shim under test finds the repository from its cwd, as a downstream spec does; fixture_git's GIT_DIR binding would hide that)
     p = git(("commit", "-q", "-m", "seed"), primary)
     check(label, p.returncode == 0 and "git-shim" not in p.stderr, f"a plain commit in the fixture is not the shim's to refuse: exit {p.returncode}: {p.stderr.strip()[:150]}")
     # a LINKED worktree of a marked fixture carries the identity in the common dir (pre_push_spec.rb adds worktrees)
