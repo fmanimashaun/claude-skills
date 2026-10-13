@@ -90,6 +90,16 @@ _strip_heredocs() {
 # ones that take a separate value) are stepped over, so `sudo -u deploy git` and `nice -n 5 git`
 # reach `git`.
 _NC_AWK_LIB='
+# Output built in pieces (#1980): BWK awk (macOS) copies the whole string on every `out = out x`, so a long output is quadratic. `app(x)` appends to a buffer
+# of about 2 KB and starts a new piece when it is full; `joined()` joins the pieces pairwise (n log n) and empties them. Callers reset OB = "" and NP = 0.
+function app(x) { OB = OB x; if (length(OB) >= 2048) { NP++; PP[NP] = OB; OB = "" } }
+function joined(    m, i, k) {
+  if (OB != "") { NP++; PP[NP] = OB; OB = "" }
+  m = NP; NP = 0
+  if (m == 0) return ""
+  while (m > 1) { k = 0; for (i = 1; i <= m; i += 2) { k++; PP[k] = (i < m) ? PP[i] PP[i + 1] : PP[i] } m = k }
+  return PP[1]
+}
 # ANSI-C quoting, $\047...\047 (#1613), decoded as bash decodes it: \a \b \e \E \f \n \r \t \v \\\\ \047 \" \?, \nnn (octal),
 # \xHH, \uHHHH, \UHHHHHHHH and \cx; any other backslash stays as written; the text is cut at a NUL, as bash cuts it.
 # ansic(s, i): s[i] is the first character after the opening quote. Sets ANSIV (the decoded text), ANSIEND (the index
@@ -178,81 +188,105 @@ _dequote() {
   # LC_ALL=C: the lexer is BYTE-oriented. gawk in a UTF-8 locale makes sprintf("%c", 233) the two bytes of U+00E9, so a `$'\xe9'` or `\u00e9` decoded to
   # the wrong bytes; pinned here so the caller's locale (release-gate.sh does not pin one, the harness inherits C.UTF-8) cannot matter.
   LC_ALL=C awk "$_NC_AWK_LIB"'
-  function simple(v,    k, n) {
-    n = length(v); if (n == 0) return 0
-    for (k = 1; k <= n; k++) if (index(BAD, substr(v, k, 1)) || substr(v, k, 1) < " ") return 0
-    return 1
+  # LINEAR IN THE LENGTH OF THE LINE (#1980). BWK awk (macOS) makes every `substr(s, i, 1)` cost the length of `s`, so any loop over a long line is quadratic: a
+  # `substr`-only loop took 0.3 s, 1.2 s and 4.9 s at 100, 200 and 400 KB, and a 300 KB line took 13 s through the whole gate, past the hook timeouts. The line
+  # is split into an array of characters ONCE (`ch`), read from it, and the output is built in pieces of about 2 KB (`app`), joined pairwise at the end (`joined`),
+  # so no concatenation grows past 2 KB until the join, which is n log n. The lexer makes the same decisions as before: `lex_selftest` in check_hook_gates.py
+  # holds the old and the new output side by side over a fuzzed corpus.
+  # The text of characters a..b of the line. A long span is cut out with one substr (the count of long spans is bounded by n / 256), a short one is joined.
+  function slice(a, b,    t, k) {
+    if (b < a) return ""
+    if (b - a >= 256) return substr(CS, a, b - a + 1)
+    t = ""; for (k = a; k <= b; k++) t = t ch[k]
+    return t
   }
+  # `simple(v)`: nothing in v that a shell would act on, so the quoted text is one plain word. BADRE is BAD plus every control character, as a test of the
+  # whole text at once instead of one `substr` per character.
+  function simple(v) { if (length(v) == 0) return 0; return (v !~ BADRE) }
   # The index of the closing double quote after i, a backslash skipping the next character; 0 when the line holds none.
-  function dq_end(s, i,    n, c) {
-    n = length(s)
-    while (i <= n) { c = substr(s, i, 1); if (c == "\\") { i += 2; continue } if (c == "\"") return i; i++ }
+  function dq_end(i,    c) {
+    while (i <= N) { c = ch[i]; if (c == "\\") { i += 2; continue } if (c == "\"") return i; i++ }
+    return 0
+  }
+  # How far the next single quote after i is (index() in the text after i); 0 when there is none.
+  function sq_end(i,    k) { for (k = i + 1; k <= N; k++) if (ch[k] == "\047") return k - i; return 0 }
+  # The index of the quote that closes an ANSI-C span whose text starts at i, a backslash skipping the next character; 0 when none does. `\c` takes the
+  # character after it as its operand, even a backslash (ansic() does), so it skips three, unless the operand is the closing quote or nothing.
+  function ansi_end(i,    c) {
+    while (i <= N) {
+      c = ch[i]
+      if (c == "\\") { if (ch[i + 1] == "c" && ch[i + 2] != "" && ch[i + 2] != "\047") i += 3; else i += 2; continue }
+      if (c == "\047") return i
+      i++
+    }
     return 0
   }
   # One line -> OUT. Sets JOIN when the line ends in an unquoted backslash (the caller joins the next line and lexes again),
   # and appends every heredoc the line opens to NQ (committed by the caller once the line is final).
-  function lex(s,    n, i, c, d, j, k, out, w, dash, word, quoted) {
-    n = length(s); i = 1; out = ""; JOIN = 0; NQN = 0
+  function lex(s,    n, i, c, d, j, k, w, dash, word, quoted, e) {
+    n = length(s); N = n; CS = s; split(s, ch, ""); i = 1; JOIN = 0; NQN = 0; OB = ""; NP = 0
     while (i <= n) {
-      c = substr(s, i, 1)
+      c = ch[i]
       if (c == "\\") {
-        d = substr(s, i + 1, 1)
+        d = ch[i + 1]
         if (d == "") { JOIN = 1; i++; continue }
-        if (index(BAD, d)) { out = out c d; i += 2; continue }
-        out = out d; i += 2; continue
+        if (index(BAD, d)) { app(c d); i += 2; continue }
+        app(d); i += 2; continue
       }
       if (c == "\047") {
-        j = index(substr(s, i + 1), "\047")
-        if (j == 0) { out = out c; i++; continue }
-        w = substr(s, i + 1, j - 1); if (simple(w)) out = out w
+        j = sq_end(i)
+        if (j == 0) { app(c); i++; continue }
+        w = slice(i + 1, i + j - 1); if (simple(w)) app(w)
         i += j + 1; continue
       }
       if (c == "\"") {
-        j = dq_end(s, i + 1)
-        if (j == 0) { out = out c; i++; continue }
-        w = substr(s, i + 1, j - i - 1); if (simple(w)) out = out w
+        j = dq_end(i + 1)
+        if (j == 0) { app(c); i++; continue }
+        w = slice(i + 1, j - 1); if (simple(w)) app(w)
         # #1982: OPT-IN (NC_MARK_EXPANSION=1, the taint view of the guard-bash git add rule). A double-quoted span holding `$` or a backtick is DELETED
         # above, so an expansion inside it (`git add f "$V"`, `"$(echo -A)"`) left no trace in the segment. This view leaves one `$` where it was, so
         # the rule can judge the words of the `git add` command ITSELF. Off by default: every other caller reads the text unchanged.
-        else if (MARKX && (index(w, "$") || index(w, "`"))) out = out "$"
+        else if (MARKX && (index(w, "$") || index(w, "`"))) app("$")
         i = j + 1; continue
       }
-      if (c == "$" && substr(s, i + 1, 1) == "\047") {
-        ansic(s, i + 2)
-        if (!ANSIOK) { out = out c; i++; continue }
-        if (simple(ANSIV)) out = out ANSIV
-        i = ANSIEND; continue
+      if (c == "$" && ch[i + 1] == "\047") {
+        e = ansi_end(i + 2)
+        if (e == 0) { app(c); i++; continue }
+        ansic(slice(i + 2, e), 1)
+        if (!ANSIOK) { app(c); i++; continue }
+        if (simple(ANSIV)) app(ANSIV)
+        i = e + 1; continue
       }
-      if (c == "#" && (i == 1 || substr(s, i - 1, 1) == " " || substr(s, i - 1, 1) == "\t")) { out = out substr(s, i); break }
+      if (c == "#" && (i == 1 || ch[i - 1] == " " || ch[i - 1] == "\t")) { app(substr(s, i)); break }
       if (c == "(") {
         if (AR > 0) AR++
-        else if (substr(s, i + 1, 1) == "(") { AR = 2; out = out "(("; i += 2; continue }
-        out = out c; i++; continue
+        else if (ch[i + 1] == "(") { AR = 2; app("(("); i += 2; continue }
+        app(c); i++; continue
       }
-      if (c == ")") { if (AR > 0) AR--; out = out c; i++; continue }
-      if (c == "<" && substr(s, i, 2) == "<<" && substr(s, i + 2, 1) != "<" && (i == 1 || substr(s, i - 1, 1) != "<")) {
-        if (AR > 0) { out = out "< <"; i += 2; continue }
+      if (c == ")") { if (AR > 0) AR--; app(c); i++; continue }
+      if (c == "<" && ch[i + 1] == "<" && ch[i + 2] != "<" && (i == 1 || ch[i - 1] != "<")) {
+        if (AR > 0) { app("< <"); i += 2; continue }
         j = i + 2; dash = 0
-        if (substr(s, j, 1) == "-") { dash = 1; j++ }
-        while (substr(s, j, 1) == " " || substr(s, j, 1) == "\t") j++
+        if (ch[j] == "-") { dash = 1; j++ }
+        while (ch[j] == " " || ch[j] == "\t") j++
         word = ""; quoted = 0
         while (j <= n) {
-          d = substr(s, j, 1)
+          d = ch[j]
           if (d == " " || d == "\t" || d == ";" || d == "&" || d == "|" || d == "(" || d == ")" || d == "<" || d == ">") break
-          if (d == "\047") { k = index(substr(s, j + 1), "\047"); if (k == 0) break; word = word substr(s, j + 1, k - 1); quoted = 1; j += k + 1; continue }
-          if (d == "\"") { k = dq_end(s, j + 1); if (k == 0) break; word = word substr(s, j + 1, k - j - 1); quoted = 1; j = k + 1; continue }
-          if (d == "\\") { word = word substr(s, j + 1, 1); quoted = 1; j += 2; continue }
+          if (d == "\047") { k = sq_end(j); if (k == 0) break; word = word slice(j + 1, j + k - 1); quoted = 1; j += k + 1; continue }
+          if (d == "\"") { k = dq_end(j + 1); if (k == 0) break; word = word slice(j + 1, k - 1); quoted = 1; j = k + 1; continue }
+          if (d == "\\") { word = word ch[j + 1]; quoted = 1; j += 2; continue }
           word = word d; j++
         }
         if (word ~ /^[A-Za-z0-9_][A-Za-z0-9_-]*$/) {
-          out = out "<<" (dash ? "-" : "") word
+          app("<<" (dash ? "-" : "") word)
           NQN++; NQW[NQN] = word; NQD[NQN] = dash; NQQ[NQN] = quoted
           i = j; continue
         }
       }
-      out = out c; i++
+      app(c); i++
     }
-    OUT = out
+    OUT = joined()
   }
   function reset() { INB = 0; QN = 0; QI = 0; BUF = ""; ACC = ""; AR = 0 }
   # A batch boundary (#1504): one string ends, and every state of it ends with it.
@@ -277,7 +311,7 @@ _dequote() {
     if (NQN) { for (k = 1; k <= NQN; k++) { QN++; QW[QN] = NQW[k]; QD[QN] = NQD[k]; QQ[QN] = NQQ[k] } QI = 1; INB = 1 }
   }
   END { if (BUF != "") { lex(BUF); print OUT } }
-  BEGIN { MARKX = (ENVIRON["NC_MARK_EXPANSION"] == "1"); BAD = ";|&()<>$`\"\\# \t\n\r\f\v\047"; reset() }
+  BEGIN { MARKX = (ENVIRON["NC_MARK_EXPANSION"] == "1"); BAD = ";|&()<>$`\"\\# \t\n\r\f\v\047"; BADRE = "[\001-\037;|&()<>$`\"\\\\# \047]"; reset() }
   '
 }
 
@@ -303,14 +337,14 @@ _peel() {
           j++
         }
       }
-      out = "git"
-      if (j <= n) { w = t[j]; if (tolower(w) in al) w = al[tolower(w)]; out = out " " w; j++ }
-      for (; j <= n; j++) out = out " " t[j]
-      print out; next
+      OB = ""; NP = 0; app("git")
+      if (j <= n) { w = t[j]; if (tolower(w) in al) w = al[tolower(w)]; app(" " w); j++ }
+      for (; j <= n; j++) app(" " t[j])
+      print joined(); next
     }
-    out = ""
-    for (j = i; j <= n; j++) out = out (j > i ? " " : "") t[j]
-    print out
+    OB = ""; NP = 0
+    for (j = i; j <= n; j++) app((j > i ? " " : "") t[j])
+    print joined()
   }
   '
 }
@@ -463,9 +497,11 @@ _inner_strings() {
   END {
     # Cost: the lexer walks the text a character at a time, so skip it when nothing it looks for is
     # there. Judged with quotes and backslashes removed, because the lexer dequotes words before it
-    # matches them (`e'v'al`, `bas\h -c`; #1498 review). gsub, not a bash pattern substitution: that
-    # is superlinear on bash 3.2 and made an 8 KB PR body cost 32 s in guard-bash (#1504).
-    p = S; gsub(/[\047"\\]/, "", p)
+    # matches them (`e'v'al`, `bas\h -c`; #1498 review). split and join, not a bash pattern substitution (superlinear on bash 3.2: an 8 KB PR body cost
+    # 32 s in guard-bash, #1504) and not a gsub (BWK awk is quadratic in the number of matches, #1980).
+    np2 = split(S, Q, /[\047"\\]/); OB = ""; NP = 0
+    for (k = 1; k <= np2; k++) app(Q[k])
+    p = joined()
     if (p !~ /\$\(|`|<\(|eval|sh/) exit
     # Only a BATCH (depth > 0) is split: a raw command holding a \002 line must not be cut mid-string
     # (#1519 review). _join_strings removes \002 from every string, so content never fakes a boundary.
