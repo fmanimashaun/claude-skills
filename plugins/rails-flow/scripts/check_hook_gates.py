@@ -848,7 +848,7 @@ NEGATIVES_1342 = ['git clean -n', 'git clean -fdn', 'git checkout feature/x', 'g
 # way. The normaliser never classified any of these, so every guard-bash rule was blind to them.
 POSITIVES_1472 = ["bash -c 'git add -A'", 'sh -c "git push --force origin main"', "bash -lc 'git reset --hard'",
                   "bash -o pipefail -c 'git add -A'", "zsh -c -- 'git add -A'", 'eval "git add -A"', "eval 'git add' '-A'",
-                  "bash -c \"eval 'git add -A'\"", 'echo "$(git add -A)"', 'echo `git add -A`', 'diff <(git add -A) x',
+                  "bash -c \"eval 'git add -A'\"", 'bash -c "bash -c \\"bash -c \'git add -A\'\\""', 'echo "$(git add -A)"', 'echo `git add -A`', 'diff <(git add -A) x',
                   'command git add -A', 'exec git add -A', 'time git add -A', 'nice -n 5 git add -A', 'env -i git add -A',
                   'sudo -u deploy git add -A', 'timeout 60 git add -A', 'echo x | xargs git add -A', '{ git add -A; }',
                   '( git add -A )', '(git add -A)', 'if true; then git add -A; fi', '\\git add -A', '/usr/bin/git add -A',
@@ -904,7 +904,7 @@ POSITIVES_1706 = ["git add /abs/path", "git add :/src/x.rb", "git add ':(top)src
                   "git push -fu origin dev", "git push origin +dev", "git checkout HEAD .", "git branch -d -f x", "git branch -df x",
                   "git add -- .", "git add --verbose -A", "git reset HEAD~1 --hard", "git push --force-with-lease origin HEAD:main"]
 NEGATIVES_1706 = ["git push --force-if-includes origin x", "git push --force-with-lease --force-if-includes origin x", "git add -u", "git add -p src/x.rb", "git add -N new.rb", "git add -v -- src/x.rb", "git add '*.md'", "git add src/x.rb", "git add ./src/x.rb", "git add src/../lib/y.rb", "git add src/*.rb", "git add app/.env.example",
-                  "git push origin :feature/old", "git push origin --delete feature/old", "git push origin HEAD:feature/x", "git add -u", "git add app/*.rb", "git checkout -b feature/x", "git push --all origin",
+                  "git push origin :feature/old", "git push origin --delete feature/old", "git push origin HEAD:feature/x", "git add app/*.rb", "git checkout -b feature/x", "git push --all origin",
                   "git add file.rb", "git add -- app/x.rb", "git branch -d x", "git push origin feature", "git checkout feature/x",
                   "git reset HEAD~1", "git push -u origin feature/x", "git push --force-with-lease origin feature/main-menu"]
 # ANSI-C bodies whose decoding must equal bash's own, byte for byte (compared when the result is one plain word, the only kind kept).
@@ -1034,6 +1034,9 @@ def guard_bash_fixtures() -> None:
     # #1504: a depth's strings are normalised as ONE batch, so each must still be judged on its own.
     for cmd, why in (("bash -c 'cat <<EOF'; bash -c 'git add -A'", "an unclosed heredoc in one string does not swallow the next"),
                      ("bash -c \"echo it's\"; bash -c \"eval 'git add -A'\"", "an unbalanced quote in one string does not stop the next being lexed"),
+                     # The row above is also stopped by an unrelated `eval` rule once the batch is one text, and on Linux (mawk) so is every single-level shape: only a NEXT string that nests one
+                     # level deeper is hidden by the unbalanced quote, so this is the row that tells a batch from one text on both awks (release.yml, v1.156.0).
+                     ("bash -c \"echo it's\"; bash -c \"bash -c 'git add -A'\"", "an unbalanced quote in one string does not stop the next being lexed (the next string nests one level deeper)"),
                      (" ".join(["echo $(date)"] * 30) + "; bash -c 'git add -A'", "the 31st string of a batch is still seen"),
                      # #1519 review: a \002 line is a batch boundary only in a batch, never in the raw command...
                      ("bash -c 'x\n\x02\ny'; bash -c 'git add -A'", "a raw \\002 line does not split the command"),
