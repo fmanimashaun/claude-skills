@@ -4720,7 +4720,9 @@ def guard_worktree_fixtures() -> None:
                 ("a 6 KB command of 1,500 quoted words is let through (bash 3.2 took 15 s over it)", "echo " + "'a' " * 1500, 0, ""),
                 ("a 390 KB command just under the cap, with `worktree` in it, is judged (not refused as too large)", wt_lines(5900) + "echo worktree", 0, ""),
                 ("a command past the cap that mentions `worktree` is refused at once, and says why", wt_lines(6900) + "echo worktree", 2, "too large for the gate to read"),
-                ("a command past the cap that does NOT mention `worktree` is let through", wt_lines(6900), 0, "")):
+                ("a command past the cap that does NOT mention `worktree` is let through", wt_lines(6900), 0, ""),
+                ("a padded command with `git $'\\x77orktree' add` (an ANSI-C spelling of worktree) is refused: past the cap a `$'` fails closed", wt_lines(6900) + "git $'\\x77orktree' add ../x", 2, "too large for the gate to read"),
+                ("a padded command with `git $'\\167orktree' add` (the octal spelling of worktree) is refused: past the cap a `$'` fails closed", wt_lines(6900) + "git $'\\167orktree' add ../x", 2, "too large for the gate to read")):
             t0 = time.monotonic()
             try:
                 res = guard(repo, cmd)
@@ -6024,7 +6026,9 @@ def guard_pr_ready_fixtures() -> None:
                 ("ONE 300 KB line of short words is let through", "echo " + "ab " * 100000, 0, ""),
                 ("a 390 KB command just under the cap, with `ready` in it, is judged (not refused as too large)", plain_lines(5900) + "echo ready", 0, ""),
                 ("a command past the cap that mentions `ready` is refused at once, and says why", plain_lines(6900) + "echo ready", 2, "too large for the gate to read"),
-                ("a command past the cap that does NOT mention `ready` is let through: it cannot be a `gh pr ready`", plain_lines(6900), 0, "")):
+                ("a command past the cap that does NOT mention `ready` is let through: it cannot be a `gh pr ready`", plain_lines(6900), 0, ""),
+                ("a padded command with `gh pr $'\\x72eady'` (an ANSI-C spelling of ready) is refused: past the cap a `$'` fails closed", plain_lines(6900) + "gh pr $'\\x72eady' 5", 2, "too large for the gate to read"),
+                ("a padded command with `gh pr $'\\162eady'` (the octal spelling of ready) is refused: past the cap a `$'` fails closed", plain_lines(6900) + "gh pr $'\\162eady' 5", 2, "too large for the gate to read")):
             res, secs = timed(cmd)
             check(f"guard-pr-ready (#1980): {label}, within {LARGE_SECONDS_MAX:.0f}s", res[0] == code and says in res[1] and secs <= LARGE_SECONDS_MAX,
                   f"exit {res[0]} in {secs:.1f}s (want {code} within {LARGE_SECONDS_MAX:.0f}s): {blocked_lines(res[1])!r}")

@@ -29,6 +29,12 @@ GUARD = Guard(
     needs=_NEEDS,
     mutations=(
         Mutation(
+            "past the cap a `$'` no longer fails closed, so a padded command spelling ready in ANSI-C passes unread (#1980)",
+            'ready* || $cmd == *"\\$\'"* ]]; then',
+            'ready* ]]; then',
+            'an ANSI-C spelling of ready) is refused',
+        ),
+        Mutation(
             "the line walk slices the string again, so 150 KB of plain lines is quadratic and runs past the hook's timeout (#1980)",
             'while IFS= read -r line || [ -n "$line" ]; do\n  if [[ $line =~ $re ]]; then\n    m="${BASH_REMATCH[0]}"',
             'rest="$seg"$\'\\n\'\nwhile [ -n "$rest" ]; do\n  line="${rest%%$\'\\n\'*}"; rest="${rest#*$\'\\n\'}"\n  if [[ $line =~ $re ]]; then\n    m="${BASH_REMATCH[0]}"',
@@ -42,7 +48,7 @@ GUARD = Guard(
         ),
         Mutation(
             'the size cap is not gated on a mention, so every large command is refused, an unrelated heredoc included (#1980)',
-            '  if [[ $plain == *ready* ]]; then\n',
+            '  if [[ $plain == *ready* || $cmd == *"\\$\'"* ]]; then\n',
             '  if true; then\n',
             'a command past the cap that does NOT mention `ready` is let through',
         ),

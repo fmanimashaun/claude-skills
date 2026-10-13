@@ -45,11 +45,11 @@ plain="$(printf '%s' "$cmd" | tr -d "\047\"\\\\" 2>/dev/null)" || plain="$cmd"
 # #1980: a command past `_large_chars` that MENTIONS `worktree` is refused at once, not read. The reading is linear now (about 1 s for 200 KB), but a
 # megabyte of it would still run into the hook's 15 s timeout, which is a DENY (`onFailure: block`, #1968) with no reason given; this says why, in well under a
 # second. A large command that does not mention the word cannot be a `git worktree add` (a word the normaliser builds out of an ANSI-C `$'...'` escape is the one
-# spelling this misses, and only past the cap) and is let through AT ONCE, unread. The caps count CHARACTERS, `${#cmd}`, which is what the cost follows (qa-flow's release gate, #1952).
+# spelling this would miss, so a `$'` anywhere in it is refused too, as the one spelling the dropped quotes cannot show) and is let through AT ONCE, unread. The caps count CHARACTERS, `${#cmd}`, which is what the cost follows (qa-flow's release gate, #1952).
 _large_chars=400000
 if [ "${#cmd}" -gt "$_large_chars" ]; then
-  if [[ $plain == *worktree* ]]; then
-    echo "BLOCKED by rails-flow worktree guard: this command is ${#cmd} characters and mentions \`worktree\`, too large for the gate to read within the hook's time limit, so it is refused rather than guessed at. Write the content to a file with the Write tool and run a short command instead." >&2
+  if [[ $plain == *worktree* || $cmd == *"\$'"* ]]; then
+    echo "BLOCKED by rails-flow worktree guard: this command is ${#cmd} characters and mentions \`worktree\` or holds an ANSI-C \`\$'...'\` string (which can spell it), too large for the gate to read within the hook's time limit, so it is refused rather than guessed at. Write the content to a file with the Write tool and run a short command instead." >&2
     exit 2
   fi
   exit 0
