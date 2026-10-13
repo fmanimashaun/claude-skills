@@ -505,7 +505,10 @@ def selftest() -> int:
         shim = d / "shimbin"
         shim.mkdir()
         fkid = d / "fetch-kid.pid"
-        real_git = shutil.which("git")
+        # The REAL git, not rails-flow's git shim: run from the Claude Code Bash tool the shim is first on PATH, so `shutil.which("git")` is the shim, and a stub that
+        # execs the shim finds this very stub as "the real git" (it skips only its own directory) and the two call each other until the budget ends (#1982).
+        real_git = next((c for c in (str(Path(q) / "git") for q in os.environ["PATH"].split(os.pathsep) if q and Path(q).name != "git-shim")
+                         if os.access(c, os.X_OK) and not os.path.isdir(c)), shutil.which("git"))
         (shim / "git").write_text(f'#!/bin/sh\ncase " $* " in *" fetch "*) sleep 30 & echo $! > "{fkid}"; wait ;; esac\nexec {real_git} "$@"\n',
                                   encoding="utf-8")
         (shim / "git").chmod(0o755)

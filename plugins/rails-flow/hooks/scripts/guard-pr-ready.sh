@@ -55,6 +55,22 @@ cmd="$(printf '%s' "$input" | python3 -c 'import json,sys
 d=json.loads(sys.stdin.buffer.read().decode("utf-8","surrogateescape"))
 sys.stdout.buffer.write(str(d.get("tool_input",{}).get("command","")).encode("utf-8","replace"))' 2>/dev/null)" || { parsed=0; cmd="$input"; }
 
+# #1980: a command past `_large_chars` that MENTIONS `ready` (in any case, with its quotes and backslashes dropped, so `re""ady` counts) is refused at once, not
+# read. The reading is linear now (about 1 s for 200 KB), but a megabyte of it would still run into the hook's 15 s timeout, which is a DENY (`onFailure: block`,
+# #1968) with no reason given; this says why, in well under a second. A large command that does not mention the word cannot be a `gh pr ready` (a word the
+# normaliser builds out of an ANSI-C `$'...'` escape is the one spelling the dropped quotes cannot show, so a `$'` anywhere in it is refused too) and is let through AT ONCE, unread. `tr`, not a bash substitution,
+# which is quadratic on 3.2; a missing `tr` leaves the text as it was. The caps count CHARACTERS, `${#cmd}`, which is what the cost follows (qa-flow's release gate, #1952).
+_large_chars=400000
+if [ "${#cmd}" -gt "$_large_chars" ]; then
+  plain="$(printf '%s' "$cmd" | tr -d "\047\"\\\\" 2>/dev/null)" || plain="$cmd"
+  shopt -s nocasematch
+  if [[ $plain == *ready* || $cmd == *"\$'"* ]]; then
+    echo "BLOCKED by rails-flow pr-ready guard: this command is ${#cmd} characters and mentions \`ready\` or holds an ANSI-C \`\$'...'\` string (which can spell it), too large for the gate to read within the hook's time limit, so it is refused rather than guessed at. Write the content to a file with the Write tool and run a short command instead." >&2
+    exit 2
+  fi
+  exit 0
+fi
+
 _dir="${BASH_SOURCE[0]%/*}"
 _lib="$_dir/lib/normalize_cmd.sh"
 _py="$_dir/lib/pr_ready_guard.py"
@@ -97,16 +113,16 @@ if [[ $input == *ready* ]]; then
 fi
 shopt -u nocasematch
 hit=0; args=""; segment=""
-rest="$seg"$'\n'
-while [ -n "$rest" ]; do
-  line="${rest%%$'\n'*}"; rest="${rest#*$'\n'}"
+# Line by line with `read` from a here-string, NOT `${rest#*$'\n'}` slicing (#1980, the cure guard-worktree.sh already has from #1978): bash 3.2's pattern
+# expansion is quadratic in the string's length, so a 150 KB command of plain lines took 16 s here, past the hook's 15 s timeout, which is a DENY since #1968.
+while IFS= read -r line || [ -n "$line" ]; do
   if [[ $line =~ $re ]]; then
     m="${BASH_REMATCH[0]}"; a="${line#*"$m"}"; a=" ${a}"
     pre=" $a "; pre="${pre%% -- *} "         # after a bare `--`, gh reads `--undo` as a positional, not the flag
     [[ $pre =~ [[:space:]]--undo[[:space:]] ]] && continue
     hit=1; args="$a"; segment="$line"; break
   fi
-done
+done <<< "$seg"
 [ "$hit" = 1 ] || exit 0
 
 # The sweep's path is printed, never run here: spelled through a variable so the harness-dependency lint (a text match on

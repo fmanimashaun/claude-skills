@@ -17,6 +17,8 @@ GUARD = Guard(
         Mutation('the project toplevel is never recorded, so the exemption can never apply', '  if [ -n "$_top" ]; then', '  if false; then', "records the session's project toplevel"),
         Mutation('the toplevel line is written on every start', 'grep -qxF -- "$_top_line" "$CLAUDE_ENV_FILE" 2>/dev/null ||', 'false ||', "records the session's project toplevel"),
         Mutation('a subdirectory is recorded instead of the toplevel', '_top="$(git rev-parse --show-toplevel 2>/dev/null)"', '_top="$(pwd)"', "records the session's project toplevel"),
+        Mutation('the session marker file is never written, so the shim cannot tell the project from a fixture by what is on disk',
+                 '    [ -n "$_gcd" ] && [ -d "$_gcd" ] && : > "$_gcd/claude-session-project" 2>/dev/null || true', '    true', "records the session's project toplevel"),
         Mutation('a toplevel is recorded outside a repository', '  if [ -n "$_top" ]; then', '  if true; then', "records the session's project toplevel"),
     ),
 )

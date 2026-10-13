@@ -32,6 +32,10 @@ allowed. The #1564 proposal's `PreToolUse[Bash]` WIP commit on `git push`, `gh p
 
 LIMITS. A filter driver or hook the USER configured in their OWN (global or system) git config still runs, as it does for any git command
 they run; this scrubs what a repository or the environment can add, it does not turn git into a sandbox. It cannot recover work a session lost before the turn ended.
+
+RUN BY HAND FROM THE CLAUDE CODE BASH TOOL it is REFUSED by rails-flow's git shim (first on PATH there): it commits with hooks off (`-c core.hooksPath=/dev/null`, `--no-verify`), which is
+exactly what the shim stops an agent doing by hand (#1994). The normal path, the Stop hook, is launched by Claude Code without the shim on PATH and is unaffected. Its `--selftest` also
+fails under the shim (it uses `-c protocol.file.allow=always`, which the shim does not allow); run it with the shim off PATH.
 Stdlib only.
 """
 from __future__ import annotations
