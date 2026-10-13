@@ -68,13 +68,13 @@ def problems(spec_text: str, gitignore: str | None) -> list[str]:
             "passes.\n"
             "    A fixed threshold is the wrong instrument in both directions — below where the "
             "repo sits it is inert, above it every run is red and it gets switched off.\n"
-            "    Add:  refuse_coverage_drop :line, :branch")
+            "    Add:  enable_coverage :branch\n"
+            "          refuse_coverage_drop :line, :branch   (the :branch criterion raises without enable_coverage :branch)")
     if uncommented(spec_text, FIXED_THRESHOLD):
         found.append(
             "`minimum_coverage <n>` is set. testing.md §11 forbids it: it is either below the repo "
             "(inert) or above it (red on day one).\n"
-            "    Gate the DROP instead — `refuse_coverage_drop`. `minimum_coverage_by_file line: 0` "
-            "is fine and is not this.")
+            "    Gate the DROP instead — `refuse_coverage_drop`.")
     if gitignore is not None:
         lines = gitignore.splitlines()
         if any(IGNORES_COVERAGE.match(l) for l in lines) and not any(

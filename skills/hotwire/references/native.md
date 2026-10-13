@@ -73,7 +73,7 @@ Hotwire.registerBridgeComponents([FormComponent.self])
 // Hotwire.config.showDoneButtonOnModals, Hotwire.config.debugLoggingEnabled, etc.
 // (debugLoggingEnabled is iOS-only — Android dropped it in 1.3.0, see §3.)
 // Hotwire.config.backButtonDisplayMode — back-button display mode of HotwireWebViewController
-Hotwire.config.hideTabBarWhenPushed = true        // default false; 1.3.0, renamed from hidesTabBarWhenPushed
+Hotwire.config.hideTabBarWhenPushed = true        // default false; new in 1.3.0
 Hotwire.config.animateReplaceActions = true       // default false; 1.3.0 (#166)
 Hotwire.config.redirectResolutionTimeout = 30     // seconds (default 30)
 // Hotwire.config.makeCustomWebView — customise each session's web view; return a NEW instance each time
@@ -81,7 +81,7 @@ Hotwire.config.makeCustomErrorView = { error, handler in  // 1.3.0 (#158/#163)
   MyErrorView(error: error, handler: handler)             // returns an ErrorPresentableView
 }
 Hotwire.config.log = MyAppLogger()                // used only when debugLoggingEnabled; 1.3.0 (#156)
-Hotwire.config.pathConfiguration.matchQueryStrings = true
+Hotwire.config.pathConfiguration.matchQueryStrings = true   // already the default; shown to name the switch
 // Full option list: native.hotwired.dev/ios/configuration
 ```
 
@@ -268,8 +268,9 @@ so it's updatable without releases:
   subsequent rules specialize.
 - **`patterns`** — regular expressions matched against the URL path.
 - **Cross-platform properties**: `context` (`default` | `modal`),
-  `presentation` (`default` | `push` | `pop` | `replace` | `replace_root` |
-  `clear_all` | `refresh` | `none`), `pull_to_refresh_enabled` (defaults:
+  `presentation` (`default` | `pop` | `replace` | `replace_root` |
+  `clear_all` | `refresh` | `none`; **`push` is Android-only**, iOS's `Navigation`
+  has no such case), `pull_to_refresh_enabled` (defaults:
   iOS `true`, Android `false`), `animated` (default `true`).
 - **Android-only**: `uri` (**required** for a rule to map to a
   fragment/activity destination), `fallback_uri` (older app versions),
