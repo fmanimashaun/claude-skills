@@ -598,6 +598,17 @@ def _(base):
     attempt("a symlink in TMPDIR that points at the project (GIT_WORK_TREE through the link)", proj.work, env_for(tmproot / "link"), ok=False)
     attempt("the same with TMPDIR widened over the project", proj.work, env_for(tmproot / "link", TMPDIR=str(base)), ok=False)
     attempt("the project itself, with TMPDIR over it", proj.work, env_for(proj.work, TMPDIR=str(base)), ok=False)
+    # the session's own repository is refused by what is ON DISK, whatever the environment claims (the security review of #1994: a wrong but existing marker value let it through)
+    mk = tmproot / "marked"
+    fixture_git.init(mk, "-b", "main")
+    (mk / "stray.txt").write_text("s\n")
+    (mk / ".git" / "claude-session-project").write_text("")
+    attempt("a repository carrying the session marker, with CLAUDE_SESSION_PROJECT_TOP pointing elsewhere", mk, env_for(mk, CLAUDE_SESSION_PROJECT_TOP=str(home)), ok=False)
+    attempt("the same, `reset --hard`", mk, env_for(mk, CLAUDE_SESSION_PROJECT_TOP=str(home)), ok=False, args=("reset", "--hard"), stray_check=False)
+    lk = tmproot / "linked-gd"                      # a linked worktree's git dir: its marker lives in the COMMON dir named by `commondir`
+    lk.mkdir()
+    (lk / "commondir").write_text("../marked/.git\n")
+    attempt("a linked worktree of a repository carrying the session marker", mk, env_for(mk, gd=lk), ok=False, stray_check=False)
     # outside a fixture the whole-tree add is still refused, and the other rules still hold INSIDE the exempt repository
     attempt("no GIT_DIR/GIT_WORK_TREE at all", fx, {}, ok=False)
     # the exemption covers the rules that protect a WORKING TREE from data loss, in the fixture's own repository (and refuses them everywhere else, above) ...
@@ -827,6 +838,8 @@ def _(base):
     out.mkdir()
     run_hook(e2, root, out)
     check(label, "CLAUDE_SESSION_PROJECT_TOP" not in e2.read_text(), "outside a repository no project toplevel may be recorded (the shim then fails closed)")
+    check(label, (r.work / ".git" / "claude-session-project").is_file(), "the session repository must carry the marker file the shim reads (an env value can be overridden inline, a file in the git dir cannot)")
+    check(label, not any(out.rglob("claude-session-project")), "nothing outside a repository may be marked")
     sub = r.work / "src"
     e3 = base / "claude-env-top3"
     run_hook(e3, root, sub)

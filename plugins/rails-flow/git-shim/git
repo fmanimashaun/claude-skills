@@ -208,6 +208,19 @@ find_top() {
 #   2. the temp root is valid (`temp_root_ok`: TMPDIR set, not `/` or HOME, not containing the session's project);
 #   3. the work tree is NOT the session's project toplevel and NOT an ancestor of it (also implied by `temp_root_ok`, which refuses a temp root that contains the project: a work
 #      tree strictly inside the temp root that held the project would have to be inside it, so the check below is defence in depth and has no mutant of its own).
+# A repository the SessionStart hook marked as the session's own: `claude-session-project` in its git dir (or, for a linked worktree, in its common dir). Read from the
+# repository GIT_DIR names, not from the environment, so an inline `CLAUDE_SESSION_PROJECT_TOP=/usr` or a crafted TMPDIR cannot turn the project into "a fixture" (the security
+# review of #1994 reproduced that: a wrong but existing marker value let `git reset --hard` through on the real project).
+session_repo_marked() {
+  local gd="$1" c
+  [ -f "$gd/claude-session-project" ] && return 0
+  if [ -f "$gd/commondir" ]; then
+    IFS= read -r c < "$gd/commondir"; case "$c" in /*) ;; *) c="$gd/$c" ;; esac
+    c="$(phys "$c")"; [ -n "$c" ] && [ -f "$c/claude-session-project" ] && return 0
+  fi
+  return 1
+}
+
 FIX_DONE=0; FIX_RC=1
 fixture_repo() {
   [ "$FIX_DONE" = 1 ] && return "$FIX_RC"
@@ -220,6 +233,7 @@ fixture_repo() {
   case "$wt" in "$TP"/?*) ;; *) return 1 ;; esac
   case "$gd" in "$TP"/?*) ;; *) return 1 ;; esac
   case "$PP/" in "$wt"/*) return 1 ;; esac      # the work tree IS the project or contains it
+  session_repo_marked "$gd" && return 1          # the repository named is the session's own, whatever the environment says
   FIX_RC=0; return 0
 }
 

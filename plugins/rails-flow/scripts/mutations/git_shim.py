@@ -79,6 +79,11 @@ GUARD = Guard(
 
         Mutation('an unset TMPDIR defaults to something that widens the temp root',
                  '  [ -n "${TMPDIR:-}" ] || return 1\n  tp="$(phys "$TMPDIR")";', '  tp="$(phys "${TMPDIR:-$GIT_WORK_TREE/..}")";', 'stage its OWN temp repository whole'),
+        # the session's own repository is marked ON DISK, so an inline env value cannot make it a fixture (the security review of #1994).
+        Mutation('a repository carrying the session marker is exempt anyway',
+                 '  session_repo_marked "$gd" && return 1          # the repository named', '  : # the repository named', 'stage its OWN temp repository whole'),
+        Mutation('the marker of a linked worktree is not looked for in its common dir',
+                 '  if [ -f "$gd/commondir" ]; then', '  if false; then', 'stage its OWN temp repository whole'),
         Mutation('an unset CLAUDE_SESSION_PROJECT_TOP is not a refusal',
                  '  [ -n "${CLAUDE_SESSION_PROJECT_TOP:-}" ] || return 1\n  pp="$(phys "$CLAUDE_SESSION_PROJECT_TOP")"; [ -n "$pp" ] || return 1',
                  '  pp="$(phys "${CLAUDE_SESSION_PROJECT_TOP:-/nonexistent-x}")"', 'stage its OWN temp repository whole'),

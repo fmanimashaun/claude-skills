@@ -19,6 +19,9 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -x "${
   if [ -n "$_top" ]; then
     _top_line="$(printf 'export CLAUDE_SESSION_PROJECT_TOP=%q' "$_top")"
     grep -qxF -- "$_top_line" "$CLAUDE_ENV_FILE" 2>/dev/null || printf '%s\n' "$_top_line" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true
+    # The same fact as a file in the repository's common git dir, which an inline env assignment cannot change: the shim refuses a fixture exemption for a repository carrying it.
+    _gcd="$(git rev-parse --git-common-dir 2>/dev/null)"
+    [ -n "$_gcd" ] && [ -d "$_gcd" ] && : > "$_gcd/claude-session-project" 2>/dev/null || true
   fi
 fi
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
