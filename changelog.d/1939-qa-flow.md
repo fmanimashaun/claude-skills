@@ -1,2 +1,0 @@
-section: qa-flow
-- **The release gate carries `"onFailure": "block"` — `plugins/qa-flow/hooks/hooks.json`** (#1939, from the upstream review on #1938). `release-gate.sh` guards a command that targets `main`; if it could not start, crashed or timed out (15 s), Claude Code ran the command anyway. With Claude Code 2.1.295's `onFailure: "block"` that failure now blocks as exit 2 does; older versions ignore the field. Same verification and measurements as the rails-flow entry for this change, and the same cost: the 15 s `timeout` is a hard deny threshold.
