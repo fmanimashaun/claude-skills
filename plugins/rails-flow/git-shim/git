@@ -49,7 +49,18 @@ ORIG=("$@")      # the arguments as given
 self="${BASH_SOURCE[0]}"
 case "$self" in */*) self_dir="$(cd "${self%/*}" 2>/dev/null && pwd -P)" ;; *) self_dir="$(pwd -P)" ;; esac
 
-# The real git: the first executable `git` on PATH that is not this directory, else /usr/bin/git.
+# A shim that has been entered more than this many times in one chain of exec'd processes is a loop (#2003): refuse rather than hang.
+depth="${RAILS_FLOW_GIT_SHIM_DEPTH:-0}"
+case "$depth" in ''|*[!0-9]*) depth=0 ;; esac
+if [ "$depth" -ge 16 ]; then
+  echo "git-shim (rails-flow): re-entered $depth times: two git shims on PATH are calling each other (#2003). Remove the older rails-flow directory from PATH." >&2
+  exit 127
+fi
+
+# The real git: the first executable `git` on PATH that is NOT a rails-flow git shim, else /usr/bin/git. After a resume two rails-flow versions' shim directories can both be on PATH
+# (1.59.0 and 1.60.0), and a shim that skipped only ITS OWN directory resolved "the real git" to the other shim, which resolved it back: every git call hung (#2003). So every candidate
+# is skipped that is a shim directory by name (`*/git-shim`, physically or as written, so a symlink to one counts), or whose file begins with this shim's own header line, which also
+# catches a shim installed under another name and every earlier version (they all open with it).
 real=""
 old_ifs="$IFS"; IFS=:
 for d in $PATH; do
@@ -57,6 +68,10 @@ for d in $PATH; do
   [ -x "$d/git" ] && [ ! -d "$d/git" ] || continue
   dd="$(cd "$d" 2>/dev/null && pwd -P)" || continue
   [ "$dd" = "$self_dir" ] && continue
+  case "$dd" in */git-shim) continue ;; esac
+  case "$d" in */git-shim|*/git-shim/) continue ;; esac
+  first=""; { IFS= read -r -d '' -n 400 first; } < "$d/git" 2>/dev/null
+  case "$first" in *"# rails-flow git shim"*) continue ;; esac
   real="$d/git"; break
 done
 IFS="$old_ifs"
@@ -65,7 +80,7 @@ IFS="$old_ifs"
 
 if [ "${RAILS_FLOW_GIT_OK:-}" = 1 ]; then
   echo "git-shim (rails-flow): RAILS_FLOW_GIT_OK=1, so this git command is not checked." >&2
-  exec "$real" "${ORIG[@]}"
+  RAILS_FLOW_GIT_SHIM_DEPTH=$((depth + 1)) exec "$real" "${ORIG[@]}"
 fi
 
 refuse() {
@@ -553,4 +568,4 @@ RULE=""
 if ! evaluate "${ORIG[@]}"; then
   refuse "${ORIG[@]}"
 fi
-exec "$real" "${ORIG[@]}"
+RAILS_FLOW_GIT_SHIM_DEPTH=$((depth + 1)) exec "$real" "${ORIG[@]}"
