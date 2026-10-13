@@ -168,13 +168,20 @@ def selftest() -> int:
         g("checkout", "-q", "-b", "feature/x")
 
         def case(label: str, files: dict[str, str], want: str | None) -> None:
+            before = {rel: ((root / rel).read_text() if (root / rel).exists() else None) for rel in files}
             for rel, body in files.items():
                 (root / rel).parent.mkdir(parents=True, exist_ok=True)
                 (root / rel).write_text(body)
             reasons = classify(diff(root, "dev"))
             ok = (not reasons) if want is None else any(r.startswith(want) for r in reasons)
             expect(label, ok, reasons)
-            g("add", "."); g("reset", "-q", "--hard", "HEAD")
+            # No `reset --hard`: run from the Claude Code Bash tool the git shim refuses it, and the fixture needs only its own files put back (#1982).
+            g("reset", "-q")
+            for rel, text in before.items():
+                if text is None:
+                    (root / rel).unlink()
+                else:
+                    (root / rel).write_text(text)
 
         # by PATH
         case("the authentication concern is risky", {"app/controllers/concerns/authentication.rb": "x\n"}, "auth")
@@ -219,7 +226,7 @@ def selftest() -> int:
         g("mv", "app/policies/p_policy.rb", "app/services/p.rb")
         expect("a policy RENAMED out of app/policies is risky (access)", any(r.startswith("access") for r in classify(diff(root, "dev"))),
                classify(diff(root, "dev")))
-        g("reset", "-q", "--hard", "HEAD")
+        g("mv", "app/services/p.rb", "app/policies/p_policy.rb")      # put the rename back (no `reset --hard`, see above)
         (root / "app/policies/\u00e9.rb").write_text("x\n")
         expect("a NON-ASCII path under app/policies is risky, not dropped", any(r.startswith("access") for r in classify(diff(root, "dev"))))
         (root / "app/policies/\u00e9.rb").unlink()
@@ -230,7 +237,8 @@ def selftest() -> int:
             expect("a path git quotes is UNUSABLE, never silently dropped", False)
         except Unusable:
             pass
-        g("reset", "-q", "--hard", "HEAD~1")
+        g("reset", "-q", "HEAD~1")
+        (root / "app/policies/a\"b.rb").unlink()
         try:
             diff(root, "no-such-branch")
             expect("an unresolvable base is UNUSABLE, never not-risky", False)
