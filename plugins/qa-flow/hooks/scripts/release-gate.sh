@@ -704,14 +704,16 @@ reader="${CLAUDE_PLUGIN_ROOT:-}/scripts/read_certification.py"
 ev="${CLAUDE_PLUGIN_ROOT:-}/scripts/release_evidence.py"
 JWHY=""
 
-# extra_files <evidence paths>: reads changed paths on stdin and prints those that are neither the stamp nor
-# evidence the stamp names. ONE definition for this checkout and for another repository (#1591): the delta
+# extra_files <evidence paths>: reads changed paths on stdin and prints those that are neither the stamp, CHANGELOG.md, nor
+# evidence the stamp names (which includes the stamp's own report and the sweep's folder, #1987). ONE definition for this checkout and for another repository (#1591): the delta
 # since the certified commit may be the stamp and the evidence it names, and nothing else.
 extra_files() {
   local evidence="$1" f p ok
   while IFS= read -r f; do
     [ -z "$f" ] && continue
     [ "$f" = "qa/CERTIFICATION" ] && continue
+    # #1987: the certify flow dates the release heading in CHANGELOG.md after the certified commit; text, not code.
+    [ "$f" = "CHANGELOG.md" ] && continue
     ok=0
     while IFS= read -r p; do
       [ -n "$p" ] || continue

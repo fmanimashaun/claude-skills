@@ -281,5 +281,29 @@ GUARD = Guard(
             '    for key in ():\n        os.environ.pop(key, None)',
             "binding: under an inherited GIT_DIR a fixture commit stays out of the repo it names",
         ),
+        Mutation(
+            "the stamp's named report is never an allowed path (#1987)",
+            "        named.append(raw_report.strip())",
+            "        pass",
+            "stamp: the report named qa/certifications/<version>.md is an evidence path",
+        ),
+        Mutation(
+            "the README beside the sweep is never an allowed path (#1987)",
+            '    named = [fb + "/", az, az.rsplit("/", 1)[0] + "/README.md"]',
+            '    named = [fb + "/", az]',
+            "stamp: both layers passing -> 0 and the evidence paths on stdout",
+        ),
+        Mutation(
+            "the sweep's whole folder is allowed, so code beside it passes (#1987)",
+            '    named = [fb + "/", az, az.rsplit("/", 1)[0] + "/README.md"]',
+            '    named = [fb + "/", az, az.rsplit("/", 1)[0] + "/"]',
+            "stamp: both layers passing -> 0 and the evidence paths on stdout",
+        ),
+        Mutation(
+            "any report path the stamp names is allowed, wherever it points (#1987)",
+            ' and raw_report.strip() == f"{REPORT_ROOT}{version}.md":',
+            ':',
+            "is never an allowed path",
+        ),
     ),
 )

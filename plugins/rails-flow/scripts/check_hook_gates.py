@@ -2951,6 +2951,31 @@ def release_gate_fixtures() -> None:
         check("release-gate (#1428): a file that only starts with the sweep's name is not evidence",
               rc == 2 and "sweep.csv.rb" in err, err)
         sh("rm", "-q", "qa/manual-tests/authz-v1/sweep.csv.rb"); sh("commit", "-q", "-m", "drop it")
+        # #1987: the certify flow's own stamp step writes, after the certified commit, the report the stamp names,
+        # a README beside the sweep and the dated CHANGELOG heading. Each is permitted; code beside them is not.
+        for path, why in (("qa/certifications/v1.md", "the report the stamp names"),
+                          ("qa/manual-tests/authz-v1/README.md", "the README beside the sweep"),
+                          ("CHANGELOG.md", "the dated CHANGELOG heading")):
+            tip = sh("rev-parse", "HEAD")
+            (repo / "qa" / "CERTIFICATION").write_text(
+                json.dumps({**new_stamp, "sha": tip, "report": "qa/certifications/v1.md"}), encoding="utf-8")
+            (repo / path).parent.mkdir(parents=True, exist_ok=True)
+            (repo / path).write_text(f"{tip}\n", encoding="utf-8")
+            sh("add", "qa", path); sh("commit", "-q", "-m", f"stamp step writes {path}")
+            rc, err = gate2()
+            check(f"release-gate (#1987): {why} written after the certified sha is permitted", rc == 0, err)
+        for path, why in (("app.rb", "an app file"), ("qa/manual-tests/authz-v1/x.rb", "code beside the sweep"),
+                          ("qa/certifications/v0.md", "a report the stamp does not name")):
+            tip = sh("rev-parse", "HEAD")
+            (repo / "qa" / "CERTIFICATION").write_text(
+                json.dumps({**new_stamp, "sha": tip, "report": "qa/certifications/v1.md"}), encoding="utf-8")
+            (repo / path).parent.mkdir(parents=True, exist_ok=True)
+            (repo / path).write_text(f"{tip}\n", encoding="utf-8")
+            sh("add", "qa", path); sh("commit", "-q", "-m", f"stamp commit that also changes {path}")
+            rc, err = gate2()
+            check(f"release-gate (#1987): {why} after the certified sha is still refused, by name",
+                  rc == 2 and path in err, err)
+            sh("reset", "-q", "--hard", "HEAD~1")
         # The gate judges what dev COMMITTED: a HOLE committed on dev, fixed only in the index here.
         tip = sh("rev-parse", "HEAD")
         (repo / "qa" / "CERTIFICATION").write_text(json.dumps({**new_stamp, "sha": tip}), encoding="utf-8")
