@@ -468,6 +468,17 @@ def copy_plugin(dest: Path) -> Path:
     return dest
 
 
+def zsh_row(label: str, env_file: Path, root: Path, which=shutil.which) -> None:
+    """The SessionStart line under zsh, the maintainer's shell. Where zsh is absent the row is SAID to be skipped and is not counted, never
+    silently dropped (#1971: the Linux check had no zsh, so this selftest read 313 checks there against 314 here, and green). `which` is
+    injectable so the skip itself is tested (the case after the hook's)."""
+    if which("zsh"):
+        r = subprocess.run(["zsh", "-c", f'. "{env_file}"; command -v git'], capture_output=True, text=True)
+        check(label, r.stdout.strip() == str(root / "git-shim" / "git"), f"under zsh, `command -v git` printed {r.stdout.strip()!r}")
+    else:
+        print(f"  skip: zsh is not on PATH, so \"{label}\" did NOT run under zsh -- not a pass.", file=sys.stderr)
+
+
 @case("hook: the SessionStart hook puts the shim first, so `command -v git` names it")
 def _(base):
     label = "hook: the SessionStart hook puts the shim first, so `command -v git` names it"
@@ -478,9 +489,21 @@ def _(base):
     check(label, p.returncode == 0 and env_file.exists(), f"exit {p.returncode}, env file {'written' if env_file.exists() else 'NOT written'}: {p.stderr.strip()[:160]}")
     r = subprocess.run(["bash", "-c", f'. "{env_file}"; command -v git'], capture_output=True, text=True)
     check(label, r.stdout.strip() == str(root / "git-shim" / "git"), f"`command -v git` printed {r.stdout.strip()!r}")
-    r = subprocess.run(["zsh", "-c", f'. "{env_file}"; command -v git'], capture_output=True, text=True) if shutil.which("zsh") else None
-    if r is not None:
-        check(label, r.stdout.strip() == str(root / "git-shim" / "git"), f"under zsh, `command -v git` printed {r.stdout.strip()!r}")
+    zsh_row(label, env_file, root)
+
+
+@case("zsh absent: the zsh row says it did NOT run, and counts nothing")
+def _(base):
+    # #1971 (9f's review of #1972): the skip line is the only thing that tells a reader the zsh row did not run, so dropping it must fail.
+    label = "zsh absent: the zsh row says it did NOT run, and counts nothing"
+    import contextlib
+    import io
+    before = CHECKS
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        zsh_row("a probe row", base / "no-env-file", base, which=lambda _name: None)
+    check(label, 'skip: zsh is not on PATH, so "a probe row" did NOT run under zsh -- not a pass.' in err.getvalue(), f"stderr was {err.getvalue()!r}")
+    check(label, CHECKS == before + 1, f"the skipped row counted {CHECKS - before - 1} check(s) of its own")
 
 
 @case("hook: running the SessionStart hook again does not repeat the line")
