@@ -115,6 +115,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | pipeline kamal destination | `pipeline` | `python3 plugins/pipeline/scripts/kamal_destination.py --selftest` | selftest |
 | pipeline release build | `pipeline` | `python3 plugins/pipeline/scripts/release_build.py --selftest` | selftest |
 | pipeline status board | `pipeline` | `python3 plugins/pipeline/scripts/status_board.py --selftest` | selftest |
+| pipeline status hook | `pipeline` | `python3 plugins/pipeline/scripts/pipeline_status_selftest.py` | live check |
 | pipeline stop conditions | `pipeline` | `python3 plugins/pipeline/scripts/breaker.py --selftest` | selftest |
 | qa-flow blast radius | `qa-flow` | `python3 plugins/qa-flow/scripts/blast_radius.py --selftest` | selftest |
 | qa-flow boot classifier | `qa-flow` | `python3 plugins/qa-flow/scripts/classify_boot_failure.py --selftest` | selftest |
@@ -168,6 +169,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | rails-flow issue mock-up declaration | `rails-flow` | `python3 plugins/rails-flow/scripts/check_issue_mockup.py --selftest` | selftest |
 | rails-flow lane assigner selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/assign_lanes.py --selftest` | selftest |
 | rails-flow mandated gems | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mandated_gems.py --selftest` | selftest |
+| rails-flow mcp end to end | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mcp_end_to_end.py --selftest` | selftest |
 | rails-flow mcp personal fields | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mcp_personal_fields.py --selftest` | selftest |
 | rails-flow mock-up gate | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mockup_gate.py --selftest` | selftest |
 | rails-flow one-way door classifier | `rails-flow` | `python3 plugins/rails-flow/scripts/classify_door.py --selftest` | selftest |

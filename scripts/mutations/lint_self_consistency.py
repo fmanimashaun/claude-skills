@@ -523,6 +523,20 @@ GUARD = Guard(
             "a wrong spelled-out count",
         ),
         Mutation(
+            # #1945, a0's P3: the stated count is compared for the plugin manifest too, not only the marketplace entry.
+            "a stated agent count is never compared with what the plugin ships",
+            "                if claimed is not None and claimed != len(shipped):",
+            "                if False:",
+            "a plugin manifest with a wrong stated count",
+        ),
+        Mutation(
+            # #1945: the plugin's own plugin.json is a second description of the same plugin.
+            "the plugin's own manifest description is never read, so only the marketplace entry is checked",
+            "        if plugin_json.is_file():",
+            "        if False:",
+            "a plugin manifest naming some agents but not all (the marketplace entry is right)",
+        ),
+        Mutation(
             # Naming SOME agents is the trap: it reads as the list. design-flow named three of
             # five, hiding design-critic -- the advisory lens the enforcement model rests on.
             "a description may name a subset of its agents and pass",
@@ -1186,7 +1200,7 @@ GUARD = Guard(
             # version leaves the marketplace copy operative, and flagging it would be a false
             # positive of exactly the kind #1041 was filed for.
             "presence of plugin.json counts as a declared version, whatever is in it",
-            '                own_version = (json.loads(read(own)) or {}).get("version")',
+            '                own_version = own_obj.get("version") if isinstance(own_obj, dict) else None',
             '                own_version = "present"',
             "a plugin.json without a version key leaves marketplace.json authoritative",
         ),
@@ -1596,6 +1610,32 @@ GUARD = Guard(
             '            if "--ignore-submodules=dirty" in line or _SUBMODULE_SAFE.search(line):',
             '            if "--ignore-submodules=" in line or _SUBMODULE_SAFE.search(line):',
             "git-status-recurses-submodules: =all, which hides a moved gitlink from a gate is a finding",
+        ),
+        # #1939. A fail-closed gate denies by exiting 2, but only while it runs: without `"onFailure": "block"` a gate that cannot start, crashes or times out lets the action through.
+        Mutation(
+            "a gate with no onFailure stops being a finding",
+            '            if hook.get("onFailure") != "block":',
+            "            if False:",
+            "a named gate on PreToolUse with no onFailure is a finding",
+        ),
+        Mutation(
+            "any onFailure value passes, so `continue` (the default, spelled out) counts as a block",
+            '            if hook.get("onFailure") != "block":',
+            '            if hook.get("onFailure") is None:',
+            "a named gate whose onFailure is continue is a finding",
+        ),
+        Mutation(
+            # SCOPE: only the gates CLAUDE.md names; flagging an advisory hook would teach people to ignore the rule, and an advisory hook must keep failing open.
+            "every PreToolUse hook is held to onFailure, not only the named gates",
+            '            if not script or script.group(1) not in named:',
+            "            if not script:",
+            "a hook CLAUDE.md does not name as a gate needs no onFailure: silent",
+        ),
+        Mutation(
+            "a gate on an event where the field has no effect (Stop) is held to it too",
+            'data.get("hooks", {}).get("PreToolUse", [])',
+            'data.get("hooks", {}).get("Stop", []) + data.get("hooks", {}).get("PreToolUse", [])',
+            "a named gate on a Stop hook is out of scope (the field has no effect there): silent",
         ),
     ),
 )

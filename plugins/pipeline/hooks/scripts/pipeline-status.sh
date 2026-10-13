@@ -5,7 +5,10 @@ set -uo pipefail
 . "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 type -P python3 >/dev/null 2>&1 || exit 0   # no python3 → skip (non-blocking status only)
-[ -f pipeline.yml ] || exit 0
+# The repository's top level, not the working directory (#1946): a session started in a subdirectory used to find no pipeline.yml and print nothing.
+top="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+[ -n "$top" ] || exit 0
+[ -f "$top/pipeline.yml" ] || exit 0
 
 # worktree-safe: read from the same git-dir the post-merge hook writes to.
 pending="$(git rev-parse --git-dir 2>/dev/null)/pipeline-pending"
@@ -15,8 +18,9 @@ if [ -f "$pending" ]; then
 fi
 
 branch="$(git branch --show-current 2>/dev/null)"
-if [ -f qa/CERTIFICATION ]; then
-  csha="$(python3 -c 'import json;print(json.load(open("qa/CERTIFICATION")).get("sha","")[:12])' 2>/dev/null || true)"
+if [ -f "$top/qa/CERTIFICATION" ]; then
+  # `-I`: python3 -c puts the working directory first on sys.path, and the working directory is the repository, so a committed json.py would be imported and run here.
+  csha="$(python3 -I -c 'import json,sys;print(json.load(open(sys.argv[1])).get("sha","")[:12])' "$top/qa/CERTIFICATION" 2>/dev/null || true)"
   devsha="$(git rev-parse origin/dev 2>/dev/null | cut -c1-12 || true)"
   [ -n "$devsha" ] && [ "$csha" = "$devsha" ] && echo "- pipeline: dev ($devsha) certified — /pipeline:release to build the image."
 fi
