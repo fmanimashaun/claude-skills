@@ -265,5 +265,18 @@ GUARD = Guard(
             '    [ -n "$next" ] || return 0\n    printf \'%s\\n\' "$next" | _normalize_one\n',
             'with an awk that exits 2',
         ),
+        # #1982: a redirect `&` (2>&1, >&2, &>file) is not a separator; a real `cmd & cmd` still is.
+        Mutation(
+            "a redirect & splits the segment again, so `git add f 2>&1 $(echo .)` loses its taint",
+            "    | _protect_redirect_amp \\\n",
+            "",
+            "the expansion is IN the add's own words",
+        ),
+        Mutation(
+            "every & is protected, so `echo $V & git add f` no longer splits and the add is refused",
+            'if (p == ">" || p == "<" || (q == ">" && p != "&")) c = "\\005"',
+            'c = "\\005"',
+            "CONTROL: the expansion belongs to ANOTHER command",
+        ),
     ),
 )

@@ -909,13 +909,18 @@ NEGATIVES_1568 = ['git add "app/x.rb" "spec/y.rb"', "git add 'x y' app/z.rb", 'g
 POSITIVES_1982 = ["V=-A; git add $V", "git add $(echo -A)", "git add f.txt $(echo -A)", "git add ~/x", "git add {a,b}", 'git add f.txt "$V"', 'git add f.txt "$(echo -A)"',
                   'git add f.txt "`echo -A`"', "git add f.txt `echo -A`", 'git add "$@"', "git add $HOME", "git add f.txt$X", "git add f.txt && git add $V",
                   "echo $X && git add $V", 'bash -c "git add $V"', "eval 'git add $V'", "git add f.txt\ngit add $V", "git -C /tmp add $V", "cd ~/x && git add -A",
-                  "cd ~/x && git add .", "git add -- ."]
+                  "cd ~/x && git add .", "git add -- .",
+                  # a redirect `&` is not a separator: the expansion stays in the add's own segment (a0's six on #1985)
+                  "git add top.txt 2>&1 $(echo .)", "git add -u 2>&1 $(echo -A)", "git add top.txt >&2 $V", "git add top.txt &>/dev/null $(echo :/)",
+                  "V=.; git add top.txt 2>&1 $V", "git add top.txt 2>&1 ~", "git add top.txt &>>f $V", "git add top.txt <&0 $V"]
 # #1982. Passes: the `~`, `$`, `{` and `}` belong to ANOTHER command of the chain (a `cd ~/x`, a commit message, an echo), or to nothing that reaches the add.
 NEGATIVES_1982 = ["cd ~/x && git add -- docs/runbooks/stock-levels-deploy.md && git status --short", "cd ~/x && git add docs/runbooks/a-b.md && git status --short",
                   "cd ~/x && python3 - <<'EOF'\nprint(1)\nEOF\ngit add -- docs/a.md; git commit -q -m \"x\"; git log --oneline -1",
                   "git add -- f.txt && git commit -m \"$(cat <<'EOF'\nfeat: add {a,b} and ~ and $X\nEOF\n)\"", 'git add f.txt && git commit -m "$(echo wip)"',
                   "git add f.txt; echo $(date)", "bash -c 'git add -- f.txt' && echo $(date)", "{ git add -- f.txt; }", "( cd ~/x && git add -- f.txt )",
-                  "git -C ~/x add -- f.txt", "git add f.txt\n# git add $V", "git add f.txt && echo ~ {a,b} $HOME"]
+                  "git -C ~/x add -- f.txt", "git add f.txt\n# git add $V", "git add f.txt && echo ~ {a,b} $HOME",
+                  # a REAL `&` still separates: the expansion belongs to the other command
+                  "echo $V & git add f.txt", "git add f.txt & echo $V", "git add f.txt >o& echo ~", "echo $V 2>&1 & git add f.txt"]
 POSITIVES_1706 = ["git add /abs/path", "git add :/src/x.rb", "git add ':(top)src/x.rb'", "git add src/**/*.rb", "git add '*.*'", "git add '?'", "git add {.,x}", "git add $PWD",
                   "git add $(pwd)", "git add 'my file.rb'", "git add -f x.rb", "git add 'src/*/x.rb'", "git switch --disc dev", "git switch -fc x",
                   "git push --mir origin", "git push --prune origin", "git push origin 'refs/*:refs/*'", "git checkout --forc dev",

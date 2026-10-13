@@ -475,9 +475,29 @@ _inner_strings() {
 # holding only \002, which _strip_heredocs and the lexer both treat as a hard reset.
 _join_strings() { awk 'NR > 1 { print "\002" } { gsub(/\002/, ""); gsub(/\001/, "\n"); print }'; }
 
+# A redirect `&` is not a separator (#1982): the one in `2>&1`, `>&2`, `<&0`, `N>&M`, `>&-`, `&>file` and `&>>file` is swapped for \005 so the
+# split below leaves `git add top.txt 2>&1 $(echo .)` in ONE segment and the expansion stays where the taint view can see it. `cmd & cmd`, `&&`
+# and `cmd >f& cmd` still split. awk, not sed: BSD sed does not take \005 in a replacement.
+_protect_redirect_amp() {
+  awk '{
+    out = ""; n = length($0)
+    for (i = 1; i <= n; i++) {
+      c = substr($0, i, 1)
+      if (c == "&") {
+        p = (i > 1) ? substr($0, i - 1, 1) : ""; q = substr($0, i + 1, 1)
+        if (p == ">" || p == "<" || (q == ">" && p != "&")) c = "\005"
+      }
+      out = out c
+    }
+    print out
+  }'
+}
+
 _normalize_one() {
   _dequote | _strip_comments | _strip_heredocs \
+    | _protect_redirect_amp \
     | tr ';|&()' '\n' \
+    | tr '\005' '&' \
     | _peel
 }
 
