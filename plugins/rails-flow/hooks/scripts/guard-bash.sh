@@ -208,6 +208,24 @@ fi
 # (`src/*.rb`, `*.md`). Shell expansion (`$`, a backtick, `{`, `}`, `~`) anywhere in a command that holds a `git add` refuses: the
 # normaliser splits a substitution into its own segment, so the pathspec it produces is invisible here. Bash only, over the
 # normalised segments. The degraded path (no normaliser) keeps the spelled rule below, and refusing more there is S9's (#1710).
+# #1982: an ABSOLUTE pathspec that resolves, physically, to a path STRICTLY INSIDE the toplevel of the repository this hook runs in is as plain as a
+# relative one (a session in a linked worktree names its files that way). Prints it top-relative; prints nothing for anything else: the root itself in
+# any spelling (`/abs/repo`, `/abs/repo/`, `/abs/repo/.`), a path above or outside it, a directory that does not exist. The directory part is resolved
+# with `cd ... && pwd -P` because git reports the toplevel physically and a temp directory is often a symlink. Bash builtins and one `git rev-parse`.
+_abs_rel() {
+  local p="$1" base dir phys rel
+  while [ "${#p}" -gt 1 ] && [ "${p%/}" != "$p" ]; do p="${p%/}"; done
+  base="${p##*/}"; dir="${p%/*}"; [ -n "$dir" ] || dir=/
+  case "$base" in ''|.|..) return 0 ;; esac
+  phys="$(cd "$dir" 2>/dev/null && pwd -P)" || return 0
+  [ -n "$phys" ] || return 0
+  [ -n "${_addtop+x}" ] || _addtop="$(git rev-parse --show-toplevel 2>/dev/null)"
+  [ -n "$_addtop" ] || return 0
+  [ "$phys" = / ] && phys=""
+  case "$phys/$base" in
+    "$_addtop"/?*) rel="${phys#"$_addtop"}/$base"; printf '%s' "${rel#/}" ;;
+  esac
+}
 _add_refused() {
   [ "$degraded" = 1 ] && return 1
   local line w opts p comp depth n last
@@ -235,7 +253,7 @@ _add_refused() {
       p="$w"
       case "$p" in
         :*|*'**'*) set +f; return 0 ;;
-        /*) set +f; return 0 ;;   # absolute: the root as `/abs/repo` stages everything (#1783 final check)
+        /*) p="$(_abs_rel "$p")"; [ -n "$p" ] || { set +f; return 0; } ;;   # absolute: only a path STRICTLY INSIDE this repository (#1982); the root as `/abs/repo` stages everything (#1783 final check)
       esac
       depth=0; n=0; last=""
       local IFS=/
@@ -260,8 +278,21 @@ _add_refused() {
     # pathspec had its arguments taken away: refused, unless -u/-p/-N, which act without one.
     [ "$specs" = 0 ] && [ "$pathless" = 0 ] && return 0
   done
-  # `$'...'` is ANSI-C QUOTING (decoded by the normaliser), not an expansion, so only a `$` that is not followed by `'` counts.
-  [ "$any" = 1 ] && [[ $cmd =~ \$[^\']|\$$|\`|\{|\}|~ ]] && return 0
+  # THE TAINT IS READ FROM THE WORDS OF THE `git add` COMMAND ITSELF (#1982), not from the whole command: `cd ~/x && git add -- f` and the commit shape CLAUDE.md
+  # tells agents to use (`git add f && git commit -m "$(cat <<'EOF' ... EOF)"`) hold a `~` and a `$` that belong to ANOTHER command. The normaliser leaves an unquoted
+  # `$V`, a backtick, `{`, `}` and `~` in the segment of the command they sit in, and splits a `$(...)` out so its `$` stays behind; it DELETES a double-quoted span
+  # holding an expansion (`"$V"`, `"$(echo -A)"`), so the second normalisation below (NC_MARK_EXPANSION=1) leaves a `$` where such a span was. `$'...'` is ANSI-C
+  # quoting, decoded by the normaliser, not an expansion: only a `$` not followed by `'` counts. A command that cannot be read again is refused (fail closed).
+  if [ "$any" = 1 ]; then
+    local tv tl
+    tv="$( export NC_MARK_EXPANSION=1; printf '%s' "$cmd" | LC_ALL=C normalize_segments )" || return 0
+    if [ "$have_grep" = 1 ]; then tv="$(printf '%s\n' "$tv" | LC_ALL=C grep -E '^git[[:space:]]+add([[:space:]]|$)')"$'\n'; else tv="$tv"$'\n'; fi
+    while [ -n "$tv" ]; do
+      tl="${tv%%$'\n'*}"; tv="${tv#*$'\n'}"
+      [[ $tl =~ ^git[[:space:]]+add([[:space:]]|$) ]] || continue
+      [[ $tl =~ \$[^\']|\$$|\`|\{|\}|~ ]] && return 0
+    done
+  fi
   return 1
 }
 if [[ "$seg" == *add* ]]; then

@@ -126,11 +126,60 @@ def _(base):
     label = "shim: a pathspec that is not a plain relative path is refused (absolute, magic, glob, a file list)"
     r = Repo(base, "plain")
     (r.work / "list.txt").write_text("a.txt\n")
-    for args in (("add", str(r.work / "a.txt")), ("add", "/etc/hosts"), ("add", ":(exclude)u.txt", "a.txt"), ("add", ":!u.txt"), ("add", "*.txt"), ("add", "src/*"),
+    for args in (("add", "/etc/hosts"), ("add", str(base / "outside.txt")), ("add", ":(exclude)u.txt", "a.txt"), ("add", ":!u.txt"), ("add", "*.txt"), ("add", "src/*"),
                  ("add", "a.t?t"), ("add", "[a].txt"), ("add", "--pathspec-from-file=list.txt"), ("add", "--pathspec-from-file", "list.txt"),
                  ("checkout", "--", "*.txt"), ("restore", "*.txt"), ("add", "../outside")):
         refused(r, label, *args, why="cannot be judged" if "pathspec-from-file" in " ".join(args) else "plain relative paths")
     runs(r, label, "add", "a.txt", "src/b.txt")
+
+
+@case("shim: an absolute path STRICTLY INSIDE this repository is as plain as a relative one; the root, outside paths and `..` stay refused (#1982)")
+def _(base):
+    label = "shim: an absolute path STRICTLY INSIDE this repository is as plain as a relative one; the root, outside paths and `..` stay refused (#1982)"
+    r = Repo(base, "absin")
+    (base / "outside.txt").write_text("o\n")
+    top = str(r.work.resolve())
+    for args in (("add", top), ("add", top + "/"), ("add", top + "//"), ("add", top + "/."), ("add", top + "/.."), ("add", top + "/src/.."),
+                 ("add", top + "/src/../.."), ("add", str(base / "outside.txt")), ("add", str(base)), ("add", "/"), ("add", top + "/*"), ("add", top + "/**"),
+                 ("add", top + "/nosuchdir/f.txt"), ("add", top + "-evil/a.txt"), ("add", top + "/src/../../outside.txt"),
+                 ("checkout", "--", top), ("checkout", "--", str(base / "outside.txt")), ("restore", top)):
+        refused(r, label, *args, why="plain relative paths")
+    # an untouched sibling directory whose name merely STARTS WITH the repository's is not inside it
+    (base / (r.work.name + "-evil")).mkdir()
+    (base / (r.work.name + "-evil") / "a.txt").write_text("e\n")
+    refused(r, label, "add", str(base.resolve() / (r.work.name + "-evil") / "a.txt"), why="plain relative paths")
+    p = runs(r, label, "add", top + "/a.txt", top + "/src/c.txt")
+    check(label, r.real("diff", "--cached", "--name-only").stdout.split() == ["a.txt", "src/c.txt"], f"staged: {r.real('diff', '--cached', '--name-only').stdout!r}")
+    r.real("reset", "-q")
+    runs(r, label, "add", "--", top + "/src/", cwd=r.work / "src")
+    check(label, "src/c.txt" in r.real("diff", "--cached", "--name-only").stdout, "a directory under the root, from a subdirectory, was not staged")
+    # SPELLED THROUGH A SYMLINK: a temp directory is often one (/tmp, /var on macOS), and git reports the toplevel physically.
+    link = base / "linkto"
+    link.symlink_to(r.work, target_is_directory=True)
+    r.real("reset", "-q")
+    runs(r, label, "add", str(link / "u.txt"))
+    check(label, "u.txt" in r.real("diff", "--cached", "--name-only").stdout, "a path spelled through a symlink to the repository was not staged")
+    refused(r, label, "add", str(link), why="plain relative paths")
+
+
+@case("shim: in a LINKED WORKTREE an absolute path inside it passes and one into the main checkout is refused (#1982, the shape that was reported)")
+def _(base):
+    label = "shim: in a LINKED WORKTREE an absolute path inside it passes and one into the main checkout is refused (#1982, the shape that was reported)"
+    r = Repo(base, "wtmain")
+    r.real("add", "a.txt")
+    r.real("commit", "-q", "-m", "two")
+    wt = base / "wtlinked"
+    r.real("worktree", "add", "-q", "-b", "feat/x", str(wt))
+    (wt / "newdir").mkdir()
+    (wt / "newdir" / "only.txt").write_text("n\n")
+    wtp = str(wt.resolve())
+    p = runs(r, label, "add", "--", wtp + "/newdir/only.txt", cwd=wt)
+    check(label, r.real("diff", "--cached", "--name-only", cwd=wt).stdout.split() == ["newdir/only.txt"], f"staged in the worktree: {r.real('diff', '--cached', '--name-only', cwd=wt).stdout!r}")
+    for args in (("add", wtp), ("add", wtp + "/."), ("add", str(r.work.resolve() / "a.txt")), ("add", str(r.work.resolve()))):
+        before = r.real("diff", "--cached", "--name-only", cwd=wt).stdout
+        q = r.g(*args, cwd=wt)
+        check(label, q.returncode != 0 and "git-shim" in q.stderr and "plain relative paths" in q.stderr
+              and r.real("diff", "--cached", "--name-only", cwd=wt).stdout == before, f"`git {' '.join(args)}` from the worktree: exit {q.returncode}: {q.stderr.strip()[:160]}")
 
 
 @case("shim: --no-<option> negates a dry run, and a dry run counts only while it is still in force")
@@ -345,9 +394,28 @@ def _(base):
                  ("config", "include.path", "/tmp/x"), ("config", "includeIf.gitdir:/x/.path", "y"), ("-c", "include.path=/tmp/x", "status"),
                  ("-c", "includeIf.gitdir:/x/.path=y", "status"), ("--config-env=include.path=X", "status")):
         refused(r, label, *args, why="can switch the #1789 git hooks off")
-    for var in ("GIT_CONFIG_COUNT", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_PARAMETERS"):
-        p = r.g("status", env={var: "0"})
-        check(label, p.returncode != 0 and "GIT_CONFIG_" in p.stderr, f"{var} in the environment was not refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
+    # #1982: the pairs are READ, not refused on sight. What can switch the hooks off, or the shim cannot read, is refused; the rest passes.
+    for env in ({"GIT_CONFIG_PARAMETERS": "'user.name'='x'"}, {"GIT_CONFIG_GLOBAL": "/tmp/cfg"}, {"GIT_CONFIG_SYSTEM": "/tmp/cfg"}, {"GIT_CONFIG_FOO": "1"},
+                {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.hooksPath", "GIT_CONFIG_VALUE_0": "/dev/null"},
+                {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "CORE.HOOKSPATH", "GIT_CONFIG_VALUE_0": "/dev/null"},
+                {"GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "user.name", "GIT_CONFIG_VALUE_0": "x", "GIT_CONFIG_KEY_1": "include.path", "GIT_CONFIG_VALUE_1": "/tmp/x"},
+                {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "includeIf.gitdir:/x/.path", "GIT_CONFIG_VALUE_0": "y"},
+                {"GIT_CONFIG_COUNT": "abc"}, {"GIT_CONFIG_COUNT": "1000000"}, {"GIT_CONFIG_COUNT": "-1"}):
+        p = r.g("status", env=env)
+        check(label, p.returncode != 0 and "git-shim" in p.stderr, f"{env} in the environment was not refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
+    # A hermetic fixture's pairs (fixture_git.hermetic()) and the switches that only make git MORE isolated pass, `git init` included.
+    for env in ({"GIT_CONFIG_COUNT": "0"}, {"GIT_CONFIG_NOSYSTEM": "1"}, {"GIT_CONFIG_GLOBAL": "/dev/null"}, {"GIT_CONFIG_SYSTEM": "/dev/null"},
+                {"GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "user.name", "GIT_CONFIG_VALUE_0": "x", "GIT_CONFIG_KEY_1": "core.autocrlf", "GIT_CONFIG_VALUE_1": "false"},
+                fixture_git.hermetic({})):
+        p = r.g("status", env=env)
+        check(label, p.returncode == 0 and "git-shim" not in p.stderr, f"{sorted(env)} in the environment was refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
+        q = r.g("init", "-q", str(base / ("init-" + str(abs(hash(str(sorted(env.items()))))))), env=env)
+        check(label, q.returncode == 0 and "git-shim" not in q.stderr, f"`git init` with {sorted(env)} was refused: exit {q.returncode}: {q.stderr.strip()[:120]}")
+    # an alias an environment pair defines is still read (git config --get sees the pairs), so a shell alias that runs git is refused as before
+    p = r.g("st", env={"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "alias.st", "GIT_CONFIG_VALUE_0": "status"})
+    check(label, p.returncode == 0 and "git-shim" not in p.stderr, f"an alias from an environment pair was not resolved: exit {p.returncode}: {p.stderr.strip()[:120]}")
+    p = r.g("sa", env={"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "alias.sa", "GIT_CONFIG_VALUE_0": "add -A"})
+    check(label, p.returncode != 0 and "git-shim" in p.stderr, f"`add -A` through an alias defined in an environment pair was not refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
     runs(r, label, "config", "user.name", "someone")
     runs(r, label, "config", "--get", "user.name")
 

@@ -207,6 +207,10 @@ _dequote() {
         j = dq_end(s, i + 1)
         if (j == 0) { out = out c; i++; continue }
         w = substr(s, i + 1, j - i - 1); if (simple(w)) out = out w
+        # #1982: OPT-IN (NC_MARK_EXPANSION=1, the taint view of the guard-bash git add rule). A double-quoted span holding `$` or a backtick is DELETED
+        # above, so an expansion inside it (`git add f "$V"`, `"$(echo -A)"`) left no trace in the segment. This view leaves one `$` where it was, so
+        # the rule can judge the words of the `git add` command ITSELF. Off by default: every other caller reads the text unchanged.
+        else if (MARKX && (index(w, "$") || index(w, "`"))) out = out "$"
         i = j + 1; continue
       }
       if (c == "$" && substr(s, i + 1, 1) == "\047") {
@@ -269,7 +273,7 @@ _dequote() {
     if (NQN) { for (k = 1; k <= NQN; k++) { QN++; QW[QN] = NQW[k]; QD[QN] = NQD[k]; QQ[QN] = NQQ[k] } QI = 1; INB = 1 }
   }
   END { if (BUF != "") { lex(BUF); print OUT } }
-  BEGIN { BAD = ";|&()<>$`\"\\# \t\n\r\f\v\047"; reset() }
+  BEGIN { MARKX = (ENVIRON["NC_MARK_EXPANSION"] == "1"); BAD = ";|&()<>$`\"\\# \t\n\r\f\v\047"; reset() }
   '
 }
 
