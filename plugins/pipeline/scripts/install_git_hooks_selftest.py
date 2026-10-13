@@ -46,6 +46,13 @@ def _env(home: Path) -> dict[str, str]:
     return env
 
 
+def set_hooks_path(repo: Path) -> None:
+    """`core.hooksPath .githooks` in the fixture's OWN repository, written to its config FILE, not through `git config`: run from the Claude Code Bash tool, rails-flow's git
+    shim refuses `git config core.hooksPath` anywhere (it is how the session's own hooks would be switched off), and this repository is a temp fixture's, not the session's (#1982)."""
+    cfg = repo / ".git" / "config"
+    cfg.write_text(cfg.read_text() + "[core]\n\thooksPath = .githooks\n")
+
+
 def git(cwd: Path, env: dict[str, str], *args: str) -> str:
     """Fixture git through fixture_git (#1588): bound to `cwd`'s own temp repo, refused if its init failed."""
     if args and args[0] == "init":
@@ -130,7 +137,7 @@ def run() -> int:
         (r / ".githooks" / "pre-push").write_text("#!/usr/bin/env bash\nexit 0\n")
         git(r, env, "add", ".githooks/pre-push")
         git(r, env, "commit", "-q", "-m", "team hook")
-        git(r, env, "config", "core.hooksPath", ".githooks")
+        set_hooks_path(r)
         commit_on_feature(r, env)
         merge_fires(r, env, "core.hooksPath: a real merge fires the nudge")
 
@@ -156,7 +163,7 @@ def run() -> int:
         (r / ".githooks" / "post-merge").write_text(team)
         git(r, env, "add", ".githooks/post-merge")
         git(r, env, "commit", "-q", "-m", "team post-merge")
-        git(r, env, "config", "core.hooksPath", ".githooks")
+        set_hooks_path(r)
         res = install(r, env)
         _tick()
         after = (r / ".githooks" / "post-merge").read_text()

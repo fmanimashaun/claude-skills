@@ -157,14 +157,21 @@ def selftest() -> int:
         g("checkout", "-q", "-b", "feature/x")
 
         def case(files: dict[str, str], label: str, want: str | None) -> None:
+            before = {rel: ((root / rel).read_text() if (root / rel).exists() else None) for rel in files}
             for rel, body in files.items():
                 (root / rel).parent.mkdir(parents=True, exist_ok=True)
                 (root / rel).write_text(body)
             reasons = classify(diff(root, "dev"))
             ok = (not reasons) if want is None else any(r.startswith(want) for r in reasons)
             expect(label, ok, str(reasons))
-            # Reset the throwaway repo between cases (it lives in a tempdir; nothing here touches a real tree).
-            g("add", "."); g("reset", "-q", "--hard", "HEAD")
+            # Put the throwaway repo back between cases: unstage what the diff reader marked, then restore or remove only the files this case wrote.
+            # No `reset --hard`: run from the Claude Code Bash tool the git shim refuses it, and the fixture needs only its own files put back (#1982).
+            g("reset", "-q")
+            for rel, text in before.items():
+                if text is None:
+                    (root / rel).unlink()
+                else:
+                    (root / rel).write_text(text)
 
         case({"db/migrate/20260926_add_x.rb": "add_column :invoices, :x, :string\n"},
              "CONTROL: an add_column migration is two-way", None)
@@ -196,7 +203,7 @@ def selftest() -> int:
         g("mv", "app/policies/p_policy.rb", "app/services/p.rb")
         expect("a policy renamed out of app/policies is one-way", any(r.startswith("access") for r in classify(diff(root, "dev"))),
                classify(diff(root, "dev")))
-        g("reset", "-q", "--hard", "HEAD")
+        g("mv", "app/services/p.rb", "app/policies/p_policy.rb")      # put the rename back (no `reset --hard`, see above)
         (root / "app/policies/a\"b.rb").write_text("x\n")
         g("add", "."); g("commit", "-q", "-m", "quoted")
         try:
@@ -206,7 +213,8 @@ def selftest() -> int:
             pass
         except Exception as exc:   # a reader that crashes on the quoted header instead of refusing it is not UNUSABLE either
             expect("a path git quotes is UNUSABLE, never silently dropped", False, repr(exc))
-        g("reset", "-q", "--hard", "HEAD~1")
+        g("reset", "-q", "HEAD~1")
+        (root / "app/policies/a\"b.rb").unlink()
         try:
             diff(root, "no-such-branch")
             expect("an unresolvable base is UNUSABLE, never two-way", False)
