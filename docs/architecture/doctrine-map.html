@@ -35,7 +35,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <main>
 <h1>Doctrine &rarr; enforcement</h1>
 <p class="lede">One row per doctrinal claim in this repo: where it is stated, and what makes it true. <strong>The unenforced rows are the deliverable.</strong> A claim with no enforcement is not automatically a defect &mdash; plenty are judgement, and gating judgement is worse than not gating it. The value is making the distinction visible instead of discovering it by accident.</p>
-<div class="tally"><b>52 claims</b><b>37 enforced guarantees</b><b>15 advisory</b><b>0 tracked gaps</b></div>
+<div class="tally"><b>53 claims</b><b>38 enforced guarantees</b><b>15 advisory</b><b>0 tracked gaps</b></div>
 <div class="controls"><button data-k="all">all</button><button data-k="guarantee">guarantees</button><button data-k="advice">advisory</button><button data-k="gap">gaps</button></div>
 <div class="row" data-k="guarantee">
 <h2>A SessionStart hook&#x27;s output is charged again after every compaction, so its bytes are budgeted and ratcheted; a shipped agent states a bounded output or returns a path.</h2>
@@ -215,6 +215,15 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <li><code>mutation:compose_brief</code></li>
 <li><code>script:plugins/design-flow/scripts/compose_brief.py</code></li>
 </ul>
+</div>
+<div class="row" data-k="guarantee">
+<h2>k6 load tests and ZAP scans are never aimed at a host that is not this machine unless the owner names that host in QA_ALLOW_REMOTE_TARGET.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/qa-flow/agents/perf-tester.md</code> &middot; #1954</span></div>
+<ul class="enf">
+<li><code>script:plugins/qa-flow/scripts/check_local_target.py</code></li>
+<li><code>mutation:check_local_target</code></li>
+</ul>
+<p class="note">The agents run the check before k6 or ZAP; it is a step an agent can skip, so this is a tripwire on the documented path and not a boundary. The model never sets the opt-in itself (said in both agents).</p>
 </div>
 <div class="row" data-k="guarantee">
 <h2>A qa-flow certification cannot unlock main without a passing first-boot operator walkthrough and a forged-request authorization sweep, both committed at dev and named for the release the stamp certifies.</h2>
@@ -487,7 +496,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <p class="none">Nothing enforces this.</p>
 <p class="note">#1363, verified on rubocop 1.91.0 / rubocop-rails-omakase 1.1.0: IndentationWidth + IndentationConsistency(indented_internal_methods) + EmptyLinesAroundAccessModifier(only_before) enforce the main shape exactly, but flag the private-only-module exception twice, and no option expresses that exception. Advice by default; a project may adopt the three with a per-file carve-out for private-only modules.</p>
 </div>
-<div class="floor"><strong>This map is a floor, not a ceiling.</strong> The audit can tell you a declared doctrine source has <em>no</em> rows; nothing here can tell you a source with four rows was not owed nine. A row count is evidence that someone looked, never proof the file is covered. Sources declared: <code>CLAUDE.md</code>, <code>AGENTS.md</code>, <code>docs/doctrine/harness-doctrine.md</code>, <code>skills/code-review/SKILL.md</code>, <code>skills/quality-pass/SKILL.md</code>, <code>skills/derived-artifacts/SKILL.md</code>, <code>skills/parallel-session-lane/SKILL.md</code>, <code>plugins/rails-flow/commands/feature.md</code>, <code>plugins/rails-flow/commands/handoff.md</code>, <code>plugins/rails-flow/commands/fix.md</code>, <code>plugins/design-flow/commands/generate.md</code>, <code>plugins/qa-flow/commands/certify.md</code>.</div>
+<div class="floor"><strong>This map is a floor, not a ceiling.</strong> The audit can tell you a declared doctrine source has <em>no</em> rows; nothing here can tell you a source with four rows was not owed nine. A row count is evidence that someone looked, never proof the file is covered. Sources declared: <code>CLAUDE.md</code>, <code>AGENTS.md</code>, <code>docs/doctrine/harness-doctrine.md</code>, <code>skills/code-review/SKILL.md</code>, <code>skills/quality-pass/SKILL.md</code>, <code>skills/derived-artifacts/SKILL.md</code>, <code>skills/parallel-session-lane/SKILL.md</code>, <code>plugins/rails-flow/commands/feature.md</code>, <code>plugins/rails-flow/commands/handoff.md</code>, <code>plugins/rails-flow/commands/fix.md</code>, <code>plugins/design-flow/commands/generate.md</code>, <code>plugins/qa-flow/commands/certify.md</code>, <code>plugins/qa-flow/agents/perf-tester.md</code>.</div>
 </main>
 <script>var btns=document.querySelectorAll('button[data-k]');
 function apply(k){

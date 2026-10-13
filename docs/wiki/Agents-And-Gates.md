@@ -128,6 +128,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | qa-flow interaction sweep | `qa-flow` | `python3 plugins/qa-flow/scripts/interaction_report.py --selftest` | selftest |
 | qa-flow layout fit | `qa-flow` | `python3 plugins/qa-flow/scripts/layout_fit.py --selftest` | selftest |
 | qa-flow link audit | `qa-flow` | `python3 plugins/qa-flow/scripts/link_audit.py --selftest` | selftest |
+| qa-flow local target | `qa-flow` | `python3 plugins/qa-flow/scripts/check_local_target.py --selftest` | selftest |
 | qa-flow requirements gate | `qa-flow` | `python3 plugins/qa-flow/scripts/check_requirements.py --selftest` | selftest |
 | qa-flow robot descriptor | `qa-flow` | `python3 plugins/qa-flow/scripts/robot_descriptor.py --selftest` | selftest |
 | qa-flow robot helpers | `qa-flow` | `python3 plugins/qa-flow/scripts/scaffold_ts_tests.py --selftest` | selftest |

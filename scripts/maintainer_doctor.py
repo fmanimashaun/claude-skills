@@ -485,6 +485,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("qa-flow robot helpers", ("python3", "plugins/qa-flow/scripts/scaffold_ts_tests.py", "--selftest")),
     # #1837. The robot descriptor's rules, and the image runner driven end to end with stub curl/npx (fails closed).
     ("qa-flow robot descriptor", ("python3", "plugins/qa-flow/scripts/robot_descriptor.py", "--selftest")),
+    # #1954. k6 and ZAP are refused for any host that is not this machine, unless the owner names that host.
+    ("qa-flow local target", ("python3", "plugins/qa-flow/scripts/check_local_target.py", "--selftest")),
     # #1447. A TypeScript e2e suite is strict, type-checked in CI, and has no explicit `any`.
     ("qa-flow ts strict", ("python3", "plugins/qa-flow/scripts/check_ts_strict.py", "--selftest")),
     ("qa-flow route crawl", ("python3", "plugins/qa-flow/scripts/crawl_report.py", "--selftest")),

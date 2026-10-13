@@ -18,7 +18,9 @@ them separately, and never let one stand in for the other.
 
 ## Load and capacity — k6. NEVER production.
 
-You measure capacity with k6 scripts in `qa/perf/`.
+You measure capacity with k6 scripts in `qa/perf/`. Before EVERY k6 run, `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_local_target.py"`
+checks `$QA_BASE_URL`: it exits 2 for any host that is not this machine, and you do not run k6 on a 2. A staging host runs only when the owner
+sets `QA_ALLOW_REMOTE_TARGET=<that host>` (audited); you never set it yourself.
 
 - **Verify (smoke)**: touched endpoints, 5 VUs x 30s, thresholds
   `http_req_duration{p(95)}<500` + `http_req_failed<0.01` (plan may override).
