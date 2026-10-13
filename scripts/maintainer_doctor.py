@@ -431,6 +431,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1204. The installer reported success and wrote a hook git never runs under core.hooksPath
     # or from a linked worktree; the selftest proves each case with a real merge, not a file check.
     ("pipeline hook install", ("python3", "plugins/pipeline/scripts/install_git_hooks_selftest.py")),
+    # #1946. The SessionStart nudge finds pipeline.yml and qa/CERTIFICATION from any directory inside the repository, not only its root.
+    ("pipeline status hook", ("python3", "plugins/pipeline/scripts/pipeline_status_selftest.py")),
     # #1789. The pre-push and pre-commit guards (a protected branch is only fast-forwarded; the staged content is checked) are proven with real
     # pushes into a bare remote and real commits, and then a look at what MOVED, not at an exit code.
     ("pipeline git guards", ("python3", "plugins/pipeline/scripts/git_guard_selftest.py")),
