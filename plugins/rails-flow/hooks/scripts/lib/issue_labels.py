@@ -266,10 +266,15 @@ def _plain_absolute(path: str) -> bool:
     """A path under the temp directory, every component passing `_bare_filename`: `/private/tmp/…/scratchpad/body.md`, where the harness tells a session to
     write its bodies (#1990). ONLY the temp directory: any other absolute path can be a git config gh resolves the remote through (`/etc/gitconfig`,
     `~/.config/git/config`, `<repo>/.git/config`), so it still loses the cd, as do `..`, `$`, backtick and `~`."""
-    for root in ("/tmp/", "/private/tmp/"):
-        if path.startswith(root):
-            return all(_bare_filename(c) for c in path[len(root):].split("/"))
-    return False
+    # A glob character lets the shell pick the name (`.g*/config`, `.gi[t]`, `{.git,x}`), so the text is not the path written (review of #1995).
+    if re.search(r"[*?\[\]{}!]", path):
+        return False
+    if not any(path.startswith(root) and all(_bare_filename(c) for c in path[len(root):].split("/")) for root in ("/tmp/", "/private/tmp/")):
+        return False
+    # A symlink already under /tmp can point into a repository's .git: judge where the write LANDS (review of #1995).
+    real = os.path.realpath(path)
+    tmp_roots = {os.path.realpath(r) + "/" for r in ("/tmp", "/private/tmp")}
+    return any(real.startswith(r) for r in tmp_roots) and not any(c.lower().startswith(".git") for c in real.split("/"))
 
 
 def _file_writer(seg: list[str]) -> bool:
@@ -1210,6 +1215,7 @@ def main(argv: list[str]) -> int:
 
 
 def selftest() -> int:
+    import shutil
     import tempfile
 
     fails: list[str] = []
@@ -1300,6 +1306,17 @@ def selftest() -> int:
         # #1990: the harness's scratchpad, under the temp directory, keeps the cd.
         ok, why = verdict(f"cd {r} && cat > /private/tmp/sp-1990/body.md <<'EOF'\nthe body\nEOF\n{rt}", s)
         check("a heredoc body written under the temp directory keeps the cd (#1990)", ok, why)
+        # Review of #1995: a symlink already under /tmp that points into a repository's .git is judged by where the write LANDS.
+        link_dir = Path(tempfile.mkdtemp(dir="/tmp"))
+        try:
+            (link_dir / "cfg").symlink_to(r / ".git")
+            ok, why = verdict(f"cd {r} && cat > {link_dir}/cfg/config <<'EOF'\nx\nEOF\n{rt}", s)
+            check("a heredoc through a /tmp symlink into .git does not keep the cd (review of #1995)", not ok and "cannot tell which repository" in why, why)
+            (link_dir / "out").symlink_to(r)
+            ok, why = verdict(f"cd {r} && cat > {link_dir}/out/body.md <<'EOF'\nx\nEOF\n{rt}", s)
+            check("a heredoc through a /tmp symlink that lands outside /tmp does not keep the cd (review of #1995)", not ok and "cannot tell which repository" in why, why)
+        finally:
+            shutil.rmtree(link_dir, ignore_errors=True)
         ok, why = verdict(f"cd {r} && {body_cat}{rt}", s)
         check("cd into another repo, a heredoc writes the body, then the create: that repo's declaration applies, and passes", ok, why)
         ok, why = verdict(f"cd {r} && {body_cat}gh issue create -t X --label bug", s)
@@ -1312,6 +1329,12 @@ def selftest() -> int:
                             ("a heredoc that writes to another absolute path", "cat > /etc/gitconfig <<'EOF'\nx\nEOF\n"),
                             ("a heredoc that writes to the XDG git config (#1990: only the temp directory keeps the cd)", "cat > /Users/u/.config/git/config <<'EOF'\nx\nEOF\n"),
                             ("a heredoc that writes under .git inside the temp directory (#1990)", "cat > /tmp/r/.git/config <<'EOF'\nx\nEOF\n"),
+                            ("a heredoc under the temp directory whose glob `.g*` can name .git (review of #1995)", "cat > /private/tmp/r/.g*/config <<'EOF'\nx\nEOF\n"),
+                            ("a heredoc under the temp directory whose glob `.gi[t]` can name .git (review of #1995)", "cat > /private/tmp/r/.gi[t]/config <<'EOF'\nx\nEOF\n"),
+                            ("a heredoc under the temp directory whose glob `[.]git` can name .git (review of #1995)", "cat > /private/tmp/r/[.]git/config <<'EOF'\nx\nEOF\n"),
+                            ("a heredoc under the temp directory whose glob `.gi?` can name .git (review of #1995)", "cat > /private/tmp/r/.gi?/config <<'EOF'\nx\nEOF\n"),
+                            ("a heredoc under the temp directory whose glob `{.git,x}` can name .git (review of #1995)", "cat > /private/tmp/r/{.git,x}/config <<'EOF'\nx\nEOF\n"),
+                            ("a heredoc under the temp directory whose glob `.gi[!x]` can name .git (review of #1995)", "cat > /private/tmp/r/.gi[!x]/config <<'EOF'\nx\nEOF\n"),
                             ("a heredoc that writes into a subdirectory", "cat > sub/b.md <<'EOF'\nx\nEOF\n"),
                             ("a heredoc that writes to `..`", "cat > .. <<'EOF'\nx\nEOF\n"),
                             ("an UNQUOTED heredoc, whose body substitutes", "cat > body.md <<EOF\n$(git remote set-url origin https://github.com/o/x.git)\nEOF\n")):
