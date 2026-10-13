@@ -115,5 +115,7 @@ cleared for main and remind the user the release-gate hook now permits that prom
 **Committing the stamp** (#1337): commit `qa/CERTIFICATION` to dev by its own PR, together with the
 first-boot and authz evidence it names (#1428), and change nothing else before promoting. The gate
 accepts a stamp whose sha is an ancestor of dev when the only paths changed since are
-`qa/CERTIFICATION` and that evidence, so the stamp's own commit never invalidates it.
+`qa/CERTIFICATION` and that evidence, so the stamp's own commit never invalidates it. The stamp step's own
+files are that evidence too (#1987): the report at `qa/certifications/<version>.md` (the only report path
+permitted), a `README.md` beside the authz sweep, and the dated `CHANGELOG.md` heading.
 Any other change after the tested sha means re-certify.
