@@ -53,6 +53,19 @@ HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
 SCRATCH_PREFIX = "hookgates-"
 
 
+def repo_marker_above(path) -> str | None:
+    """The first directory at or above `path` that holds a `.git` or a `Gemfile`, or None (#1929). The hook rebuilds PATH from absolute entries OUTSIDE the repository, which it takes to be the
+    OUTERMOST such ancestor of its working directory (`lib/trusted-env.sh`, `rf_repo_root`); "/" is never the repository. A fixture whose tool directory sits under a scratch directory is therefore
+    only testing a PATH while nothing above that directory is one, and `$TMPDIR` is the machine's, not ours."""
+    probe = Path(os.path.realpath(path))
+    while True:
+        if str(probe) != "/" and ((probe / ".git").exists() or (probe / "Gemfile").exists()):
+            return str(probe)
+        if probe.parent == probe:
+            return None
+        probe = probe.parent
+
+
 @contextlib.contextmanager
 def scratch_dir():
     """A temp directory a fixture owns, removed on exit WITHOUT ever failing the run (#1800).
@@ -848,7 +861,7 @@ NEGATIVES_1342 = ['git clean -n', 'git clean -fdn', 'git checkout feature/x', 'g
 # way. The normaliser never classified any of these, so every guard-bash rule was blind to them.
 POSITIVES_1472 = ["bash -c 'git add -A'", 'sh -c "git push --force origin main"', "bash -lc 'git reset --hard'",
                   "bash -o pipefail -c 'git add -A'", "zsh -c -- 'git add -A'", 'eval "git add -A"', "eval 'git add' '-A'",
-                  "bash -c \"eval 'git add -A'\"", 'echo "$(git add -A)"', 'echo `git add -A`', 'diff <(git add -A) x',
+                  "bash -c \"eval 'git add -A'\"", 'bash -c "bash -c \\"bash -c \'git add -A\'\\""', 'echo "$(git add -A)"', 'echo `git add -A`', 'diff <(git add -A) x',
                   'command git add -A', 'exec git add -A', 'time git add -A', 'nice -n 5 git add -A', 'env -i git add -A',
                   'sudo -u deploy git add -A', 'timeout 60 git add -A', 'echo x | xargs git add -A', '{ git add -A; }',
                   '( git add -A )', '(git add -A)', 'if true; then git add -A; fi', '\\git add -A', '/usr/bin/git add -A',
@@ -904,7 +917,7 @@ POSITIVES_1706 = ["git add /abs/path", "git add :/src/x.rb", "git add ':(top)src
                   "git push -fu origin dev", "git push origin +dev", "git checkout HEAD .", "git branch -d -f x", "git branch -df x",
                   "git add -- .", "git add --verbose -A", "git reset HEAD~1 --hard", "git push --force-with-lease origin HEAD:main"]
 NEGATIVES_1706 = ["git push --force-if-includes origin x", "git push --force-with-lease --force-if-includes origin x", "git add -u", "git add -p src/x.rb", "git add -N new.rb", "git add -v -- src/x.rb", "git add '*.md'", "git add src/x.rb", "git add ./src/x.rb", "git add src/../lib/y.rb", "git add src/*.rb", "git add app/.env.example",
-                  "git push origin :feature/old", "git push origin --delete feature/old", "git push origin HEAD:feature/x", "git add -u", "git add app/*.rb", "git checkout -b feature/x", "git push --all origin",
+                  "git push origin :feature/old", "git push origin --delete feature/old", "git push origin HEAD:feature/x", "git add app/*.rb", "git checkout -b feature/x", "git push --all origin",
                   "git add file.rb", "git add -- app/x.rb", "git branch -d x", "git push origin feature", "git checkout feature/x",
                   "git reset HEAD~1", "git push -u origin feature/x", "git push --force-with-lease origin feature/main-menu"]
 # ANSI-C bodies whose decoding must equal bash's own, byte for byte (compared when the result is one plain word, the only kind kept).
@@ -1034,6 +1047,9 @@ def guard_bash_fixtures() -> None:
     # #1504: a depth's strings are normalised as ONE batch, so each must still be judged on its own.
     for cmd, why in (("bash -c 'cat <<EOF'; bash -c 'git add -A'", "an unclosed heredoc in one string does not swallow the next"),
                      ("bash -c \"echo it's\"; bash -c \"eval 'git add -A'\"", "an unbalanced quote in one string does not stop the next being lexed"),
+                     # The row above is also stopped by an unrelated `eval` rule once the batch is one text, and on Linux (mawk) so is every single-level shape: only a NEXT string that nests one
+                     # level deeper is hidden by the unbalanced quote, so this is the row that tells a batch from one text on both awks (release.yml, v1.156.0).
+                     ("bash -c \"echo it's\"; bash -c \"bash -c 'git add -A'\"", "an unbalanced quote in one string does not stop the next being lexed (the next string nests one level deeper)"),
                      (" ".join(["echo $(date)"] * 30) + "; bash -c 'git add -A'", "the 31st string of a batch is still seen"),
                      # #1519 review: a \002 line is a batch boundary only in a batch, never in the raw command...
                      ("bash -c 'x\n\x02\ny'; bash -c 'git add -A'", "a raw \\002 line does not split the command"),
@@ -1839,6 +1855,20 @@ def guard_claims_fixtures() -> None:
                    "measured against dev", "measured live on dev", "CONFIRMED by doctrine-verifier"):
         check(f"guard-claims (#1877): the evidence phrase '{phrase}' is accepted",
               run("gh pr create --base dev --body-file BODY", NUMERIC + phrase + ".\n") == 0, said())
+    # #1936: `Verified <date> against ...` is the twin of 'verified against <tag>' with the date in the middle, and was refused as the ONLY evidence (a body passed only because an earlier line said
+    # "Measured <date> against"). One row per form, including the cross-repo `-R` shape the report came from, and the near misses.
+    for phrase in ("Verified 2026-10-12 against Retask dev", "verified on 2026-10-12", "verified 2026-10-12"):
+        check(f"guard-claims (#1936): the evidence phrase '{phrase}' is accepted",
+              run("gh pr create --base dev --body-file BODY", NUMERIC + phrase + ".\n") == 0, said())
+    check("guard-claims (#1936): ...and the same phrase on a cross-repo `gh issue comment -R` is accepted",
+          run("gh issue comment 1724 -R fmanimashaun/Retask-platform --body-file BODY", NUMERIC + "Verified 2026-10-12 against Retask dev.\n") == 0, said())
+    check("guard-claims (#1936) control: 'verified' with no date and no `against` is not evidence",
+          run("gh pr create --base dev --body-file BODY", NUMERIC + "Verified, I think.\n") == 2, said())
+    for phrase in ("unverified 2026-10-12", "unverified against the spec", "unverified on 2026-10-12", "re-unverified 2026-10-12"):
+        check(f"guard-claims (#1936) control: '{phrase}' is not evidence (the word must start with `verified`)",
+              run("gh pr create --base dev --body-file BODY", NUMERIC + phrase + ".\n") == 2, said())
+    check("guard-claims (#1936) control: a year alone ('verified 2026') is not a date",
+          run("gh pr create --base dev --body-file BODY", NUMERIC + "verified 2026.\n") == 2, said())
     check("guard-claims (#1877) control: 'measured' with no date and no on/against is not evidence",
           run("gh pr create --base dev --body-file BODY", NUMERIC + "Measured, I think.\n") == 2, said())
     check("guard-claims (#1877) control: a year alone ('measured 2026') is not a date",
@@ -2928,6 +2958,10 @@ def release_gate_fixtures() -> None:
                                   env={"PATH": str(only)}, capture_output=True, text=True, timeout=60)
             return done.returncode, done.stdout + done.stderr
 
+    with scratch_dir() as probe_td:
+        above = repo_marker_above(probe_td)
+    check("release-gate: the degraded-PATH fixtures run where no .git or Gemfile is above their scratch directory (else the hook drops their tool directory and every tool reads as missing)",
+          above is None, f"{above} holds a .git or a Gemfile above {tempfile.gettempdir()}: set TMPDIR to a directory outside it")
     code, out = bare_gate("git push origin main")
     check("release-gate: with ONLY bash on PATH, a push to main is still blocked", code == 2, f"exit {code}: {out[:160]!r}")
     code, out = bare_gate("gh pr merge 12")
@@ -6361,6 +6395,16 @@ def meta_checks() -> None:
     """The checks about `--only` and `--match` themselves. Cheap, but not free (about 2.5 s), so a `--match` run
     skips them: the baseline run of the same file has already shown them pass (#1599)."""
     global CHECKS, LAST_CPU_S, _CURRENT_GROUP, machine_load
+    # #1929: the degraded-PATH precondition is decided by `repo_marker_above`, so it is driven with each marker above a scratch directory, and with none.
+    with scratch_dir() as marker_td:
+        deep = Path(marker_td) / "a" / "b"
+        deep.mkdir(parents=True)
+        check("bare_gate precondition: a scratch directory with no .git or Gemfile above it is clear", repo_marker_above(deep) is None, str(repo_marker_above(deep)))
+        (Path(marker_td) / ".git").mkdir()
+        check("bare_gate precondition: a .git above the scratch directory is found", repo_marker_above(deep) == os.path.realpath(marker_td), str(repo_marker_above(deep)))
+        (Path(marker_td) / ".git").rmdir()
+        (Path(marker_td) / "Gemfile").write_text("")
+        check("bare_gate precondition: a Gemfile above the scratch directory is found", repo_marker_above(deep) == os.path.realpath(marker_td), str(repo_marker_above(deep)))
     # --only REFUSES what it cannot run (#1497), checked on every run whatever the selection: a
     # silently empty selection is how a mutant would "survive" with no fixture ever consulted.
     for bad in ("nope", "", ",", "release_gate,nope", "release_gate,", " release_gate", "timeout,timeout"):

@@ -90,6 +90,18 @@ GUARD = Guard(
             'release-gate (#1810): the detail of a failed check carries what the hook said',
         ),
         Mutation(
+            'the bare_gate precondition ignores a Gemfile above the scratch directory (#1929)',
+            '((probe / ".git").exists() or (probe / "Gemfile").exists())',
+            '((probe / ".git").exists() or False)',
+            'bare_gate precondition: a Gemfile above the scratch directory is found',
+        ),
+        Mutation(
+            'the bare_gate precondition ignores a .git above the scratch directory (#1929)',
+            '((probe / ".git").exists() or (probe / "Gemfile").exists())',
+            '(False or (probe / "Gemfile").exists())',
+            'bare_gate precondition: a .git above the scratch directory is found',
+        ),
+        Mutation(
             'a deadline fixture carries a bare constant detail again (#1810)',
             '              nosleep("git add -A") == 2, said())',
             '              nosleep("git add -A") == 2, "exit 0")',
