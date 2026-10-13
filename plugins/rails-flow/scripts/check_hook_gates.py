@@ -5776,7 +5776,7 @@ def release_gate_large_fixtures() -> None:
             try:
                 _out, err = proc.communicate(json.dumps({"tool_input": {"command": cmd}}), timeout=12)   # the answer is well under 1 s
             except subprocess.TimeoutExpired:
-                subprocess.run(["pkill", "-KILL", "-s", str(proc.pid)], capture_output=True)            # by SESSION id: only what this fixture started
+                _run(["pkill", "-KILL", "-s", str(proc.pid)], capture_output=True)            # by SESSION id: only what this fixture started
                 proc.kill()
                 proc.communicate()
                 return None, time.monotonic() - t0, "timed out after 12 s"
