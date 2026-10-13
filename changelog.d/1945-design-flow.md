@@ -1,0 +1,2 @@
+section: design-flow
+- **design-flow's own manifest names all five agents — `plugins/design-flow/.claude-plugin/plugin.json`** (#1945). Its description ended "Agents: ui-composer, design-auditor, brand-guardian" and the plugin ships five: `design-critic` and `design-porter` were invisible in the manifest the installed plugin carries, the defect #653 fixed in the marketplace entry only. Measured by comparing each plugin's manifest description to its `agents/` directory. Our own design; no framework claim.

@@ -24,7 +24,8 @@ GUARD = Guard(
         Mutation(
             "the nudge prints the time it was stamped, a clock value",
             '        echo "- brain-review due since ${_due_date:-the cadence passed} (cadence ${_days}d) — run /rails-flow:brain-review"',
-            '        echo "- brain-review due since $(date -u -r "$_ts" +%FT%H:%M) (cadence ${_days}d) — run /rails-flow:brain-review"',
+            # GNU date takes `-d @N` and reads `-r` as a reference FILE, BSD date takes `-r N`: the mutant tries both, or on Linux it printed no time at all and survived (release.yml, v1.156.0).
+            '        echo "- brain-review due since $(date -u -d "@$_ts" +%FT%H:%M 2>/dev/null || date -u -r "$_ts" +%FT%H:%M) (cadence ${_days}d) — run /rails-flow:brain-review"',
             "every SessionStart hook's output, against the fixture, holds no ticking value",
         ),
     ),
