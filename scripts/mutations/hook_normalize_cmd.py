@@ -278,5 +278,17 @@ GUARD = Guard(
             '-e "s/&/${p}/g"',
             "CONTROL: the expansion belongs to ANOTHER command",
         ),
+        Mutation(
+            "a redirect with its target attached before the command is not peeled, so `2>&1 git add -A` hides the add",
+            '    if (w ~ /^([0-9]*(>>|>&|<&|<>|>[|]|>|<)|&>>?)./) { i++; continue }\n',
+            "",
+            "a redirect BEFORE the command does not hide it",
+        ),
+        Mutation(
+            "a bare redirect operator does not take its target, so `> out.txt git add -A` hides the add",
+            "|&>>?)$/) { i += 2; continue }",
+            "|&>>?)$/) { i++; continue }",
+            "a redirect BEFORE the command does not hide it",
+        ),
     ),
 )

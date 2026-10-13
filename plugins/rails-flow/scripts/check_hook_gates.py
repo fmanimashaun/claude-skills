@@ -912,7 +912,9 @@ POSITIVES_1982 = ["V=-A; git add $V", "git add $(echo -A)", "git add f.txt $(ech
                   "cd ~/x && git add .", "git add -- .",
                   # a redirect `&` is not a separator: the expansion stays in the add's own segment (a0's six on #1985)
                   "git add top.txt 2>&1 $(echo .)", "git add -u 2>&1 $(echo -A)", "git add top.txt >&2 $V", "git add top.txt &>/dev/null $(echo :/)",
-                  "V=.; git add top.txt 2>&1 $V", "git add top.txt 2>&1 ~", "git add top.txt &>>f $V", "git add top.txt <&0 $V"]
+                  "V=.; git add top.txt 2>&1 $V", "git add top.txt 2>&1 ~", "git add top.txt &>>f $V", "git add top.txt <&0 $V",
+                  # a redirect BEFORE the command does not hide it
+                  "2>&1 git add -A", ">/dev/null git add -A", "&>/dev/null git add .", "> out.txt git add -A", ">&2 git add :/"]
 # #1982. Passes: the `~`, `$`, `{` and `}` belong to ANOTHER command of the chain (a `cd ~/x`, a commit message, an echo), or to nothing that reaches the add.
 NEGATIVES_1982 = ["cd ~/x && git add -- docs/runbooks/stock-levels-deploy.md && git status --short", "cd ~/x && git add docs/runbooks/a-b.md && git status --short",
                   "cd ~/x && python3 - <<'EOF'\nprint(1)\nEOF\ngit add -- docs/a.md; git commit -q -m \"x\"; git log --oneline -1",

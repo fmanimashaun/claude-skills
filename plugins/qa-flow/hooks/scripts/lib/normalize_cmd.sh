@@ -153,6 +153,10 @@ function peel(t, n,    i, w) {
   while (i <= n) {
     w = t[i]
     if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { i++; continue }
+    # A redirect BEFORE the command is not the command (#1982): `2>&1 git add -A` and `>/dev/null git add -A` run git. An operator alone takes the next
+    # word as its target, one with the target attached is a single word.
+    if (w ~ /^([0-9]*(>>|>&|<&|<>|>[|]|>|<)|&>>?)$/) { i += 2; continue }
+    if (w ~ /^([0-9]*(>>|>&|<&|<>|>[|]|>|<)|&>>?)./) { i++; continue }
     if (w == "{" || w == "!" || w == "if" || w == "then" || w == "elif" || w == "else" || w == "do" || w == "while" || w == "until") { i++; continue }
     if (w == "sudo")    { i = skipopts(t, n, i + 1, "-u -g -h -p -C -U -r -t -D -R -T --user --group --host --prompt --other-user --role --type --chdir --chroot --close-from --command-timeout"); continue }
     if (w == "env")     { i = skipopts(t, n, i + 1, "-u -C --unset --chdir"); continue }
