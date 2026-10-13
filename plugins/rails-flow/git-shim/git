@@ -17,9 +17,9 @@
 #   checkout-index  -f / --force            read-tree  --reset together with -u
 #   commit | push | merge | rebase | pull | am | cherry-pick | revert   --no-verify (and `commit -n`; `-n` is a dry run or --no-stat elsewhere)
 #   config     any `git config` that names core.hooksPath or include.* / includeIf.*
-#   any        -c / --config-env naming core.hooksPath, include.*, includeIf.*, core.fsmonitor or core.sshCommand; the same keys in the GIT_CONFIG_COUNT/KEY_n/VALUE_n pairs of the
-#              environment, GIT_CONFIG_PARAMETERS, and GIT_CONFIG_GLOBAL / GIT_CONFIG_SYSTEM naming anything but /dev/null (#1982: a hermetic fixture's
-#              pairs, `user.name` and the like, pass; refusing every GIT_CONFIG_* variable on sight refused even `git init` in every such fixture)
+#   any        -c / --config-env, and the GIT_CONFIG_COUNT/KEY_n/VALUE_n pairs of the environment, naming any key but the ALLOWLIST (#1982): maintenance.auto, gc.auto,
+#              user.name, user.email, commit.gpgsign (what a hermetic fixture sets), exact and case-insensitive; GIT_CONFIG_PARAMETERS, and GIT_CONFIG_GLOBAL /
+#              GIT_CONFIG_SYSTEM naming anything but /dev/null. (Refusing every GIT_CONFIG_* variable on sight refused even `git init` in every hermetic fixture.)
 # PATHSPECS (add, checkout, restore): a PLAIN RELATIVE PATH only (an absolute path counts as one only when it resolves, physically, to a path
 # STRICTLY INSIDE the toplevel of the repository git runs in, #1982: a session in a linked worktree names its files that way). Refused: any other
 # absolute path (outside the repository, the root itself in any spelling, above it), pathspec magic (a leading `:`), a glob
@@ -79,18 +79,23 @@ refuse() {
 # Case-insensitive glob match, switched on only for the one test (a global nocasematch would make `-A` and `-a` the same option).
 ci_match() { local r; shopt -s nocasematch; [[ $1 == $2 ]]; r=$?; shopt -u nocasematch; return $r; }
 
-# A config key that can switch the #1789 hooks off or run a program: hooksPath, includes, and (#1982) the two that name a command, core.fsmonitor
-# (git runs it on status/add) and core.sshCommand (git runs it on fetch/push). Case-insensitive: git folds the section and key names.
-CFG_DANGER() {
-  ci_match "$1" "core.hookspath*" || ci_match "$1" "include.*" || ci_match "$1" "includeif.*" \
-    || ci_match "$1" "core.fsmonitor*" || ci_match "$1" "core.sshcommand*"
+# THE CONFIG A COMMAND MAY CARRY IS AN ALLOWLIST (#1982, the coordinator's decision), in all three forms: GIT_CONFIG_KEY_n in the environment, `-c` and `--config-env`.
+# A denylist could not be completed: a key that runs a program (core.hooksPath, core.fsmonitor, core.sshCommand, core.pager, core.editor, credential.helper,
+# gpg.program, diff.external, filter.*.clean, ...) or pulls in a file (include.*) is one more entry nobody listed yet. Only the keys a hermetic fixture sets
+# pass (`scripts/fixture_git.py`: SETTINGS maintenance.auto and gc.auto; IDENTITY user.name, user.email and commit.gpgsign), matched EXACTLY and
+# case-insensitively (git folds the section and variable names): `user.name.x` and `user.namex` are not `user.name`. Anything else is refused, aliases
+# included: an alias given on the command line (`-c alias.p=push`) is a key like any other.
+CFG_ALLOWED() {
+  ci_match "$1" "maintenance.auto" || ci_match "$1" "gc.auto" || ci_match "$1" "user.name" || ci_match "$1" "user.email" || ci_match "$1" "commit.gpgsign"
 }
+CFG_ALLOWED_LIST="maintenance.auto, gc.auto, user.name, user.email, commit.gpgsign"
+# `-c name=value` and `--config-env=name=ENVVAR`: the key is what precedes the first `=`.
+CFG_DANGER() { ! CFG_ALLOWED "${1%%=*}"; }
 
-# GIT_CONFIG_* in the environment can define a hooks path and includes: READ them, refuse what can switch the #1789 hooks off (#1982). A hermetic
-# fixture exports GIT_CONFIG_COUNT/KEY_n/VALUE_n (`user.name`, `core.autocrlf`, ...) to keep its git independent of the host, and refusing every
-# GIT_CONFIG_* variable on sight refused `git init` itself in each of them. Aliases the pairs define are resolved below with `git config --get`,
-# which reads the pairs, so they are seen. Anything this shim cannot read stays refused: GIT_CONFIG_PARAMETERS, a non-/dev/null GLOBAL or SYSTEM file,
-# an unknown GIT_CONFIG_* name, a count that is not a plain number.
+# GIT_CONFIG_* in the environment: READ the pairs and admit only the allowlisted keys (#1982). A hermetic fixture exports GIT_CONFIG_COUNT/KEY_n/VALUE_n
+# (maintenance.auto and gc.auto) to keep its git independent of the host, and refusing every GIT_CONFIG_* variable on sight refused `git init` itself in
+# each of them. Anything this shim cannot read stays refused: GIT_CONFIG_PARAMETERS, a non-/dev/null GLOBAL or SYSTEM file, an unknown GIT_CONFIG_*
+# name, a count that is not a plain number, and any pair whose key is not allowlisted.
 for v in $(compgen -e GIT_CONFIG_); do
   case "$v" in
     GIT_CONFIG_NOSYSTEM|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_*|GIT_CONFIG_VALUE_*) ;;      # a switch that only turns the system file OFF; the pairs, read below
@@ -106,8 +111,8 @@ esac
 cfg_i=0
 while [ "$cfg_i" -lt "$cfg_count" ]; do
   cfg_var="GIT_CONFIG_KEY_$cfg_i"; cfg_key="${!cfg_var:-}"
-  if CFG_DANGER "$cfg_key"; then
-    RULE="$cfg_var=$cfg_key: core.hooksPath, include.*, core.fsmonitor and core.sshCommand in the environment can switch the #1789 git hooks off or run a program"; refuse "${ORIG[@]}"
+  if ! CFG_ALLOWED "$cfg_key"; then
+    RULE="$cfg_var=$cfg_key: only $CFG_ALLOWED_LIST may be set in the environment (any other key can run a program or pull in a file)"; refuse "${ORIG[@]}"
   fi
   cfg_i=$((cfg_i + 1))
 done
@@ -374,11 +379,11 @@ evaluate() {
       -c|--config-env)
         GLOBALS[${#GLOBALS[@]}]="$a"; i=$((i + 1))
         if [ "$i" -lt "$n" ]; then
-          if CFG_DANGER "${ARGV[$i]}"; then RULE="$a ${ARGV[$i]}: core.hooksPath, include.*, core.fsmonitor and core.sshCommand on the command line can switch the #1789 git hooks off or run a program"; return 1; fi
+          if CFG_DANGER "${ARGV[$i]}"; then RULE="$a ${ARGV[$i]}: only $CFG_ALLOWED_LIST may be set on the command line (any other key can run a program or pull in a file)"; return 1; fi
           GLOBALS[${#GLOBALS[@]}]="${ARGV[$i]}"; i=$((i + 1))
         fi ;;
       --config-env=*)
-        if CFG_DANGER "${a#--config-env=}"; then RULE="$a: core.hooksPath, include.*, core.fsmonitor and core.sshCommand on the command line can switch the #1789 git hooks off or run a program"; return 1; fi
+        if CFG_DANGER "${a#--config-env=}"; then RULE="$a: only $CFG_ALLOWED_LIST may be set on the command line (any other key can run a program or pull in a file)"; return 1; fi
         GLOBALS[${#GLOBALS[@]}]="$a"; i=$((i + 1)) ;;
       --version|--help|-h|--exec-path|--html-path|--man-path|--info-path|--list-cmds=*) return 0 ;;
       -*) GLOBALS[${#GLOBALS[@]}]="$a"; i=$((i + 1)) ;;

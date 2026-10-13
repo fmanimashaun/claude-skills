@@ -325,6 +325,11 @@ def _(base):
         check(label, shutil.which(tool, path=r.path_env["PATH"]) is None, f"{tool} is still on the test PATH")
     refused(r, label, "reset", "--hard")
     refused(r, label, "-c", "core.hooksPath=/dev/null", "status")
+    # ci_match is what reads these two, and it must not depend on tr: a shell alias that names git, and `git config core.hooksPath` (#1982: the -c form is an
+    # allowlist now and fails CLOSED when ci_match cannot run, so it no longer shows the fail-open by itself)
+    r.real("config", "alias.shellgit", "!git reset --hard")
+    refused(r, label, "shellgit", why="mentions git")
+    refused(r, label, "config", "core.hooksPath", "/dev/null")
     p = r.g("status", "--porcelain")
     check(label, p.returncode == 0 and "a.txt" in p.stdout, f"status through the shim with a bare PATH: exit {p.returncode}: {p.stderr.strip()[:140]}")
 
@@ -394,7 +399,7 @@ def _(base):
                  ("config", "include.path", "/tmp/x"), ("config", "includeIf.gitdir:/x/.path", "y"), ("-c", "include.path=/tmp/x", "status"),
                  ("-c", "includeIf.gitdir:/x/.path=y", "status"), ("--config-env=include.path=X", "status"),
                  ):
-        refused(r, label, *args, why="can switch the #1789 git hooks off")
+        refused(r, label, *args, why="may be set on the command line" if args[0].startswith("-") else "can switch the #1789 git hooks off")
     # #1982: the pairs are READ, not refused on sight. What can switch the hooks off, or the shim cannot read, is refused; the rest passes.
     for env in ({"GIT_CONFIG_PARAMETERS": "'user.name'='x'"}, {"GIT_CONFIG_GLOBAL": "/tmp/cfg"}, {"GIT_CONFIG_SYSTEM": "/tmp/cfg"}, {"GIT_CONFIG_FOO": "1"},
                 {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.hooksPath", "GIT_CONFIG_VALUE_0": "/dev/null"},
@@ -408,19 +413,22 @@ def _(base):
                 {"GIT_CONFIG_COUNT": "abc"}, {"GIT_CONFIG_COUNT": "1000000"}, {"GIT_CONFIG_COUNT": "-1"}):
         p = r.g("status", env=env)
         check(label, p.returncode != 0 and "git-shim" in p.stderr, f"{env} in the environment was not refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
+    # A count that is not a plain number is refused BY THE COUNT CHECK: git's own alias lookup fails on one too, so "refused" alone would hide a dead check.
+    for cnt in ("abc", "1000000", "-1", "1.5", "0x1", "+1", " 1", "1 "):
+        p = r.g("status", env={"GIT_CONFIG_COUNT": cnt})
+        check(label, p.returncode != 0 and "plain number" in p.stderr, f"GIT_CONFIG_COUNT={cnt!r} was not refused as a count: exit {p.returncode}: {p.stderr.strip()[:120]}")
     # A hermetic fixture's pairs (fixture_git.hermetic()) and the switches that only make git MORE isolated pass, `git init` included.
     for env in ({"GIT_CONFIG_COUNT": "0"}, {"GIT_CONFIG_NOSYSTEM": "1"}, {"GIT_CONFIG_GLOBAL": "/dev/null"}, {"GIT_CONFIG_SYSTEM": "/dev/null"},
-                {"GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "user.name", "GIT_CONFIG_VALUE_0": "x", "GIT_CONFIG_KEY_1": "core.autocrlf", "GIT_CONFIG_VALUE_1": "false"},
+                {"GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "user.name", "GIT_CONFIG_VALUE_0": "x", "GIT_CONFIG_KEY_1": "gc.auto", "GIT_CONFIG_VALUE_1": "0"},
                 fixture_git.hermetic({})):
         p = r.g("status", env=env)
         check(label, p.returncode == 0 and "git-shim" not in p.stderr, f"{sorted(env)} in the environment was refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
         q = r.g("init", "-q", str(base / ("init-" + str(abs(hash(str(sorted(env.items()))))))), env=env)
         check(label, q.returncode == 0 and "git-shim" not in q.stderr, f"`git init` with {sorted(env)} was refused: exit {q.returncode}: {q.stderr.strip()[:120]}")
-    # an alias an environment pair defines is still read (git config --get sees the pairs), so a shell alias that runs git is refused as before
-    p = r.g("st", env={"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "alias.st", "GIT_CONFIG_VALUE_0": "status"})
-    check(label, p.returncode == 0 and "git-shim" not in p.stderr, f"an alias from an environment pair was not resolved: exit {p.returncode}: {p.stderr.strip()[:120]}")
-    p = r.g("sa", env={"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "alias.sa", "GIT_CONFIG_VALUE_0": "add -A"})
-    check(label, p.returncode != 0 and "git-shim" in p.stderr, f"`add -A` through an alias defined in an environment pair was not refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
+    # an alias defined by an environment pair is a key like any other: it is not on the allowlist, so it is refused (and `add -A` through one never runs)
+    for name, value in (("st", "status"), ("sa", "add -A")):
+        p = r.g(name, env={"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": f"alias.{name}", "GIT_CONFIG_VALUE_0": value})
+        check(label, p.returncode != 0 and "git-shim" in p.stderr, f"an alias from an environment pair was not refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
     runs(r, label, "config", "user.name", "someone")
     runs(r, label, "config", "--get", "user.name")
 
@@ -432,7 +440,7 @@ def _(base):
     r.real("add", "a.txt")
     for args in (("-c", "core.hooksPath=/dev/null", "commit", "-m", "x"), ("-c", "core.hookspath=/dev/null", "status"),
                  ("--config-env=core.hooksPath=X", "status")):
-        refused(r, label, *args, why="switch the #1789 git hooks off")
+        refused(r, label, *args, why="may be set on the command line")
     runs(r, label, "-c", "user.name=u", "-c", "user.email=u@u", "commit", "-m", "y")  # fixture-git: exempt (the shim under test finds the repository from its cwd; fixture_git's GIT_DIR binding would hide that)
 
 
@@ -442,8 +450,42 @@ def _(base):
     r = Repo(base, "runsprog")
     for args in (("-c", "core.fsmonitor=/tmp/x", "status"), ("-c", "CORE.FSMONITOR=/tmp/x", "status"), ("-c", "core.sshCommand=/tmp/x", "status"),
                  ("-c", "Core.SshCommand=/tmp/x", "status"), ("--config-env=core.fsmonitor=X", "status"), ("--config-env=core.sshCommand=X", "status")):
-        refused(r, label, *args, why="run a program")
-    runs(r, label, "-c", "core.autocrlf=false", "status")
+        refused(r, label, *args, why="may be set on the command line")
+    runs(r, label, "-c", "gc.auto=0", "status")
+
+
+ALLOWED_KEYS = ("maintenance.auto", "gc.auto", "user.name", "user.email", "commit.gpgsign")
+REFUSED_KEYS = ("core.pager", "core.editor", "credential.helper", "gpg.program", "core.fsmonitor", "core.sshCommand", "core.hooksPath", "include.path", "includeIf.gitdir:/x/.path",
+                "diff.external", "core.autocrlf", "alias.p", "filter.evil.clean", "core.askPass", "sequence.editor", "user.name.x", "user.namex", "user.nam", "xuser.name",
+                "gc.autoDetach", "commit.gpgsign.x", "user.email ", " user.email")
+
+
+@case("shim: the config a command may carry is an ALLOWLIST of exact keys, in all three forms: GIT_CONFIG_KEY_n, -c and --config-env (#1982)")
+def _(base):
+    label = "shim: the config a command may carry is an ALLOWLIST of exact keys, in all three forms: GIT_CONFIG_KEY_n, -c and --config-env (#1982)"
+    r = Repo(base, "allowlist")
+
+    def forms(key: str) -> list[tuple[str, tuple[str, ...], dict[str, str]]]:
+        return [("GIT_CONFIG_KEY_0", ("status",), {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": key, "GIT_CONFIG_VALUE_0": "x"}),
+                ("-c", ("-c", f"{key}=x", "status"), {}),
+                ("--config-env=", (f"--config-env={key}=CFGV", "status"), {"CFGV": "x"}),
+                ("--config-env", ("--config-env", f"{key}=CFGV", "status"), {"CFGV": "x"})]
+    for key in REFUSED_KEYS:
+        for form, args, env in forms(key):
+            p = r.g(*args, env=env)
+            check(label, p.returncode != 0 and "git-shim" in p.stderr, f"{key!r} through {form} was not refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
+    for key in ALLOWED_KEYS + ("USER.NAME", "Commit.GpgSign", "Maintenance.Auto"):
+        for form, args, env in forms(key):
+            p = r.g(*args, env=env)
+            check(label, p.returncode == 0 and "git-shim" not in p.stderr, f"{key!r} through {form} was refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
+    # every key a hermetic fixture sets must pass, or the fixture cannot run under the shim: read them from the helper, not from this file
+    env = fixture_git.hermetic({})
+    for i in range(int(env["GIT_CONFIG_COUNT"])):
+        k = env[f"GIT_CONFIG_KEY_{i}"]
+        check(label, k.lower() in ALLOWED_KEYS, f"fixture_git.hermetic() sets {k!r}, which the shim's allowlist does not admit")
+    identity = [a.split("=")[0] for a in fixture_git.IDENTITY if "=" in a]
+    for k in identity:
+        check(label, k.lower() in ALLOWED_KEYS, f"fixture_git.IDENTITY passes {k!r} with -c, which the shim's allowlist does not admit")
 
 
 @case("shim: a git alias is expanded before the rules are applied")
