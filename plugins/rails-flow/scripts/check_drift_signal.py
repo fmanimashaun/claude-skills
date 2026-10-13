@@ -43,7 +43,8 @@ def run_hook(*, hashers: str, manifest_hash: str, manifest: str | None = None, b
         (root / ".claude" / "skills" / ".manifest.tsv").write_text(
             manifest if manifest is not None else f"tracked.md\t{manifest_hash}\n")
         import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import fixture_git as _fg  # #1588
-        _fg.init(root)
+        # THE BRANCH IS NAMED, never read from the host (#1973): a bare `git init` takes `init.defaultBranch` from whatever config the host has.
+        _fg.init(root, "-b", "main")
         _fg.run(root, "add", "-A")
         _fg.run(root, "commit", "-qm", "x")
         if behind is not None:
@@ -52,7 +53,9 @@ def run_hook(*, hashers: str, manifest_hash: str, manifest: str | None = None, b
             for cmd in (["git", "clone", "-q", "--bare", str(root), str(up)],
                         ["git", "-C", str(root), "remote", "add", "origin", str(up)],
                         ["git", "-C", str(root), "fetch", "-q", "origin"],
-                        ["git", "-C", str(root), "branch", "-q", "-u", "origin/HEAD"],
+                        # `origin/main` by name, not `origin/HEAD` (#1973): a plain fetch creates `refs/remotes/origin/HEAD` only on git >= 2.48
+                        # (`remote.<name>.followRemoteHEAD`). The maintainer Mac has 2.50 and Linux 2.43, so origin/HEAD never existed there.
+                        ["git", "-C", str(root), "branch", "-q", "-u", "origin/main"],
                         ["git", "clone", "-q", str(up), str(other)]):
                 subprocess.run(cmd, check=True, capture_output=True)
             for i in range(behind):

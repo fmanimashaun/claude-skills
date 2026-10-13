@@ -97,6 +97,38 @@ def main() -> int:
         check("a failing guard OR selftest in the container makes the container script exit non-zero",
               script_text.count("|| rc=1") == 2 and "exit $rc" in script_text)
 
+        # THE HOST-TOOL CANARY (#1964): the container installs the tools a selftest probes and asserts them present before any guard.
+        check("the container installs the host tools a selftest probes: postgresql-client, lsof, procps and zsh",
+              "ca-certificates $LINUX_CHECK_HOST_PACKAGES" in script_text
+              and "LINUX_CHECK_HOST_PACKAGES=postgresql-client lsof procps zsh" in args, str(args))
+        check("the container asserts pg_isready, lsof, ps and zsh are present", "LINUX_CHECK_CANARY_TOOLS=pg_isready lsof ps zsh" in args, str(args))
+        canary_at, install_at, loop_at = (script_text.find(x) for x in ("--check-tools $LINUX_CHECK_CANARY_TOOLS", "apt-get install", 'for spec in "$@"'))
+        check("the host-tool canary runs after the install and before any guard", 0 <= install_at < canary_at < loop_at, f"{install_at} {canary_at} {loop_at}")
+        check("a failing canary aborts the container (exit 3), it does not go on", "--check-tools $LINUX_CHECK_CANARY_TOOLS || exit 3" in script_text)
+
+        tools = root / "tools"
+        tools.mkdir()
+        for name in ("pg_isready", "lsof"):
+            (tools / name).write_text("#!/bin/sh\nexit 0\n")
+            (tools / name).chmod(0o755)
+        # PATH is the stub directory only, so a tool the host happens to have cannot answer for a missing one; the script uses builtins only.
+        canary_env = {"PATH": str(tools), "HOME": td}
+
+        def canary(*names: str) -> subprocess.CompletedProcess:
+            return subprocess.run(["/bin/bash", str(SCRIPT), "--check-tools", *names], capture_output=True, text=True, cwd=work, env=canary_env, timeout=60)
+
+        r = canary("pg_isready", "lsof")
+        check("--check-tools with every tool present exits 0 and says nothing", r.returncode == 0 and r.stderr == "", f"{r.returncode} {r.stderr}")
+        r = canary("pg_isready", "ps")
+        check("a missing tool FAILS CLOSED: exit 3, names it and not the one that is present, and says a guard would read green",
+              r.returncode == 3 and "FAILED CLOSED" in r.stderr and " ps," in r.stderr and "pg_isready," not in r.stderr and "read green" in r.stderr and "#1964" in r.stderr,
+              f"{r.returncode} {r.stderr}")
+        r = canary("pg_isready", "lsof", "ps", "nosuch")
+        check("every missing tool is named, not only the first", r.returncode == 3 and " ps nosuch," in r.stderr, f"{r.returncode} {r.stderr}")
+        r = canary()
+        check("--check-tools with no names is a usage error (exit 2): zero tools checked is not a pass", r.returncode == 2 and "at least one tool name" in r.stderr, f"{r.returncode} {r.stderr}")
+        check("--check-tools never touches docker", not (root / "args.txt").exists() and "FAILED CLOSED: 'docker'" not in r.stderr)
+
         (root / "bad").mkdir()
         stub(root / "bad", run_rc=1)
         r = run("some_guard", docker=root / "bad" / "docker", cwd=work)

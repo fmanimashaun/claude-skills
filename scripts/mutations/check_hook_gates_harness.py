@@ -287,8 +287,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a fixture group is left out of every part, so the doctor would never run it",
-            '"b": ["release_gate", "release_gate_effects"],',
-            '"b": ["release_gate"],',
+            '"b": ["release_gate", "release_gate_effects", "release_gate_large"],',
+            '"b": ["release_gate", "release_gate_large"],',
             "every fixture group is in exactly one PART",
         ),
         Mutation(

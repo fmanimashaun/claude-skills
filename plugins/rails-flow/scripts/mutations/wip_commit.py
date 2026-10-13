@@ -9,6 +9,7 @@ GUARD = Guard(
     name="wip_commit",
     subject="scripts/wip_commit.py",
     selftest="scripts/wip_commit.py",   # --selftest lives in the module itself
+    narrow_with="--match",                   # #1942: each mutant runs only the case that names it (658 s of work over the whole selftest)
     needs=("scripts/test_preflight.py",),   # it imports the one trusted_which resolver
     mutations=(
         Mutation(

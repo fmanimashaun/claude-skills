@@ -100,5 +100,55 @@ GUARD = Guard(
             "  exit 1",
             "the container's own exit status is the script's",
         ),
+        # #1964. A container that lacks a tool the runner has makes a guard read green here and fail there (release run 38297902322: pg_isready).
+        Mutation(
+            "postgresql-client is not installed, so pg_isready is the host's absence again",
+            'HOST_PACKAGES="postgresql-client lsof procps zsh"',
+            'HOST_PACKAGES="lsof procps zsh"',
+            "the container installs the host tools a selftest probes",
+        ),
+        Mutation(
+            "the canary no longer asks for pg_isready",
+            'CANARY_TOOLS="pg_isready lsof ps zsh"',
+            'CANARY_TOOLS="lsof ps zsh"',
+            "the container asserts pg_isready, lsof, ps and zsh are present",
+        ),
+        # #1971: without zsh, git_shim_selftest's zsh row is skipped, so the Linux check could not see a zsh regression.
+        Mutation(
+            "zsh is not installed, so git_shim_selftest's zsh row is skipped again",
+            'HOST_PACKAGES="postgresql-client lsof procps zsh"',
+            'HOST_PACKAGES="postgresql-client lsof procps"',
+            "the container installs the host tools a selftest probes",
+        ),
+        Mutation(
+            "the canary no longer asks for zsh",
+            'CANARY_TOOLS="pg_isready lsof ps zsh"',
+            'CANARY_TOOLS="pg_isready lsof ps"',
+            "the container asserts pg_isready, lsof, ps and zsh are present",
+        ),
+        Mutation(
+            "the canary is never run before a guard",
+            'bash scripts/linux_check.sh --check-tools $LINUX_CHECK_CANARY_TOOLS || exit 3\n',
+            "",
+            "the host-tool canary runs after the install and before any guard",
+        ),
+        Mutation(
+            "a failing canary is ignored and the guards run anyway",
+            "--check-tools $LINUX_CHECK_CANARY_TOOLS || exit 3",
+            "--check-tools $LINUX_CHECK_CANARY_TOOLS || true",
+            "a failing canary aborts the container",
+        ),
+        Mutation(
+            "a missing tool exits 0, so the absent tool reads as present",
+            'Add its package to HOST_PACKAGES in scripts/linux_check.sh." >&2\n    exit 3',
+            'Add its package to HOST_PACKAGES in scripts/linux_check.sh." >&2\n    exit 0',
+            "a missing tool FAILS CLOSED",
+        ),
+        Mutation(
+            "no tool names passes, so an empty canary checks nothing and says ok",
+            'if [ "$#" -lt 1 ]; then echo "linux_check: --check-tools needs',
+            'if [ "$#" -lt 0 ]; then echo "linux_check: --check-tools needs',
+            "--check-tools with no names is a usage error",
+        ),
     ),
 )

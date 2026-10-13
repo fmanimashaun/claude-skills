@@ -13,12 +13,35 @@
 #
 # The repository is mounted at /work; the image is pinned by tag (LINUX_CHECK_IMAGE to override). PYTHONDONTWRITEBYTECODE
 # keeps root-owned __pycache__ out of your checkout. A git worktree's .git file points outside the mount, so git-dependent
-# guards are best run from a main checkout. The container has python3, git and bash only: a guard that shells out to node
-# or ruby is proven by CI, not here.
+# guards are best run from a main checkout. The container has python3, git and bash, plus the host tools a selftest probes (HOST_PACKAGES below, asserted by a
+# canary, #1964): a guard that shells out to node or ruby is proven by CI, not here.
 set -u
 
 IMAGE="${LINUX_CHECK_IMAGE:-ubuntu:24.04}"
 DOCKER="${LINUX_CHECK_DOCKER:-docker}"
+
+# THE HOST TOOLS A SELFTEST PROBES (#1964). A selftest that resolves a tool on PATH sees a different machine in a container that lacks it than on the
+# runner that has it: `test_preflight`'s "no pg_isready on PATH" row found the runner's own `/usr/bin/pg_isready` and failed there, while this script
+# reported it green because the container had no Postgres client (release run 38297902322). So the container installs them, and CANARY_TOOLS are asserted
+# present before any guard runs: an image that loses one is a refusal with a sentence, never a green that means nothing. The tools are `trusted_which`
+# lookups in `plugins/rails-flow/scripts/test_preflight.py` (`pg_isready`, `lsof`, `ps`). node, ruby and zsh are not here: a guard that needs them is proven by CI (see above).
+# zsh (#1971): `git_shim_selftest.py` checks the SessionStart hook under zsh too, and without it the row is skipped, so the container installs it.
+HOST_PACKAGES="postgresql-client lsof procps zsh"
+CANARY_TOOLS="pg_isready lsof ps zsh"
+
+# --check-tools <name>...: assert each is on PATH, and nothing else (it never touches docker). The container runs it on itself before a guard, so the
+# canary's refusal can be exercised without a container. No names is a usage error: zero inputs checked is not a pass.
+if [ "${1:-}" = "--check-tools" ]; then
+  shift
+  if [ "$#" -lt 1 ]; then echo "linux_check: --check-tools needs at least one tool name" >&2; exit 2; fi
+  missing=""
+  for tool in "$@"; do command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"; done
+  if [ -n "$missing" ]; then
+    echo "linux_check: FAILED CLOSED: the container has no${missing}, a tool the runner has and a selftest probes (#1964). A guard that depends on it would read green here and fail on the runner. Add its package to HOST_PACKAGES in scripts/linux_check.sh." >&2
+    exit 3
+  fi
+  exit 0
+fi
 
 usage() {
   echo "usage: scripts/linux_check.sh <guard> [more guards] [--run <selftest.py>]..." >&2
@@ -67,7 +90,8 @@ fi
 inside='
 set -u
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq >/dev/null && apt-get install -y -qq python3 git bash ca-certificates >/dev/null || { echo "linux_check: could not install python3, git and bash in the container" >&2; exit 3; }
+apt-get update -qq >/dev/null && apt-get install -y -qq python3 git bash ca-certificates $LINUX_CHECK_HOST_PACKAGES >/dev/null || { echo "linux_check: could not install python3, git, bash and the host tools in the container" >&2; exit 3; }
+bash scripts/linux_check.sh --check-tools $LINUX_CHECK_CANARY_TOOLS || exit 3
 git config --global --add safe.directory /work >/dev/null 2>&1
 rc=0
 for spec in "$@"; do
@@ -79,7 +103,7 @@ done
 exit $rc
 '
 
-"$DOCKER" run --rm -e PYTHONDONTWRITEBYTECODE=1 -v "$PWD":/work -w /work "$IMAGE" bash -c "$inside" linux_check "${specs[@]}"
+"$DOCKER" run --rm -e PYTHONDONTWRITEBYTECODE=1 -e LINUX_CHECK_HOST_PACKAGES="$HOST_PACKAGES" -e LINUX_CHECK_CANARY_TOOLS="$CANARY_TOOLS" -v "$PWD":/work -w /work "$IMAGE" bash -c "$inside" linux_check "${specs[@]}"
 status=$?
 if [ "$status" -ne 0 ]; then
   echo "linux_check: FAILED on Linux (exit $status): $IMAGE" >&2
