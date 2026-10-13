@@ -97,6 +97,10 @@ def init(repo: str | os.PathLike, *extra: str) -> Path:
     for key in ("GIT_DIR", "GIT_WORK_TREE"):     # init creates them; never inherit someone else's
         e.pop(key, None)
     subprocess.run(["git", "init", "-q", *extra, str(path)], check=True, env=e, capture_output=True)
+    # POSITIVE identity for rails-flow's git shim (#1994): it lets a hermetic fixture stage its own repository whole only when that repository carries this file, which only this
+    # function writes, so a standalone repository that merely sits inside the temp root (or the session's own) is not a fixture.
+    gitdir = path / ".git" if (path / ".git").is_dir() else path      # a --bare repository is its own git directory
+    (gitdir / "rails-flow-fixture").write_text("")
     return path
 
 

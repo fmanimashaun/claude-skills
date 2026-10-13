@@ -501,6 +501,17 @@ def _(base):
         for form, args, env in pair_forms(key, value):
             p = r.g(*args, env=env)
             check(label, p.returncode != 0 and "git-shim" in p.stderr, f"{key}={value!r} through {form} was not refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
+    # core.hooksPath=/dev/null switches the hooks (our pre-commit and pre-push guards) off, so only a command that runs no hook may carry it (#1994)
+    for sub_ in ("commit", "push", "merge", "rebase", "pull", "am", "cherry-pick", "revert", "add", "checkout", "rm", "gc", "some-unknown-subcommand"):
+        for form, args, env in pair_forms("core.hooksPath", "/dev/null"):
+            a = args[:-1] + (sub_,)
+            p = r.g(*a, env=env)
+            check(label, p.returncode != 0 and "git-shim" in p.stderr and "runs no hook" in p.stderr, f"core.hooksPath=/dev/null through {form} on `{sub_}` was not refused for the hooks reason: exit {p.returncode}: {p.stderr.strip()[:120]}")
+    for sub_ in ("diff", "log", "rev-parse", "ls-files", "show-ref", "config", "fetch", "ls-remote"):
+        for form, args, env in pair_forms("core.hooksPath", "/dev/null"):
+            a = args[:-1] + (sub_,)
+            p = r.g(*a, env=env)
+            check(label, "git-shim" not in p.stderr, f"core.hooksPath=/dev/null through {form} on the hook-free `{sub_}` was refused: {p.stderr.strip()[:120]}")
     for key in ("core.fsmonitor", "core.hooksPath", "credential.helper", "tag.gpgSign"):
         p = r.g("-c", key, "status")
         check(label, p.returncode != 0 and "git-shim" in p.stderr, f"`-c {key}` with no value (the value true) was not refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
@@ -608,6 +619,22 @@ def _(base):
     lk.mkdir()
     (lk / "commondir").write_text("../marked/.git\n")
     attempt("a linked worktree of a repository carrying the session marker", mk, env_for(mk, gd=lk), ok=False, stray_check=False)
+    # the adversary pass on #1994: five commands got through. Each is a row here, and each is judged by the refusal it must get.
+    # 1. git prefers a command-line --git-dir/--work-tree/-C/--namespace over the environment, so the decoy fixture in GIT_DIR proved nothing about the repository the command named
+    pw = str(proj.work)
+    for what, args in (("--git-dir and --work-tree", ("--git-dir", f"{pw}/.git", "--work-tree", pw, "add", "-A")), ("--git-dir= and --work-tree=", (f"--git-dir={pw}/.git", f"--work-tree={pw}", "add", "-A")),
+                       ("-C the project", ("-C", pw, "add", "-A")), ("--namespace", ("--namespace", "x", "add", "-A"))):
+        attempt(f"{what} on the command line beat a decoy fixture named in the environment", fx, env_for(fx), ok=False, args=args)
+    # 2. an index, an object store, a common dir or a namespace in the environment point git at another repository's state while the decoy sits in GIT_DIR
+    for var, val in (("GIT_INDEX_FILE", f"{pw}/.git/index"), ("GIT_OBJECT_DIRECTORY", f"{pw}/.git/objects"), ("GIT_ALTERNATE_OBJECT_DIRECTORIES", f"{pw}/.git/objects"),
+                     ("GIT_COMMON_DIR", f"{pw}/.git"), ("GIT_NAMESPACE", "x")):
+        attempt(f"{var} in the environment redirects git away from the fixture", fx, env_for(fx, **{var: val}), ok=False)
+    # 3. a standalone repository that merely sits inside the temp root is not a fixture: only one `fixture_git.init` created carries the identity file
+    sa = tmproot / "standalone"
+    sa.mkdir()
+    subprocess.run([REAL_GIT, "init", "-q", str(sa)], env=fixture_git.hermetic(proj.env), capture_output=True, check=True)
+    (sa / "stray.txt").write_text("s\n")
+    attempt("a standalone repository inside the temp root that fixture_git did not create", sa, env_for(sa), ok=False)
     # outside a fixture the whole-tree add is still refused, and the other rules still hold INSIDE the exempt repository
     attempt("no GIT_DIR/GIT_WORK_TREE at all", fx, {}, ok=False)
     # the exemption covers STAGING only: the working-tree rules stay refused in a fixture's own repository (widening them waits for an adversary pass)
@@ -655,6 +682,7 @@ def _(base):
     go("a temp file whose entries are all allowlisted", str(good), ok=True)
     go("an empty temp file", str(cfgfile(tmproot, "empty.cfg", "")), ok=True)
     for name, text in (("hooks.cfg", "[core]\n\thooksPath = /tmp/h\n"), ("hooks-null.cfg", "[core]\n\thooksPath = /dev/null\n[core]\n\tpager = cat\n"),
+                       ("hooks-null-only.cfg", "[core]\n\thooksPath = /dev/null\n"),
                        ("inc.cfg", "[include]\n\tpath = /tmp/x\n"), ("incif.cfg", "[includeIf \"gitdir:/x/\"]\n\tpath = /tmp/x\n"), ("pager.cfg", "[core]\n\tpager = less\n"),
                        ("alias.cfg", "[alias]\n\tp = push\n"), ("fsm.cfg", "[core]\n\tfsmonitor = true\n"), ("mixed.cfg", "[user]\n\tname = t\n[core]\n\teditor = vi\n"),
                        ("ml.cfg", "[user]\n\tname = \"a\\nuser.name\"\n")):
