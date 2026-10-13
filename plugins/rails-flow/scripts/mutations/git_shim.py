@@ -51,7 +51,10 @@ GUARD = Guard(
         Mutation('a shell alias that mentions git is allowed', 'if ci_match "$val" "*git*"; then RULE="the shell alias', 'if false; then RULE="the shell alias', 'a shell alias that mentions git'),
         Mutation('an alias with a quote is allowed', '      *\\\'*|*\\"*|*\\\\*) RULE="the alias alias.$SUB holds a quote', '      *NOPE*) RULE="the alias alias.$SUB holds a quote', 'an alias with a quote'),
         Mutation('an alias chain of any depth is followed', 'if [ "$depth" -gt 5 ]; then RULE="an alias chain', 'if false; then RULE="an alias chain', 'an alias with a quote'),
-        Mutation('the shim finds itself as the real git', '  [ "$dd" = "$self_dir" ] && continue', '  :', 'does not loop'),
+        # the own-directory line alone is now redundant (the name and the header line also skip the shim's own copy, #2003), so the mutant removes all four skips at once
+        Mutation('the shim finds itself as the real git',
+                 '  [ "$dd" = "$self_dir" ] && continue\n  case "$dd" in */git-shim) continue ;; esac\n  case "$d" in */git-shim|*/git-shim/) continue ;; esac\n  first=""; { IFS= read -r -d \'\' -n 400 first; } < "$d/git" 2>/dev/null\n  case "$first" in *"# rails-flow git shim"*) continue ;; esac\n',
+                 '', 'does not loop'),
         Mutation('the escape variable is not read', 'if [ "${RAILS_FLOW_GIT_OK:-}" = 1 ]; then', 'if [ "${RAILS_FLOW_GIT_OK:-}" = 2 ]; then', 'RAILS_FLOW_GIT_OK=1 runs the real git'),
         Mutation('-C is not forwarded when finding the root', '  TOP="$("$real" "${GLOBALS[@]}" rev-parse --show-toplevel 2>/dev/null)" || TOP=""', '  TOP="$("$real" rev-parse --show-toplevel 2>/dev/null)" || TOP=""', '-C is honoured'),
         Mutation('the shim depends on tr, so a PATH without it fails open', 'ci_match() { local r;', 'ci_match() { local r; tr a a </dev/null >/dev/null 2>&1 || return 1;', 'with no tr or dirname on PATH'),
