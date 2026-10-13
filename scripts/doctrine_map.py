@@ -150,9 +150,24 @@ DOCTRINE_SOURCES = (
     "plugins/rails-flow/commands/fix.md",
     "plugins/design-flow/commands/generate.md",
     "plugins/qa-flow/commands/certify.md",
+    "plugins/qa-flow/agents/perf-tester.md",
 )
 
 CLAIMS: tuple[Claim, ...] = (
+    Claim(
+        claim="On the documented path, k6 load tests and ZAP scans are not aimed at a host that is not this machine unless "
+              "the owner names that host in QA_ALLOW_REMOTE_TARGET.",
+        stated_in="plugins/qa-flow/agents/perf-tester.md",
+        anchor="## Load and capacity — k6. NEVER production.",
+        kind=GUARANTEE,
+        enforced_by=("script:plugins/qa-flow/scripts/check_local_target.py",
+                     "mutation:check_local_target"),
+        refs=(1954,),
+        note="The agents run the check before k6 or ZAP; it is a step an agent can skip, so this is a tripwire "
+             "on the documented path and not a boundary. ZAP is tied to the checked value (-t \"$QA_BASE_URL\"); k6 is tied by "
+             "-e BASE_URL=\"$QA_BASE_URL\" and a script that reads __ENV.BASE_URL and never hard-codes a host (said in perf-tester.md; "
+             "a script that does hard-code one is outside the check). The model never sets the opt-in itself (said in both agents).",
+    ),
     Claim(
         claim="A qa-flow certification cannot unlock main without a passing first-boot operator "
               "walkthrough and a forged-request authorization sweep, both committed at dev and named "

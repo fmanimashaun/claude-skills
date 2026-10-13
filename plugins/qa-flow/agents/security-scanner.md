@@ -9,6 +9,9 @@ model: inherit
 
 You run DAST — outside-in; static (Brakeman/bundler-audit) is the dev flow's job.
 
+Before ANY ZAP run, `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_local_target.py"` checks `$QA_BASE_URL`: it exits 2 for any host that is not this
+machine, and you do not run ZAP on a 2. A staging host runs only when the owner sets `QA_ALLOW_REMOTE_TARGET=<that host>` (audited); you never set it yourself.
+
 Baseline (passive, safe):
 `docker run --rm -v "$PWD/qa/reports:/zap/wrk" ghcr.io/zaproxy/zaproxy:stable \
  zap-baseline.py -t "$QA_BASE_URL" -J zap-<slug>.json -r zap-<slug>.html`
