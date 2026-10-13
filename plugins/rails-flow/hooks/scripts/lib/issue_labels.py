@@ -1312,9 +1312,19 @@ def selftest() -> int:
             (link_dir / "cfg").symlink_to(r / ".git")
             ok, why = verdict(f"cd {r} && cat > {link_dir}/cfg/config <<'EOF'\nx\nEOF\n{rt}", s)
             check("a heredoc through a /tmp symlink into .git does not keep the cd (review of #1995)", not ok and "cannot tell which repository" in why, why)
-            (link_dir / "out").symlink_to(r)
-            ok, why = verdict(f"cd {r} && cat > {link_dir}/out/body.md <<'EOF'\nx\nEOF\n{rt}", s)
-            check("a heredoc through a /tmp symlink that lands outside /tmp does not keep the cd (review of #1995)", not ok and "cannot tell which repository" in why, why)
+            # The link must land OUTSIDE both temp roots, so the target is made under /var/tmp, which is outside /tmp and /private/tmp on macOS and on Linux. The selftest's own temp
+            # repository `r` is NOT a safe target: on Linux, inside the mutation harness's staged tempdir, it is itself under /tmp, so a link to it landed inside /tmp and the cd was
+            # rightly kept (the v1.157.1 release run: this row failed the UNMUTATED baseline and the guard read INERT). The precondition is asserted, so it cannot pass or fail vacuously.
+            outside = Path(tempfile.mkdtemp(dir="/var/tmp"))
+            try:
+                tmp_roots = {os.path.realpath(x) + "/" for x in ("/tmp", "/private/tmp")}
+                check("the fixture's directory for the symlink target lies outside both temp roots",
+                      not any(os.path.realpath(outside).startswith(x) for x in tmp_roots), f"{os.path.realpath(outside)} vs {sorted(tmp_roots)}")
+                (link_dir / "out").symlink_to(outside)
+                ok, why = verdict(f"cd {r} && cat > {link_dir}/out/body.md <<'EOF'\nx\nEOF\n{rt}", s)
+                check("a heredoc through a /tmp symlink that lands outside /tmp does not keep the cd (review of #1995)", not ok and "cannot tell which repository" in why, why)
+            finally:
+                shutil.rmtree(outside, ignore_errors=True)
         finally:
             shutil.rmtree(link_dir, ignore_errors=True)
         ok, why = verdict(f"cd {r} && {body_cat}{rt}", s)
