@@ -42,6 +42,7 @@ import argparse
 import dataclasses
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -582,9 +583,19 @@ STARVED_PREFIX = "STARVED: "
 
 
 def selftest_timed_out(output: str | None) -> bool:
-    """True when a selftest's own output says one of its subprocess calls ran out of time (`TimeoutExpired ... timed out after N seconds`)."""
-    text = output or ""
-    return "TimeoutExpired" in text and "timed out after" in text
+    """True when EVERY failure in a selftest's output is one of its own subprocess calls running out of time (`TimeoutExpired ... timed out after N seconds`).
+
+    A real failure row beside a timeout row is a failure (#2014): the substring test alone read that mix as STARVED and hid an INERT guard behind a loaded machine."""
+    lines = [line for line in (output or "").splitlines() if line.strip()]
+    timeouts = [line for line in lines if "TimeoutExpired" in line and "timed out after" in line]
+    if not timeouts:
+        return False
+    rest = [line for line in lines if line not in timeouts and not _SELFTEST_SUMMARY.search(line)]
+    return not any(_FAILURE_LINE.search(line) for line in rest)
+
+
+_SELFTEST_SUMMARY = re.compile(r"FAILED --|failure\(s\)|checks? passed|STARVED")      # a selftest's own tally line: it counts the failures, it is not one
+_FAILURE_LINE = re.compile(r"^\s*[-*] |fail|error|assert|traceback", re.IGNORECASE)    # a failure row (`  - label: ...`) or the words a failure is reported in
 
 
 def starved(message: str) -> list[str]:
