@@ -11,6 +11,54 @@ GUARD = Guard(
     selftest="scripts/check_mcp_annotations.py",
     mutations=(
         Mutation(
+            "a registry is found by its last name, so another module's ALL stands for Mcp::Tools::ALL (#1988, dd)",
+            'if a and "::".join([n for _, n in stack] + [a["lhs"]]) == path:',
+            'if a and "::".join([n for _, n in stack] + [a["lhs"]]) == path or a and a["lhs"].split("::")[-1] == path.split("::")[-1]:',
+            "registry: another module's ALL is not the declared Mcp::Tools::ALL",
+        ),
+        Mutation(
+            'anything may follow the closing bracket, so `[A] + EXTRA` serves EXTRA unread (#1988, dd)',
+            '    if after not in ("", ".freeze") or re.match(r"[.&+\\-|*]", following):',
+            '    if False:',
+            'registry: a literal head with an unread tail',
+        ),
+        Mutation(
+            'a chained call on the next line is not read as more of the list (#1988, dd)',
+            '    if after not in ("", ".freeze") or re.match(r"[.&+\\-|*]", following):',
+            '    if after not in ("", ".freeze"):',
+            'registry: a list followed by `.concat(EXTRA)` on the next line',
+        ),
+        Mutation(
+            'a registry grown after its definition is read as the literal list (#1988, dd)',
+            '    if any(re.search(rf"(?<![\\w])(?:[A-Z]\\w*::)*{last}{GROWN}", t) for _, t, _ in parsed):',
+            '    if False:',
+            'registry: `ALL << Rogue` after the definition',
+        ),
+        Mutation(
+            '`push` is not read as growing the registry (#1988, dd)',
+            '(?:push|append|',
+            '(?:append|',
+            'registry: `ALL.push(Rogue)` after the definition',
+        ),
+        Mutation(
+            '`+=` is not read as rewriting the registry (#1988, dd)',
+            '(?:<<|\\+=|\\|=|',
+            '(?:<<|\\|=|',
+            'registry: `ALL += [Rogue]` after the definition',
+        ),
+        Mutation(
+            'the declaration is read inside a string literal too (#1988, dd)',
+            'span = "\\n".join(_comment(ln) for ln in raw[max(first - 1, 0) : last + 1])',
+            'span = "\\n".join(raw[max(first - 1, 0) : last + 1])',
+            'registry: the declaration inside a string is not a declaration',
+        ),
+        Mutation(
+            'a `#` inside a string is taken for the start of a comment (#1988, dd)',
+            '        elif ch in "\\"\'":\n            quote = ch\n        elif ch == "#":\n            return line[i:]',
+            '        elif ch == "#":\n            return line[i:]',
+            'registry: the declaration inside a string is not a declaration',
+        ),
+        Mutation(
             'a declared registry stops being checked against the tool classes found (#1988)',
             'fs, us = _registry(parsed, mark["const"], tools, concrete)',
             'fs, us = [], []',
