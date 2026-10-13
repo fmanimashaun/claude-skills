@@ -121,6 +121,23 @@ def main() -> int:
         check("qa-status: where the gate cannot be run, the banner says so and does NOT claim cleared for main",
               "could not be run" in said and '"cleared for main" is not claimed' in said and "CERTIFIED" not in said, f"banner: {said!r}")
 
+    # 3b. A gate that cannot judge in time, and one that answers 0 without confirming the certification, are not "cleared" either, and say what happened (59's review of #1977).
+    with TemporaryDirectory(prefix="qa-status-") as td:
+        w = World(Path(td))
+        w.commit_stamp()
+        w.point_origin()
+        for stub_name, body, want, label in (
+                ("slow", 'echo "BLOCKED by qa-flow release gate: the gate took longer than 6s, and this command looks like a promotion to main, so it is refused rather than guessed at." >&2\nexit 2\n',
+                 "could not be judged in time", "a gate that hits its deadline is reported as unable to judge in time, not as a refusal"),
+                ("silent", "exit 0\n", "allowed it for another reason; certification not shown", "a gate that answers 0 without confirming the certification is not cleared, and says so")):
+            root = Path(td) / f"plugin-{stub_name}"
+            (root / "scripts").mkdir(parents=True)
+            (root / "hooks" / "scripts").mkdir(parents=True)
+            (root / "scripts" / "read_certification.py").write_text((PLUGIN / "scripts" / "read_certification.py").read_text())
+            (root / "hooks" / "scripts" / "release-gate.sh").write_text("#!/bin/bash\n" + body)
+            said = w.banner(plugin_root=root)
+            check(f"qa-status: {label}", want in said and "cleared for main\" is not claimed" in said and "CERTIFIED" not in said and "would refuse" not in said, f"banner: {said!r}")
+
     # 4. Controls: no stamp, and a stamp that is not PASS, keep the messages they always had.
     with TemporaryDirectory(prefix="qa-status-") as td:
         w = World(Path(td))

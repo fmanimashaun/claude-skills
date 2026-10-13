@@ -36,7 +36,12 @@ if [ -n "$devsha" ] && [ "$verdict" = "PASS" ]; then
     echo "- qa-flow: dev ($devsha) is CERTIFIED — the release gate's own check passes, cleared for main."
   elif [ "$rc" = 2 ]; then
     reason="$(printf '%s' "$said" | grep -m1 'BLOCKED by qa-flow release gate' | sed 's/^BLOCKED by qa-flow release gate: //' | cut -c1-240)"
-    echo "- qa-flow: dev ($devsha) has a PASS stamp, but the release gate would refuse a promotion: ${reason:-no reason given}"
+    case "$reason" in
+      "the gate took longer than "*) echo "- qa-flow: dev ($devsha) has a PASS stamp, but the release gate could not be judged in time, so \"cleared for main\" is not claimed — retry, or run /qa-flow:certify." ;;
+      *) echo "- qa-flow: dev ($devsha) has a PASS stamp, but the release gate would refuse a promotion: ${reason:-no reason given}" ;;
+    esac
+  elif [ "$rc" = 0 ]; then
+    echo "- qa-flow: dev ($devsha) has a PASS stamp; the release gate allowed it for another reason; certification not shown, so \"cleared for main\" is not claimed."
   else
     echo "- qa-flow: dev ($devsha) has a PASS stamp, but the release gate's check could not be run here (exit $rc), so \"cleared for main\" is not claimed — /qa-flow:certify or retry."
   fi

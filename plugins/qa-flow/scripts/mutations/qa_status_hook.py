@@ -28,6 +28,18 @@ GUARD = Guard(
             "a PASS stamp whose release-only evidence has a HOLE",
         ),
         Mutation(
+            "a deadline exit is reported as a refusal again",
+            '''      "the gate took longer than "*) echo''',
+            '''      "NEVER MATCHES"*) echo''',
+            "a gate that hits its deadline is reported as unable to judge in time",
+        ),
+        Mutation(
+            "an allow with no confirmation falls into the could-not-be-run message again",
+            '''  elif [ "$rc" = 0 ]; then''',
+            '''  elif false; then''',
+            "a gate that answers 0 without confirming the certification",
+        ),
+        Mutation(
             "a gate that could not be run still reads as an allow",
             """  said=""; rc=1""",
             """  said="certification valid for"; rc=0""",
