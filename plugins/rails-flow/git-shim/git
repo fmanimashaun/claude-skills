@@ -201,8 +201,8 @@ find_top() {
   PREFIX="$("$real" "${GLOBALS[@]}" rev-parse --show-prefix 2>/dev/null)" || PREFIX=""
 }
 
-# THE FIXTURE EXEMPTION (#1982, the coordinator's decision (b)). A hermetic fixture builds its own temp repository and stages it whole (`git add -A`) and resets it (`reset --hard`),
-# which the rules above refuse everywhere, so every selftest that does either failed when run from the Claude Code Bash tool (the shim is first on PATH there). `fixture_git.run`
+# THE FIXTURE EXEMPTION (#1982, the coordinator's decision (b)). A hermetic fixture builds its own temp repository and stages it whole (`git add -A`),
+# which the rules above refuse everywhere, so every selftest that does it failed when run from the Claude Code Bash tool (the shim is first on PATH there). `fixture_git.run`
 # names the repository exactly, with GIT_DIR and GIT_WORK_TREE. The exemption holds ONLY when ALL of these are true, each resolved PHYSICALLY:
 #   1. GIT_DIR and GIT_WORK_TREE are both set, and both lie STRICTLY INSIDE the temp root (one inside and one outside refuses);
 #   2. the temp root is valid (`temp_root_ok`: TMPDIR set, not `/` or HOME, not containing the session's project);
@@ -411,9 +411,9 @@ decide() {
     add|reset|checkout|switch|restore|clean|rm|stash|checkout-index|read-tree|config|commit|push|merge|rebase|pull|am|cherry-pick|revert) ;;
     *) return 0 ;;
   esac
-  # THE FIXTURE EXEMPTION (above) covers the rules that protect a WORKING TREE from data loss, and only those: staging it whole, `reset --hard`, forced checkout and switch, `restore`/`checkout`
-  # of paths, `clean -f`, `rm` of the root, `stash drop`/`clear`, `checkout-index -f`, `read-tree --reset`. The rules about hooks, config and `--no-verify` are not exempt in a fixture either.
-  case "$sub" in add|reset|checkout|switch|restore|clean|rm|stash|checkout-index|read-tree) fixture_repo && return 0 ;; esac
+  # THE FIXTURE EXEMPTION (above) covers staging only (`add`). `reset --hard`, `clean`, forced checkout and the other working-tree rules, and the rules about hooks, config and
+  # `--no-verify`, are NOT exempt in a fixture: widening it waits for an adversary pass (the coordinator's ruling on #1994).
+  case "$sub" in add) fixture_repo && return 0 ;; esac
   analyse "$sub" "$@"
   case "$sub" in
     add)

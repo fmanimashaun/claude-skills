@@ -604,19 +604,16 @@ def _(base):
     (mk / "stray.txt").write_text("s\n")
     (mk / ".git" / "claude-session-project").write_text("")
     attempt("a repository carrying the session marker, with CLAUDE_SESSION_PROJECT_TOP pointing elsewhere", mk, env_for(mk, CLAUDE_SESSION_PROJECT_TOP=str(home)), ok=False)
-    attempt("the same, `reset --hard`", mk, env_for(mk, CLAUDE_SESSION_PROJECT_TOP=str(home)), ok=False, args=("reset", "--hard"), stray_check=False)
     lk = tmproot / "linked-gd"                      # a linked worktree's git dir: its marker lives in the COMMON dir named by `commondir`
     lk.mkdir()
     (lk / "commondir").write_text("../marked/.git\n")
     attempt("a linked worktree of a repository carrying the session marker", mk, env_for(mk, gd=lk), ok=False, stray_check=False)
     # outside a fixture the whole-tree add is still refused, and the other rules still hold INSIDE the exempt repository
     attempt("no GIT_DIR/GIT_WORK_TREE at all", fx, {}, ok=False)
-    # the exemption covers the rules that protect a WORKING TREE from data loss, in the fixture's own repository (and refuses them everywhere else, above) ...
-    attempt("`reset --hard` in the fixture", fx, env_for(fx), ok=True, args=("reset", "--hard"), stray_check=False)
-    attempt("`clean -fd` in the fixture", fx, env_for(fx), ok=True, args=("clean", "-fd"), stray_check=False)
-    attempt("`reset --hard` with the work tree outside TMPDIR", outside, env_for(outside), ok=False, args=("reset", "--hard"), stray_check=False)
-    attempt("`clean -fd` in a sibling named like TMPDIR's", evil / "fx", env_for(evil / "fx"), ok=False, args=("clean", "-fd"), stray_check=False)
-    # ... and NOT the rules about hooks, config and --no-verify, even there
+    # the exemption covers STAGING only: the working-tree rules stay refused in a fixture's own repository (widening them waits for an adversary pass)
+    for what, args in (("`reset --hard`", ("reset", "--hard")), ("`clean -fd`", ("clean", "-fd")), ("`checkout -f`", ("checkout", "-f")), ("`stash clear`", ("stash", "clear"))):
+        attempt(f"{what} is not exempt in the fixture", fx, env_for(fx), ok=False, args=args, stray_check=False)
+    # ... nor the rules about hooks, config and --no-verify
     attempt("`commit --no-verify` is not exempt in the fixture", fx, env_for(fx), ok=False, args=("commit", "--no-verify", "-m", "x", "--allow-empty"), stray_check=False)
     attempt("`config core.hooksPath` is not exempt in the fixture", fx, env_for(fx), ok=False, args=("config", "core.hooksPath", "/tmp/h"), stray_check=False)
 
