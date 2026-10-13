@@ -392,7 +392,9 @@ def _(base):
     r = Repo(base, "cfg")
     for args in (("config", "core.hooksPath", "/dev/null"), ("config", "--local", "core.hookspath", "x"), ("config", "--get", "core.hooksPath"),
                  ("config", "include.path", "/tmp/x"), ("config", "includeIf.gitdir:/x/.path", "y"), ("-c", "include.path=/tmp/x", "status"),
-                 ("-c", "includeIf.gitdir:/x/.path=y", "status"), ("--config-env=include.path=X", "status")):
+                 ("-c", "includeIf.gitdir:/x/.path=y", "status"), ("--config-env=include.path=X", "status"),
+                 ("-c", "core.fsmonitor=/tmp/x", "status"), ("-c", "CORE.FSMONITOR=/tmp/x", "status"), ("-c", "core.sshCommand=/tmp/x", "status"),
+                 ("-c", "Core.SshCommand=/tmp/x", "status"), ("--config-env=core.fsmonitor=X", "status")):
         refused(r, label, *args, why="can switch the #1789 git hooks off")
     # #1982: the pairs are READ, not refused on sight. What can switch the hooks off, or the shim cannot read, is refused; the rest passes.
     for env in ({"GIT_CONFIG_PARAMETERS": "'user.name'='x'"}, {"GIT_CONFIG_GLOBAL": "/tmp/cfg"}, {"GIT_CONFIG_SYSTEM": "/tmp/cfg"}, {"GIT_CONFIG_FOO": "1"},
@@ -400,6 +402,10 @@ def _(base):
                 {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "CORE.HOOKSPATH", "GIT_CONFIG_VALUE_0": "/dev/null"},
                 {"GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "user.name", "GIT_CONFIG_VALUE_0": "x", "GIT_CONFIG_KEY_1": "include.path", "GIT_CONFIG_VALUE_1": "/tmp/x"},
                 {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "includeIf.gitdir:/x/.path", "GIT_CONFIG_VALUE_0": "y"},
+                {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "/tmp/x"},
+                {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "CORE.FSMONITOR", "GIT_CONFIG_VALUE_0": "/tmp/x"},
+                {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.sshCommand", "GIT_CONFIG_VALUE_0": "/tmp/x"},
+                {"GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "user.name", "GIT_CONFIG_VALUE_0": "x", "GIT_CONFIG_KEY_1": "CORE.SSHCOMMAND", "GIT_CONFIG_VALUE_1": "/tmp/x"},
                 {"GIT_CONFIG_COUNT": "abc"}, {"GIT_CONFIG_COUNT": "1000000"}, {"GIT_CONFIG_COUNT": "-1"}):
         p = r.g("status", env=env)
         check(label, p.returncode != 0 and "git-shim" in p.stderr, f"{env} in the environment was not refused: exit {p.returncode}: {p.stderr.strip()[:120]}")

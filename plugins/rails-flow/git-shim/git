@@ -17,7 +17,7 @@
 #   checkout-index  -f / --force            read-tree  --reset together with -u
 #   commit | push | merge | rebase | pull | am | cherry-pick | revert   --no-verify (and `commit -n`; `-n` is a dry run or --no-stat elsewhere)
 #   config     any `git config` that names core.hooksPath or include.* / includeIf.*
-#   any        -c / --config-env naming core.hooksPath, include.* or includeIf.*; the same keys in the GIT_CONFIG_COUNT/KEY_n/VALUE_n pairs of the
+#   any        -c / --config-env naming core.hooksPath, include.*, includeIf.*, core.fsmonitor or core.sshCommand; the same keys in the GIT_CONFIG_COUNT/KEY_n/VALUE_n pairs of the
 #              environment, GIT_CONFIG_PARAMETERS, and GIT_CONFIG_GLOBAL / GIT_CONFIG_SYSTEM naming anything but /dev/null (#1982: a hermetic fixture's
 #              pairs, `user.name` and the like, pass; refusing every GIT_CONFIG_* variable on sight refused even `git init` in every such fixture)
 # PATHSPECS (add, checkout, restore): a PLAIN RELATIVE PATH only (an absolute path counts as one only when it resolves, physically, to a path
@@ -79,6 +79,13 @@ refuse() {
 # Case-insensitive glob match, switched on only for the one test (a global nocasematch would make `-A` and `-a` the same option).
 ci_match() { local r; shopt -s nocasematch; [[ $1 == $2 ]]; r=$?; shopt -u nocasematch; return $r; }
 
+# A config key that can switch the #1789 hooks off or run a program: hooksPath, includes, and (#1982) the two that name a command, core.fsmonitor
+# (git runs it on status/add) and core.sshCommand (git runs it on fetch/push). Case-insensitive: git folds the section and key names.
+CFG_DANGER() {
+  ci_match "$1" "core.hookspath*" || ci_match "$1" "include.*" || ci_match "$1" "includeif.*" \
+    || ci_match "$1" "core.fsmonitor*" || ci_match "$1" "core.sshcommand*"
+}
+
 # GIT_CONFIG_* in the environment can define a hooks path and includes: READ them, refuse what can switch the #1789 hooks off (#1982). A hermetic
 # fixture exports GIT_CONFIG_COUNT/KEY_n/VALUE_n (`user.name`, `core.autocrlf`, ...) to keep its git independent of the host, and refusing every
 # GIT_CONFIG_* variable on sight refused `git init` itself in each of them. Aliases the pairs define are resolved below with `git config --get`,
@@ -99,8 +106,8 @@ esac
 cfg_i=0
 while [ "$cfg_i" -lt "$cfg_count" ]; do
   cfg_var="GIT_CONFIG_KEY_$cfg_i"; cfg_key="${!cfg_var:-}"
-  if ci_match "$cfg_key" "core.hookspath*" || ci_match "$cfg_key" "include.*" || ci_match "$cfg_key" "includeif.*"; then
-    RULE="$cfg_var=$cfg_key: core.hooksPath and include.* in the environment can switch the #1789 git hooks off"; refuse "${ORIG[@]}"
+  if CFG_DANGER "$cfg_key"; then
+    RULE="$cfg_var=$cfg_key: core.hooksPath, include.*, core.fsmonitor and core.sshCommand in the environment can switch the #1789 git hooks off or run a program"; refuse "${ORIG[@]}"
   fi
   cfg_i=$((cfg_i + 1))
 done
@@ -341,8 +348,8 @@ decide() {
     config)
       local x
       for x in "$@"; do
-        if ci_match "$x" "*core.hookspath*" || ci_match "$x" "*include.path*" || ci_match "$x" "*includeif.*"; then
-          RULE="git config naming core.hooksPath or include.* can switch the #1789 git hooks off"; return 1
+        if ci_match "$x" "*core.hookspath*" || ci_match "$x" "*include.path*" || ci_match "$x" "*includeif.*" || ci_match "$x" "*core.fsmonitor*" || ci_match "$x" "*core.sshcommand*"; then
+          RULE="git config naming core.hooksPath, include.*, core.fsmonitor or core.sshCommand can switch the #1789 git hooks off"; return 1
         fi
       done ;;
     commit|push|merge|rebase|pull|am|cherry-pick|revert)
@@ -352,7 +359,6 @@ decide() {
 }
 
 GLOBALS=()
-CFG_DANGER() { ci_match "$1" "core.hookspath*" || ci_match "$1" "include.*" || ci_match "$1" "includeif.*"; }
 
 # evaluate <git arguments...>: 0 to let the command run, 1 (with RULE set) to refuse it.
 evaluate() {
@@ -368,11 +374,11 @@ evaluate() {
       -c|--config-env)
         GLOBALS[${#GLOBALS[@]}]="$a"; i=$((i + 1))
         if [ "$i" -lt "$n" ]; then
-          if CFG_DANGER "${ARGV[$i]}"; then RULE="$a ${ARGV[$i]}: core.hooksPath and include.* on the command line can switch the #1789 git hooks off"; return 1; fi
+          if CFG_DANGER "${ARGV[$i]}"; then RULE="$a ${ARGV[$i]}: core.hooksPath, include.*, core.fsmonitor and core.sshCommand on the command line can switch the #1789 git hooks off or run a program"; return 1; fi
           GLOBALS[${#GLOBALS[@]}]="${ARGV[$i]}"; i=$((i + 1))
         fi ;;
       --config-env=*)
-        if CFG_DANGER "${a#--config-env=}"; then RULE="$a: core.hooksPath and include.* on the command line can switch the #1789 git hooks off"; return 1; fi
+        if CFG_DANGER "${a#--config-env=}"; then RULE="$a: core.hooksPath, include.*, core.fsmonitor and core.sshCommand on the command line can switch the #1789 git hooks off or run a program"; return 1; fi
         GLOBALS[${#GLOBALS[@]}]="$a"; i=$((i + 1)) ;;
       --version|--help|-h|--exec-path|--html-path|--man-path|--info-path|--list-cmds=*) return 0 ;;
       -*) GLOBALS[${#GLOBALS[@]}]="$a"; i=$((i + 1)) ;;
