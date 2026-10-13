@@ -115,7 +115,8 @@ replacement).
   other event the dot is read as part of the event name (that is how
   jQuery-style `jquery.custom.event->x#y` works), so `click.esc->x#y` waits on
   a `click.esc` event that never fires. The complete filter set is
-  `enter tab esc space up down left right home end page_up page_down`, plus
+  `enter tab esc space up down left right home end page_up page_down` (`page_up` and
+  `page_down` since **3.2.2**, #677), plus
   any single letter `a`–`z` or digit `0`–`9`. **There are no function-key
   filters in the default schema.** An app can add keys by starting with its own
   `keyMappings`: `Application.start(document.documentElement, { ...defaultSchema,
@@ -129,8 +130,8 @@ replacement).
 - **Modifiers** (`keydown.ctrl+k`, `.meta+`, `.shift+`, `.alt+`) match
   **exactly** on all four of meta/ctrl/alt/shift, so `keydown.ctrl+k` stays
   silent while Shift is also held — spell out `keydown.ctrl+shift+k` if you
-  want that too. Mouse events take the same modifiers as a prefix:
-  `ctrl+click->x#y`.
+  want that too. Mouse events take the same modifiers as a prefix
+  (`ctrl+click->x#y`) since **3.2.2** (#665); on 3.2.0 and 3.2.1 that syntax does nothing.
 - **A key filter is not a type check.** `Binding#willBeInvokedByEvent` consults
   the filter only inside `event instanceof KeyboardEvent`
   (`src/core/binding.ts`, Stimulus 3.2.0+ — filters did not exist before
