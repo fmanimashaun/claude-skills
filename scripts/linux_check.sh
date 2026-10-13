@@ -25,8 +25,9 @@ DOCKER="${LINUX_CHECK_DOCKER:-docker}"
 # reported it green because the container had no Postgres client (release run 38297902322). So the container installs them, and CANARY_TOOLS are asserted
 # present before any guard runs: an image that loses one is a refusal with a sentence, never a green that means nothing. The tools are `trusted_which`
 # lookups in `plugins/rails-flow/scripts/test_preflight.py` (`pg_isready`, `lsof`, `ps`). node, ruby and zsh are not here: a guard that needs them is proven by CI (see above).
-HOST_PACKAGES="postgresql-client lsof procps"
-CANARY_TOOLS="pg_isready lsof ps"
+# zsh (#1971): `git_shim_selftest.py` checks the SessionStart hook under zsh too, and without it the row is skipped, so the container installs it.
+HOST_PACKAGES="postgresql-client lsof procps zsh"
+CANARY_TOOLS="pg_isready lsof ps zsh"
 
 # --check-tools <name>...: assert each is on PATH, and nothing else (it never touches docker). The container runs it on itself before a guard, so the
 # canary's refusal can be exercised without a container. No names is a usage error: zero inputs checked is not a pass.

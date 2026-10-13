@@ -478,9 +478,13 @@ def _(base):
     check(label, p.returncode == 0 and env_file.exists(), f"exit {p.returncode}, env file {'written' if env_file.exists() else 'NOT written'}: {p.stderr.strip()[:160]}")
     r = subprocess.run(["bash", "-c", f'. "{env_file}"; command -v git'], capture_output=True, text=True)
     check(label, r.stdout.strip() == str(root / "git-shim" / "git"), f"`command -v git` printed {r.stdout.strip()!r}")
-    r = subprocess.run(["zsh", "-c", f'. "{env_file}"; command -v git'], capture_output=True, text=True) if shutil.which("zsh") else None
-    if r is not None:
+    # zsh is the maintainer's shell, so the row is worth running wherever zsh exists. Where it does not, the row is SAID to be skipped and is
+    # not counted, never silently dropped (#1971: the Linux check had no zsh, so this selftest read 313 checks there against 314 here, green).
+    if shutil.which("zsh"):
+        r = subprocess.run(["zsh", "-c", f'. "{env_file}"; command -v git'], capture_output=True, text=True)
         check(label, r.stdout.strip() == str(root / "git-shim" / "git"), f"under zsh, `command -v git` printed {r.stdout.strip()!r}")
+    else:
+        print(f"  skip: zsh is not on PATH, so \"{label}\" did NOT run under zsh -- not a pass.", file=sys.stderr)
 
 
 @case("hook: running the SessionStart hook again does not repeat the line")
