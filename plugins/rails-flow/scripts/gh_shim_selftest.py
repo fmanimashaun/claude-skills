@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -132,6 +133,13 @@ def _no_record(base: Path) -> None:
     for cmd in ("gh pr ready --undo --web 5", "gh pr ready 5 --undo -R o/r", "gh pr ready --undo=false 5"):
         ok, why = refused(fx, cmd)
         check(f"shim: `{cmd}`: `--undo` does not excuse the other arguments, and `--undo=false` is not `--undo`", ok, why)
+    # With NO record the mutant `--undo=false` counts as `--undo` is refused anyway (nothing to judge), so the checks above cannot see it.
+    # A GREEN record makes the difference observable: `--undo=false` is not a plain PR number and must still be refused.
+    fx.record()
+    ok, why = refused(fx, "gh pr ready --undo=false 5")
+    check("shim: `gh pr ready --undo=false 5` is refused even with a GREEN record: `--undo=false` is not `--undo`", ok, why)
+    ok, why = allowed(fx, "gh pr ready 5")
+    check("shim: CONTROL: the same green record lets a plain `gh pr ready 5` through", ok, why)
 
 
 @case("green record")
@@ -350,14 +358,21 @@ def _two_shims(base: Path) -> None:
     copy_dir.mkdir()
     shutil.copy(SHIM_DIR / "gh", copy_dir / "gh")
     env = {"PATH": f"{SHIM_DIR}{os.pathsep}{copy_dir}{os.pathsep}{fx.bin}{os.pathsep}{os.environ['PATH']}"}
+    # A real loop (two shims exec each other) never ends; a loaded machine only takes longer. A fixed 8 s limit read the sweep's load as a
+    # loop (#1156 sweep: the UNMUTATED fixture timed out), so the limit is derived from one measured shim hop under the SAME load.
+    fx.reset()
+    t0 = time.monotonic()
+    one = subprocess.run(["bash", "-c", "gh pr list"], cwd=fx.repo, env=fx.env, capture_output=True, text=True, timeout=120)
+    hop = time.monotonic() - t0
+    limit = max(30.0, 20 * hop)
     fx.reset()
     try:
-        r = subprocess.run(["bash", "-c", "gh pr list"], cwd=fx.repo, env={**fx.env, **env}, capture_output=True, text=True, timeout=8)
+        r = subprocess.run(["bash", "-c", "gh pr list"], cwd=fx.repo, env={**fx.env, **env}, capture_output=True, text=True, timeout=limit)
         looped = False
     except subprocess.TimeoutExpired:
         r, looped = None, True
     check("shim: a second copy of the shim on PATH is not taken for the real gh (it would exec itself forever)", not looped and r is not None and r.returncode == 0 and fx.ran() == ["pr list"],
-          "timed out: the two shims exec each other" if looped else f"rc {r.returncode}, ran {fx.ran()}")
+          f"timed out after {limit:.0f}s (one hop took {hop:.1f}s, rc {one.returncode}): the two shims exec each other" if looped else f"rc {r.returncode}, ran {fx.ran()}")
 
 
 @case("interpreter")

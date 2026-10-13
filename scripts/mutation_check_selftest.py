@@ -1017,6 +1017,10 @@ def run() -> int:
 
     real_guards = mc.GUARDS
     mc.GUARDS = (StandInGuard,)
+    # AN EMPTY DIRECTORY OF ITS OWN for the --merge-shards row (v1.156.0 sweep: its mutant timed out at 300 s). The row used the shared system
+    # temp directory, which the unmutated refusal never reads; with the refusal removed, `rglob("shard-*.json")` walked every session's temp
+    # files on a busy maintainer machine. Empty, the mutant fails at once (no shards) and the row stays a pure argument check.
+    merge_dir = tempfile.mkdtemp(prefix="merge-shards-empty-")
     try:
         for label, argv, env, want in (
                 ("--rebaseline outside CI with no --host is refused", ["--rebaseline"], {"GITHUB_ACTIONS": None}, 2),
@@ -1025,7 +1029,7 @@ def run() -> int:
                 ("--shard 5/4 is refused", ["--shard", "5/4"], {}, 2),
                 ("--shard-out without --shard is refused", ["--shard-out", "x.json"], {}, 2),
                 ("--rebaseline with --shard is refused (the summary step records)", ["--rebaseline", "--host", "lab", "--shard", "1/2"], {}, 2),
-                ("--merge-shards without --expect-shards is refused", ["--merge-shards", tempfile.gettempdir()], {}, 2)):
+                ("--merge-shards without --expect-shards is refused", ["--merge-shards", merge_dir], {}, 2)):
             _tick()
             got = quietly(argv, **env)
             if got != want:
@@ -1099,6 +1103,7 @@ def run() -> int:
                 mc.COST_BASELINE, mc.commit_id, mc.inc.post_proof = real_state
     finally:
         mc.GUARDS = real_guards
+        shutil.rmtree(merge_dir, ignore_errors=True)
 
     # ---- 1i. THE PATH CI RUNS, end to end: trusted skip, change, --full, harness, shards, release mode (#1738, #1739) ----
     guard, root = _fixture_guard((mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),))

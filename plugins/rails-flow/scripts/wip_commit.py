@@ -663,7 +663,11 @@ def selftest() -> int:
         local_config("diff.external", "diff.external", "@PROG@")
         local_config("a difftool command", "difftool.evil.cmd", "@PROG@")
         local_config("a pager for a command", "pager.log", "@PROG@")
-        local_config("core.worktree redirecting git elsewhere", "core.worktree", "/tmp")
+        # A directory of its own, never `/tmp`: on Linux the fixture's HOME lives under `/tmp`, so a repository redirected to it contains HOME and the
+        # hook refuses it for THAT reason (skip:home-inside-repository) before it reads the config the row is about (macOS' temp dir is not under /tmp).
+        redirected = base / "redirected-worktree"
+        redirected.mkdir()
+        local_config("core.worktree redirecting git elsewhere", "core.worktree", str(redirected))
         # (review of 0aa91844) the hook's working directory may be a SUBDIRECTORY: an absolute PATH entry at repo/bin is outside repo/app but inside the project
         sub_repo = make_repo("sub-cwd")
         (sub_repo / "app").mkdir()
