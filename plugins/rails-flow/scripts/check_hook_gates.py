@@ -905,6 +905,24 @@ NEGATIVES_1568 = ['git add "app/x.rb" "spec/y.rb"', "git add 'x y' app/z.rb", 'g
                   'git add "app/models/user.rb"', "git add 'a.rb' 'b.rb'", 'git commit -m "fix"', 'git status "-s"']
 # #1706: the honest-mistake spellings beside a blocked one, each measured allowed on dev before this change; and #1708's force-with-lease
 # to a branch whose NAME contains main, which was blocked. Controls must keep their verdict.
+# #1982. Refused: the expansion sits in the words of the `git add` itself, however it is spelled.
+POSITIVES_1982 = ["V=-A; git add $V", "git add $(echo -A)", "git add f.txt $(echo -A)", "git add ~/x", "git add {a,b}", 'git add f.txt "$V"', 'git add f.txt "$(echo -A)"',
+                  'git add f.txt "`echo -A`"', "git add f.txt `echo -A`", 'git add "$@"', "git add $HOME", "git add f.txt$X", "git add f.txt && git add $V",
+                  "echo $X && git add $V", 'bash -c "git add $V"', "eval 'git add $V'", "git add f.txt\ngit add $V", "git -C /tmp add $V", "cd ~/x && git add -A",
+                  "cd ~/x && git add .", "git add -- .",
+                  # a redirect `&` is not a separator: the expansion stays in the add's own segment (a0's six on #1985)
+                  "git add top.txt 2>&1 $(echo .)", "git add -u 2>&1 $(echo -A)", "git add top.txt >&2 $V", "git add top.txt &>/dev/null $(echo :/)",
+                  "V=.; git add top.txt 2>&1 $V", "git add top.txt 2>&1 ~", "git add top.txt &>>f $V", "git add top.txt <&0 $V",
+                  # a redirect BEFORE the command does not hide it
+                  "2>&1 git add -A", ">/dev/null git add -A", "&>/dev/null git add .", "> out.txt git add -A", ">&2 git add :/"]
+# #1982. Passes: the `~`, `$`, `{` and `}` belong to ANOTHER command of the chain (a `cd ~/x`, a commit message, an echo), or to nothing that reaches the add.
+NEGATIVES_1982 = ["cd ~/x && git add -- docs/runbooks/stock-levels-deploy.md && git status --short", "cd ~/x && git add docs/runbooks/a-b.md && git status --short",
+                  "cd ~/x && python3 - <<'EOF'\nprint(1)\nEOF\ngit add -- docs/a.md; git commit -q -m \"x\"; git log --oneline -1",
+                  "git add -- f.txt && git commit -m \"$(cat <<'EOF'\nfeat: add {a,b} and ~ and $X\nEOF\n)\"", 'git add f.txt && git commit -m "$(echo wip)"',
+                  "git add f.txt; echo $(date)", "bash -c 'git add -- f.txt' && echo $(date)", "{ git add -- f.txt; }", "( cd ~/x && git add -- f.txt )",
+                  "git -C ~/x add -- f.txt", "git add f.txt\n# git add $V", "git add f.txt && echo ~ {a,b} $HOME",
+                  # a REAL `&` still separates: the expansion belongs to the other command
+                  "echo $V & git add f.txt", "git add f.txt & echo $V", "git add f.txt >o& echo ~", "echo $V 2>&1 & git add f.txt"]
 POSITIVES_1706 = ["git add /abs/path", "git add :/src/x.rb", "git add ':(top)src/x.rb'", "git add src/**/*.rb", "git add '*.*'", "git add '?'", "git add {.,x}", "git add $PWD",
                   "git add $(pwd)", "git add 'my file.rb'", "git add -f x.rb", "git add 'src/*/x.rb'", "git switch --disc dev", "git switch -fc x",
                   "git push --mir origin", "git push --prune origin", "git push origin 'refs/*:refs/*'", "git checkout --forc dev",
@@ -1019,6 +1037,34 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#1706): `{cmd}` is blocked like its plain sibling", run(cmd) == 2, said())
     for cmd in NEGATIVES_1706:
         check(f"guard-bash (#1706/#1708): CONTROL: `{cmd}` passes", run(cmd) == 0, said())
+    # #1982: THE TAINT BELONGS TO THE `git add` COMMAND'S OWN WORDS, not to the whole command. v1.156.0 refused any command holding a `git add` and a `~`, `$`, a backtick,
+    # `{` or `}` ANYWHERE, so `cd ~/wt && git add -- f` (a tilde in the cd) and `git add f && git commit -m "$(cat <<'EOF' ...)"` (the shape CLAUDE.md tells agents to commit with)
+    # were refused. The words of the add stay tainted in every spelling the normaliser can show: an unquoted `$V`, `$(...)`, a backtick, a brace, a tilde, and (through the
+    # opt-in marker view) a double-quoted span holding an expansion.
+    for cmd in POSITIVES_1982:
+        check(f"guard-bash (#1982): the expansion is IN the add's own words, `{cmd[:70]!r}` is blocked", run(cmd) == 2, said())
+    for cmd in NEGATIVES_1982:
+        check(f"guard-bash (#1982): CONTROL: the expansion belongs to ANOTHER command, `{cmd[:70]!r}` passes", run(cmd) == 0, said())
+    # An ABSOLUTE pathspec inside the repository the hook runs in is as plain as a relative one; the root, outside paths and `..` are not (needs a real repo as cwd).
+    with scratch_dir() as td:
+        repo = Path(td) / "repo"
+        fixture_git.init(repo, "-b", "main")
+        (repo / "src").mkdir()
+        (repo / "newdir").mkdir()
+        evil = Path(td) / "repo-evil"
+        evil.mkdir()
+        link = Path(td) / "linkto"
+        link.symlink_to(repo, target_is_directory=True)
+
+        def at_repo(cmd: str) -> int:
+            last["rc"], last["out"] = run_hook("guard-bash.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": cmd}}))
+            return last["rc"]
+        for cmd in (f"git add {repo}/src/a.rb", f"git add -- {repo}/newdir/f.txt", f"git add {repo}/src/", f"git add {link}/src/a.rb", f"git add -- {repo.resolve()}/src/a.rb"):
+            check(f"guard-bash (#1982): an absolute path STRICTLY INSIDE the repository passes: `{cmd[:80]}`", at_repo(cmd) == 0, said())
+        for cmd in (f"git add {repo}", f"git add {repo}/", f"git add {repo}/.", f"git add {repo}/..", f"git add {repo}/src/..", f"git add {link}", f"git add {evil}/a.txt",
+                    f"git add {td}", "git add /", "git add /etc/hosts", f"git add {repo}/*", f"git add {repo}/**", f"git add {repo}/nosuchdir/f.txt",
+                    f"git add {repo}/src/../../repo-evil/a.txt"):
+            check(f"guard-bash (#1982): an absolute path that is the root, outside it or leaves it is still blocked: `{cmd[:80]}`", at_repo(cmd) == 2, said())
     for cmd in POSITIVES_1792:
         check(f"guard-bash (#1792): the tripwire refuses `{cmd[:70]}`", run(cmd) == 2, said())
     for cmd in NEGATIVES_1792:

@@ -153,6 +153,10 @@ function peel(t, n,    i, w) {
   while (i <= n) {
     w = t[i]
     if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { i++; continue }
+    # A redirect BEFORE the command is not the command (#1982): `2>&1 git add -A` and `>/dev/null git add -A` run git. An operator alone takes the next
+    # word as its target, one with the target attached is a single word.
+    if (w ~ /^([0-9]*(>>|>&|<&|<>|>[|]|>|<)|&>>?)$/) { i += 2; continue }
+    if (w ~ /^([0-9]*(>>|>&|<&|<>|>[|]|>|<)|&>>?)./) { i++; continue }
     if (w == "{" || w == "!" || w == "if" || w == "then" || w == "elif" || w == "else" || w == "do" || w == "while" || w == "until") { i++; continue }
     if (w == "sudo")    { i = skipopts(t, n, i + 1, "-u -g -h -p -C -U -r -t -D -R -T --user --group --host --prompt --other-user --role --type --chdir --chroot --close-from --command-timeout"); continue }
     if (w == "env")     { i = skipopts(t, n, i + 1, "-u -C --unset --chdir"); continue }
@@ -207,6 +211,10 @@ _dequote() {
         j = dq_end(s, i + 1)
         if (j == 0) { out = out c; i++; continue }
         w = substr(s, i + 1, j - i - 1); if (simple(w)) out = out w
+        # #1982: OPT-IN (NC_MARK_EXPANSION=1, the taint view of the guard-bash git add rule). A double-quoted span holding `$` or a backtick is DELETED
+        # above, so an expansion inside it (`git add f "$V"`, `"$(echo -A)"`) left no trace in the segment. This view leaves one `$` where it was, so
+        # the rule can judge the words of the `git add` command ITSELF. Off by default: every other caller reads the text unchanged.
+        else if (MARKX && (index(w, "$") || index(w, "`"))) out = out "$"
         i = j + 1; continue
       }
       if (c == "$" && substr(s, i + 1, 1) == "\047") {
@@ -269,7 +277,7 @@ _dequote() {
     if (NQN) { for (k = 1; k <= NQN; k++) { QN++; QW[QN] = NQW[k]; QD[QN] = NQD[k]; QQ[QN] = NQQ[k] } QI = 1; INB = 1 }
   }
   END { if (BUF != "") { lex(BUF); print OUT } }
-  BEGIN { BAD = ";|&()<>$`\"\\# \t\n\r\f\v\047"; reset() }
+  BEGIN { MARKX = (ENVIRON["NC_MARK_EXPANSION"] == "1"); BAD = ";|&()<>$`\"\\# \t\n\r\f\v\047"; reset() }
   '
 }
 
@@ -471,9 +479,19 @@ _inner_strings() {
 # holding only \002, which _strip_heredocs and the lexer both treat as a hard reset.
 _join_strings() { awk 'NR > 1 { print "\002" } { gsub(/\002/, ""); gsub(/\001/, "\n"); print }'; }
 
+# A redirect `&` is not a separator (#1982): the one in `2>&1`, `>&2`, `<&0`, `N>&M`, `>&-`, `&>file` and `&>>file` is swapped for \005 so the
+# split below leaves `git add top.txt 2>&1 $(echo .)` in ONE segment and the expansion stays where the taint view can see it. `cmd & cmd`, `&&`
+# and `cmd >f& cmd` still split. sed with the byte spliced in from printf: a plain substitution, linear on the 50,000 x `<&>` inputs where a per-character awk loop doubled the time.
+_protect_redirect_amp() {
+  local p; p="$(printf '\005')"
+  sed -e "s/>&/>${p}/g" -e "s/<&/<${p}/g" -e "s/&>/${p}>/g"
+}
+
 _normalize_one() {
   _dequote | _strip_comments | _strip_heredocs \
+    | _protect_redirect_amp \
     | tr ';|&()' '\n' \
+    | tr '\005' '&' \
     | _peel
 }
 
