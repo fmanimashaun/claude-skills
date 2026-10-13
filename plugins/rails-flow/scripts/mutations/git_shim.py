@@ -84,6 +84,13 @@ GUARD = Guard(
                  '  session_repo_marked "$gd" && return 1          # the repository named', '  : # the repository named', 'stage its OWN temp repository whole'),
         Mutation('the marker of a linked worktree is not looked for in its common dir',
                  '  if [ -f "$gd/commondir" ]; then', '  if false; then', 'stage its OWN temp repository whole'),
+        # #2003: two rails-flow versions' shims on PATH called each other forever (every git call hung).
+        Mutation('a shim directory is not skipped by its physical name', 'case "$dd" in */git-shim) continue ;; esac', ':', 'do not call each other forever'),
+        Mutation('a shim directory is not skipped by the name it is written with', 'case "$d" in */git-shim|*/git-shim/) continue ;; esac', ':', 'do not call each other forever'),
+        Mutation('a shim is not recognised by its header line', 'case "$first" in *"# rails-flow git shim"*) continue ;; esac', ':', 'do not call each other forever'),
+        Mutation('the re-entry counter never refuses', 'if [ "$depth" -ge 16 ]; then', 'if [ "$depth" -ge 160000 ]; then', 'do not call each other forever'),
+        Mutation('the audited escape does not pass the counter on', '  RAILS_FLOW_GIT_SHIM_DEPTH=$((depth + 1)) exec "$real" "${ORIG[@]}"\nfi', '  exec "$real" "${ORIG[@]}"\nfi', 'do not call each other forever'),
+        Mutation('the final exec does not pass the counter on', '\nRAILS_FLOW_GIT_SHIM_DEPTH=$((depth + 1)) exec "$real" "${ORIG[@]}"\n', '\nexec "$real" "${ORIG[@]}"\n', 'do not call each other forever'),
         # the adversary pass on #1994 (atk1994.sh, atk1994b.sh): one mutant per bypass, and per variable / flag.
         Mutation('an environment redirection (index, objects, common dir, namespace) is not refused',
                  '    [ "${!v+x}" = x ] && return 1', '    :', 'stage its OWN temp repository whole'),
