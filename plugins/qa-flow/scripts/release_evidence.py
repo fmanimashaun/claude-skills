@@ -118,6 +118,8 @@ LOCATION = re.compile(r"^[\w./-]*\w\.\w+:\d+(?:-\d+)?$")
 # gate lets the stamp's own commit carry the evidence it names -- so a stamp naming `app` would carry
 # code past the gate (#1437 review). Relative, under this root, no `..`.
 EVIDENCE_ROOT = "qa/manual-tests/"
+# The certify flow writes its report here, named for the release (#1987): qa/certifications/<version>.md.
+REPORT_ROOT = "qa/certifications/"
 
 OTPAUTH = re.compile(r"otpauth://", re.I)
 # The LABEL is case-insensitive; the secret is upper-case base32, optionally in groups of 4 ("JBSW Y3DP
@@ -543,7 +545,16 @@ def check_stamp(stamp: Path, base: Path, grandfather: bool | None = None,
             except Unusable as exc:
                 findings.append(f"{label}: {exc}")
     # A directory ends in "/" (the gate matches it as a prefix); the sweep is ONE file, matched exactly.
-    return findings, [fb + "/", az], []
+    # #1987: the certify flow's own stamp step also writes, after the certified commit, the report the stamp
+    # names and a README beside the sweep. So the README in the sweep's folder (validated above as authz-<version>/)
+    # is allowed -- that ONE file, not the folder, so a code file beside the sweep is still refused -- and the report
+    # only in the one shape it is named for, qa/certifications/<version>.md: a report path pointing anywhere else
+    # (app/, or another release) stays extra and the gate still refuses it.
+    named = [fb + "/", az, az.rsplit("/", 1)[0] + "/README.md"]
+    raw_report = data.get("report")
+    if isinstance(raw_report, str) and not CONTROL.search(raw_report) and raw_report.strip() == f"{REPORT_ROOT}{version}.md":
+        named.append(raw_report.strip())
+    return findings, named, []
 
 
 # --------------------------------------------------------------------------- main
@@ -922,8 +933,18 @@ def selftest() -> int:
         base = {**old, "schema": STAMP_SCHEMA, "version": V}
         put({**base, **ev})
         rc, out, _ = run("--rev", "HEAD")
-        check("stamp: both layers passing -> 0 and the evidence paths on stdout",
-              (rc, out) == (0, f"qa/manual-tests/first-boot-{V}/\nqa/manual-tests/authz-{V}/sweep.csv"), (rc, out))
+        check("stamp: both layers passing -> 0 and the evidence paths on stdout (the sweep folder's README too, #1987)",
+              (rc, out) == (0, f"qa/manual-tests/first-boot-{V}/\nqa/manual-tests/authz-{V}/sweep.csv\nqa/manual-tests/authz-{V}/README.md"), (rc, out))
+        # #1987: the stamp's own report is carried only in the shape it is named for; anywhere else it stays extra.
+        put({**base, **ev, "report": f"qa/certifications/{V}.md"})
+        rc, out, _ = run("--rev", "HEAD")
+        check("stamp: the report named qa/certifications/<version>.md is an evidence path the gate allows (#1987)",
+              rc == 0 and f"qa/certifications/{V}.md" in out.splitlines(), (rc, out))
+        for bad in ("app/models/user.rb", f"qa/certifications/v0.0.1.md", f"qa/certifications/{V}.md\napp/x.rb", "../../x.md"):
+            put({**base, **ev, "report": bad})
+            rc, out, _ = run("--rev", "HEAD")
+            check(f"stamp: a report at {bad!r} is never an allowed path, so the gate still refuses a change there (#1987)",
+                  rc == 0 and not any(l in out.splitlines() for l in (bad, "app/x.rb", "app/models/user.rb")), (rc, out))
         put(base)
         rc, out, err = run("--rev", "HEAD")
         check("stamp: a schema-2 stamp naming no evidence is refused", rc == 1 and out == "" and "first_boot" in err,
