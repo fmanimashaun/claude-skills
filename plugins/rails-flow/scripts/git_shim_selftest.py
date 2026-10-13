@@ -583,6 +583,9 @@ def _(base):
     # the exemption
     attempt("a fixture repo named by GIT_DIR and GIT_WORK_TREE inside TMPDIR", fx, env_for(fx), ok=True)
     attempt("`add .` in the same repo", fx, env_for(fx), ok=True, args=("add", "."))
+    # the temp root is compared PHYSICALLY: a TMPDIR that is a symlink to the real temp root (macOS /var is /private/var) still exempts a fixture, because git reports physical paths
+    (base / "tmplink").symlink_to(tmproot, target_is_directory=True)
+    attempt("TMPDIR is a symlink to the real temp root: still exempt, the comparison is physical", fx, env_for(fx, TMPDIR=str(base / "tmplink")), ok=True)
     # every condition, each broken alone
     attempt("only GIT_WORK_TREE set", fx, env_for(fx, GIT_DIR=None), ok=False)
     attempt("only GIT_DIR set", fx, env_for(fx, GIT_WORK_TREE=None), ok=False)
