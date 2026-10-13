@@ -116,8 +116,14 @@ class MatchSequenceError(Exception):
 _TEMP_PATH = re.compile(r"/\S*?/(?:tmp\w+|" + re.escape(SCRATCH_PREFIX) + r"\w*)")
 
 
+# A label that carries how long its check took (`... (rc 0, 0.1s of at most 21s)`, the #1645 rows) differs between the two passes too: the seconds are
+# what the machine made of that run and the bound scales with its load, so under load `--match` refused the whole group, and a mutation guard read
+# every mutant of it as "cannot be narrowed" (a Linux run at load 40 to 67 refused 3 of hook_normalize_cmd's 40, #1980). The numbers are masked.
+_TIMING = re.compile(r"\b[0-9.]+s of at most [0-9.]+s\b")
+
+
 def _stable(label: str) -> str:
-    return _TEMP_PATH.sub("<tmp>", label)
+    return _TIMING.sub("<t>s of at most <m>s", _TEMP_PATH.sub("<tmp>", label))
 
 
 def skipping() -> bool:
@@ -6709,6 +6715,9 @@ def meta_checks() -> None:
           and _stable("no path in this label") == "no path in this label"
           and _stable("a /tmp/tmpAbCd1234/x") != _stable("b /tmp/tmpAbCd1234/x"),
           repr([_stable("x: git worktree remove /tmp/tmpAbCd1234/a"), _stable("x /private/tmp/tmpp47g")]))
+    check("a label's timing text is masked, so --match compares the survey with the run when the machine is busy (#1980)",
+          _stable("x (rc 0, 0.1s of at most 21s)") == _stable("x (rc 0, 11.4s of at most 10s)") and _stable("x (rc 0, 0.1s of at most 10s)") != _stable("y (rc 0, 0.1s of at most 10s)")
+          and _stable("took 3 s") == "took 3 s", repr(_stable("x (rc 0, 0.1s of at most 21s)")))
     with scratch_dir() as made:
         masked, cut = _stable(f"x: {made}/a"), _stable(f"x: {made[:made.index(SCRATCH_PREFIX) + len(SCRATCH_PREFIX)]}")
     check("a label's path under a REAL scratch directory is masked, whole or cut right after its prefix, so --match works for the labels that embed one (#1893)",

@@ -1,6 +1,9 @@
 """Mutation guard: hook_guard_worktree. Declared here, run by scripts/mutation_check.py (#1581).
 
 The wrapper: the rules (one issue at a time; no duplicate for a branch or an issue). Split out of one guard that re-ran ALL four worktree fixture groups per mutant: this one runs only `guard_worktree`.
+
+There is no mutant for the quote strip going back to `${cmd//[...]/}` (#1980): it is worse than quadratic only on bash 3.2 (macOS), and the harness runs on Linux too,
+where bash 5 does it in no time and such a mutant would SURVIVE. The fixture row (a 6 KB command of 1,500 quoted words) still catches it on macOS.
 """
 from mutation_types import Guard, Mutation  # noqa: F401
 
@@ -51,12 +54,6 @@ GUARD = Guard(
             '  if [[ $plain == *worktree* || $cmd == *"\\$\'"* ]]; then\n    echo "BLOCKED',
             '  if true; then\n    echo "BLOCKED',
             'does NOT mention `worktree` is let through',
-        ),
-        Mutation(
-            "the quotes are dropped with bash's global substitution again, which is worse than quadratic in the number of quotes: 2,000 quoted words took 35 s (#1980)",
-            'plain="$(printf \'%s\' "$cmd" | tr -d "\\047\\"\\\\\\\\" 2>/dev/null)" || plain="$cmd"',
-            'plain="${cmd//[\\\'\\"\\\\]/}"',
-            'a 6 KB command of 1,500 quoted words is let through',
         ),
         Mutation(
             'every command is taken for a worktree add, so a plain git status is judged and refused',
