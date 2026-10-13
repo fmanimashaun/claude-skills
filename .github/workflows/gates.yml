@@ -59,9 +59,10 @@ jobs:
             command -v "$bin" >/dev/null || { echo "::error::$bin is not on PATH — the markdown code linter would report INCOMPLETE and its findings would be silently skipped."; exit 1; }
             echo "$bin: $("$bin" --version)"
           done
-          # #1973: REPORTED, not asserted. The Linux check installs zsh (#1971) and selftests reach perl and shasum; whether the runner has them was
-          # unmeasured, and a selftest that skips a row without them would read the same as a pass here. This line is the measurement.
-          for bin in zsh perl shasum; do echo "host tool $bin: $(command -v "$bin" || echo ABSENT)"; done
+          # #1973: REPORTED, not asserted, for the tools selftests reach that the runner image ships (measured present, PR #1974's run). zsh is not
+          # here: the image has none, and the "zsh for the git shim's zsh row" step below installs it and ASSERTS it, so a line here would read ABSENT
+          # on every run, before that install.
+          for bin in perl shasum; do echo "host tool $bin: $(command -v "$bin" || echo ABSENT)"; done
 
       # `kamal_destination.py --selftest` asks Kamal's own loader how a destination merges and what
       # RAILS_ENV each role resolves (#1465). Without the gem those fixtures report exit 3 (INCOMPLETE),
@@ -79,7 +80,7 @@ jobs:
       - name: zsh for the git shim's zsh row
         run: |
           set -euo pipefail
-          sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+          { sudo apt-get update -qq && sudo apt-get install -y -qq zsh; } || { sleep 5; sudo apt-get update -qq && sudo apt-get install -y -qq zsh; }   # one retry: a mirror blip must not turn a release red
           command -v zsh >/dev/null || { echo "::error::zsh did not install: git_shim_selftest's zsh row would be skipped"; exit 1; }
           echo "zsh: $(zsh --version)"
 
@@ -204,7 +205,7 @@ jobs:
           gem install --user-install --no-document kamal -v 2.12.0
           ruby -e 'require "kamal"; puts "kamal: #{Kamal::VERSION}"'
           # zsh for the git shim guards, as in the gate sweep's job above: the runner image has none.
-          sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+          { sudo apt-get update -qq && sudo apt-get install -y -qq zsh; } || { sleep 5; sudo apt-get update -qq && sudo apt-get install -y -qq zsh; }   # one retry: a mirror blip must not turn a release red
           command -v zsh >/dev/null || { echo "::error::zsh did not install"; exit 1; }
           echo "zsh: $(zsh --version)"
 
