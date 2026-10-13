@@ -393,8 +393,7 @@ def _(base):
     for args in (("config", "core.hooksPath", "/dev/null"), ("config", "--local", "core.hookspath", "x"), ("config", "--get", "core.hooksPath"),
                  ("config", "include.path", "/tmp/x"), ("config", "includeIf.gitdir:/x/.path", "y"), ("-c", "include.path=/tmp/x", "status"),
                  ("-c", "includeIf.gitdir:/x/.path=y", "status"), ("--config-env=include.path=X", "status"),
-                 ("-c", "core.fsmonitor=/tmp/x", "status"), ("-c", "CORE.FSMONITOR=/tmp/x", "status"), ("-c", "core.sshCommand=/tmp/x", "status"),
-                 ("-c", "Core.SshCommand=/tmp/x", "status"), ("--config-env=core.fsmonitor=X", "status")):
+                 ):
         refused(r, label, *args, why="can switch the #1789 git hooks off")
     # #1982: the pairs are READ, not refused on sight. What can switch the hooks off, or the shim cannot read, is refused; the rest passes.
     for env in ({"GIT_CONFIG_PARAMETERS": "'user.name'='x'"}, {"GIT_CONFIG_GLOBAL": "/tmp/cfg"}, {"GIT_CONFIG_SYSTEM": "/tmp/cfg"}, {"GIT_CONFIG_FOO": "1"},
@@ -435,6 +434,16 @@ def _(base):
                  ("--config-env=core.hooksPath=X", "status")):
         refused(r, label, *args, why="switch the #1789 git hooks off")
     runs(r, label, "-c", "user.name=u", "-c", "user.email=u@u", "commit", "-m", "y")  # fixture-git: exempt (the shim under test finds the repository from its cwd; fixture_git's GIT_DIR binding would hide that)
+
+
+@case("shim: -c core.fsmonitor and -c core.sshCommand (a program git runs) are refused, in any case")
+def _(base):
+    label = "shim: -c core.fsmonitor and -c core.sshCommand (a program git runs) are refused, in any case"
+    r = Repo(base, "runsprog")
+    for args in (("-c", "core.fsmonitor=/tmp/x", "status"), ("-c", "CORE.FSMONITOR=/tmp/x", "status"), ("-c", "core.sshCommand=/tmp/x", "status"),
+                 ("-c", "Core.SshCommand=/tmp/x", "status"), ("--config-env=core.fsmonitor=X", "status"), ("--config-env=core.sshCommand=X", "status")):
+        refused(r, label, *args, why="run a program")
+    runs(r, label, "-c", "core.autocrlf=false", "status")
 
 
 @case("shim: a git alias is expanded before the rules are applied")
