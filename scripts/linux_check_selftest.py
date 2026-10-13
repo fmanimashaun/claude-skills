@@ -98,7 +98,7 @@ def main() -> int:
               script_text.count("|| rc=1") == 2 and "exit $rc" in script_text)
 
         # THE HOST-TOOL CANARY (#1964): the container installs the tools a selftest probes and asserts them present before any guard.
-        check("the container installs the host tools a selftest probes: postgresql-client, lsof and procps",
+        check("the container installs the host tools a selftest probes: postgresql-client, lsof, procps and zsh",
               "ca-certificates $LINUX_CHECK_HOST_PACKAGES" in script_text
               and "LINUX_CHECK_HOST_PACKAGES=postgresql-client lsof procps zsh" in args, str(args))
         check("the container asserts pg_isready, lsof, ps and zsh are present", "LINUX_CHECK_CANARY_TOOLS=pg_isready lsof ps zsh" in args, str(args))
