@@ -1855,6 +1855,20 @@ def guard_claims_fixtures() -> None:
                    "measured against dev", "measured live on dev", "CONFIRMED by doctrine-verifier"):
         check(f"guard-claims (#1877): the evidence phrase '{phrase}' is accepted",
               run("gh pr create --base dev --body-file BODY", NUMERIC + phrase + ".\n") == 0, said())
+    # #1936: `Verified <date> against ...` is the twin of 'verified against <tag>' with the date in the middle, and was refused as the ONLY evidence (a body passed only because an earlier line said
+    # "Measured <date> against"). One row per form, including the cross-repo `-R` shape the report came from, and the near misses.
+    for phrase in ("Verified 2026-10-12 against Retask dev", "verified on 2026-10-12", "verified 2026-10-12"):
+        check(f"guard-claims (#1936): the evidence phrase '{phrase}' is accepted",
+              run("gh pr create --base dev --body-file BODY", NUMERIC + phrase + ".\n") == 0, said())
+    check("guard-claims (#1936): ...and the same phrase on a cross-repo `gh issue comment -R` is accepted",
+          run("gh issue comment 1724 -R fmanimashaun/Retask-platform --body-file BODY", NUMERIC + "Verified 2026-10-12 against Retask dev.\n") == 0, said())
+    check("guard-claims (#1936) control: 'verified' with no date and no `against` is not evidence",
+          run("gh pr create --base dev --body-file BODY", NUMERIC + "Verified, I think.\n") == 2, said())
+    for phrase in ("unverified 2026-10-12", "unverified against the spec", "unverified on 2026-10-12", "re-unverified 2026-10-12"):
+        check(f"guard-claims (#1936) control: '{phrase}' is not evidence (the word must start with `verified`)",
+              run("gh pr create --base dev --body-file BODY", NUMERIC + phrase + ".\n") == 2, said())
+    check("guard-claims (#1936) control: a year alone ('verified 2026') is not a date",
+          run("gh pr create --base dev --body-file BODY", NUMERIC + "verified 2026.\n") == 2, said())
     check("guard-claims (#1877) control: 'measured' with no date and no on/against is not evidence",
           run("gh pr create --base dev --body-file BODY", NUMERIC + "Measured, I think.\n") == 2, said())
     check("guard-claims (#1877) control: a year alone ('measured 2026') is not a date",
