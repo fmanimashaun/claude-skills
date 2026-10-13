@@ -282,13 +282,13 @@ GUARD = Guard(
             "a redirect with its target attached before the command is not peeled, so `2>&1 git add -A` hides the add",
             '    if (w ~ /^([0-9]*(>>|>&|<&|<>|>[|]|>|<)|&>>?)./) { i++; continue }\n',
             "",
-            "a redirect BEFORE the command does not hide it",
+            "`'2>&1 git add -A'` is blocked",
         ),
         Mutation(
             "a bare redirect operator does not take its target, so `> out.txt git add -A` hides the add",
             "|&>>?)$/) { i += 2; continue }",
             "|&>>?)$/) { i++; continue }",
-            "a redirect BEFORE the command does not hide it",
+            "`'> out.txt git add -A'` is blocked",
         ),
     ),
 )
