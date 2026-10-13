@@ -828,5 +828,17 @@ GUARD = Guard(
             '        return ""',
             "GH_REPO inherited by the command (the lib's copy) keeps the session's rules",
         ),
+        Mutation(
+            "a heredoc body in the temp directory loses the cd again (#1990)",
+            '    for root in ("/tmp/", "/private/tmp/"):',
+            '    for root in ():',
+            "a heredoc body written under the temp directory keeps the cd (#1990)",
+        ),
+        Mutation(
+            "any absolute path keeps the cd, so a write to a git config steers gh (#1990)",
+            '    return False\n\n\ndef _file_writer',
+            '    return path.startswith("/")\n\n\ndef _file_writer',
+            "XDG git config",
+        ),
     ),
 )

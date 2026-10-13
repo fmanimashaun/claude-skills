@@ -262,10 +262,20 @@ def _bare_filename(path: str) -> bool:
         and not path.lower().startswith(".git")
 
 
+def _plain_absolute(path: str) -> bool:
+    """A path under the temp directory, every component passing `_bare_filename`: `/private/tmp/…/scratchpad/body.md`, where the harness tells a session to
+    write its bodies (#1990). ONLY the temp directory: any other absolute path can be a git config gh resolves the remote through (`/etc/gitconfig`,
+    `~/.config/git/config`, `<repo>/.git/config`), so it still loses the cd, as do `..`, `$`, backtick and `~`."""
+    for root in ("/tmp/", "/private/tmp/"):
+        if path.startswith(root):
+            return all(_bare_filename(c) for c in path[len(root):].split("/"))
+    return False
+
+
 def _file_writer(seg: list[str]) -> bool:
     """`cat > NAME`, `cat >> NAME`, with or without the heredoc operator (`<<EOF`, in either order): a segment that only writes a file in the cd's directory (#1851).
 
-    NAME is a bare relative filename (see `_bare_filename`). That is the honest shape (a body written beside the command); anything else loses the cd and the
+    NAME is a bare relative filename (see `_bare_filename`) or a plain absolute path (see `_plain_absolute`, #1990). That is the honest shape (a body written beside the command); anything else loses the cd and the
     refusal says it cannot tell which repository. This guards honest mistakes, not steering (#1793)."""
     if not seg or seg[0] != "cat":
         return False
@@ -273,7 +283,7 @@ def _file_writer(seg: list[str]) -> bool:
     while i < len(seg):
         t = seg[i]
         if t in (">", ">>") and i + 1 < len(seg):
-            if not _bare_filename(seg[i + 1]):
+            if not (_bare_filename(seg[i + 1]) or _plain_absolute(seg[i + 1])):
                 return False
             wrote = True
             i += 2
@@ -1287,6 +1297,9 @@ def selftest() -> int:
         check("...and passes what the toplevel allows", verdict(f"cd {r}/app/models && {rt}", s)[0])
         # ---- #1851: a heredoc that writes the body, THEN the create; an unfollowed cd says it cannot tell; `bash -n` runs nothing ----
         body_cat = "cat > body.md <<'EOF'\nthe body\nEOF\n"
+        # #1990: the harness's scratchpad, under the temp directory, keeps the cd.
+        ok, why = verdict(f"cd {r} && cat > /private/tmp/sp-1990/body.md <<'EOF'\nthe body\nEOF\n{rt}", s)
+        check("a heredoc body written under the temp directory keeps the cd (#1990)", ok, why)
         ok, why = verdict(f"cd {r} && {body_cat}{rt}", s)
         check("cd into another repo, a heredoc writes the body, then the create: that repo's declaration applies, and passes", ok, why)
         ok, why = verdict(f"cd {r} && {body_cat}gh issue create -t X --label bug", s)
@@ -1297,6 +1310,8 @@ def selftest() -> int:
                             ("a heredoc that writes a file whose name starts .GIT, in any case", "cat > .GITCONFIG <<'EOF'\nx\nEOF\n"),
                             ("a heredoc that writes to a path in the home directory", "cat > ~/.gitconfig <<'EOF'\nx\nEOF\n"),
                             ("a heredoc that writes to another absolute path", "cat > /etc/gitconfig <<'EOF'\nx\nEOF\n"),
+                            ("a heredoc that writes to the XDG git config (#1990: only the temp directory keeps the cd)", "cat > /Users/u/.config/git/config <<'EOF'\nx\nEOF\n"),
+                            ("a heredoc that writes under .git inside the temp directory (#1990)", "cat > /tmp/r/.git/config <<'EOF'\nx\nEOF\n"),
                             ("a heredoc that writes into a subdirectory", "cat > sub/b.md <<'EOF'\nx\nEOF\n"),
                             ("a heredoc that writes to `..`", "cat > .. <<'EOF'\nx\nEOF\n"),
                             ("an UNQUOTED heredoc, whose body substitutes", "cat > body.md <<EOF\n$(git remote set-url origin https://github.com/o/x.git)\nEOF\n")):
