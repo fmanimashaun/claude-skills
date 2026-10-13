@@ -828,5 +828,23 @@ GUARD = Guard(
             '        return ""',
             "GH_REPO inherited by the command (the lib's copy) keeps the session's rules",
         ),
+        Mutation(
+            "a heredoc body in the temp directory loses the cd again (#1990)",
+            ' for root in ("/tmp/", "/private/tmp/")):',
+            ' for root in ()):',
+            "a heredoc body written under the temp directory keeps the cd (#1990)",
+        ),
+        Mutation(
+            "glob characters in a temp-dir body path are allowed again, so `.g*/config` names .git (review of #1995)",
+            '    if re.search(r"[*?\\[\\]{}!]", path):\n        return False',
+            '    if False:\n        return False',
+            "whose glob",
+        ),
+        Mutation(
+            "the real path is never checked, so a /tmp symlink into .git keeps the cd (review of #1995)",
+            '    return any(real.startswith(r) for r in tmp_roots) and not any(c.lower().startswith(".git") for c in real.split("/"))',
+            '    return True',
+            "a /tmp symlink",
+        ),
     ),
 )

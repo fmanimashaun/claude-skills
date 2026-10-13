@@ -1228,6 +1228,16 @@ def guard_bash_fixtures() -> None:
         rc, err = cross(f"cd {other} && echo hi && gh issue create -t X --label enhancement --body-file b.md")
         check("guard-bash (#1851): a cd followed by something else is refused, and the refusal says it cannot tell which repository (not the session's taxonomy)",
               rc == 2 and "cannot tell which repository" in err and "comp:*" not in err, err)
+        # #1990: the body written under the temp directory (the harness's scratchpad) keeps the cd; one written into the target's .git does not.
+        rc, err = cross(f"cd {other} && cat > /private/tmp/scratch-1990/b.md {body[len('cat > b.md '):]}gh issue create -t X --label enhancement --body-file /private/tmp/scratch-1990/b.md")
+        check("guard-bash (#1990): `cd <other repo> && cat > /abs/scratch/b.md <<EOF … EOF` then the create answers to THAT repo's labels", rc == 0, err)
+        rc, err = cross(f"cd {other} && cat > /private/tmp/scratch-1990/b.md {body[len('cat > b.md '):]}gh issue create -t X --label bug --body-file /private/tmp/scratch-1990/b.md")
+        check("guard-bash (#1990): ...and that repo's rules still refuse it", rc == 2 and "severity:s1" in err, err)
+        rc, err = cross(f"cd {session} && cat > /private/tmp/scratch-1990/b.md {body[len('cat > b.md '):]}gh issue create -t X --label enhancement --body-file /private/tmp/scratch-1990/b.md")
+        check("guard-bash (#1990): the same shape cd'd into the session's repo still needs comp:*", rc == 2 and "comp:*" in err, err)
+        rc, err = cross(f"cd {other} && cat > {other}/.git/config {body[len('cat > b.md '):]}gh issue create -t X --label enhancement --body-file b.md")
+        check("guard-bash (#1990): a write into the target's .git/ (where gh reads the remote) loses the cd and is refused",
+              rc == 2 and "cannot tell which repository" in err, err)
         rc, err = cross("gh issue create -R other/repo -t X --label enhancement --body-file b.md")
         check("guard-bash (#1851): `-R other/repo` names the repository, so the session's rules do not apply", rc == 0, err)
         runner = Path(td) / "make-issue.sh"
