@@ -122,5 +122,11 @@ GUARD = Guard(
             "    if False:",
             "a relative QA_FLOW_VERDICT_DIR is refused",
         ),
+        Mutation(
+            "--record falls back to the gate's 8 s budget again (#1987)",
+            "    return RECORD_BUDGET if record_mode else DEFAULT_BUDGET",
+            "    return DEFAULT_BUDGET",
+            "--record with no --budget gets 180 s",
+        ),
     ),
 )

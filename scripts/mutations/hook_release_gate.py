@@ -253,5 +253,11 @@ GUARD = Guard(
             'u="$(git config --get-all "remote.$r.url" 2>/dev/null)"',
             "a pushInsteadOf that rewrites the push target",
         ),
+        Mutation(
+            "the dated CHANGELOG heading is refused again after the certified sha (#1987)",
+            '    [ "$f" = "CHANGELOG.md" ] && continue\n',
+            "",
+            "release-gate (#1987): the dated CHANGELOG heading written after the certified sha is permitted",
+        ),
     ),
 )
