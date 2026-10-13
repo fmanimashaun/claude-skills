@@ -302,6 +302,17 @@ def main(argv: list[str]) -> int:
     return 0
 
 
+def real_git_outside_shims(path: str) -> str | None:
+    """The first executable regular-file `git` on `path` whose directory is not a `git-shim` one (rails-flow's git shim), or None (#1998)."""
+    for q in path.split(os.pathsep):
+        if not q or Path(q).name == "git-shim":
+            continue
+        c = str(Path(q) / "git")
+        if os.path.isfile(c) and os.access(c, os.X_OK):
+            return c
+    return None
+
+
 def selftest(match: str = "") -> int:
     import inspect
     import shutil
@@ -318,8 +329,7 @@ def selftest(match: str = "") -> int:
     # The REAL git, not rails-flow's git shim: run from the Claude Code Bash tool the shim is first on PATH, so `shutil.which("git")` is the shim, and the fixture's own setup
     # (`-c protocol.file.allow=always submodule add` into a temp repository) is refused by it. The fixture touches only its own temp repositories, so it takes the first
     # executable `git` whose directory is not a `git-shim` one (#1998).
-    real_git = next((c for c in (str(Path(q) / "git") for q in os.environ.get("PATH", "").split(os.pathsep) if q and Path(q).name != "git-shim")
-                     if os.path.isfile(c) and os.access(c, os.X_OK)), None) or shutil.which("git")
+    real_git = real_git_outside_shims(os.environ.get("PATH", "")) or shutil.which("git")
     if not real_git:
         print("wip_commit selftest: no git on PATH, nothing to test", file=sys.stderr)
         return 2
@@ -444,6 +454,20 @@ def selftest(match: str = "") -> int:
                 cases.append((label, fn))
                 return fn
             return register
+
+        @case('the selftest finds the real git past a git-shim directory (#1998)')
+        def _():
+            shimdir, realdir = base / "fake" / "git-shim", base / "fake" / "bin"
+            for d in (shimdir, realdir):
+                d.mkdir(parents=True)
+                (d / "git").write_text("#!/bin/sh\n")
+                (d / "git").chmod(0o755)
+            plain = base / "fake" / "plain"
+            plain.mkdir()
+            (plain / "git").write_text("not executable")        # a candidate that is not executable is skipped too
+            found = real_git_outside_shims(os.pathsep.join([str(shimdir), str(plain), str(realdir)]))
+            expect("a git-shim directory first on PATH is skipped, and so is a non-executable git", found == str(realdir / "git"), found)
+            expect("a PATH of only shim directories finds none", real_git_outside_shims(str(shimdir)) is None)
 
         @case('happy path and rolling amend')
         def _():
