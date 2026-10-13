@@ -31,37 +31,39 @@ GUARD = Guard(
         Mutation(
             "a payload past _large_bytes enters the full path again, which took 8 s at 390 KB and gave no answer in 70 s at 683 KB",
             """if [ "${#input}" -gt "$_large_bytes" ]; then
-  _coarse_looks_promotion
-""",
+  [ "${QA_ALLOW_MAIN:-0}" = "1" ]""",
             """if false; then
-  _coarse_looks_promotion
-""",
+  [ "${QA_ALLOW_MAIN:-0}" = "1" ]""",
             "a 700 KB command with a push to main is refused within seconds",
         ),
         Mutation(
             "the fallback runs its quadratic precise rules on every size again, so a deadline turns a 100 KB command into minutes",
-            """  if [ "${#input}" -gt "$_coarse_bytes" ]; then""",
-            """  if false; then""",
-            "a 700 KB command with a push to main is refused within seconds",     # on bash 5 (Linux) the 100 KB case is fast even with the precise rules; the 700 KB one is not, on either
+            """_coarse_looks_promotion() {
+  if [ "${#input}" -gt "$_coarse_bytes" ]; then""",
+            """_coarse_looks_promotion() {
+  if false; then""",
+            "python3 missing, a 6 KB command that is NOT a promotion is refused too",
         ),
         Mutation(
             "a command past the cap is judged by its words again (here: allowed), so a spelling the words miss passes",
             """    _looks_promotion=1      # cannot be read in time: refused, not guessed at""",
             """    _looks_promotion=0""",
-            "a large command that names neither git nor gh is refused TOO",
+            "python3 missing, a 6 KB command with a push to main is refused by the fallback within seconds",
         ),
         Mutation(
             "the oversize branch of the pre-gate allows instead of refusing, so a 700 KB push is let through",
-            """if [ "$_looks_promotion" = "1" ]; then
-    [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: a ${#input}-byte""",
-            """if [ "$_looks_promotion" = "9" ]; then
-    [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: a ${#input}-byte""",
+            """or set QA_ALLOW_MAIN=1 (audited)." >&2
+  exit 2
+fi""",
+            """or set QA_ALLOW_MAIN=1 (audited)." >&2
+  exit 0
+fi""",
             "a 700 KB command with a push to main is refused within seconds",
         ),
         Mutation(
             "QA_ALLOW_MAIN=1 is ignored for a large command",
-            """    [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: a ${#input}-byte""",
-            """    [ "0" = "1" ] && { echo "qa-flow: a ${#input}-byte""",
+            """  [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: a ${#input}-character""",
+            """  [ "0" = "1" ] && { echo "qa-flow: a ${#input}-character""",
             "QA_ALLOW_MAIN=1 is honoured for a large command and audited",
         ),
     ),

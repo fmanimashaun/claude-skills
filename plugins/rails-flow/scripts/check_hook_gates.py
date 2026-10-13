@@ -5788,12 +5788,23 @@ def release_gate_large_fixtures() -> None:
     SECONDS_MAX = 8.0
     PUSH = "git push origin main\n"
 
-    def run(cmd: str, extra_env: dict[str, str] | None = None, path_without_python: bool = False) -> tuple[int | None, float, str]:
+    def run(cmd: str, extra_env: dict[str, str] | None = None, path_without_python: bool = False, marketplace: bool = False,
+            hung_awk: bool = False) -> tuple[int | None, float, str]:
         """(exit code or None when it timed out, seconds, stderr). The gate in a repository with an origin and no certification."""
         with scratch_dir() as td, scratch_dir() as nopy:
             _git_repo(Path(td))
+            if marketplace:
+                # What MAKES a tree the marketplace repository (the gate normally exempts it): the file AND the repository's identity.
+                (Path(td) / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+                (Path(td) / ".claude-plugin" / "marketplace.json").write_text('{"name": "x", "plugins": []}', encoding="utf-8")
+                _run(["git", "remote", "add", "origin", "https://github.com/fmanimashaun/claude-skills.git"], cwd=td, check=True, capture_output=True)
             env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
             env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2]); env.update(extra_env or {})
+            if hung_awk:
+                # An awk that never returns: the full path hangs, the DEADLINE fires and the fallback answers (the deadline fixtures' own stub).
+                (Path(nopy) / "awk").write_text("#!/bin/bash\nsleep 300 &\nwait\n")
+                (Path(nopy) / "awk").chmod(0o755)
+                env["PATH"] = nopy + os.pathsep + env["PATH"]
             if path_without_python:
                 # python3 missing: the builtins-only fallback judges alone. The tools below stay; python3 does not.
                 for tool in ("git", "cat", "sed", "grep", "awk", "tr", "cut", "head", "dirname", "basename", "env", "mktemp", "rm", "wc", "sort",
@@ -5829,6 +5840,8 @@ def release_gate_large_fixtures() -> None:
          run(PUSH + "echo line\n" * 9000, {"RAILS_FLOW_HOOK_DEADLINE": "1"}), 2)
     fast("release-gate (#1952): python3 missing, a 6 KB command with a push to main is refused by the fallback within seconds (it took 22 s)",
          run(PUSH + "echo line\n" * 600, path_without_python=True), 2)
+    fast("release-gate (#1952): python3 missing, a 6 KB command that is NOT a promotion is refused too: the fallback does not judge a command past 2 KB by its words",
+         run("git status\n" + "echo line\n" * 600, path_without_python=True), 2, "BLOCKED")
     fast("release-gate (#1952): a large command that merges through the gh CLI is refused within seconds",
          run("gh pr merge 5\n" + "x\n" * 200000), 2, "too large for the gate to read")
     fast("release-gate (#1952): a large command with a gh merge on a LATER line is refused within seconds (a JSON-escaped newline does not hide the verb)",
@@ -5857,6 +5870,10 @@ def release_gate_large_fixtures() -> None:
          run("cat > f <<EOF\n" + "some words about nothing\n" * 60000 + "EOF\n"), 2, "Write tool")
     fast("release-gate (#1952): a large command that merely documents `git push` is refused (as every large command is) and says what to do",
          run("cat > f <<EOF\n" + "git push origin main in a doc\n" * 40000 + "EOF\n"), 2, "Write tool")
+    fast("release-gate (#1952): a large command is refused INSIDE the marketplace repository too (the size rule comes before its exemption)",
+         run(big_push, marketplace=True), 2, "too large for the gate to read")
+    fast("release-gate (#1952): a command past the fallback's 2 KB limit that hits the deadline says it is too large to judge, not that it looks like a promotion",
+         run("git status\n" + "echo line\n" * 600, {"RAILS_FLOW_HOOK_DEADLINE": "1"}, hung_awk=True), 2, "too large for the fallback to judge")
     fast("release-gate (#1952): QA_ALLOW_MAIN=1 is honoured for a large command and audited",
          run(big_push, {"QA_ALLOW_MAIN": "1"}), 0, "audited")
     rc, secs, err = run("git push origin main")
