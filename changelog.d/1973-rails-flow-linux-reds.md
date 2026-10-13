@@ -1,0 +1,7 @@
+section: rails-flow
+- **Two selftests that failed only in the Linux check now pass there — `plugins/rails-flow/scripts/check_drift_signal.py`, `plugins/rails-flow/scripts/branch_rulesets.py`** (#1973).
+  - **`check_drift_signal`:** the "behind" fixture ran `git branch -u origin/HEAD` after a plain fetch. A plain fetch creates `refs/remotes/origin/HEAD` only on git 2.48 and later (`remote.<name>.followRemoteHEAD`). The maintainer Mac has 2.50 and the container 2.43, so it crashed with exit 128 there. The fixture now runs `git init -b main` and tracks `origin/main` by name.
+  - **`branch_rulesets`:** 5 of its 24 checks failed. The API-path fixtures inject a fake `gh` runner, but `main()` asks `shutil.which("gh")` first and refused before reaching it, so they passed only where a real `gh` existed. The selftest now declares `gh` present (the "gh not installed" row still overrides that).
+  - **A safety bug found on the way:** the "never edits someone else's ruleset" fixture used the real `_post`. A broken `--apply` would have run `gh api -X POST` for real: a live write on a machine with an authenticated `gh`. It now passes a recording post and asserts nothing was posted, which its label claimed and its condition never checked.
+  - **Measured:** both selftests pass, and `--guard branch_rulesets` (15/15) and `--guard hook_session_start` (5/5) are caught on macOS and in `scripts/linux_check.sh`.
+  Our own design: the coordinator's assignment on #1973.

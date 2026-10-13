@@ -59,6 +59,9 @@ jobs:
             command -v "$bin" >/dev/null || { echo "::error::$bin is not on PATH — the markdown code linter would report INCOMPLETE and its findings would be silently skipped."; exit 1; }
             echo "$bin: $("$bin" --version)"
           done
+          # #1973: REPORTED, not asserted. The Linux check installs zsh (#1971) and selftests reach perl and shasum; whether the runner has them was
+          # unmeasured, and a selftest that skips a row without them would read the same as a pass here. This line is the measurement.
+          for bin in zsh perl shasum; do echo "host tool $bin: $(command -v "$bin" || echo ABSENT)"; done
 
       # `kamal_destination.py --selftest` asks Kamal's own loader how a destination merges and what
       # RAILS_ENV each role resolves (#1465). Without the gem those fixtures report exit 3 (INCOMPLETE),
