@@ -1,0 +1,2 @@
+section: Repository hygiene
+- **The upstream review cursor moves to Claude Code 2.1.296 — `docs/evidence/upstream/claude-code.json`, `docs/evidence/upstream/reviews/claude-code-2.1.293-2.1.296.md`** (#1938). All 150 CHANGELOG entries from 2.1.293 to 2.1.296 were read against our hooks, mods, agents and `CLAUDE_ENV_FILE` use: one affects us (`onFailure: "block"`, filed and built as #1939), none moved a registry quote, and the rest touch surfaces we do not ship. The record names what was checked and what was not.
