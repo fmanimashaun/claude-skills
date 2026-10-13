@@ -1008,8 +1008,8 @@ Exit **1** means propose the diff; exit **3** means no `simplecov` and nothing t
 **The ratchet** — in the SimpleCov block:
 
 ```ruby
+enable_coverage :branch              # :branch below raises without it
 refuse_coverage_drop :line, :branch
-minimum_coverage_by_file line: 0     # inert at 0; raise deliberately
 ```
 
 Today's number is the floor, so it is **never red on day one**, it **cannot slide**, and it **rises
