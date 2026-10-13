@@ -274,8 +274,8 @@ GUARD = Guard(
         ),
         Mutation(
             "every & is protected, so `echo $V & git add f` no longer splits and the add is refused",
-            'if (p == ">" || p == "<" || (q == ">" && p != "&")) c = "\\005"',
-            'c = "\\005"',
+            '-e "s/&>/${p}>/g"',
+            '-e "s/&/${p}/g"',
             "CONTROL: the expansion belongs to ANOTHER command",
         ),
     ),

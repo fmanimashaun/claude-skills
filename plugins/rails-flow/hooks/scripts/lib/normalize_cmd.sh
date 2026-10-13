@@ -477,20 +477,10 @@ _join_strings() { awk 'NR > 1 { print "\002" } { gsub(/\002/, ""); gsub(/\001/, 
 
 # A redirect `&` is not a separator (#1982): the one in `2>&1`, `>&2`, `<&0`, `N>&M`, `>&-`, `&>file` and `&>>file` is swapped for \005 so the
 # split below leaves `git add top.txt 2>&1 $(echo .)` in ONE segment and the expansion stays where the taint view can see it. `cmd & cmd`, `&&`
-# and `cmd >f& cmd` still split. awk, not sed: BSD sed does not take \005 in a replacement.
+# and `cmd >f& cmd` still split. sed with the byte spliced in from printf: a plain substitution, linear on the 50,000 x `<&>` inputs where a per-character awk loop doubled the time.
 _protect_redirect_amp() {
-  awk '{
-    out = ""; n = length($0)
-    for (i = 1; i <= n; i++) {
-      c = substr($0, i, 1)
-      if (c == "&") {
-        p = (i > 1) ? substr($0, i - 1, 1) : ""; q = substr($0, i + 1, 1)
-        if (p == ">" || p == "<" || (q == ">" && p != "&")) c = "\005"
-      }
-      out = out c
-    }
-    print out
-  }'
+  local p; p="$(printf '\005')"
+  sed -e "s/>&/>${p}/g" -e "s/<&/<${p}/g" -e "s/&>/${p}>/g"
 }
 
 _normalize_one() {
