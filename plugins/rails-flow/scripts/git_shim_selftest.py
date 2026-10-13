@@ -534,6 +534,7 @@ def _(base):
 def _(base):
     label = "shim: a hermetic fixture may stage its OWN temp repository whole, under every condition of the exemption (#1982, decision (b))"
     proj = Repo(base, "proj")                       # the session's project: outside the temp root used below
+    (proj.work / ".git" / "rails-flow-fixture").write_text("")     # so the rows about the PROJECT are refused by what they test (location, symlink, containment), not by the missing identity
     tmproot = base / "tmproot"
     tmproot.mkdir()
     fx = tmproot / "fx"
@@ -615,16 +616,28 @@ def _(base):
     (mk / "stray.txt").write_text("s\n")
     (mk / ".git" / "claude-session-project").write_text("")
     attempt("a repository carrying the session marker, with CLAUDE_SESSION_PROJECT_TOP pointing elsewhere", mk, env_for(mk, CLAUDE_SESSION_PROJECT_TOP=str(home)), ok=False)
-    lk = tmproot / "linked-gd"                      # a linked worktree's git dir: its marker lives in the COMMON dir named by `commondir`
-    lk.mkdir()
-    (lk / "commondir").write_text("../marked/.git\n")
-    attempt("a linked worktree of a repository carrying the session marker", mk, env_for(mk, gd=lk), ok=False, stray_check=False)
+    # a REAL linked worktree of the marked repository: its git dir has `commondir`, the marker lives in the common dir, and it carries the fixture identity itself, so only the marker refuses
+    fixture_git.run(mk, "commit", "-q", "--allow-empty", "-m", "i")
+    lw = tmproot / "marked-wt"
+    fixture_git.run(mk, "worktree", "add", "-q", str(lw), "-b", "lw")
+    lgd = mk / ".git" / "worktrees" / "marked-wt"
+    (lgd / "rails-flow-fixture").write_text("")
+    (lw / "stray.txt").write_text("s\n")
+    attempt("a linked worktree of a repository carrying the session marker (the marker is in its common dir)", lw, env_for(lw, gd=lgd), ok=False)
     # the adversary pass on #1994: five commands got through. Each is a row here, and each is judged by the refusal it must get.
     # 1. git prefers a command-line --git-dir/--work-tree/-C/--namespace over the environment, so the decoy fixture in GIT_DIR proved nothing about the repository the command named
     pw = str(proj.work)
     for what, args in (("--git-dir and --work-tree", ("--git-dir", f"{pw}/.git", "--work-tree", pw, "add", "-A")), ("--git-dir= and --work-tree=", (f"--git-dir={pw}/.git", f"--work-tree={pw}", "add", "-A")),
                        ("-C the project", ("-C", pw, "add", "-A")), ("--namespace", ("--namespace", "x", "add", "-A"))):
         attempt(f"{what} on the command line beat a decoy fixture named in the environment", fx, env_for(fx), ok=False, args=args)
+    # the flags are refused OUTRIGHT, even when they name another valid fixture (one rule to reason about, and it does not depend on the second check)
+    fx2 = tmproot / "fx2"
+    fixture_git.init(fx2, "-b", "main")
+    (fx2 / "stray.txt").write_text("s\n")
+    attempt("--git-dir naming another valid fixture is still refused", fx, env_for(fx), ok=False, args=("--git-dir", str(fx2 / ".git"), "add", "-A"))
+    attempt("--git-dir= naming another valid fixture is still refused", fx, env_for(fx), ok=False, args=(f"--git-dir={fx2 / '.git'}", "add", "-A"))
+    attempt("--work-tree naming another valid fixture is still refused", fx, env_for(fx), ok=False, args=("--work-tree", str(fx2), "add", "-A"))
+    attempt("--work-tree= naming another valid fixture is still refused", fx, env_for(fx), ok=False, args=(f"--work-tree={fx2}", "add", "-A"))
     # 2. an index, an object store, a common dir or a namespace in the environment point git at another repository's state while the decoy sits in GIT_DIR
     for var, val in (("GIT_INDEX_FILE", f"{pw}/.git/index"), ("GIT_OBJECT_DIRECTORY", f"{pw}/.git/objects"), ("GIT_ALTERNATE_OBJECT_DIRECTORIES", f"{pw}/.git/objects"),
                      ("GIT_COMMON_DIR", f"{pw}/.git"), ("GIT_NAMESPACE", "x")):
