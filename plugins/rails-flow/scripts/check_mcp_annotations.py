@@ -158,8 +158,8 @@ def _is_tool(name: str, tools: set[str]) -> bool:
     return name in MCP_TOOL or name.split("::")[-1] in tools
 
 
-def scan(root: Path) -> tuple[int, list[str], list[str]]:
-    """(tools found, findings, places this scan could not read)."""
+def _parsed(root: Path) -> list[tuple[Path, str, list[str]]]:
+    """Every .rb under SCAN_DIRS as (path, text with whole-line comments blanked, lines); raises Unusable on an unreadable file."""
     files = [p for d in SCAN_DIRS for p in sorted((root / d).rglob("*.rb"))] if root.is_dir() else []
     parsed: list[tuple[Path, str, list[str]]] = []
     for p in files:
@@ -170,6 +170,11 @@ def scan(root: Path) -> tuple[int, list[str], list[str]]:
         # a commented-out declaration is not one: blank whole-line comments (line numbers stay)
         lines = ["" if ln.lstrip().startswith("#") else ln for ln in text.split("\n")]
         parsed.append((p, "\n".join(lines), lines))
+    return parsed
+
+
+def _tool_names(parsed: list[tuple[Path, str, list[str]]]) -> tuple[set[str], set[str]]:
+    """(the short names of every class that reaches MCP::Tool, the abstract bases among them -- not judged)."""
     # one name may be declared twice (`Admin::Report`, `Api::Report`): keep every base it has, so no declaration hides another
     classes: dict[str, set[str]] = {}
     served: set[str] = set()
@@ -191,16 +196,40 @@ def scan(root: Path) -> tuple[int, list[str], list[str]]:
                 grew = True
     # a base is abstract (not judged) only when it has a tool subclass AND defines no `call`: a tool that implements `call` is served
     bases = {b.split("::")[-1] for n in tools for b in classes[n]} - served
+    return tools, bases
+
+
+def class_tools(root: Path) -> list[tuple[Path, int, str, str]]:
+    """Every concrete class-form tool as (path, 1-based line, class name, class body): ONE definition of "what is an MCP tool
+    class", shared by this gate and check_mcp_personal_fields.py (#1931). The Define and Class.new forms are scanned only here."""
+    parsed = _parsed(root)
+    tools, bases = _tool_names(parsed)
+    return [(p, i + 1, name, body) for p, lines in ((p, lines) for p, _t, lines in parsed)
+            for i, name, body in _concrete_classes(lines, tools, bases)]
+
+
+def _concrete_classes(lines: list[str], tools: set[str], bases: set[str]) -> list[tuple[int, str, str]]:
+    """(0-based line, class name, body) of each class in one file that is a tool and not an abstract base."""
+    out = []
+    for i, line in enumerate(lines):
+        m = CLASS.match(line)
+        if m and _is_tool(m["base"], tools) and m["name"].split("::")[-1] not in bases:
+            out.append((i, m["name"], _class_body(lines, i, m["indent"])))
+    return out
+
+
+def scan(root: Path) -> tuple[int, list[str], list[str]]:
+    """(tools found, findings, places this scan could not read)."""
+    parsed = _parsed(root)
+    tools, bases = _tool_names(parsed)
     found, findings, unchecked = 0, [], []
     for p, text, lines in parsed:
         rel = p.relative_to(root)
-        for i, line in enumerate(lines):
-            m = CLASS.match(line)
-            if m and _is_tool(m["base"], tools) and m["name"].split("::")[-1] not in bases:
-                found += 1
-                why = _judge(_class_body(lines, i, m["indent"]))
-                if why:
-                    findings.append(f"{rel}:{i + 1}: tool {m['name']} {why}")
+        for i, name, body in _concrete_classes(lines, tools, bases):
+            found += 1
+            why = _judge(body)
+            if why:
+                findings.append(f"{rel}:{i + 1}: tool {name} {why}")
         for m in CALL.finditer(text):
             if m["recv"] and not _is_tool(m["recv"], tools):
                 continue

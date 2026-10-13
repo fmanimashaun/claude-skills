@@ -170,6 +170,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | rails-flow lane assigner selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/assign_lanes.py --selftest` | selftest |
 | rails-flow mandated gems | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mandated_gems.py --selftest` | selftest |
 | rails-flow mcp end to end | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mcp_end_to_end.py --selftest` | selftest |
+| rails-flow mcp personal fields | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mcp_personal_fields.py --selftest` | selftest |
 | rails-flow mock-up gate | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mockup_gate.py --selftest` | selftest |
 | rails-flow one-way door classifier | `rails-flow` | `python3 plugins/rails-flow/scripts/classify_door.py --selftest` | selftest |
 | rails-flow product brief | `rails-flow` | `python3 plugins/rails-flow/scripts/check_brief.py --selftest` | selftest |
