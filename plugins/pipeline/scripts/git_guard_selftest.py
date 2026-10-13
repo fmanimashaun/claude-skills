@@ -115,7 +115,7 @@ class World:
     def diverge(self, branch: str = "main") -> None:
         """Put the local branch on a commit that does NOT contain the remote tip."""
         self.git("checkout", "-q", branch)
-        self.git("reset", "-q", "--hard", "HEAD~1")
+        self.git("reset", "-q", "HEAD~1")
         self.commit_file(f"diverged-{branch}.txt", branch, "other history")
 
 
@@ -184,7 +184,7 @@ def _(base):
     w.git("checkout", "-q", "-b", "feature")
     w.commit_file("a.txt")
     w.git("push", "-q", "origin", "feature")
-    w.git("reset", "-q", "--hard", "HEAD~1")
+    w.git("reset", "-q", "HEAD~1")
     w.commit_file("b.txt")
     p = w.git("push", "--force", "origin", "feature", check_rc=False)
     check(label, p.returncode == 0 and w.remote_ref("refs/heads/feature") == w.head(), f"force push of feature: exit {p.returncode}: {p.stderr.strip()[:160]}")
@@ -225,7 +225,7 @@ def _(base):
         w.git("checkout", "-q", "-b", b, "main")
         w.commit_file(f"{b.replace('/', '-')}.txt")
         w.git("push", "-q", "origin", b, check_rc=False)   # the first push of a branch is a create: allowed for every name
-        w.git("reset", "-q", "--hard", "HEAD~1")
+        w.git("reset", "-q", "HEAD~1")
         w.commit_file(f"{b.replace('/', '-')}-2.txt")
         before = w.remote_ref(f"refs/heads/{b}")
         p = w.git("push", "--force", "origin", b, check_rc=False)
@@ -243,7 +243,7 @@ def _(base):
     w.git("checkout", "-q", "-b", "feature", "main")
     w.commit_file("a.txt")
     w.git("push", "-q", "origin", "feature")
-    w.git("reset", "-q", "--hard", "HEAD~1")
+    w.git("reset", "-q", "HEAD~1")
     w.commit_file("b.txt")
     p = w.git("push", "--force", "origin", "feature", check_rc=False)
     check(label, p.returncode == 0, f"a declaration that sits in code was read: exit {p.returncode}: {p.stderr.strip()[:160]}")
