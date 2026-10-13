@@ -26,7 +26,18 @@ The hint must be a literal key (`read_only_hint:` or `:read_only_hint =>`). An `
 statically and is a finding, never a pass.
 
 COULD NOT CHECK, never a pass (exit 2): a place this scan cannot read.
-  * `MCP::Server.new(tools: SOMETHING)` where the value is not a literal `[...]`.
+  * `MCP::Server.new(tools: SOMETHING)` where the value is not a literal `[...]`, UNLESS the call carries the declaration below.
+    A registry-driven server (`tools: policy.tools`, a role-filtered list) cannot be a literal list, and `tools: [*policy.tools]` would tell this
+    scan nothing, so the app says where the tools come from and the scan checks THAT (#1988, our own design, the maintainer's decision on the issue):
+        # mcp-tools: registry Mcp::Tools::ALL        (on the line above the call, or trailing the line it ends on)
+    The scan then requires the registry, by its FULL path (`Mcp::Tools::ALL` is not `Colors::ALL`; the enclosing `module` lines spell the namespace), to
+    be defined ONCE in app/ or lib/ as exactly a literal list of constants (`ALL = [A, B].freeze`: a splat, an empty list, a computed definition, a call
+    or `+ EXTRA` after the `]` is could-not-check, as is any `<<`, push, concat, `+=` ... on the constant anywhere in the scanned code), every entry to
+    be a tool class it found (judged like any other), and every concrete tool class it found to be in the list (an unlisted class is a finding). The
+    mark is read as a COMMENT only: the same words inside a string literal declare nothing.
+    Stated limit: a mutation the scan cannot follow statically passes, namely `Mcp::Tools.const_get(:ALL) << Rogue` and `list = Mcp::Tools::ALL; list << Rogue`
+    (an alias or a reflective lookup of the constant, then a change through it). Only a change written against the constant's own name is read. What it cannot see: that the server's `tools:` value really comes from that registry. The declaration
+    is a stated, checked claim about the registry, not a proof about the server; a tool added any other way is still caught by the next bullet.
   * A tool added after construction. `Server#tools` is an `attr_accessor` over a HASH keyed by tool name (`@tools = tools.to_h { |t| [t.name_value, t] }`,
     server.rb:217/222; `@tools[tool_name] = tool`, :302/307; `@tools.values`, :555/560), so the late forms are Hash forms:
     `server.tools = {...}`, `server.tools['name'] = T`, `.tools.merge!/store/update/replace(...)`. (`<<`, `.push` and `.concat` raise on a Hash and
@@ -66,6 +77,9 @@ CLASS = re.compile(r"^(?P<indent>[ \t]*)class\s+(?P<name>[\w:]+)\s*<\s*(?P<base>
 CALL = re.compile(r"(?:(?P<recv>[\w:]+)\.define(?!\w)|\.define_tool(?!\w))\s*\(?")
 CLASS_NEW = re.compile(r"\bClass\.new\(\s*(?P<base>[\w:]+)\s*\)")
 SERVER_NEW = re.compile(r"MCP::Server\.new\s*\(")
+# a registry-driven server (`tools: policy.tools`, a role-filtered list) names the registry it draws from; the scan then reads the registry (#1988)
+REGISTRY_MARK = re.compile(r"#[ \t]*mcp-tools:[ \t]*registry[ \t]+(?P<const>[A-Z]\w*(?:::[A-Z]\w*)*)(?![\w:])")
+CONST_PATH = re.compile(r"[A-Z]\w*(?:::[A-Z]\w*)*")
 # `Server#tools` is a Hash keyed by tool name: these are the ways to put a tool into it after construction
 TOOLS_MUTATED = re.compile(r"\.tools\s*(?:=(?![=~>])|\[[^\]]*\]\s*(?:\|\||&&)?=(?![=~>])|\.(?:merge!|(?:store|update|replace)\b))")
 CALLS = re.compile(r"\bdef\s+(?:self\.)?call\b")
@@ -218,10 +232,90 @@ def _concrete_classes(lines: list[str], tools: set[str], bases: set[str]) -> lis
     return out
 
 
+NESTING = re.compile(r"^(?P<indent>[ \t]*)(?:module|class)\s+(?P<name>[A-Z][\w:]*)")
+# a way to grow or rewrite a constant list after its definition: `ALL << X`, `ALL.push(X)`, `ALL += [X]`
+GROWN = r"\s*(?:<<|\+=|\|=|\.(?:push|append|concat|unshift|prepend|insert|replace)\b)"
+
+
+def _definitions(parsed: list[tuple[Path, str, list[str]]], path: str) -> list[tuple[str, int]]:
+    """Every assignment to the FULL constant path `path` (`Mcp::Tools::ALL`) as (file text, offset of what follows the `=`). The enclosing
+    `module`/`class` lines spell the namespace (by indentation, as the rest of this scan reads a body), so `Colors::ALL` is not `Mcp::Tools::ALL`."""
+    out = []
+    for _, text, lines in parsed:
+        stack: list[tuple[int, str]] = []
+        offset = 0
+        for line in lines:
+            if line.strip():
+                width = len(line) - len(line.lstrip())
+                while stack and stack[-1][0] >= width:
+                    stack.pop()
+                m = NESTING.match(line)
+                if m:
+                    stack.append((width, m["name"]))
+                a = re.match(r"[ \t]*(?P<lhs>(?:[A-Z]\w*::)*[A-Z]\w*)[ \t]*=(?![=~>])", line)
+                if a and "::".join([n for _, n in stack] + [a["lhs"]]) == path:
+                    out.append((text, offset + a.end()))
+            offset += len(line) + 1
+    return out
+
+
+def _registry(parsed: list[tuple[Path, str, list[str]]], const: str, tools: set[str], concrete: set[str]) -> tuple[list[str], list[str]]:
+    """(findings, unchecked) for a server that declares `# mcp-tools: registry CONST`. The declaration is only as good as what it can be checked
+    against, so it passes only when CONST (the FULL path) is defined ONCE, as exactly a literal list of constants (a trailing `.freeze` is all that
+    may follow the `]`), is never grown or rewritten anywhere in the scanned code, every entry is a tool class this scan found (and so judged), and
+    no tool class found is missing from it. What it cannot see, and says so: that the server's `tools:` value is really drawn from CONST."""
+    path = const.lstrip(":")
+    last = path.split("::")[-1]
+    defs = _definitions(parsed, path)
+    if len(defs) != 1:
+        return [], [f"`# mcp-tools: registry {const}` names a registry that is defined {len(defs)} times in app/ or lib/ (the full path, as written), not once, so the tools it serves cannot be found"]
+    text, at = defs[0]
+    rest = text[at:].lstrip(" \t")
+    if not rest.startswith("["):
+        return [], [f"registry {const} is defined as {rest.split(chr(10))[0].strip()[:40]!r}, not a literal list, so the tools it serves cannot be found"]
+    lst = _balanced(rest, 0, "[", "]")
+    tail = re.sub(r"#[^\n]*", "", rest[len(lst):]).split("\n")
+    after = tail[0].strip()
+    following = next((ln.strip() for ln in tail[1:] if ln.strip()), "")
+    if after not in ("", ".freeze") or re.match(r"[.&+\-|*]", following):
+        return [], [f"registry {const} has more after its list ({(after or following)[:40]!r}), so the tools it serves cannot be found"]
+    if any(re.search(rf"(?<![\w])(?:[A-Z]\w*::)*{last}{GROWN}", t) for _, t, _ in parsed):
+        return [], [f"registry {const} is grown or rewritten after its definition (`<<`, push, concat, `+=` ...), so the tools it serves cannot be found"]
+    body = re.sub(r"#[^\n]*", "", lst)[1:-1]
+    items = [x.strip() for x in body.split(",") if x.strip()]
+    bad = [x for x in items if not CONST_PATH.fullmatch(x)]
+    if bad or not items:
+        return [], [f"registry {const} is not a literal list of constants ({(bad or ['empty'])[0][:40]!r}), so the tools it serves cannot be found"]
+    listed = {x.split("::")[-1] for x in items}
+    findings = [f"registry {const} lists {x}, which is not an MCP tool class this scan found, so it is served unread" for x in sorted(listed - tools)]
+    findings += [f"tool class {x} is not in registry {const}, which the server declares it draws from" for x in sorted(concrete - listed)]
+    return findings, []
+
+
+def _comment(line: str) -> str:
+    """The comment on one line of Ruby ('' when there is none): the text from the first `#` that is outside a string literal."""
+    quote = ""
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if quote:
+            if ch == "\\":
+                i += 1
+            elif ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "#":
+            return line[i:]
+        i += 1
+    return ""
+
+
 def scan(root: Path) -> tuple[int, list[str], list[str]]:
     """(tools found, findings, places this scan could not read)."""
     parsed = _parsed(root)
     tools, bases = _tool_names(parsed)
+    concrete = {name.split("::")[-1] for _, _, lines in parsed for _, name, _ in _concrete_classes(lines, tools, bases)}
     found, findings, unchecked = 0, [], []
     for p, text, lines in parsed:
         rel = p.relative_to(root)
@@ -258,7 +352,18 @@ def scan(root: Path) -> tuple[int, list[str], list[str]]:
             args = _balanced(text, m.end() - 1, "(", ")")
             t = re.search(r"\btools:\s*(\S)", args)
             if t and t[1] != "[":
-                unchecked.append(f"{rel}:{_line_of(text, m.start())}: MCP::Server.new(tools: ...) is not a literal list, so the tools it serves cannot be found")
+                where = f"{rel}:{_line_of(text, m.start())}"
+                # the declaration is a comment and `parsed` blanks whole-line comments, so read it from the file: the line above the call through the line it ends on
+                raw = p.read_text(encoding="utf-8").split("\n")
+                first, last = _line_of(text, m.start()) - 1, _line_of(text, m.end() - 1 + len(args)) - 1
+                span = "\n".join(_comment(ln) for ln in raw[max(first - 1, 0) : last + 1])   # comments only: the same words in a string are not a declaration
+                mark = REGISTRY_MARK.search(span)
+                if not mark:
+                    unchecked.append(f"{where}: MCP::Server.new(tools: ...) is not a literal list, so the tools it serves cannot be found")
+                    continue
+                fs, us = _registry(parsed, mark["const"], tools, concrete)
+                findings += [f"{where}: {f}" for f in fs]
+                unchecked += [f"{where}: {u}" for u in us]
         for m in TOOLS_MUTATED.finditer(text):
             unchecked.append(f"{rel}:{_line_of(text, m.start())}: tools are added to a server after construction ({m.group(0).strip()}), so they cannot be found")
     unchecked.extend(_outside(root))
@@ -337,7 +442,47 @@ GOOD = "class SalesReport < MCP::Tool\n  annotations(read_only_hint: true, open_
 BASE = "class ApplicationTool < MCP::Tool\nend\n"
 SUB = "class Sub < ApplicationTool\n  annotations(read_only_hint: true, open_world_hint: false)\nend\n"
 # (label, files, tools expected, findings expected, text a finding must contain, places not checked expected)
+def _tool(name: str, hints: str = "read_only_hint: true, open_world_hint: false") -> str:
+    return f"class {name} < MCP::Tool\n  annotations({hints})\nend\n"
+
+
+def _registry_case(label: str, registry: str, mark: str, tools: str, want_tools: int, want_findings: int, needle: str, want_unchecked: int, after: bool = False):
+    call = "    MCP::Server.new(name: 'x', tools: policy.tools)" + (f"  {mark}" if after else "") + "\n"
+    server = "class Factory\n  def build\n" + ("" if after else f"    {mark}\n") + call + "  end\nend\n"
+    return (label, {"app/mcp/tools.rb": tools + registry, "app/mcp/factory.rb": server}, want_tools, want_findings, needle, want_unchecked)
+
+
+_MARK = "# mcp-tools: registry ALL"
+_FULL = "# mcp-tools: registry Mcp::Tools::ALL"
 CASES: list[tuple[str, dict[str, str], int, int, str, int]] = [
+    _registry_case("registry: a declared registry of scanned tool classes passes", "ALL = [A, B].freeze\n", _MARK, _tool("A") + _tool("B"), 2, 0, "", 0),
+    _registry_case("registry: the declaration may trail the call's line", "ALL = [A, B].freeze\n", _MARK, _tool("A") + _tool("B"), 2, 0, "", 0, after=True),
+    _registry_case("registry: a registry spread over lines with comments passes", "ALL = [\n  A, # reads\n  B,\n].freeze\n", _MARK, _tool("A") + _tool("B"), 2, 0, "", 0),
+    _registry_case("registry: a listed class that is not a tool is a finding, not a pass", "ALL = [A, Ghost].freeze\n", _MARK, _tool("A"), 1, 1, "lists Ghost", 0),
+    _registry_case("registry: a tool class the registry does not list is a finding", "ALL = [A].freeze\n", _MARK, _tool("A") + _tool("B"), 2, 1, "tool class B is not in registry ALL", 0),
+    _registry_case("registry: a listed tool that states no hints is still judged", "ALL = [A, B].freeze\n", _MARK, _tool("A") + "class B < MCP::Tool\nend\n", 2, 1, "declares no annotations", 0),
+    _registry_case("registry: a registry that is not defined is could-not-check", "OTHER = [A].freeze\n", _MARK, _tool("A"), 1, 0, "", 1),
+    _registry_case("registry: a registry defined twice is could-not-check", "ALL = [A].freeze\nALL = [A].freeze\n", _MARK, _tool("A"), 1, 0, "", 1),
+    _registry_case("registry: a splat in the registry is could-not-check", "ALL = [A, *OTHER].freeze\n", _MARK, _tool("A"), 1, 0, "", 1),
+    _registry_case("registry: an empty registry is could-not-check", "ALL = [].freeze\n", _MARK, _tool("A"), 1, 0, "", 1),
+    _registry_case("registry: a declaration three lines above the call is not beside it", "ALL = [A].freeze\n", _MARK + "\n\n", _tool("A"), 1, 0, "", 1),
+    # dd's review of #1988 (each of these passed with 0 findings before): the wrong constant, an unread tail, a grown list, a mark in a string
+    _registry_case("registry: another module's ALL is not the declared Mcp::Tools::ALL", "module Colors\n  ALL = [A, B].freeze\nend\n", _FULL, _tool("A") + _tool("B"), 2, 0, "", 1),
+    _registry_case("registry: a computed Mcp::Tools::ALL is could-not-check even with a literal ALL elsewhere",
+                   "module Mcp\n  module Tools\n    ALL = ObjectSpace.each_object(Class).select { |c| c < MCP::Tool }\n  end\nend\nmodule Colors\n  ALL = [A, B].freeze\nend\n", _FULL, _tool("A") + _tool("B"), 2, 0, "", 1),
+    _registry_case("registry: the declared full path, nested as modules, is read", "module Mcp\n  module Tools\n    ALL = [A, B].freeze\n  end\nend\n", _FULL, _tool("A") + _tool("B"), 2, 0, "", 0),
+    _registry_case("registry: the declared full path, compact as `module Mcp::Tools`, is read", "module Mcp::Tools\n  ALL = [A, B].freeze\nend\n", _FULL, _tool("A") + _tool("B"), 2, 0, "", 0),
+    _registry_case("registry: a literal head with an unread tail (`[A] + EXTRA`) is could-not-check", "ALL = [A] + EXTRA\n", _MARK, _tool("A"), 1, 0, "", 1),
+    _registry_case("registry: a list followed by `.concat(EXTRA)` on the next line is could-not-check", "ALL = [A]\n  .concat(EXTRA)\n", _MARK, _tool("A"), 1, 0, "", 1),
+    _registry_case("registry: a list with a chained call (`.map`) is could-not-check", "ALL = [A].map(&:itself)\n", _MARK, _tool("A"), 1, 0, "", 1),
+    _registry_case("registry: `ALL << Rogue` after the definition is could-not-check", "ALL = [A]\nALL << Rogue\n", _MARK, _tool("A"), 1, 0, "", 1),
+    _registry_case("registry: `ALL.push(Rogue)` after the definition is could-not-check", "ALL = [A]\nALL.push(Rogue)\n", _MARK, _tool("A"), 1, 0, "", 1),
+    _registry_case("registry: `ALL += [Rogue]` after the definition is could-not-check", "ALL = [A]\nALL += [Rogue]\n", _MARK, _tool("A"), 1, 0, "", 1),
+    _registry_case("registry: `ALL.freeze` is not a mutation", "ALL = [A]\nALL.freeze\n", _MARK, _tool("A"), 1, 0, "", 0),
+    ("registry: the declaration inside a string is not a declaration",
+     {"app/mcp/tools.rb": _tool("A") + "ALL = [A].freeze\n", "app/mcp/factory.rb": "class F\n  def b\n    MCP::Server.new(name: '# mcp-tools: registry ALL', tools: policy.tools)\n  end\nend\n"}, 1, 0, "", 1),
+    ("registry: the declaration in a comment after code on its own line still counts",
+     {"app/mcp/tools.rb": _tool("A") + "ALL = [A].freeze\n", "app/mcp/factory.rb": "class F\n  def b\n    MCP::Server.new(name: 'x #', tools: policy.tools) # mcp-tools: registry ALL\n  end\nend\n"}, 1, 0, "", 0),
     ("explicit class macro is clean", {"app/mcp/a.rb": GOOD}, 1, 0, "", 0),
     ("no annotations at all is a finding", {"app/mcp/a.rb": "class A < MCP::Tool\n  description 'x'\nend\n"}, 1, 1, "declares no annotations", 0),
     ("only read_only_hint set misses open_world_hint",
