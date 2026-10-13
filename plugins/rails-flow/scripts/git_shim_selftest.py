@@ -55,7 +55,9 @@ class Repo:
         self.work = base / name
         home = base / f"{name}-home"; home.mkdir()
         gc = home / "gitconfig"; gc.write_text("")
-        self.env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "RAILS_FLOW_")) and k not in {"HOME", "XDG_CONFIG_HOME"}}
+        # CLAUDE_SESSION_PROJECT_TOP is stripped too (#1999): inside a Claude session it is in the ambient environment, and with it the fixture exemption is live for ANY marked repository in the temp
+        # root run from its own directory, which these rows (made by fixture_git.init, so marked) would then walk through instead of being refused.
+        self.env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "RAILS_FLOW_", "CLAUDE_SESSION")) and k not in {"HOME", "XDG_CONFIG_HOME"}}
         # NO GIT_CONFIG_* here: the shim refuses a command run with one (they can define aliases and hooks it cannot see), so the home directory isolates.
         self.env.update(HOME=str(home), GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",  # fixture-git: exempt (the shim under test finds the repository from its cwd; fixture_git's GIT_DIR binding would hide that)
                         GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t", GIT_TERMINAL_PROMPT="0", GIT_EDITOR=":")  # fixture-git: exempt (the shim under test finds the repository from its cwd; fixture_git's GIT_DIR binding would hide that)
@@ -455,7 +457,7 @@ def _(base):
     runs(r, label, "-c", "gc.auto=0", "status")
 
 
-ALLOWED_KEYS = ("maintenance.auto", "gc.auto", "user.name", "user.email", "commit.gpgsign")
+ALLOWED_KEYS = ("maintenance.auto", "gc.auto", "user.name", "user.email", "commit.gpgsign", "init.defaultbranch")
 PAIRS_OK = (("core.fsmonitor", "false"), ("core.hooksPath", "/dev/null"), ("core.quotePath", "false"), ("tag.gpgSign", "false"), ("credential.helper", ""),
             ("credential.helper", "!gh auth git-credential"), ("CORE.FSMONITOR", "false"), ("Core.HooksPath", "/dev/null"), ("TAG.GPGSIGN", "false"))
 PAIRS_REFUSED = (("core.fsmonitor", "true"), ("core.fsmonitor", "/tmp/x"), ("core.fsmonitor", "False"), ("core.fsmonitor", "false "), ("core.fsmonitor", ""), ("core.fsmonitor", "0"),
@@ -658,7 +660,140 @@ def _(base):
         attempt(f"{what} is not exempt in the fixture", fx, env_for(fx), ok=False, args=args, stray_check=False)
     # ... nor the rules about hooks, config and --no-verify
     attempt("`commit --no-verify` is not exempt in the fixture", fx, env_for(fx), ok=False, args=("commit", "--no-verify", "-m", "x", "--allow-empty"), stray_check=False)
-    attempt("`config core.hooksPath` is not exempt in the fixture", fx, env_for(fx), ok=False, args=("config", "core.hooksPath", "/tmp/h"), stray_check=False)
+    # ... except ONE local config write, which a project's spec needs to install its own hooks in its temp repository (#1999): `core.hooksPath` in the fixture's own config
+    attempt("`config core.hooksPath` in the fixture's own config IS exempt (#1999): it switches off the fixture's hooks, never the session's", fx, env_for(fx), ok=True, args=("config", "core.hooksPath", "/tmp/h"), stray_check=False)
+    attempt("`config --global core.hooksPath` is not exempt in the fixture", fx, env_for(fx), ok=False, args=("config", "--global", "core.hooksPath", "/tmp/h"), stray_check=False)
+    attempt("`config core.fsmonitor` is not exempt in the fixture", fx, env_for(fx), ok=False, args=("config", "core.fsmonitor", "true"), stray_check=False)
+
+
+@case("shim: a downstream project's own spec fixtures, run from the repository's directory, may stage their temp repositories once marked (#1999)")
+def _(base):
+    label = "shim: a downstream project's own spec fixtures, run from the repository's directory, may stage their temp repositories once marked (#1999)"
+    # MODELLED ON RETASK'S SPECS (#1845: 41 examples in spec/lib/qa/release_certification_spec.rb, spec/lib/githooks/pre_push_spec.rb and four more): `Dir.mktmpdir` for the repository, git run
+    # through the shim with `chdir: repo` (no GIT_DIR, no GIT_WORK_TREE), a hermetic environment (GIT_CONFIG_GLOBAL=/dev/null, GIT_CONFIG_NOSYSTEM=1, GIT_AUTHOR_*), `git init -q -b dev`, a
+    # bare origin made with `-c init.defaultBranch=main init --bare`, then `git add -A`, `git add .` and `git -C dir -c user.name=t -c user.email=t@t add .`. The project's helper writes the
+    # identity file (`.git/rails-flow-fixture`) right after `git init`: the documented contract (plugins/rails-flow/reference/downstream-spec-fixtures.md).
+    proj = Repo(base, "p1999")                       # the session's project, which the SessionStart hook marked
+    (proj.work / ".git" / "claude-session-project").write_text("")
+    tmproot = base / "tmproot1999"
+    tmproot.mkdir()
+    home = base / "home1999"
+    home.mkdir()
+    outside = base / "outside1999"
+    outside.mkdir()
+
+    def env(**over: str | None) -> dict[str, str]:
+        e = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "RAILS_FLOW_", "CLAUDE_SESSION")) and k not in {"HOME", "TMPDIR"}}
+        e.update(PATH=f"{SHIM_DIR}{os.pathsep}{os.environ['PATH']}", HOME=str(home), TMPDIR=str(tmproot), CLAUDE_SESSION_PROJECT_TOP=str(proj.work),
+                 GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1", GIT_AUTHOR_NAME="Spec", GIT_AUTHOR_EMAIL="spec@example.com",
+                 GIT_COMMITTER_NAME="Spec", GIT_COMMITTER_EMAIL="spec@example.com", GIT_TERMINAL_PROMPT="0", GIT_EDITOR=":")
+        for k, v in over.items():
+            e.pop(k, None) if v is None else e.__setitem__(k, v)
+        return e
+
+    def git(args: tuple[str, ...], cwd: Path, **over: str | None) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", *args], cwd=cwd, env=env(**over), capture_output=True, text=True, timeout=20)  # fixture-git: exempt (the SHIM under test is what runs; the repository is judged from this cwd)
+
+    def staged(repo: Path) -> str:
+        return subprocess.run([REAL_GIT, "-C", str(repo), "diff", "--cached", "--name-only"], env=fixture_git.hermetic(proj.env), capture_output=True, text=True).stdout
+
+    def unstage(repo: Path) -> None:
+        subprocess.run([REAL_GIT, "-C", str(repo), "reset", "-q"], env=fixture_git.hermetic(proj.env), capture_output=True, text=True)
+
+    def works(what: str, args: tuple[str, ...], cwd: Path, repo: Path, **over: str | None) -> None:
+        unstage(repo)
+        p = git(args, cwd, **over)
+        check(label, p.returncode == 0 and "git-shim" not in p.stderr and "stray.txt" in staged(repo), f"{what}: refused or not staged: exit {p.returncode}: {p.stderr.strip()[:150]}")
+
+    def refuses(what: str, args: tuple[str, ...], cwd: Path, repo: Path, **over: str | None) -> None:
+        unstage(repo)
+        p = git(args, cwd, **over)
+        check(label, p.returncode != 0 and "git-shim" in p.stderr and "stray.txt" not in staged(repo) and "secret.env" not in staged(proj.work),
+              f"{what}: was NOT refused, or something was staged: exit {p.returncode}: {p.stderr.strip()[:150]}")
+
+    # the repositories, made THROUGH the shim the way the project's specs make them
+    primary = tmproot / "primary"
+    p = git(("init", "-q", "-b", "dev", str(primary)), tmproot)
+    check(label, p.returncode == 0 and "git-shim" not in p.stderr, f"`git init -q -b dev` under the hermetic environment: exit {p.returncode}: {p.stderr.strip()[:150]}")
+    p = git(("-c", "init.defaultBranch=main", "init", "-q", "--bare", str(tmproot / "origin.git")), tmproot)
+    check(label, p.returncode == 0 and "git-shim" not in p.stderr, f"`git -c init.defaultBranch=main init --bare` (a key the project's specs set): exit {p.returncode}: {p.stderr.strip()[:150]}")
+    p = git(("-c", "init.templatedir=/nowhere", "init", "-q", str(tmproot / "tpl")), tmproot)
+    check(label, p.returncode != 0 and "git-shim" in p.stderr, f"`-c init.templateDir=...` (a template can carry hooks) must stay refused: exit {p.returncode}: {p.stderr.strip()[:150]}")
+    (primary / "stray.txt").write_text("s\n")
+    (proj.work / "secret.env").write_text("secret\n")
+    # NOT YET MARKED: the shim cannot tell the project's repository from a fixture
+    refuses("an UNMARKED repository in the temp root", ("add", "-A"), primary, primary)
+    # THE CONTRACT: the project's helper writes the identity file right after `git init`
+    (primary / ".git" / "rails-flow-fixture").write_text("")
+    works("`add -A` in the marked repository, from its own directory", ("add", "-A"), primary, primary)
+    works("`add .` in the marked repository", ("add", "."), primary, primary)
+    works("`git -C <dir> -c user.name=t -c user.email=t@t add .` (the spelling release_spec.rb uses)", ("-C", str(primary), "-c", "user.name=t", "-c", "user.email=t@t", "add", "."), tmproot, primary)
+    p = git(("commit", "-q", "-m", "seed"), primary)
+    check(label, p.returncode == 0 and "git-shim" not in p.stderr, f"a plain commit in the fixture is not the shim's to refuse: exit {p.returncode}: {p.stderr.strip()[:150]}")
+    # a LINKED worktree of a marked fixture carries the identity in the common dir (pre_push_spec.rb adds worktrees)
+    wt = tmproot / "feature-wt"
+    p = git(("worktree", "add", "-q", str(wt), "-b", "feature"), primary)
+    check(label, p.returncode == 0, f"`git worktree add`: {p.stderr.strip()[:150]}")
+    (wt / "wt-stray.txt").write_text("s\n")           # a NEW file: stray.txt is already tracked here by the seed commit, so adding it again stages nothing
+    unstage(wt)
+    p = git(("add", "-A"), wt)
+    check(label, p.returncode == 0 and "git-shim" not in p.stderr and "wt-stray.txt" in staged(wt),
+          f"`add -A` in a linked worktree of a marked fixture (the identity is in the common dir): refused or not staged: exit {p.returncode}: {p.stderr.strip()[:150]}")
+    # what the contract does NOT open: every condition and every #1994 bypass, in this mode
+    (outside / "stray.txt").write_text("s\n")
+    subprocess.run([REAL_GIT, "init", "-q", str(outside)], env=fixture_git.hermetic(proj.env), capture_output=True, check=True)
+    (outside / ".git" / "rails-flow-fixture").write_text("")
+    refuses("a MARKED repository outside the temp root", ("add", "-A"), outside, outside)
+    refuses("TMPDIR unset", ("add", "-A"), primary, primary, TMPDIR=None)
+    refuses("TMPDIR contains the project", ("add", "-A"), primary, primary, TMPDIR=str(base))
+    refuses("CLAUDE_SESSION_PROJECT_TOP unset", ("add", "-A"), primary, primary, CLAUDE_SESSION_PROJECT_TOP=None)
+    refuses("only GIT_DIR set", ("add", "-A"), primary, primary, GIT_DIR=str(primary / ".git"))
+    refuses("only GIT_WORK_TREE set", ("add", "-A"), primary, primary, GIT_WORK_TREE=str(primary))
+    pw = str(proj.work)
+    for what, args in (("--git-dir and --work-tree naming the project", ("--git-dir", f"{pw}/.git", "--work-tree", pw, "add", "-A")),
+                       ("--git-dir= and --work-tree=", (f"--git-dir={pw}/.git", f"--work-tree={pw}", "add", "-A")),
+                       ("--namespace", ("--namespace", "x", "add", "-A")),
+                       ("-C the project (the repository git will use is the project, which carries the session marker)", ("-C", pw, "add", "-A")),
+                       ("-C an UNMARKED repository", ("-C", str(tmproot / "plain"), "add", "-A"))):
+        if what.startswith("-C an UNMARKED"):
+            subprocess.run([REAL_GIT, "init", "-q", str(tmproot / "plain")], env=fixture_git.hermetic(proj.env), capture_output=True, check=True)
+            (tmproot / "plain" / "stray.txt").write_text("s\n")
+        refuses(what, args, primary, primary)
+    for var, val in (("GIT_INDEX_FILE", f"{pw}/.git/index"), ("GIT_OBJECT_DIRECTORY", f"{pw}/.git/objects"), ("GIT_ALTERNATE_OBJECT_DIRECTORIES", f"{pw}/.git/objects"),
+                     ("GIT_COMMON_DIR", f"{pw}/.git"), ("GIT_NAMESPACE", "x")):
+        refuses(f"{var} in the environment", ("add", "-A"), primary, primary, **{var: val})
+    # a marked repository whose work tree is configured to be the project: the repository git will use is judged, not the directory the command ran in
+    subprocess.run([REAL_GIT, "-C", str(primary), "config", "core.worktree", pw], env=fixture_git.hermetic(proj.env), capture_output=True, check=True)
+    refuses("core.worktree pointing at the project", ("add", "-A"), primary, primary)
+    subprocess.run([REAL_GIT, "-C", str(primary), "config", "--unset", "core.worktree"], env=fixture_git.hermetic(proj.env), capture_output=True)
+    # the exemption is STAGING only, in this mode too
+    for what, args in (("`reset --hard`", ("reset", "--hard")), ("`clean -fd`", ("clean", "-fd")), ("`checkout -f`", ("checkout", "-f")),
+                       ("`commit --no-verify`", ("commit", "--no-verify", "-m", "x", "--allow-empty"))):
+        refuses(f"{what} is not exempt in a downstream fixture", args, primary, primary)
+    # ONE local config write is: the project's spec installs its own hooks in its temp repository (`git config core.hooksPath .githooks`, pre_push_spec.rb)
+    hp = ("core.hooksPath", ".githooks")
+    p = git(("config", *hp), primary)
+    check(label, p.returncode == 0 and "git-shim" not in p.stderr and "hooksPath = .githooks" in (primary / ".git" / "config").read_text(),
+          f"`git config core.hooksPath .githooks` in a marked fixture: exit {p.returncode}: {p.stderr.strip()[:150]}")
+    p = git(("config", "--local", *hp), primary)
+    check(label, p.returncode == 0 and "git-shim" not in p.stderr, f"`git config --local core.hooksPath` in a marked fixture: exit {p.returncode}: {p.stderr.strip()[:150]}")
+    p = git(("config", "core.hooksPath", ".githooks"), plain := tmproot / "plain")
+    check(label, p.returncode != 0 and "git-shim" in p.stderr, f"`config core.hooksPath` in an UNMARKED repository must be refused: exit {p.returncode}: {p.stderr.strip()[:150]}")
+    p = git(("config", *hp), outside)
+    check(label, p.returncode != 0 and "git-shim" in p.stderr, f"`config core.hooksPath` in a MARKED repository outside the temp root must be refused: exit {p.returncode}: {p.stderr.strip()[:150]}")
+    p = git(("-C", pw, "config", *hp), primary)
+    check(label, p.returncode != 0 and "git-shim" in p.stderr and "hooksPath" not in (proj.work / ".git" / "config").read_text(),
+          f"`-C <the project> config core.hooksPath` must be refused and write nothing: exit {p.returncode}: {p.stderr.strip()[:150]}")
+    for what, args in (("`--global core.hooksPath`", ("config", "--global", *hp)), ("`--system core.hooksPath`", ("config", "--system", *hp)), ("`--file` naming a global config", ("config", "--file", str(home / ".gitconfig"), *hp)),
+                       ("`-f` naming a global config", ("config", "-f", str(home / ".gitconfig"), *hp)), ("`--worktree core.hooksPath`", ("config", "--worktree", *hp)), ("`--unset core.hooksPath`", ("config", "--unset", "core.hooksPath")),
+                       ("a value that looks like an option", ("config", "core.hooksPath", "--global")), ("an extra argument", ("config", *hp, "extra")), ("another key: core.fsmonitor", ("config", "core.fsmonitor", "true")),
+                       ("another key: core.sshCommand", ("config", "core.sshCommand", "x")), ("another key: include.path", ("config", "include.path", "/etc/gitconfig")),
+                       ("`--get core.hooksPath` (a read: the unchanged rule refuses any `config` naming the key)", ("config", "--get", "core.hooksPath"))):
+        p = git(args, primary)
+        check(label, p.returncode != 0 and "git-shim" in p.stderr, f"`git {' '.join(args)}`: was NOT refused: exit {p.returncode}: {p.stderr.strip()[:150]}")
+    check(label, not (home / ".gitconfig").exists(), "a `--global`/`--file` write reached the home directory's gitconfig")
+    # ENV mode keeps its own rule about -C: GIT_DIR and GIT_WORK_TREE name the repository, so a -C beside them is a command that names two
+    refuses("ENV mode: GIT_DIR and GIT_WORK_TREE set, and -C beside them", ("-C", str(primary), "add", "-A"), primary, primary, GIT_DIR=str(primary / ".git"), GIT_WORK_TREE=str(primary))
 
 
 @case("shim: GIT_CONFIG_GLOBAL is /dev/null, or a file inside the temp root whose every entry is allowlisted (#1982)")
