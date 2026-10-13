@@ -83,6 +83,12 @@ jobs:
           { sudo apt-get update -qq && sudo apt-get install -y -qq zsh; } || { sleep 5; sudo apt-get update -qq && sudo apt-get install -y -qq zsh; }   # one retry: a mirror blip must not turn a release red
           command -v zsh >/dev/null || { echo "::error::zsh did not install: git_shim_selftest's zsh row would be skipped"; exit 1; }
           echo "zsh: $(zsh --version)"
+          # PROOF IN THE LOG that the row runs (the gate sweep prints only a passing gate's verdict): the hook case alone, and a refusal if it says
+          # it skipped its zsh row.
+          # `|| { echo "$out"; exit 1; }`: under set -e a failing selftest would otherwise end the step with an EMPTY log (8b's review of #1976).
+          out="$(python3 plugins/rails-flow/scripts/git_shim_selftest.py --match "the SessionStart hook puts the shim first" 2>&1)" || { echo "$out"; exit 1; }
+          echo "$out" | tail -1
+          case "$out" in *"did NOT run under zsh"*) echo "::error::git_shim_selftest skipped its zsh row with zsh installed"; exit 1 ;; esac
 
       # The gate sweep WITHOUT the machine diagnostics. Those ask about a maintainer's clone --
       # current branch, stale local `main` ref, `gh` auth, the licensed corpora -- none of which is
