@@ -51,7 +51,10 @@ GUARD = Guard(
         Mutation('a shell alias that mentions git is allowed', 'if ci_match "$val" "*git*"; then RULE="the shell alias', 'if false; then RULE="the shell alias', 'a shell alias that mentions git'),
         Mutation('an alias with a quote is allowed', '      *\\\'*|*\\"*|*\\\\*) RULE="the alias alias.$SUB holds a quote', '      *NOPE*) RULE="the alias alias.$SUB holds a quote', 'an alias with a quote'),
         Mutation('an alias chain of any depth is followed', 'if [ "$depth" -gt 5 ]; then RULE="an alias chain', 'if false; then RULE="an alias chain', 'an alias with a quote'),
-        Mutation('the shim finds itself as the real git', '  [ "$dd" = "$self_dir" ] && continue', '  :', 'does not loop'),
+        # the own-directory line alone is now redundant (the name and the header line also skip the shim's own copy, #2003), so the mutant removes all four skips at once
+        Mutation('the shim finds itself as the real git',
+                 '  [ "$dd" = "$self_dir" ] && continue\n  case "$dd" in */git-shim) continue ;; esac\n  case "$d" in */git-shim|*/git-shim/) continue ;; esac\n  first=""; { IFS= read -r -d \'\' -n 400 first; } < "$d/git" 2>/dev/null\n  case "$first" in *"# rails-flow git shim"*) continue ;; esac\n',
+                 '', 'does not loop'),
         Mutation('the escape variable is not read', 'if [ "${RAILS_FLOW_GIT_OK:-}" = 1 ]; then', 'if [ "${RAILS_FLOW_GIT_OK:-}" = 2 ]; then', 'RAILS_FLOW_GIT_OK=1 runs the real git'),
         Mutation('-C is not forwarded when finding the root', '  TOP="$("$real" "${GLOBALS[@]}" rev-parse --show-toplevel 2>/dev/null)" || TOP=""', '  TOP="$("$real" rev-parse --show-toplevel 2>/dev/null)" || TOP=""', '-C is honoured'),
         Mutation('the shim depends on tr, so a PATH without it fails open', 'ci_match() { local r;', 'ci_match() { local r; tr a a </dev/null >/dev/null 2>&1 || return 1;', 'with no tr or dirname on PATH'),
@@ -84,6 +87,13 @@ GUARD = Guard(
                  '  session_repo_marked "$gd" && return 1          # the repository named', '  : # the repository named', 'stage its OWN temp repository whole'),
         Mutation('the marker of a linked worktree is not looked for in its common dir',
                  '  if [ -f "$gd/commondir" ]; then', '  if false; then', 'stage its OWN temp repository whole'),
+        # #2003: two rails-flow versions' shims on PATH called each other forever (every git call hung).
+        Mutation('a shim directory is not skipped by its physical name', 'case "$dd" in */git-shim) continue ;; esac', ':', 'do not call each other forever'),
+        Mutation('a shim directory is not skipped by the name it is written with', 'case "$d" in */git-shim|*/git-shim/) continue ;; esac', ':', 'do not call each other forever'),
+        Mutation('a shim is not recognised by its header line', 'case "$first" in *"# rails-flow git shim"*) continue ;; esac', ':', 'do not call each other forever'),
+        Mutation('the re-entry counter never refuses', 'if [ "$depth" -ge 16 ]; then', 'if [ "$depth" -ge 160000 ]; then', 'do not call each other forever'),
+        Mutation('the audited escape does not pass the counter on', '  RAILS_FLOW_GIT_SHIM_DEPTH=$((depth + 1)) exec "$real" "${ORIG[@]}"\nfi', '  exec "$real" "${ORIG[@]}"\nfi', 'do not call each other forever'),
+        Mutation('the final exec does not pass the counter on', '\nRAILS_FLOW_GIT_SHIM_DEPTH=$((depth + 1)) exec "$real" "${ORIG[@]}"\n', '\nexec "$real" "${ORIG[@]}"\n', 'do not call each other forever'),
         # the adversary pass on #1994 (atk1994.sh, atk1994b.sh): one mutant per bypass, and per variable / flag.
         Mutation('an environment redirection (index, objects, common dir, namespace) is not refused',
                  '    [ "${!v+x}" = x ] && return 1', '    :', 'stage its OWN temp repository whole'),

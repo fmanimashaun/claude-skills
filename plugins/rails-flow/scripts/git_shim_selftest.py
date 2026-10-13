@@ -688,6 +688,7 @@ def _(base):
                 env[k] = v
         e = dict(proj.path_env)
         e.pop("TMPDIR", None)
+        e.pop("CLAUDE_SESSION_PROJECT_TOP", None)     # this very session's own marker, when the selftest runs inside one, must not stand in for the row's
         e.update(env)
         p = subprocess.run(["git", "status"], cwd=proj.work, env=e, capture_output=True, text=True, timeout=20)
         if ok:
@@ -803,6 +804,75 @@ def _(base):
     p = r.g("status", "--porcelain")
     check(label, p.returncode == 0 and "a.txt" in p.stdout, f"exit {p.returncode}: {p.stderr.strip()[:160]}")
     refused(r, label, "reset", "--hard")
+
+
+OLD_SHIM = """#!/usr/bin/env bash
+# rails-flow git shim (#1790, the owner's decision on #1793). An EARLIER version: it skips only ITS OWN directory when it looks for the real git.
+self="${BASH_SOURCE[0]}"
+self_dir="$(cd "${self%/*}" && pwd -P)"
+real=""; old_ifs="$IFS"; IFS=:
+for d in $PATH; do [ -x "$d/git" ] && [ ! -d "$d/git" ] || continue; dd="$(cd "$d" && pwd -P)" || continue; [ "$dd" = "$self_dir" ] && continue; real="$d/git"; break; done
+IFS="$old_ifs"
+exec "$real" "$@"
+"""
+
+
+@case("shim: two rails-flow versions' shims on PATH do not call each other forever (#2003)")
+def _(base):
+    label = "shim: two rails-flow versions' shims on PATH do not call each other forever (#2003)"
+    tmp = base / "two"
+    tmp.mkdir()
+
+    def make(parent: str, name: str = "git-shim", text: str | None = None) -> Path:
+        d = tmp / parent / name
+        d.mkdir(parents=True)
+        (d / "git").write_text(text if text is not None else (SHIM_DIR / "git").read_text())
+        (d / "git").chmod(0o755)
+        return d
+
+    clean = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "RAILS_FLOW_"))}
+    headerless = OLD_SHIM.replace("# rails-flow git shim (#1790, the owner's decision on #1793). An EARLIER version:", "# an earlier shim, with no signature line:")
+
+    def run(what: str, dirs: list[Path | str], *args: str, rc: int = 0, want: str | None = None, **extra: str) -> None:
+        env = dict(clean, PATH=os.pathsep.join([str(x) for x in dirs] + [os.environ["PATH"]]), **extra)
+        try:
+            p = subprocess.run(["git", *args], env=env, capture_output=True, text=True, timeout=15)
+        except subprocess.TimeoutExpired:
+            check(label, False, f"{what}: git HUNG (no answer in 15 s): the shims call each other")
+            return
+        ok = p.returncode == rc and (want is None or want in (p.stdout + p.stderr))
+        check(label, ok, f"{what}: exit {p.returncode} (want {rc}){'' if want is None else f', wanted {want!r}'}: {(p.stdout + p.stderr).strip()[:160]}")
+
+    new = make("v2")
+    old = make("v1", text=OLD_SHIM)
+    run("the new shim first, an earlier version behind it", [new, old], "--version", want="git version")
+    run("an earlier version first, the new shim behind it", [old, new], "--version", want="git version")
+    run("two copies of the current shim, each in a */git-shim directory", [new, make("v3")], "--version", want="git version")
+    # each way of recognising another shim, alone: the others cannot save it
+    run("a shim with NO signature line in a */git-shim directory (by its physical name only)", [new, make("n", text=headerless)], "--version", want="git version")
+    run("a shim with the signature line in a directory of another name (by its content only)", [new, make("c", "shimx", text=OLD_SHIM)], "--version", want="git version")
+    target = tmp / "lgtarget"
+    target.mkdir()
+    (target / "git").write_text(headerless)
+    (target / "git").chmod(0o755)
+    (tmp / "lg").mkdir()
+    (tmp / "lg" / "git-shim").symlink_to(target, target_is_directory=True)
+    run("a symlink named */git-shim to a headerless shim in a directory of another name (by its logical name only)", [new, tmp / "lg" / "git-shim"], "--version", want="git version")
+    plink = make("pl")
+    (tmp / "plink").symlink_to(plink.parent / "git-shim", target_is_directory=True)
+    (plink / "git").write_text(headerless)
+    run("a symlink of another name to a headerless shim in a */git-shim directory (by its physical name only)", [new, tmp / "plink"], "--version", want="git version")
+    # the re-entry counter
+    run("a chain that has entered a shim 16 times is refused, not run", [new], "--version", rc=127, want="re-entered 16 times", RAILS_FLOW_GIT_SHIM_DEPTH="16")
+    run("a chain that has entered a shim 15 times still runs", [new], "--version", want="git version", RAILS_FLOW_GIT_SHIM_DEPTH="15")
+    run("a counter that is not a number counts as zero", [new], "--version", want="git version", RAILS_FLOW_GIT_SHIM_DEPTH="abc")
+    stub = tmp / "stubreal"
+    stub.mkdir()
+    (stub / "git").write_text("#!/bin/sh\necho depth=$RAILS_FLOW_GIT_SHIM_DEPTH\n")
+    (stub / "git").chmod(0o755)
+    run("the real git is exec'd with the counter one higher (a first entry)", [new, stub], "--version", want="depth=1")
+    run("the audited escape (RAILS_FLOW_GIT_OK=1) also passes the counter on", [new, stub], "--version", want="depth=1", RAILS_FLOW_GIT_OK="1")
+    run("the real git is exec'd with the counter one higher (a later entry)", [new, stub], "--version", want="depth=4", RAILS_FLOW_GIT_SHIM_DEPTH="3")
 
 
 # --------------------------------------------------------------------------------------------- the SessionStart hook that puts it first
