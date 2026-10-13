@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Run the node:test files beside the QA robot's scaffolded TypeScript helpers (#1835).
 
-    scaffold_ts_tests.py [--selftest]
+    scaffold_ts_tests.py [--selftest | --selftest-only]
+
+`--selftest-only` runs the decision rules' own rows and stops: no Node needed, which is what the mutation guard runs (#1979).
 
 The helpers in `plugins/qa-flow/scaffold/qa/e2e/support/` are copied into a project by /qa-flow:setup-qa, so a defect in
 them ships to every project that takes the release-image robot. This runs their tests with Node's own runner and type
@@ -39,6 +41,21 @@ def summary(output: str) -> tuple[int | None, int | None]:
     return count("tests"), count("fail")
 
 
+def too_old(have: tuple[int, int] | None) -> bool:
+    """Node is unusable: its version could not be read, or it is below the floor type stripping needs."""
+    return have is None or have < MIN_NODE
+
+
+def no_tests(files: list[str]) -> bool:
+    """A run that found no test files is not a pass: it is the shape of a glob that matched nothing."""
+    return not files
+
+
+def run_passed(returncode: int, tests: int | None, fail: int | None) -> bool:
+    """A pass needs the runner to exit 0, BOTH footer counts to be present, at least one test, and zero failures."""
+    return returncode == 0 and tests is not None and fail is not None and tests > 0 and fail == 0
+
+
 def unrunnable(why: str, env: dict[str, str]) -> int:
     """Nothing could run. A skip on a maintainer's machine (3); a FAILURE under CI (1), where a skip would hide it."""
     ci = bool(env.get("CI", "").strip())
@@ -52,28 +69,48 @@ def selftest() -> int:
     if unrunnable("x", {"CI": "true"}) != 1: bad.append("under CI, a missing or old Node is not exit 1")
     if unrunnable("x", {}) != 3: bad.append("off CI, a missing or old Node is not exit 3")
     if unrunnable("x", {"CI": " "}) != 3: bad.append("a blank CI value is treated as CI")
+    # The decisions main() takes, without needing Node: each is a pure function, and each rule is a row that can fail (#1979).
+    footer = "ℹ tests 30\nℹ suites 0\nℹ pass 30\nℹ fail 0\nℹ cancelled 0\n"
+    if summary(footer) != (30, 0): bad.append("summary does not read tests and fail from node:test's footer")
+    if summary(footer.replace("fail 0", "fail 2")) != (30, 2): bad.append("summary does not read a non-zero failure count")
+    if summary("") != (None, None): bad.append("summary invents counts for a run that printed no footer")
+    if not run_passed(0, 30, 0): bad.append("a run with tests, no failures and exit 0 is not a pass")
+    if run_passed(0, 0, 0): bad.append("a run that executed no tests is a pass")
+    if run_passed(0, 30, 2): bad.append("a run with failing tests is a pass")
+    if run_passed(1, 30, 0): bad.append("a non-zero exit from the runner is a pass")
+    if run_passed(0, None, 0): bad.append("a run with no tests count is a pass")
+    if run_passed(0, 30, None): bad.append("a run with no failure count is a pass")
+    if not too_old(None): bad.append("a Node whose version could not be read is usable")
+    if not too_old((22, 5)): bad.append("Node 22.5, below the type-stripping floor, is usable")
+    if too_old((22, 6)): bad.append("Node 22.6, the floor itself, is too old")
+    if too_old((24, 0)): bad.append("a newer Node is too old")
+    if not too_old((21, 99)): bad.append("Node 21.99 is usable")
+    if not no_tests([]): bad.append("an empty list of test files is not 'no tests'")
+    if no_tests(["a.test.ts"]): bad.append("a list with a test file is 'no tests'")
     for b in bad:
         print(f"FAIL {b}")
     return 1 if bad else 0
 
 
 def main() -> int:
+    if "--selftest-only" in sys.argv[1:]:
+        return selftest()
     if "--selftest" in sys.argv[1:] and selftest():
         return 1
     node = shutil.which("node")
     if not node:
         return unrunnable("node is not on PATH", dict(os.environ))
     have = node_version(node)
-    if have is None or have < MIN_NODE:
+    if too_old(have):
         return unrunnable(f"node {have} is older than {MIN_NODE[0]}.{MIN_NODE[1]}, which type stripping needs", dict(os.environ))
     files = sorted(str(p) for p in SUPPORT.glob("*.test.ts"))
-    if not files:
+    if no_tests(files):
         print(f"scaffold_ts_tests: no *.test.ts under {SUPPORT} -- a run with no tests is not a pass")
         return 1
     r = subprocess.run([node, "--experimental-strip-types", "--no-warnings", "--test", "--test-reporter=spec", *files],
                        capture_output=True, text=True, timeout=300)
     tests, fail = summary(r.stdout)
-    if r.returncode != 0 or tests is None or fail is None or tests == 0 or fail != 0:
+    if not run_passed(r.returncode, tests, fail):
         # Every failing test BY NAME first: a tail of the output alone cut the first file's failures off.
         failed = sorted({l.strip() for l in r.stdout.splitlines() if l.lstrip().startswith("✖") and "failing tests" not in l})
         print("failing tests:\n  " + "\n  ".join(failed) if failed else "failing tests: none named")
