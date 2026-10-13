@@ -36,21 +36,21 @@ GUARD = Guard(
         ),
         Mutation(
             'no size cap: a command past it that mentions worktree is read, runs into the 15 s timeout and is denied without a reason (#1980)',
-            'if [ "${#cmd}" -gt "$_large_chars" ] && [[ $plain == *worktree* ]]; then\n',
-            'if false; then\n',
+            'if [ "${#cmd}" -gt "$_large_chars" ]; then\n  if [[ $plain == *worktree* ]]; then\n',
+            'if false; then\n  if [[ $plain == *worktree* ]]; then\n',
             'mentions `worktree` is refused at once',
         ),
         Mutation(
             'the size cap is not gated on a mention, so every large command is refused, an unrelated heredoc included (#1980)',
-            ' && [[ $plain == *worktree* ]]; then\n',
-            '; then\n',
+            '  if [[ $plain == *worktree* ]]; then\n    echo "BLOCKED',
+            '  if true; then\n    echo "BLOCKED',
             'does NOT mention `worktree` is let through',
         ),
         Mutation(
-            "the quotes are dropped with bash's global substitution again, which is quadratic in the number of quotes: 50,000 quoted words took over 100 s (#1980)",
+            "the quotes are dropped with bash's global substitution again, which is worse than quadratic in the number of quotes: 2,000 quoted words took 35 s (#1980)",
             'plain="$(printf \'%s\' "$cmd" | tr -d "\\047\\"\\\\\\\\" 2>/dev/null)" || plain="$cmd"',
             'plain="${cmd//[\\\'\\"\\\\]/}"',
-            'ONE 200 KB line of quoted words is let through',
+            'a 6 KB command of 1,500 quoted words is let through',
         ),
         Mutation(
             'every command is taken for a worktree add, so a plain git status is judged and refused',

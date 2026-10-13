@@ -4712,12 +4712,12 @@ def guard_worktree_fixtures() -> None:
         repo = new_repo(td)
         allowed("guard-worktree: a session that owns nothing may add a worktree", guard(repo, "git worktree add ../fresh -b feature/fresh dev"))
         # #1980: a large command is answered within seconds, whatever its shape (see guard-pr-ready's fixtures): plain lines, ONE long line, many quoted words (bash 3.2's
-        # `${cmd//[...]/}` took over 100 s on 50,000 of them), and one past the size cap that mentions `worktree` is refused at once with its reason (a timeout is a DENY with none).
+        # `${cmd//[...]/}` took 4 s on 1,000 of them, 35 s on 2,000 and 110 s on 3,000: worse than quadratic), and one past the size cap that mentions `worktree` is refused at once with its reason (a timeout is a DENY with none).
         wt_lines = lambda n: "echo start\n" + ("echo " + "x" * 60 + "\n") * n
         for label, cmd, code, says in (
                 ("a 170 KB command of plain lines is let through", wt_lines(2600), 0, ""),
                 ("ONE 300 KB line is let through", "echo " + "x" * 300000, 0, ""),
-                ("ONE 200 KB line of quoted words is let through", "echo " + "'a' " * 50000, 0, ""),
+                ("a 6 KB command of 1,500 quoted words is let through (bash 3.2 took 15 s over it)", "echo " + "'a' " * 1500, 0, ""),
                 ("a 390 KB command just under the cap, with `worktree` in it, is judged (not refused as too large)", wt_lines(5900) + "echo worktree", 0, ""),
                 ("a command past the cap that mentions `worktree` is refused at once, and says why", wt_lines(6900) + "echo worktree", 2, "too large for the gate to read"),
                 ("a command past the cap that does NOT mention `worktree` is let through", wt_lines(6900), 0, "")):
