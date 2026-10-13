@@ -103,15 +103,28 @@ GUARD = Guard(
         # #1964. A container that lacks a tool the runner has makes a guard read green here and fail there (release run 38297902322: pg_isready).
         Mutation(
             "postgresql-client is not installed, so pg_isready is the host's absence again",
-            'HOST_PACKAGES="postgresql-client lsof procps"',
-            'HOST_PACKAGES="lsof procps"',
+            'HOST_PACKAGES="postgresql-client lsof procps zsh"',
+            'HOST_PACKAGES="lsof procps zsh"',
             "the container installs the host tools a selftest probes",
         ),
         Mutation(
             "the canary no longer asks for pg_isready",
+            'CANARY_TOOLS="pg_isready lsof ps zsh"',
+            'CANARY_TOOLS="lsof ps zsh"',
+            "the container asserts pg_isready, lsof, ps and zsh are present",
+        ),
+        # #1971: without zsh, git_shim_selftest's zsh row is skipped, so the Linux check could not see a zsh regression.
+        Mutation(
+            "zsh is not installed, so git_shim_selftest's zsh row is skipped again",
+            'HOST_PACKAGES="postgresql-client lsof procps zsh"',
+            'HOST_PACKAGES="postgresql-client lsof procps"',
+            "the container installs the host tools a selftest probes",
+        ),
+        Mutation(
+            "the canary no longer asks for zsh",
+            'CANARY_TOOLS="pg_isready lsof ps zsh"',
             'CANARY_TOOLS="pg_isready lsof ps"',
-            'CANARY_TOOLS="lsof ps"',
-            "the container asserts pg_isready, lsof and ps are present",
+            "the container asserts pg_isready, lsof, ps and zsh are present",
         ),
         Mutation(
             "the canary is never run before a guard",

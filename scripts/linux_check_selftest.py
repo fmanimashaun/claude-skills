@@ -98,10 +98,10 @@ def main() -> int:
               script_text.count("|| rc=1") == 2 and "exit $rc" in script_text)
 
         # THE HOST-TOOL CANARY (#1964): the container installs the tools a selftest probes and asserts them present before any guard.
-        check("the container installs the host tools a selftest probes: postgresql-client, lsof and procps",
+        check("the container installs the host tools a selftest probes: postgresql-client, lsof, procps and zsh",
               "ca-certificates $LINUX_CHECK_HOST_PACKAGES" in script_text
-              and "LINUX_CHECK_HOST_PACKAGES=postgresql-client lsof procps" in args, str(args))
-        check("the container asserts pg_isready, lsof and ps are present", "LINUX_CHECK_CANARY_TOOLS=pg_isready lsof ps" in args, str(args))
+              and "LINUX_CHECK_HOST_PACKAGES=postgresql-client lsof procps zsh" in args, str(args))
+        check("the container asserts pg_isready, lsof, ps and zsh are present", "LINUX_CHECK_CANARY_TOOLS=pg_isready lsof ps zsh" in args, str(args))
         canary_at, install_at, loop_at = (script_text.find(x) for x in ("--check-tools $LINUX_CHECK_CANARY_TOOLS", "apt-get install", 'for spec in "$@"'))
         check("the host-tool canary runs after the install and before any guard", 0 <= install_at < canary_at < loop_at, f"{install_at} {canary_at} {loop_at}")
         check("a failing canary aborts the container (exit 3), it does not go on", "--check-tools $LINUX_CHECK_CANARY_TOOLS || exit 3" in script_text)
