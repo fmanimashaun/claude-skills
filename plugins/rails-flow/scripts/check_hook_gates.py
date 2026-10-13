@@ -4953,6 +4953,19 @@ def guard_worktree_failopen_fixtures() -> None:
         denied("guard-worktree: with no python3 a worktree add is refused, not waved through",
                guard(repo, "git worktree add ../b -b feature/b dev", env_extra=bare), "python3")
         allowed("guard-worktree: ...and with no python3 an ordinary command is untouched", guard(repo, "git status", env_extra=bare))
+        # #1978: the no-python3 path was QUADRATIC in the command's size (bash 3.2's `${rest#*$'\n'}` slicing), 150 KB took 11.8-20.5 s, past the
+        # hook's 15 s timeout, and a killed hook lets the command run. 5 s is a third of that timeout and a tenth of nothing a linear read needs.
+        big = "git worktree add ../b -b feature/b dev # " + "x" * 150_000
+        started = time.monotonic()
+        res = guard(repo, big, env_extra=bare)
+        took = time.monotonic() - started
+        check("guard-worktree (#1978): with no python3 a 150 KB worktree add is refused in under 5 s, not run past the hook's timeout",
+              res[0] == 2 and "python3" in res[1] and took < 5.0, f"exit {res[0]} after {took:.1f}s: {res[1][:160]}")
+        started = time.monotonic()
+        res = guard(repo, "echo " + "x" * 150_000, env_extra=bare)
+        took = time.monotonic() - started
+        check("guard-worktree (#1978): ...and a 150 KB ordinary command is answered in under 5 s, and allowed",
+              res[0] == 0 and took < 5.0, f"exit {res[0]} after {took:.1f}s: {res[1][:160]}")
 
     # A helper that crashes must fail CLOSED: any exit but 0 or 2 would let the command run.
     with scratch_dir() as td:
