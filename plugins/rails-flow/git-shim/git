@@ -91,7 +91,10 @@ ci_match() { local r; shopt -s nocasematch; [[ $1 == $2 ]]; r=$?; shopt -u nocas
 # Anything else is refused, aliases included: an alias given on the command line (`-c alias.p=push`) is a key like any other, and core.fsmonitor=<anything but false> or
 # core.hooksPath=<anything but /dev/null> is refused. A `-c name` with no `=` is the value "true". `--config-env name=VAR` is judged with the value VAR holds.
 # core.hooksPath=/dev/null switches the git hooks (the #1789 pre-commit and pre-push guards) OFF for the command that carries it, so it is admitted ONLY for a command that runs no
-# hook: CFG_PAIR_ALLOWED sets HOOKS_OFF when it admits the pair, `decide` refuses the command unless its subcommand is on HOOK_FREE, and a GIT_CONFIG_GLOBAL file may not carry it at
+# pre-commit or pre-push hook. The rule is that and nothing wider; the list below (HOOK_FREE) is every subcommand admitted, and each is read-only or touches no commit or push: status, diff,
+# diff-index, diff-tree, log, show, shortlog, ls-files, ls-tree, ls-remote, rev-parse, rev-list, merge-base, for-each-ref, cat-file, show-ref, symbolic-ref, describe, blame, var, fetch, config,
+# remote, branch, tag, init, check-ignore, name-rev, count-objects, grep. Adding a name to it needs the same justification (it must not run the pre-commit or pre-push hook).
+# How it works: CFG_PAIR_ALLOWED sets HOOKS_OFF when it admits the pair, `decide` refuses the command unless its subcommand is on HOOK_FREE, and a GIT_CONFIG_GLOBAL file may not carry it at
 # all (#1994: `git -c core.hooksPath=/dev/null commit` and `push` skipped the guards, and so did a global file naming it).
 HOOKS_OFF=0
 HOOK_FREE=" status diff diff-index diff-tree log show shortlog ls-files ls-tree ls-remote rev-parse rev-list merge-base for-each-ref cat-file show-ref symbolic-ref describe blame var fetch config remote branch tag init check-ignore name-rev count-objects grep "
