@@ -414,6 +414,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/check_changelog_coverage.py", "--selftest")),
     ("qa-flow certification reader",
      ("python3", "plugins/qa-flow/scripts/read_certification.py", "--selftest")),
+    # #1955. The SessionStart banner says "cleared for main" only when the release gate, run in a child on dev's tip, permits it.
+    ("qa-flow status banner", ("python3", "plugins/qa-flow/scripts/qa_status_selftest.py")),
     ("qa-flow tiers", ("python3", "plugins/rails-flow/scripts/check_handoff.py",
                        "--agents", "plugins/qa-flow/agents",
                        "--tiers", "plugins/qa-flow/reference/model-tiers.md")),

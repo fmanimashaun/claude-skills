@@ -133,6 +133,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | qa-flow robot helpers | `qa-flow` | `python3 plugins/qa-flow/scripts/scaffold_ts_tests.py --selftest` | selftest |
 | qa-flow route coverage | `qa-flow` | `python3 plugins/qa-flow/scripts/route_coverage.py --selftest` | selftest |
 | qa-flow route crawl | `qa-flow` | `python3 plugins/qa-flow/scripts/crawl_report.py --selftest` | selftest |
+| qa-flow status banner | `qa-flow` | `python3 plugins/qa-flow/scripts/qa_status_selftest.py` | live check |
 | qa-flow text resize | `qa-flow` | `python3 plugins/qa-flow/scripts/text_resize.py --selftest` | selftest |
 | qa-flow theme parity | `qa-flow` | `python3 plugins/qa-flow/scripts/theme_parity.py --selftest` | selftest |
 | qa-flow ts strict | `qa-flow` | `python3 plugins/qa-flow/scripts/check_ts_strict.py --selftest` | selftest |
