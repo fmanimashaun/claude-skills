@@ -51,7 +51,7 @@ case "$self" in */*) self_dir="$(cd "${self%/*}" 2>/dev/null && pwd -P)" ;; *) s
 
 # A shim that has been entered more than this many times in one chain of exec'd processes is a loop (#2003): refuse rather than hang.
 depth="${RAILS_FLOW_GIT_SHIM_DEPTH:-0}"
-case "$depth" in ''|*[!0-9]*) depth=0 ;; esac
+case "$depth" in ''|*[!0-9]*|???????*) depth=0 ;; esac       # not a number, or too long to be one this shim wrote (it counts to 16): zero, quietly (#2005)
 if [ "$depth" -ge 16 ]; then
   echo "git-shim (rails-flow): re-entered $depth times: two git shims on PATH are calling each other (#2003). Remove the older rails-flow directory from PATH." >&2
   exit 127
@@ -65,7 +65,7 @@ real=""
 old_ifs="$IFS"; IFS=:
 for d in $PATH; do
   [ -n "$d" ] || d="."
-  [ -x "$d/git" ] && [ ! -d "$d/git" ] || continue
+  [ -x "$d/git" ] && [ -f "$d/git" ] || continue          # a regular file: reading a FIFO named git ahead on PATH below would block every git call (#2005)
   dd="$(cd "$d" 2>/dev/null && pwd -P)" || continue
   [ "$dd" = "$self_dir" ] && continue
   case "$dd" in */git-shim) continue ;; esac
