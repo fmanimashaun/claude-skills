@@ -23,7 +23,7 @@ IFS= read -r -d '' input || true
 # run the shell. The one answer that cannot be wrong is the refusal, and the refusal says what to do. Cost, accepted, in the degraded paths ONLY
 # (a deadline, a missing tool): a command past 2 KB is refused ("retry it"), where before it was answered after the harness had already let it run.
 _coarse_bytes=2048
-# And a payload past `_large_bytes` never enters the full path at all (195 KB took 3.1 s and 390 KB took 8.2 s on an idle machine): it is refused at
+# And a payload past `_large_bytes` never enters the full path at all (195 KB took 3.1 s and 390 KB took 8.2 s on an idle machine; the caps count CHARACTERS, `${#input}`, which is what the cost follows): it is refused at
 # once, so the answer arrives in well under a second whatever the load. A command this large is a file written through Bash; the Write tool exists.
 _large_bytes=131072
 _coarse_looks_promotion() {
@@ -172,13 +172,9 @@ _coarse_looks_promotion() {
 
 # #1952: a payload past `_large_bytes` is not read by the full path at all; it is refused in well under a second (QA_ALLOW_MAIN=1 allows it, audited).
 if [ "${#input}" -gt "$_large_bytes" ]; then
-  _coarse_looks_promotion
-  if [ "$_looks_promotion" = "1" ]; then
-    [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: a ${#input}-byte command is too large to read, but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
-    echo "BLOCKED by qa-flow release gate: this command is ${#input} bytes, too large for the gate to read within the hook's time limit, so it is refused rather than guessed at. Write the content to a file with the Write tool and run a short command instead, or set QA_ALLOW_MAIN=1 (audited)." >&2
-    exit 2
-  fi
-  exit 0
+  [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: a ${#input}-character command is too large to read, but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
+  echo "BLOCKED by qa-flow release gate: this command is ${#input} characters, too large for the gate to read within the hook's time limit, so it is refused rather than guessed at. Write the content to a file with the Write tool and run a short command instead, or set QA_ALLOW_MAIN=1 (audited)." >&2
+  exit 2
 fi
 
 _missing=""
@@ -997,9 +993,10 @@ exit 0
 
 # THE DEADLINE (#1575). qa-flow's gate sources the same normaliser as guard-bash, and a normaliser that spins left
 # awk children behind for hours. Past the deadline the whole process group is killed. This gate refuses only a
-# main-ward promotion, so a timeout does too: the COARSE builtin detector above judges the raw payload; a command
-# that does not look like a promotion is allowed (blocking every slow command would be the failure here), and one that
-# does is denied, QA_ALLOW_MAIN=1 honoured and audited exactly as in the missing-tool path. The default is 13 s, under the
+# main-ward promotion, so a timeout does too: the COARSE builtin detector above judges the raw payload. Up to `_coarse_bytes` a command that does not
+# look like a promotion is allowed (blocking every slow command would be the failure here) and one that does is denied; PAST `_coarse_bytes` the
+# detector refuses whatever the command says (#1952), so a timeout on a large command is a refusal. QA_ALLOW_MAIN=1 is honoured and audited
+# exactly as in the missing-tool path. The default is 13 s, under the
 # hook's 15 s timeout (hooks.json), and RAILS_FLOW_HOOK_DEADLINE is clamped at 13. It was 10 until #1607: the foreign-repository judgment
 # (#1612) plans for up to about 12 s of its own and bounds each of its calls, so the deadline must sit ABOVE that budget, where it only
 # catches a call nobody bounded, and not cut a slow-but-bounded judgment off first with a less useful reason. The gate's NETWORK calls (`gh pr view`,
@@ -1017,7 +1014,11 @@ if [ -f "$_dl" ] && . "$_dl" 2>/dev/null && type deadline_run >/dev/null 2>&1; t
     _coarse_looks_promotion
     if [ "$_looks_promotion" = "1" ]; then
       [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: the gate hit its ${_deadline_s}s deadline but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
-      echo "BLOCKED by qa-flow release gate: the gate took longer than ${_deadline_s}s, and this command looks like a promotion to main, so it is refused rather than guessed at. Retry it; if it keeps timing out, run /qa-flow:certify and check the repo and network." >&2
+      if [ "${#input}" -gt "$_coarse_bytes" ]; then
+        echo "BLOCKED by qa-flow release gate: the gate took longer than ${_deadline_s}s, and a command of ${#input} characters is too large for the fallback to judge (its limit is ${_coarse_bytes}), so it is refused rather than guessed at. Write the content to a file with the Write tool and run a short command instead, or set QA_ALLOW_MAIN=1 (audited)." >&2
+      else
+        echo "BLOCKED by qa-flow release gate: the gate took longer than ${_deadline_s}s, and this command looks like a promotion to main, so it is refused rather than guessed at. Retry it; if it keeps timing out, run /qa-flow:certify and check the repo and network." >&2
+      fi
       exit 2
     fi
     exit 0
