@@ -20,8 +20,9 @@ Each tool is held to `config/privacy_inventory.yml` (read by check_privacy_inven
   1. a tool that declares no `sources` is a finding -- an undeclared tool can return anything;
   2. a `table.column` the inventory does not list, or lists with no category, is a finding -- a column with no category cannot
      be shown safe;
-  3. a `table.column` whose category is not `none` is a finding, unless `.rails-flow/mcp.json` allows that category for that
-     tool: `{"allow": {"<tool_name>": ["<category>", ...]}}`.
+  3. a `table.column` whose category is not `none` is a finding, unless `.rails-flow/mcp.json` allows it for that tool, by
+     category or by the column alone (#1940): `{"allow": {"<tool_name>": ["<category>" | "<table.column>", ...]}}`. A column
+     entry admits that one column, so one `work_record` column can be returned without admitting the whole category.
 
 What it cannot see: whether `sources` tells the truth about what the code returns; the app's own spec holds that half.
 
@@ -157,6 +158,9 @@ def check(root: Path) -> tuple[int, list[str]]:
                 allow = json.loads(_read(root / DECLARATION)).get("allow", {}) or {}
             except (json.JSONDecodeError, AttributeError) as exc:
                 raise CouldNotCheck(f"{DECLARATION} is not a JSON object ({exc})") from exc
+            # an allow-list it cannot read is could-not-check, never a traceback and never a silent string-of-characters (#1941 review)
+            if not isinstance(allow, dict) or not all(isinstance(v, list) and all(isinstance(e, str) for e in v) for v in allow.values()):
+                raise CouldNotCheck(f'{DECLARATION}: `allow` must map each tool to a list of strings, {{"tool": ["category" | "table.column"]}}')
         found_tools = tools(root)
         unjudged = unjudged_forms(root)
     except CouldNotCheck as exc:
@@ -186,7 +190,8 @@ def check(root: Path) -> tuple[int, list[str]]:
             if not category:
                 findings.append(f"{name} ({rel}): {tok} is in {INVENTORY} with no category, so it cannot be shown safe")
                 continue
-            if category != "none" and category not in allowed:
+            # #1940: an entry shaped `table.column` admits that column alone; any other entry is a category.
+            if category != "none" and category not in allowed and f"{table}.{column}" not in allowed:
                 findings.append(f"{name} ({rel}): {tok} is `{category}`; allow it for this tool in {DECLARATION} "
                                 f'({{"allow": {{"{name}": ["{category}"]}}}}) or stop returning it')
     findings = list(dict.fromkeys(findings))          # one line per tool and column, however many fields read it
@@ -225,6 +230,17 @@ def selftest() -> int:
         ("a tool returning a personal column is a finding", {**base, T: tool("countries", "%w[users.email_address]")}, 1),
         ("CONTROL: the personal column, allow-listed for that tool and category, is clean",
          {**base, T: tool("countries", "%w[users.email_address]"), ".rails-flow/mcp.json": '{"allow": {"countries": ["contact"]}}'}, 0),
+        # #1940: a column entry admits that column, and only that column.
+        ("CONTROL: a column entry admits that personal column",
+         {**base, T: tool("countries", "%w[users.email_address]"), ".rails-flow/mcp.json": '{"allow": {"countries": ["users.email_address"]}}'}, 0),
+        ("a column entry admits ONLY that column, not another of the same category",
+         {**base, "config/privacy_inventory.yml": inv.replace("  id: { category: none }", "  id: { category: none }\n  phone: { category: contact }"),
+          T: tool("countries", "%w[users.email_address users.phone]"), ".rails-flow/mcp.json": '{"allow": {"countries": ["users.email_address"]}}'}, 1),
+        ("a column entry for ANOTHER tool does not cover this one",
+         {**base, T: tool("countries", "%w[users.email_address]"), ".rails-flow/mcp.json": '{"allow": {"other": ["users.email_address"]}}'}, 1),
+        ("CONTROL: a category entry still admits the whole category",
+         {**base, "config/privacy_inventory.yml": inv.replace("  id: { category: none }", "  id: { category: none }\n  phone: { category: contact }"),
+          T: tool("countries", "%w[users.email_address users.phone]"), ".rails-flow/mcp.json": '{"allow": {"countries": ["contact"]}}'}, 0),
         ("an allow-list for ANOTHER tool does not cover this one",
          {**base, T: tool("countries", "%w[users.email_address]"), ".rails-flow/mcp.json": '{"allow": {"other": ["contact"]}}'}, 1),
         ("an allow-list for another CATEGORY does not cover this one",
@@ -272,6 +288,15 @@ def selftest() -> int:
         failures.append("no privacy inventory must be n/a (exit 3): nothing to hold the tools to")
     if run({**base, ".rails-flow/mcp.json": "not json"})[0] != 2:
         failures.append("a declaration that is not JSON is could-not-check (exit 2), never a pass")
+    # A malformed allow-list is could-not-check (exit 2), not a crash and not a quiet string of characters (#1941 review).
+    for bad in ('{"allow": {"countries": [["users.email_address"]]}}', '{"allow": {"countries": null}}',
+                '{"allow": {"countries": "users.email_address"}}', '{"allow": ["countries"]}'):
+        try:
+            got = run({**base, T: tool("countries", "%w[users.email_address]"), ".rails-flow/mcp.json": bad})[0]
+        except Exception as exc:  # noqa: BLE001  a traceback is the defect this row exists for
+            got = f"crashed: {exc!r}"
+        if got != 2:
+            failures.append(f"a malformed allow-list {bad} is could-not-check (exit 2), got {got}")
     for f in failures:
         print(f"selftest FAIL: {f}")
     print(f"check_mcp_personal_fields selftest: {'FAILED' if failures else 'ok'} ({len(failures)} failure(s))")
