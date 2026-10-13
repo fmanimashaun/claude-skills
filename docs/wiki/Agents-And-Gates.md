@@ -6,11 +6,11 @@
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
-| `design-flow` | 1.46.0 | 5 | 12 | 5 |
+| `design-flow` | 1.46.1 | 5 | 12 | 5 |
 | `flow-suite` | 1.0.0 | — | — | — |
-| `pipeline` | 1.5.0 | 2 | 9 | 2 |
-| `qa-flow` | 1.37.0 | 11 | 8 | 11 |
-| `rails-flow` | 1.59.0 | 13 | 24 | 13 |
+| `pipeline` | 1.5.1 | 2 | 9 | 2 |
+| `qa-flow` | 1.38.0 | 11 | 8 | 11 |
+| `rails-flow` | 1.60.0 | 13 | 24 | 13 |
 
 ## Agents
 
