@@ -18,7 +18,7 @@
 #   commit | push | merge | rebase | pull | am | cherry-pick | revert   --no-verify (and `commit -n`; `-n` is a dry run or --no-stat elsewhere)
 #   config     any `git config` that names core.hooksPath or include.* / includeIf.*
 #   any        -c / --config-env, and the GIT_CONFIG_COUNT/KEY_n/VALUE_n pairs of the environment, setting anything but the ALLOWLIST of (key, value) pairs (#1982): the keys a
-#              hermetic fixture sets (maintenance.auto, gc.auto, user.name, user.email, commit.gpgsign), and the exact hardening overrides shipped code passes (core.fsmonitor=false,
+#              hermetic fixture sets (maintenance.auto, gc.auto, user.name, user.email, commit.gpgsign, init.defaultBranch, #1999), and the exact hardening overrides shipped code passes (core.fsmonitor=false,
 #              core.hooksPath=/dev/null, core.quotePath=false, tag.gpgSign=false, credential.helper= and credential.helper=!gh auth git-credential); GIT_CONFIG_PARAMETERS; GIT_CONFIG_SYSTEM
 #              naming anything but /dev/null; GIT_CONFIG_GLOBAL naming anything but /dev/null or a file inside the temp root whose every entry passes the same rule.
 # PATHSPECS (add, checkout, restore): a PLAIN RELATIVE PATH only (an absolute path counts as one only when it resolves, physically, to a path
@@ -116,7 +116,7 @@ ci_match() { local r; shopt -s nocasematch; [[ $1 == $2 ]]; r=$?; shopt -u nocas
 HOOKS_OFF=0
 HOOK_FREE=" status diff diff-index diff-tree log show shortlog ls-files ls-tree ls-remote rev-parse rev-list merge-base for-each-ref cat-file show-ref symbolic-ref describe blame var fetch config remote branch tag init check-ignore name-rev count-objects grep "
 CFG_ALLOWED() {
-  ci_match "$1" "maintenance.auto" || ci_match "$1" "gc.auto" || ci_match "$1" "user.name" || ci_match "$1" "user.email" || ci_match "$1" "commit.gpgsign"
+  ci_match "$1" "maintenance.auto" || ci_match "$1" "gc.auto" || ci_match "$1" "user.name" || ci_match "$1" "user.email" || ci_match "$1" "commit.gpgsign" || ci_match "$1" "init.defaultbranch"
 }
 CFG_PAIR_ALLOWED() {      # $1 key, $2 value
   CFG_ALLOWED "$1" && return 0
@@ -127,7 +127,7 @@ CFG_PAIR_ALLOWED() {      # $1 key, $2 value
   ci_match "$1" "credential.helper" && { [ -z "$2" ] || [ "$2" = '!gh auth git-credential' ]; } && return 0
   return 1
 }
-CFG_ALLOWED_LIST="maintenance.auto, gc.auto, user.name, user.email, commit.gpgsign (any value) or core.fsmonitor=false, core.hooksPath=/dev/null, core.quotePath=false, tag.gpgSign=false, credential.helper= (empty), credential.helper=!gh auth git-credential"
+CFG_ALLOWED_LIST="maintenance.auto, gc.auto, user.name, user.email, commit.gpgsign, init.defaultBranch (any value) or core.fsmonitor=false, core.hooksPath=/dev/null, core.quotePath=false, tag.gpgSign=false, credential.helper= (empty), credential.helper=!gh auth git-credential"
 cfg_arg_ok() {            # `-c name=value`, or `-c name` (the value "true")
   case "$1" in *=*) CFG_PAIR_ALLOWED "${1%%=*}" "${1#*=}" ;; *) CFG_PAIR_ALLOWED "$1" true ;; esac
 }
@@ -247,19 +247,41 @@ session_repo_marked() {
   return 1
 }
 
+# The identity file: in the repository's git dir, or, for a LINKED worktree of a fixture, in its common dir (the same two places the session marker is read). A downstream project's
+# spec helpers write it right after `git init` (`plugins/rails-flow/reference/downstream-spec-fixtures.md`, #1999); `fixture_git.init` writes it for ours. It is a file in the git dir, not
+# an environment variable, because the environment is the caller's: an inline assignment would turn any repository into a fixture.
+fixture_marked() {
+  local gd="$1" c
+  [ -f "$gd/rails-flow-fixture" ] && return 0
+  if [ -f "$gd/commondir" ]; then
+    IFS= read -r c < "$gd/commondir"; case "$c" in /*) ;; *) c="$gd/$c" ;; esac
+    c="$(phys "$c")"; [ -n "$c" ] && [ -f "$c/rails-flow-fixture" ] && return 0
+  fi
+  return 1
+}
+
 FIX_DONE=0; FIX_RC=1
 fixture_repo() {
   [ "$FIX_DONE" = 1 ] && return "$FIX_RC"
   FIX_DONE=1
-  local gd wt v g rp l1 l2
-  [ -n "${GIT_DIR:-}" ] && [ -n "${GIT_WORK_TREE:-}" ] || return 1
+  local gd wt v g rp l1 l2 cwd_mode
+  # TWO MODES, never a mix (#1999). ENV mode: GIT_DIR and GIT_WORK_TREE are BOTH set (`fixture_git.run`). CWD mode: BOTH are unset and the repository is the one the process's own
+  # directory (or a `-C <dir>`) is in, which is how a downstream project's spec helpers run git (`Open3.capture2e(env, "git", ..., chdir: repo)`). One set and not the other is refused.
+  # Either way the repository judged is the one the REAL git will use (asked below), so a mode cannot name one repository and run on another.
+  cwd_mode=0
+  if [ -z "${GIT_DIR:-}" ] && [ -z "${GIT_WORK_TREE:-}" ]; then cwd_mode=1
+  else [ -n "${GIT_DIR:-}" ] && [ -n "${GIT_WORK_TREE:-}" ] || return 1
+  fi
   # Things git honours INSTEAD OF (or beside) GIT_DIR and GIT_WORK_TREE: a command-line --git-dir/--work-tree/-C/--namespace beats the environment, and an index, an object store, a
   # common dir or a namespace named in the environment point git at another repository's state while a decoy sits in GIT_DIR (#1994).
   for v in GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_NAMESPACE; do
     [ "${!v+x}" = x ] && return 1
   done
   for g in "${GLOBALS[@]}"; do
-    case "$g" in -C|--git-dir|--git-dir=*|--work-tree|--work-tree=*|--namespace|--namespace=*) return 1 ;; esac
+    case "$g" in --git-dir|--git-dir=*|--work-tree|--work-tree=*|--namespace|--namespace=*) return 1 ;; esac
+    # `-C <dir>` beats nothing in CWD mode (there is no GIT_DIR for it to override): the real git is asked about the repository it leads to. In ENV mode it would move git's directory
+    # while GIT_DIR names a decoy, so it stays refused there.
+    [ "$g" = -C ] && [ "$cwd_mode" = 0 ] && return 1
   done
   temp_root_ok || return 1
   # Judge the repository git WILL use, asked of the real git under the real arguments and environment, not the variables read off the environment.
@@ -272,8 +294,24 @@ fixture_repo() {
   case "$gd" in "$TP"/?*) ;; *) return 1 ;; esac
   case "$PP/" in "$wt"/*) return 1 ;; esac      # the work tree IS the project or contains it
   session_repo_marked "$gd" && return 1          # the repository named is the session's own, whatever the environment says
-  [ -f "$gd/rails-flow-fixture" ] || return 1    # POSITIVE identity: only a repository `fixture_git.init` created is a fixture (a standalone repo inside the temp root is not)
+  fixture_marked "$gd" || return 1               # POSITIVE identity: only a repository that carries `rails-flow-fixture` is a fixture (a standalone repo inside the temp root is not)
   FIX_RC=0; return 0
+}
+
+# `git config core.hooksPath <value>` (or `--local core.hooksPath <value>`) in a FIXTURE repository, judged by `fixture_repo` (marked, inside the temp root, not the session's project, no flag or variable
+# that redirects git). Why this one write is safe: it lands in the fixture's OWN `.git/config`, so the hooks it can switch off are the fixture's, never the session's (#1789); the repository is the
+# one the real git will use, so `-C`, `--git-dir` and a decoy in the environment cannot aim it at the project. Anything else about `config` stays refused here: every other key, `--global`,
+# `--system`, `--file`/`-f`, `--blob`, `--worktree`, an unset, a value that looks like an option, and extra arguments (a project's spec that needs more asks for it with an adversary pass).
+fixture_hooks_config() {
+  local key val
+  case "$#" in
+    2) key="$1"; val="$2" ;;
+    3) [ "$1" = --local ] || return 1; key="$2"; val="$3" ;;
+    *) return 1 ;;
+  esac
+  ci_match "$key" "core.hookspath" || return 1
+  case "$val" in ''|-*) return 1 ;; esac
+  fixture_repo
 }
 
 # Is this pathspec the repository root, in any spelling? (used by `rm`, which may name a glob)
@@ -453,9 +491,13 @@ decide() {
     add|reset|checkout|switch|restore|clean|rm|stash|checkout-index|read-tree|config|commit|push|merge|rebase|pull|am|cherry-pick|revert) ;;
     *) return 0 ;;
   esac
-  # THE FIXTURE EXEMPTION (above) covers staging only (`add`). `reset --hard`, `clean`, forced checkout and the other working-tree rules, and the rules about hooks, config and
-  # `--no-verify`, are NOT exempt in a fixture: widening it waits for an adversary pass (the coordinator's ruling on #1994).
-  case "$sub" in add) fixture_repo && return 0 ;; esac
+  # THE FIXTURE EXEMPTION (above) covers staging (`add`) and, since #1999, ONE local config write: `core.hooksPath` in the fixture repository's own config (a project's spec installs
+  # its own hooks there). `reset --hard`, `clean`, forced checkout and the other working-tree rules, and every other rule about hooks, config and `--no-verify`, are NOT exempt in a
+  # fixture: widening it waits for an adversary pass (the coordinator's ruling on #1994).
+  case "$sub" in
+    add) fixture_repo && return 0 ;;
+    config) fixture_hooks_config "$@" && return 0 ;;        # #1999: ONE local config write, in a marked fixture only (see `fixture_hooks_config`)
+  esac
   analyse "$sub" "$@"
   case "$sub" in
     add)
