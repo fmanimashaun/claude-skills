@@ -487,7 +487,9 @@ def _(base):
         refused(r, label, *args)
     check(label, "/tmp/helper-2042" not in r.real("config", "--get-all", "credential.helper").stdout, "a credential helper path was written anyway")
     runs(r, label, "config", "credential.helper", "store")
-    check(label, r.real("config", "--get-all", "credential.helper").stdout.strip() == "store", "a named credential helper did not land")
+    # --local: the REPOSITORY's config only. A machine's system config can carry its own helper (Xcode's git ships credential.helper=osxkeychain),
+    # and --get-all would list it too, failing this row for a reason that has nothing to do with the shim (72 hit it locally on #2062).
+    check(label, r.real("config", "--local", "--get-all", "credential.helper").stdout.strip() == "store", "a named credential helper did not land")
 
 
 @case("shim: git config WRITES are an allowlist; reads run (#2043)")
@@ -516,7 +518,11 @@ def _(base):
     # a COMBINED short cluster is read letter by letter by git (the commit security review of #2043): `-ze` edits, `-zf FILE` / `-fFILE` move the key
     for args in (("config", "-ze"), ("config", "-zf", "user.name", "pager.log", "x"), ("config", "-fuser.name", "pager.log", "x")):
         refused(r, label, *args)
-    check(label, not (r.work / "user.name").exists(), "a short cluster wrote a config file past the key check")
+    # an ABBREVIATED value option takes the next argument as its value, so it moves the key too (the second commit security review of #2043)
+    for args in (("config", "--fil", "user.name", "pager.log", "x"), ("config", "--comm", "user.name", "pager.log", "x"),
+                 ("config", "--ty", "bool", "user.name", "true"), ("config", "--", "pager.log", "x")):
+        refused(r, label, *args)
+    check(label, not (r.work / "user.name").exists(), "a short cluster or an abbreviated option wrote a config file past the key check")
     runs(r, label, "config", "--add", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
     runs(r, label, "config", "--unset", "color.ui")
     for args in (("config", "--get", "pager.log"), ("config", "--list"), ("config", "-l"), ("config", "get", "user.name"), ("config", "list"),
