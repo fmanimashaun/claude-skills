@@ -514,6 +514,7 @@ def _(base):
         runs(r, label, "config", key, value)
     runs(r, label, "config", "--file", ".git/config", "user.name", "someone")      # an option's value is never the key
     runs(r, label, "config", "--type", "bool", "commit.gpgsign", "false")
+    runs(r, label, "config", "-t", "bool", "commit.gpgsign", "false")              # -t is --type's short form: its value is not the key
     refused(r, label, "config", "--un", "pager.log")                                 # git's shortest unique-enough prefix of --unset
     # a COMBINED short cluster is read letter by letter by git (the commit security review of #2043): `-ze` edits, `-zf FILE` / `-fFILE` move the key
     for args in (("config", "-ze"), ("config", "-zf", "user.name", "pager.log", "x"), ("config", "-fuser.name", "pager.log", "x")):
