@@ -559,6 +559,17 @@ spans are folded in process into aggregates and written to the app's own databas
   Measured: `create role … password '…'` appeared verbatim. Set
   `pg_stat_statements.track_utility = off` and read data statements only before
   showing the text to anyone.
+- **`query_log_tags` do not split a statement by route here (PostgreSQL 18 docs;
+  measured on 18.6).** `queryid` "is computed on the post-parse-analysis
+  representation of the queries", so a comment does not change it: the same `SELECT`
+  with no comment, with a tag comment at either end, and with different
+  `controller`/`action` values gave one Query Identifier (`SET compute_query_id = on`,
+  `EXPLAIN (VERBOSE)`). Every route's executions fold into one row whose text is "that
+  of the first query that had the particular `queryid`". The tags attribute a query to
+  a route **per execution** only: in the server log and in `pg_stat_activity.query`
+  while it runs. That column is truncated at `track_activity_query_size` (1024 bytes
+  by default), so a tag at the end of a long query can be cut off; raise the setting,
+  or put the tags first with `config.active_record.query_log_tags_prepend_comment = true`.
 - **On Kamal 2.12.0 the preload flag is the accessory's `cmd:`** (for example
   `postgres -c shared_preload_libraries=pg_stat_statements`). It takes effect only
   when the container is recreated: `kamal accessory reboot NAME` (prepare, pull the
