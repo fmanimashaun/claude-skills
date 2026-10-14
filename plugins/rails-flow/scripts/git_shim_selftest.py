@@ -483,6 +483,37 @@ def _(base):
     check(label, r.real("config", "--get-all", "credential.helper").stdout.strip() == "store", "a named credential helper did not land")
 
 
+@case("shim: git config WRITES are an allowlist; reads run (#2043)")
+def _(base):
+    label = "shim: git config WRITES are an allowlist; reads run (#2043)"
+    r = Repo(base, "allow2043")
+    # a write to a key outside the allowlist is refused, whatever runs it: a0's measured program-running keys, each class, and a harmless stranger
+    for key in ("pager.log", "core.askpass", "core.gitProxy", "diff.x.textconv", "diff.x.command", "filter.x.clean", "filter.x.smudge",
+                "filter.x.process", "merge.x.driver", "mergetool.x.cmd", "difftool.x.cmd", "web.browser", "uploadpack.packObjectsHook", "some.random"):
+        refused(r, label, "config", key, "/tmp/prog-2043")
+        check(label, "/tmp/prog-2043" not in r.real("config", "--get-all", key).stdout, f"`git config {key}` was written anyway")
+    # every write spelling is judged: the subcommand, the flags (and git's unique prefixes), the old two-positional form; an option's value is not the key
+    for args in (("config", "set", "pager.log", "x"), ("config", "--add", "pager.log", "x"), ("config", "--ad", "pager.log", "x"),
+                 ("config", "--replace-all", "pager.log", "x"), ("config", "--unset", "pager.log"), ("config", "unset", "pager.log"),
+                 ("config", "--file", ".git/config", "pager.log", "x"), ("config", "--type", "bool", "pager.log", "true"),
+                 ("config", "--remove-section", "pager"), ("config", "--edit"), ("config", "-e"), ("config", "edit")):
+        refused(r, label, *args)
+    # the allowlist: each key writes, and reads run
+    for key, value in (("user.name", "someone"), ("user.email", "a@b.c"), ("commit.gpgsign", "false"), ("tag.gpgSign", "false"),  # fixture-git: exempt (these are the KEYS under test, written through the shim on purpose, not a fixture identity)
+                       ("init.defaultBranch", "main"), ("pull.rebase", "true"), ("push.autoSetupRemote", "true"), ("fetch.prune", "true"),
+                       ("branch.main.remote", "origin"), ("remote.origin.url", "https://example.com/r.git"), ("Color.UI", "auto")):
+        runs(r, label, "config", key, value)
+    runs(r, label, "config", "--file", ".git/config", "user.name", "someone")      # an option's value is never the key
+    runs(r, label, "config", "--type", "bool", "commit.gpgsign", "false")
+    refused(r, label, "config", "--un", "pager.log")                                 # git's shortest unique-enough prefix of --unset
+    runs(r, label, "config", "--add", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+    runs(r, label, "config", "--unset", "color.ui")
+    for args in (("config", "--get", "pager.log"), ("config", "--list"), ("config", "-l"), ("config", "get", "user.name"), ("config", "list"),
+                 ("config", "--get-regexp", "remote"), ("config", "--get-all", "remote.origin.fetch")):
+        p = r.g(*args)
+        check(label, "git-shim" not in p.stderr, f"`git {' '.join(args)}` (a read) was refused: {p.stderr.strip()[:120]}")
+
+
 @case("shim: -c core.hooksPath on the command line is refused")
 def _(base):
     label = "shim: -c core.hooksPath on the command line is refused"
