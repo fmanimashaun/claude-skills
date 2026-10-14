@@ -535,12 +535,25 @@ decide() {
     read-tree)
       if seen reset && seen update; then RULE="git read-tree --reset -u overwrites the working tree"; return 1; fi ;;
     config)
-      local x alias_key=0 shell_value=0
+      local x alias_key=0 shell_value=0 section_move=0
       for x in "$@"; do
         if ci_match "$x" "*core.hookspath*" || ci_match "$x" "*include.path*" || ci_match "$x" "*includeif.*" || ci_match "$x" "*core.fsmonitor*" || ci_match "$x" "*core.sshcommand*"; then
           RULE="git config naming core.hooksPath, include.*, core.fsmonitor or core.sshCommand can switch the #1789 git hooks off"; return 1
         fi
         ci_match "$x" "alias.*" && alias_key=1
+        # A section RENAMED to `alias` (`--rename-section foo alias`, or the `rename-section` subcommand of newer gits) turns every `foo.x '!sh'`
+        # written before it into a shell alias without ever naming `alias.x` or a `!` value (found by the commit security review of #2020).
+        if ci_match "$x" "alias" || ci_match "$x" "alias.*"; then
+          local y
+          for y in "$@"; do
+            # git reads a long option by its UNIQUE PREFIX, so `--ren` is this option too; the subcommand spelling is exact.
+            case "$y" in rename-section) section_move=1 ;; esac
+            case "--rename-section" in "$y"?*|"$y") [ "${#y}" -ge 5 ] && section_move=1 ;; esac
+          done
+          if [ "${section_move:-0}" = 1 ]; then
+            RULE="git config renaming a section to alias.* can turn a stored value into a shell alias this shim cannot see"; return 1
+          fi
+        fi
         case "${x#"${x%%[! ]*}"}" in "!"*) shell_value=1 ;; esac      # the value, leading spaces aside, starts with `!`
       done
       # #2015: a SHELL alias (`!…`) runs any command the next time it is used, and this shim cannot see inside it; writing one is refused, in a

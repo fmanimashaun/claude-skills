@@ -446,6 +446,13 @@ def _(base):
     runs(r, label, "config", "alias.st", "status")
     check(label, r.real("config", "--get", "alias.st").stdout.strip() == "status", "a plain alias write did not land")
     runs(r, label, "config", "--get", "alias.st")
+    # a value stored under another section and then RENAMED to `alias` becomes a shell alias without naming either (the commit security review of #2020);
+    # git reads a long option by its unique prefix, so `--ren` and `--rename-s` are refused too. Renaming to any other section still runs.
+    r.real("config", "foo.x", "!sh")
+    for args in (("config", "--rename-section", "foo", "alias"), ("config", "--ren", "foo", "ALIAS"), ("config", "--rename-s", "foo", "alias.sub")):
+        refused(r, label, *args)
+    check(label, r.real("config", "--get", "alias.x").returncode != 0, "a section renamed to alias was written anyway")
+    runs(r, label, "config", "--rename-section", "foo", "bar")
 
 
 @case("shim: -c core.hooksPath on the command line is refused")
