@@ -1,0 +1,2 @@
+section: design-flow
+- **Dollar amounts in the asset commands are escaped — `plugins/design-flow/commands/generate.md`, `plugins/design-flow/commands/assets.md`** (#2022). `$0.04` and `$0.00` in prose were read as the first argument followed by `.04`, because a bare dollar-digit in a command's markdown is replaced by the invocation's arguments; each is now written with a backslash before the dollar sign, the documented escape.
