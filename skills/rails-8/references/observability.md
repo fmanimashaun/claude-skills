@@ -318,10 +318,12 @@ Source: each point below was read on the named official page on 2026-10-14; the 
 - **What Rails Pulse says and does not say** (README, read 2026-10-14): tracking is "queued off the
   request thread and dropped rather than blocked under load"; thresholds for slow, very slow and
   critical are configurable but **no default values are documented**; N+1 patterns are listed
-  among its query views without a description of how they are detected; the README does not say
-  whether requests are sampled, nor whether SQL literals are removed before storage. Do not
-  assume either; check the stored rows before putting Pulse in front of data that must not
-  hold literals.
+  among its query views without a description of how they are detected; its words for the SQL it
+  stores are "normalised and fingerprinted" (so execution counts and P95 show per statement
+  shape), which is not a statement that literals are removed. The README does not say whether
+  requests are sampled, nor whether SQL literals are removed before storage. Do not assume
+  either; check the stored rows before putting Pulse in front of data that must not hold
+  literals.
 
 ### Self-hosted performance monitoring — Rails Pulse
 
