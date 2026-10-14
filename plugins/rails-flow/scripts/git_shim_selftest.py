@@ -458,7 +458,9 @@ def _(base):
     r.real("config", "bar.path", "/tmp/renamed-2026-include")
     for args in (("config", "--rename-section", "foo", "alias"), ("config", "--ren", "foo", "ALIAS"), ("config", "--rename-s", "foo", "alias.sub"),
                  ("config", "--rename-section", "hk", "core"), ("config", "--ren", "hk", "Core"), ("config", "--rename-section", "bar", "include"),
-                 ("config", "rename-section", "hk", "core"), ("config", "--rename-section", "foo", "harmless")):
+                 ("config", "rename-section", "hk", "core"), ("config", "--rename-section", "foo", "harmless"),
+                 # an ALLOWLISTED section name (alias.x, under alias.*): only the rename rule stands between it and core (#2043 keeps the rule for this)
+                 ("config", "--rename-section", "alias.x", "core"), ("config", "--ren", "alias.x", "core"), ("config", "rename-section", "alias.x", "core")):
         refused(r, label, *args)
     for key, planted in (("alias.x", "!sh"), ("core.hookspath", "/tmp/renamed-2026-hooks"), ("core.fsmonitor", "renamed-2026-fsmonitor"),
                          ("core.sshcommand", "renamed-2026-ssh"), ("include.path", "/tmp/renamed-2026-include")):
@@ -473,7 +475,12 @@ def _(base):
     for key in ("diff.external", "core.pager", "core.editor", "sequence.editor", "gpg.program", "gpg.ssh.program", "core.fsmonitor", "core.sshCommand", "Core.Pager"):
         refused(r, label, "config", key, "/tmp/prog-2021")
         check(label, "/tmp/prog-2021" not in r.real("config", "--get-all", key).stdout, f"`git config {key}` was written anyway")
-    refused(r, label, "config", "--get", "core.editor")
+    # a READ of a program key changes nothing; since #2043 the allowlist judges writes, so the read runs (it was refused under #2021's per-key list)
+    p = r.g("config", "--get", "core.editor")
+    check(label, "git-shim" not in p.stderr, f"a read of core.editor was refused: {p.stderr.strip()[:120]}")
+    # core.fsmonitor and core.sshCommand stay refused even to READ: they sit in the #1789 hooks rule with core.hooksPath
+    refused(r, label, "config", "--get", "core.fsmonitor")
+    refused(r, label, "config", "--get", "core.sshCommand")
     # a credential helper that starts with `!` is a shell command; a named helper runs git's own git-credential-<name>
     for args in (("config", "credential.helper", "!sh -c x"), ("config", "--add", "credential.https://example.com.helper", "!x"), ("config", "Credential.Helper", " !x"),
                  ("config", "credential.helper", "/tmp/helper-2042"), ("config", "credential.helper", " /tmp/helper-2042")):    # a0, review of #2042: a program path runs too
