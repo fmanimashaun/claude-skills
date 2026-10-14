@@ -475,8 +475,10 @@ def _(base):
         check(label, "/tmp/prog-2021" not in r.real("config", "--get-all", key).stdout, f"`git config {key}` was written anyway")
     refused(r, label, "config", "--get", "core.editor")
     # a credential helper that starts with `!` is a shell command; a named helper runs git's own git-credential-<name>
-    for args in (("config", "credential.helper", "!sh -c x"), ("config", "--add", "credential.https://example.com.helper", "!x"), ("config", "Credential.Helper", " !x")):
+    for args in (("config", "credential.helper", "!sh -c x"), ("config", "--add", "credential.https://example.com.helper", "!x"), ("config", "Credential.Helper", " !x"),
+                 ("config", "credential.helper", "/tmp/helper-2042"), ("config", "credential.helper", " /tmp/helper-2042")):    # a0, review of #2042: a program path runs too
         refused(r, label, *args)
+    check(label, "/tmp/helper-2042" not in r.real("config", "--get-all", "credential.helper").stdout, "a credential helper path was written anyway")
     runs(r, label, "config", "credential.helper", "store")
     check(label, r.real("config", "--get-all", "credential.helper").stdout.strip() == "store", "a named credential helper did not land")
 

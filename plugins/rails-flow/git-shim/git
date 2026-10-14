@@ -538,7 +538,7 @@ decide() {
     read-tree)
       if seen reset && seen update; then RULE="git read-tree --reset -u overwrites the working tree"; return 1; fi ;;
     config)
-      local x alias_key=0 shell_value=0 section_move=0 cred_key=0
+      local x alias_key=0 shell_value=0 section_move=0 cred_key=0 path_value=0
       for x in "$@"; do
         if ci_match "$x" "*core.hookspath*" || ci_match "$x" "*include.path*" || ci_match "$x" "*includeif.*" || ci_match "$x" "*core.fsmonitor*" || ci_match "$x" "*core.sshcommand*"; then
           RULE="git config naming core.hooksPath, include.*, core.fsmonitor or core.sshCommand can switch the #1789 git hooks off"; return 1
@@ -554,16 +554,19 @@ decide() {
         # `include` it set `core.hooksPath`, `core.fsmonitor`, `core.sshCommand` or `include.path` past the per-key rules above (a0, measured), because a
         # rename never names the key it creates. git reads a long option by its UNIQUE PREFIX, so `--ren` is this option too.
         case "--rename-section" in "$x"?*|"$x") if [ "${#x}" -ge 5 ]; then section_move=1; fi ;; esac
-        case "${x#"${x%%[! ]*}"}" in "!"*) shell_value=1 ;; esac      # the value, leading spaces aside, starts with `!`
+        case "${x#"${x%%[! ]*}"}" in "!"*) shell_value=1 ;; "/"*) path_value=1 ;; esac      # the value, leading spaces aside, starts with `!` (a shell command) or `/` (a program path)
       done
       # The `rename-section` SUBCOMMAND (newer gits) is the same rename, spelled as the first word.
       [ "${1:-}" = rename-section ] && section_move=1
       if [ "$section_move" = 1 ]; then
         RULE="git config renaming a section can create core.hooksPath, include.path or a shell alias without naming them"; return 1
       fi
-      # #2021: a credential helper starting with `!` is a shell command git runs; a named helper (`credential.helper store`) runs git's own `git-credential-<name>`.
-      if [ "$cred_key" = 1 ] && [ "$shell_value" = 1 ]; then
-        RULE="git config writing a credential.helper that starts with ! runs a shell command this shim cannot see"; return 1
+      # #2021: git runs a credential helper three ways. A value starting with `!` is a SHELL command; an ABSOLUTE PATH is a program run as given
+      # (a0, review of #2042: `credential.helper /abs/script` ran with the real git first on its PATH); anything else is git's own
+      # `git credential-<name>` (`store`, `cache`, `osxkeychain`), which is allowed. The first two are refused. Any other argument starting with
+      # `/` (a `--file /path`) also counts, so `git config --file /x credential.helper store` is refused too: an accepted cost on a rare command.
+      if [ "$cred_key" = 1 ] && { [ "$shell_value" = 1 ] || [ "$path_value" = 1 ]; }; then
+        RULE="git config writing a credential.helper that is a shell command (!) or a program path (/) runs a program this shim cannot see"; return 1
       fi
       # #2015: a SHELL alias (`!…`) runs any command the next time it is used, and this shim cannot see inside it; writing one is refused, in a
       # fixture too (the exemption above covers only `core.hooksPath`). A plain alias is judged again when it is used, and reading one writes nothing.
