@@ -1,2 +1,0 @@
-section: Repository hygiene
-- **The STARVED rule's tally-header exemption has a selftest row and a mutant — `scripts/mutation_check_selftest.py`, `scripts/mutations/mutation_check_harness.py`** (#2017, from a2's review of #2016). `_SELFTEST_SUMMARY` keeps a selftest's own `SELFTEST FAILED -- N failure(s)` line from counting as a failure row, but no fixture printed that header, so a pattern that never matched survived. A selftest printing the header and only timeout rows must read STARVED, and a mutant that stops the header matching reads INERT instead. Our own design.
