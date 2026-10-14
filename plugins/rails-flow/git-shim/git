@@ -16,7 +16,10 @@
 #   stash      drop, clear
 #   checkout-index  -f / --force            read-tree  --reset together with -u
 #   commit | push | merge | rebase | pull | am | cherry-pick | revert   --no-verify (and `commit -n`; `-n` is a dry run or --no-stat elsewhere)
-#   config     any `git config` that names core.hooksPath or include.* / includeIf.*
+#   config     any `git config` that names core.hooksPath, include.* / includeIf.*, core.fsmonitor, core.sshCommand, or a key that runs a program
+#              (diff.external, core.pager, core.editor, sequence.editor, gpg.*program, #2021); a credential.helper or an alias whose value starts with `!`;
+#              any section rename (#2027). OUT OF SCOPE (#2021): `git clone --config`/`-c` setting such a key in the NEW clone; that is not the session's
+#              repository, and the guarantee moves to the hooks of #1789/#1790.
 #   any        -c / --config-env, and the GIT_CONFIG_COUNT/KEY_n/VALUE_n pairs of the environment, setting anything but the ALLOWLIST of (key, value) pairs (#1982): the keys a
 #              hermetic fixture sets (maintenance.auto, gc.auto, user.name, user.email, commit.gpgsign, init.defaultBranch, #1999), and the exact hardening overrides shipped code passes (core.fsmonitor=false,
 #              core.hooksPath=/dev/null, core.quotePath=false, tag.gpgSign=false, credential.helper= and credential.helper=!gh auth git-credential); GIT_CONFIG_PARAMETERS; GIT_CONFIG_SYSTEM
@@ -535,11 +538,17 @@ decide() {
     read-tree)
       if seen reset && seen update; then RULE="git read-tree --reset -u overwrites the working tree"; return 1; fi ;;
     config)
-      local x alias_key=0 shell_value=0 section_move=0
+      local x alias_key=0 shell_value=0 section_move=0 cred_key=0
       for x in "$@"; do
         if ci_match "$x" "*core.hookspath*" || ci_match "$x" "*include.path*" || ci_match "$x" "*includeif.*" || ci_match "$x" "*core.fsmonitor*" || ci_match "$x" "*core.sshcommand*"; then
           RULE="git config naming core.hooksPath, include.*, core.fsmonitor or core.sshCommand can switch the #1789 git hooks off"; return 1
         fi
+        # #2021 (the coordinator's scope decision): keys that make git RUN A PROGRAM. That program finds the real git first on its own PATH, never this shim,
+        # so it could run a refused command unseen (a0 measured it for diff.external). Named at all, as core.hooksPath is: a read is refused too.
+        if ci_match "$x" "*diff.external*" || ci_match "$x" "*core.pager*" || ci_match "$x" "*core.editor*" || ci_match "$x" "*sequence.editor*" || ci_match "$x" "*gpg.*program*"; then
+          RULE="git config naming diff.external, core.pager, core.editor, sequence.editor or gpg.*program sets a program git runs, which this shim cannot see"; return 1
+        fi
+        ci_match "$x" "credential.*helper" && cred_key=1
         ci_match "$x" "alias.*" && alias_key=1
         # A SECTION RENAME is refused OUTRIGHT, whatever the target (#2026): renamed onto `alias` it made a shell alias (#2023), and onto `core` or
         # `include` it set `core.hooksPath`, `core.fsmonitor`, `core.sshCommand` or `include.path` past the per-key rules above (a0, measured), because a
@@ -551,6 +560,10 @@ decide() {
       [ "${1:-}" = rename-section ] && section_move=1
       if [ "$section_move" = 1 ]; then
         RULE="git config renaming a section can create core.hooksPath, include.path or a shell alias without naming them"; return 1
+      fi
+      # #2021: a credential helper starting with `!` is a shell command git runs; a named helper (`credential.helper store`) runs git's own `git-credential-<name>`.
+      if [ "$cred_key" = 1 ] && [ "$shell_value" = 1 ]; then
+        RULE="git config writing a credential.helper that starts with ! runs a shell command this shim cannot see"; return 1
       fi
       # #2015: a SHELL alias (`!…`) runs any command the next time it is used, and this shim cannot see inside it; writing one is refused, in a
       # fixture too (the exemption above covers only `core.hooksPath`). A plain alias is judged again when it is used, and reading one writes nothing.
