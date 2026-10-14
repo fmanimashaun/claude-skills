@@ -12,17 +12,20 @@ it runs with database access, so it bypasses that authorization. Maintainers alr
 `bin/rails runner`. Put the queries in **report objects under `app/models`** and have the MCP tools
 call them, so a CLI could be a thin client of the same layer later if a real need appears.
 
-## 1. What the platform gives you (verified 2026-09-24, MCP spec revision 2026-07-28)
+## 1. What the platform gives you (verified 2026-09-24, MCP spec revision 2026-07-28; the `mcp` gem re-verified 2026-10-14)
 
 - **The official Ruby SDK is the `mcp` gem** (1.7.0, released 2026-10-05, [modelcontextprotocol/ruby-sdk][sdk];
   verified 2026-10-14 on rubygems.org). It
   serves tools, prompts and resources, over stdio or **Streamable HTTP**, "including mounted inside a
   Rails application". The mount is shown in the repo's `examples/rails` and in the
   [SDK docs][sdk-docs], so follow those rather than a tutorial.
-- **The gem supports spec revision 2026-07-28** (since 1.1.0, verified 2026-10-14 in `lib/mcp/configuration.rb`
-  at v1.7.0: `LATEST_STABLE_PROTOCOL_VERSION = "2026-07-28"`). The SDK docs page does not say so; the source does.
-  One boundary: the legacy `initialize` handshake still defaults to `2025-03-26` and never negotiates
-  `2026-07-28`, which is the stateless revision where each request carries its own version in `_meta`.
+- **The gem supports spec revision 2026-07-28**, and serves it statelessly since 1.2.0 (verified 2026-10-14 in the CHANGELOG
+  and in `lib/mcp/configuration.rb` at v1.7.0: `LATEST_STABLE_PROTOCOL_VERSION = "2026-07-28"`). 1.1.0 (2026-08-01) only listed
+  it as the latest; 1.2.0 (2026-08-15) "completes the SEP-2575 stateless lifecycle of the 2026-07-28 specification": the
+  per-request envelope, sessionless Streamable HTTP and `server/discover`. The SDK docs page does not say so; the source does.
+  One boundary: the legacy `initialize` handshake still defaults to `2025-03-26` and never negotiates `2026-07-28`, which is
+  the stateless revision where each request carries its own version in `_meta`; a client reaches it through `server/discover`
+  and that per-request envelope, not through the handshake.
 - **Use Streamable HTTP.** The older HTTP+SSE transport is deprecated since protocol `2025-03-26`,
   and the spec says new implementations SHOULD NOT adopt it ([transports][spec-transport]).
 - **claude.ai custom connectors** reach a remote MCP server over the internet, with OAuth, on Free,
@@ -68,8 +71,8 @@ yours to write, or the tokens come from an external identity provider.
    whose source does not state both (it reads the source, because the gem emits all four hints once any
    one is set). The spec says clients **MUST** treat tool
    annotations as untrusted ([tools][spec-tools]), so the hint describes the tool and guarantees
-   nothing. The guarantee is that no tool's code path writes. **Write tools are out of scope until a
-   project needs them** (maintainer ruling, #2034); this file covers reporting (read-only) tools.
+   nothing. The guarantee is that no tool's code path writes. **Write tools are out of scope for
+   now** (maintainer ruling, #2034; future work tracked in #2049); this file covers reporting (read-only) tools.
 3. **One tool per report, with typed arguments**, for example `overdue_tasks_by_team(period:)`. No
    query language, no SQL, and no "run this scope". A tool's arguments are the only thing an agent
    controls, so they are validated like form params.
@@ -110,10 +113,13 @@ names its source; a rule marked *advice* is vendor guidance, not a requirement o
 
 - Bound what a tool returns: pagination, range selection, filtering or truncation, and when you truncate, tell the agent
   how to narrow the request. Letting the agent pick a concise or a detailed response is one way. *Advice* (the Anthropic post).
-- Claude Code limits an MCP tool's output to 25,000 tokens by default and warns above 10,000. `MAX_MCP_OUTPUT_TOKENS`
-  raises it, and a tool can set its own with `anthropic/maxResultSizeChars`; a result over the limit is saved to a file and
-  replaced in the conversation by its path, not truncated in place ([Claude Code MCP docs][cc-mcp], read 2026-10-14, an
-  undated page). So the server bounds its own output.
+- Claude Code limits an MCP tool's output to 25,000 tokens by default and warns above 10,000. `MAX_MCP_OUTPUT_TOKENS` raises
+  it, and a tool can set its own with `anthropic/maxResultSizeChars`. What happens past the limit depends on the result: a
+  **successful result with no image content** over the token limit is saved to a file and replaced in the conversation by
+  its path, and for a tool without its own limit that result is saved once it is longer than 50,000 characters, whatever its
+  token count; **error text** longer than about 11,000 characters keeps only its first 5,000 and last 5,000 characters, so it
+  is truncated, not saved ([Claude Code MCP docs][cc-mcp], read 2026-10-14, an undated page). So the server bounds its own
+  output, errors included.
 
 **Structured output and errors**
 
@@ -139,7 +145,7 @@ names its source; a rule marked *advice* is vendor guidance, not a requirement o
   and `--method tools/call --tool-name <name> --tool-arg key=value` ([Inspector docs][inspector]; it needs Node 22.19.0 or
   newer, per the page read 2026-10-14).
 - When a tool's name or description changes, run an evaluation: realistic tasks that need several tool calls, each paired
-  with a verifiable outcome, recording the runtime of each call and task, and refine the descriptions from what it shows.
+  with a verifiable outcome, recording the total runtime of individual tool calls and tasks, the total number of tool calls, the total token consumption and tool errors, and refine the descriptions from what it shows.
   *Advice* (the Anthropic post). Re-running it on every description change is this project's advice; no official source states it.
 
 [sdk]: https://github.com/modelcontextprotocol/ruby-sdk
