@@ -449,16 +449,20 @@ def _(base):
     # A SECTION RENAME is refused outright, whatever the target (#2026): onto `alias` it made a shell alias (#2023); onto `core` or `include` it set
     # core.hooksPath / core.fsmonitor / core.sshCommand / include.path past the per-key rules (a0, measured). Every unique prefix and the subcommand.
     r.real("config", "foo.x", "!sh")
-    r.real("config", "foo.hookspath", "/dev/null")
-    r.real("config", "foo.fsmonitor", "true")
-    r.real("config", "foo.sshcommand", "sh")
-    r.real("config", "bar.path", "/tmp/x")
+    # UNIQUE values: the hermetic repository may already carry a `core.hooksPath` of its own (it does on Linux), so the check below asks whether THIS
+    # value arrived, not whether the key is set at all.
+    # each target its OWN source section, so a rename that got through (under a mutant) cannot use up the section the next row needs
+    r.real("config", "hk.hookspath", "/tmp/renamed-2026-hooks")
+    r.real("config", "hk.fsmonitor", "renamed-2026-fsmonitor")
+    r.real("config", "hk.sshcommand", "renamed-2026-ssh")
+    r.real("config", "bar.path", "/tmp/renamed-2026-include")
     for args in (("config", "--rename-section", "foo", "alias"), ("config", "--ren", "foo", "ALIAS"), ("config", "--rename-s", "foo", "alias.sub"),
-                 ("config", "--rename-section", "foo", "core"), ("config", "--ren", "foo", "Core"), ("config", "--rename-section", "bar", "include"),
-                 ("config", "rename-section", "foo", "core"), ("config", "--rename-section", "foo", "harmless")):
+                 ("config", "--rename-section", "hk", "core"), ("config", "--ren", "hk", "Core"), ("config", "--rename-section", "bar", "include"),
+                 ("config", "rename-section", "hk", "core"), ("config", "--rename-section", "foo", "harmless")):
         refused(r, label, *args)
-    for key in ("alias.x", "core.hookspath", "core.fsmonitor", "core.sshcommand", "include.path"):
-        check(label, r.real("config", "--get", key).returncode != 0, f"a section rename wrote {key} anyway")
+    for key, planted in (("alias.x", "!sh"), ("core.hookspath", "/tmp/renamed-2026-hooks"), ("core.fsmonitor", "renamed-2026-fsmonitor"),
+                         ("core.sshcommand", "renamed-2026-ssh"), ("include.path", "/tmp/renamed-2026-include")):
+        check(label, planted not in r.real("config", "--get-all", key).stdout, f"a section rename wrote {key}={planted} anyway")
 
 
 @case("shim: -c core.hooksPath on the command line is refused")
