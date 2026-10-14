@@ -436,9 +436,9 @@ def _(base):
     runs(r, label, "config", "--get", "user.name")
 
 
-@case("shim: writing a shell alias (`!…`) through git config is refused; a plain alias write and an alias read run (#2015)")
+@case("shim: writing a shell alias (`!…`) through git config is refused, so is any section rename (#2015, #2026); a plain alias write and an alias read run")
 def _(base):
-    label = "shim: writing a shell alias (`!…`) through git config is refused; a plain alias write and an alias read run (#2015)"
+    label = "shim: writing a shell alias (`!…`) through git config is refused, so is any section rename (#2015, #2026); a plain alias write and an alias read run"
     r = Repo(base, "alias2015")
     for args in (("config", "alias.x", "!sh"), ("config", "--add", "alias.x", "!rm -rf ."), ("config", "--local", "ALIAS.x", "!sh"), ("config", "alias.x", "  !sh")):
         refused(r, label, *args)
@@ -446,13 +446,19 @@ def _(base):
     runs(r, label, "config", "alias.st", "status")
     check(label, r.real("config", "--get", "alias.st").stdout.strip() == "status", "a plain alias write did not land")
     runs(r, label, "config", "--get", "alias.st")
-    # a value stored under another section and then RENAMED to `alias` becomes a shell alias without naming either (the commit security review of #2020);
-    # git reads a long option by its unique prefix, so `--ren` and `--rename-s` are refused too. Renaming to any other section still runs.
+    # A SECTION RENAME is refused outright, whatever the target (#2026): onto `alias` it made a shell alias (#2023); onto `core` or `include` it set
+    # core.hooksPath / core.fsmonitor / core.sshCommand / include.path past the per-key rules (a0, measured). Every unique prefix and the subcommand.
     r.real("config", "foo.x", "!sh")
-    for args in (("config", "--rename-section", "foo", "alias"), ("config", "--ren", "foo", "ALIAS"), ("config", "--rename-s", "foo", "alias.sub")):
+    r.real("config", "foo.hookspath", "/dev/null")
+    r.real("config", "foo.fsmonitor", "true")
+    r.real("config", "foo.sshcommand", "sh")
+    r.real("config", "bar.path", "/tmp/x")
+    for args in (("config", "--rename-section", "foo", "alias"), ("config", "--ren", "foo", "ALIAS"), ("config", "--rename-s", "foo", "alias.sub"),
+                 ("config", "--rename-section", "foo", "core"), ("config", "--ren", "foo", "Core"), ("config", "--rename-section", "bar", "include"),
+                 ("config", "rename-section", "foo", "core"), ("config", "--rename-section", "foo", "harmless")):
         refused(r, label, *args)
-    check(label, r.real("config", "--get", "alias.x").returncode != 0, "a section renamed to alias was written anyway")
-    runs(r, label, "config", "--rename-section", "foo", "bar")
+    for key in ("alias.x", "core.hookspath", "core.fsmonitor", "core.sshcommand", "include.path"):
+        check(label, r.real("config", "--get", key).returncode != 0, f"a section rename wrote {key} anyway")
 
 
 @case("shim: -c core.hooksPath on the command line is refused")
