@@ -583,7 +583,7 @@ spans are folded in process into aggregates and written to the app's own databas
 - **`auto_explain` does nothing until `auto_explain.log_min_duration` is set** (default
   -1). `log_analyze` times every plan node of every statement ("an extremely negative
   impact on performance"): pair it with `auto_explain.sample_rate` below 1 and
-  `log_timing = off`. `auto_explain.log_parameter_max_length` defaults to -1, which logs
+  `log_timing = off`. `auto_explain.log_parameter_max_length` (new in 16) defaults to -1, which logs
   bind values **in full**, which means personal data in the logs; set it to 0. Load it
   via `session_preload_libraries` or `shared_preload_libraries`.
 - **Logging companions (all present on 16):** `log_min_duration_sample` with
@@ -593,7 +593,8 @@ spans are folded in process into aggregates and written to the app's own databas
   (needed to see other users' text and `queryid`), **not** `pg_monitor`: `pg_monitor`
   includes `pg_stat_scan_tables`, whose functions "may take ACCESS SHARE locks on
   tables, potentially for a long time". That role is also what `pgstattuple` requires,
-  so a `pg_read_all_stats` reader cannot measure bloat. Set `statement_timeout`,
+  so a `pg_read_all_stats` reader cannot run `pgstattuple` (it can still read
+  `n_dead_tup`). Set `statement_timeout`,
   `lock_timeout` and `idle_in_transaction_session_timeout` per role
   (`ALTER ROLE … SET`); the docs call setting the first two in `postgresql.conf` "not
   recommended because it would affect all sessions".
