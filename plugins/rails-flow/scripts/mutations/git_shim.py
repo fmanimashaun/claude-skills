@@ -226,5 +226,8 @@ GUARD = Guard(
         Mutation('a credential.helper starting with ! is not refused (#2021)',
                  '      if [ "$cred_key" = 1 ] && [ "$shell_value" = 1 ]; then',
                  '      if false; then', 'runs a program'),
+        Mutation('the --rename-section prefix floor is raised, so the 5-character `--ren` is not read (a0, review of #2029)',
+                 '        case "--rename-section" in "$x"?*|"$x") if [ "${#x}" -ge 5 ]; then section_move=1; fi ;; esac',
+                 '        case "--rename-section" in "$x"?*|"$x") if [ "${#x}" -ge 6 ]; then section_move=1; fi ;; esac', 'writing a shell alias'),
     ),
 )

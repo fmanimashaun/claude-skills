@@ -674,6 +674,17 @@ def _(base):
     (lgd / "rails-flow-fixture").write_text("")
     (lw / "stray.txt").write_text("s\n")
     attempt("a linked worktree of a repository carrying the session marker (the marker is in its common dir)", lw, env_for(lw, gd=lgd), ok=False)
+    # #2019: a linked worktree of a FIXTURE carries the fixture identity only in its COMMON dir (`fixture_git.init` writes it once, in the main git dir), so the
+    # exemption must look there. Without this row nothing reached `fixture_marked`'s commondir branch, and the mutant that dropped it survived.
+    ffx = tmproot / "fixture-main"
+    fixture_git.init(ffx, "-b", "main")
+    fixture_git.run(ffx, "commit", "-q", "--allow-empty", "-m", "i")
+    flw = tmproot / "fixture-linked"
+    fixture_git.run(ffx, "worktree", "add", "-q", str(flw), "-b", "flw")
+    flgd = ffx / ".git" / "worktrees" / "fixture-linked"
+    check(label, (ffx / ".git" / "rails-flow-fixture").is_file() and not (flgd / "rails-flow-fixture").exists(), "the fixture identity is not only in the common dir: the row below would not reach the commondir branch")
+    (flw / "stray.txt").write_text("s\n")
+    attempt("a linked worktree of a fixture, its identity only in the common dir, IS exempt (#2019)", flw, env_for(flw, gd=flgd), ok=True)
     # the adversary pass on #1994: five commands got through. Each is a row here, and each is judged by the refusal it must get.
     # 1. git prefers a command-line --git-dir/--work-tree/-C/--namespace over the environment, so the decoy fixture in GIT_DIR proved nothing about the repository the command named
     pw = str(proj.work)
