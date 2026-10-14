@@ -202,5 +202,8 @@ GUARD = Guard(
                  '      [ "${1:-}" = rename-section ] && section_move=1', '      :', 'writing a shell alias'),
         Mutation('the alias key is matched case-sensitively, so ALIAS.x passes (a0, review of #2020)',
                  '        ci_match "$x" "alias.*" && alias_key=1', '        [[ $x == alias.* ]] && alias_key=1', 'writing a shell alias'),
+        Mutation('the --rename-section prefix floor is raised, so the 5-character `--ren` is not read (a0, review of #2029)',
+                 '        case "--rename-section" in "$x"?*|"$x") if [ "${#x}" -ge 5 ]; then section_move=1; fi ;; esac',
+                 '        case "--rename-section" in "$x"?*|"$x") if [ "${#x}" -ge 6 ]; then section_move=1; fi ;; esac', 'writing a shell alias'),
     ),
 )
