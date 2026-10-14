@@ -266,5 +266,7 @@ GUARD = Guard(
         Mutation('the refused class `uploadpack.packobjectshook` is allowlisted (#2043)',
                  'CONFIG_WRITE_ALLOWED="user.name user.email commit.gpgsign tag.gpgsign init.defaultbranch maintenance.auto gc.auto core.quotepath core.autocrlf pull.rebase pull.ff push.default push.autosetupremote fetch.prune rerere.enabled merge.conflictstyle color.ui branch.*.remote branch.*.merge branch.*.rebase remote.*.url remote.*.fetch alias.* credential.helper credential.*.helper"',
                  'CONFIG_WRITE_ALLOWED="uploadpack.packobjectshook user.name user.email commit.gpgsign tag.gpgsign init.defaultbranch maintenance.auto gc.auto core.quotepath core.autocrlf pull.rebase pull.ff push.default push.autosetupremote fetch.prune rerere.enabled merge.conflictstyle color.ui branch.*.remote branch.*.merge branch.*.rebase remote.*.url remote.*.fetch alias.* credential.helper credential.*.helper"', 'allowlist; reads run'),
+        Mutation('a combined short cluster (-ze, -zf FILE) is not treated as an unjudgeable write (the security review of #2043)',
+                 '      -[!-]?*) CFG_WRITE=1; CFG_KEY=""; CLUSTER=1; continue ;;', '      -[!-]?*) continue ;;', 'allowlist; reads run'),
     ),
 )

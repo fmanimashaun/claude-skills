@@ -513,6 +513,10 @@ def _(base):
     runs(r, label, "config", "--file", ".git/config", "user.name", "someone")      # an option's value is never the key
     runs(r, label, "config", "--type", "bool", "commit.gpgsign", "false")
     refused(r, label, "config", "--un", "pager.log")                                 # git's shortest unique-enough prefix of --unset
+    # a COMBINED short cluster is read letter by letter by git (the commit security review of #2043): `-ze` edits, `-zf FILE` / `-fFILE` move the key
+    for args in (("config", "-ze"), ("config", "-zf", "user.name", "pager.log", "x"), ("config", "-fuser.name", "pager.log", "x")):
+        refused(r, label, *args)
+    check(label, not (r.work / "user.name").exists(), "a short cluster wrote a config file past the key check")
     runs(r, label, "config", "--add", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
     runs(r, label, "config", "--unset", "color.ui")
     for args in (("config", "--get", "pager.log"), ("config", "--list"), ("config", "-l"), ("config", "get", "user.name"), ("config", "list"),

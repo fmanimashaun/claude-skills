@@ -317,7 +317,7 @@ CONFIG_WRITE_ALLOWED="user.name user.email commit.gpgsign tag.gpgsign init.defau
 # A write is a write subcommand (set, unset, rename-section, remove-section, edit), a write flag in any unique-prefix spelling git accepts, or the
 # old two-positional form `key value` with no read flag. Option values (`--file x`, `--type x`, ...) are skipped so they are never read as the key.
 config_write_key() {
-  CFG_WRITE=0; CFG_KEY=""
+  CFG_WRITE=0; CFG_KEY=""; CLUSTER=0
   local a pos=() read=0 skip=0 f
   case "${1:-}" in
     set|unset|rename-section|remove-section|edit) CFG_WRITE=1; shift ;;
@@ -329,6 +329,10 @@ config_write_key() {
       -f|--file|--blob|--type|--default|--comment|--value|--url) skip=1; continue ;;
       -e) CFG_WRITE=1; continue ;;
       -l) read=1; continue ;;
+      # A COMBINED short cluster (`-ze` = -z -e, `-zf FILE`, an attached `-fFILE`) is parsed by git letter by letter, so this shim cannot tell
+      # which argument is the key or whether it edits: treat it as an unjudgeable write, which the allowlist refuses (the commit security
+      # review of #2043: `git config -ze` opened the editor and `-zf user.name pager.log x` wrote pager.log past the key check).
+      -[!-]?*) CFG_WRITE=1; CFG_KEY=""; CLUSTER=1; continue ;;
       --*=*) continue ;;
       --*)
         for f in --add --replace-all --unset --unset-all --remove-section --rename-section --edit; do
@@ -344,7 +348,7 @@ config_write_key() {
   done
   [ "$read" = 1 ] && [ "$CFG_WRITE" = 0 ] && return 0
   [ "${#pos[@]}" -ge 2 ] && CFG_WRITE=1
-  [ "$CFG_WRITE" = 1 ] && CFG_KEY="${pos[0]:-}"
+  [ "$CFG_WRITE" = 1 ] && [ "${CLUSTER:-0}" = 0 ] && CFG_KEY="${pos[0]:-}"
   return 0
 }
 
