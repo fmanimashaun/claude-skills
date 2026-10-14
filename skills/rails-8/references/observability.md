@@ -83,7 +83,8 @@ solid_cache 1.0.10; #2065):
 
 - **Queue latency comes from Active Job, not Solid Queue.** `perform_start.active_job` carries
   `:job`, and `enqueued_at` is stamped in `serialize` and restored on deserialize
-  (`active_job/core.rb:129`, `:170`), so latency is the event's time minus `job.enqueued_at`; a
+  (`active_job/core.rb:129`, `:170`), so latency is `event.time - payload[:job].enqueued_at.to_f` (`event.time` is a Float, and a Float
+  minus a Time raises); a
   scheduled job counts from `scheduled_at`, since `enqueued_at` is the enqueue moment. Solid Queue
   instruments no per-job latency; its `SolidQueue::Queue#latency` is the age of the oldest ready
   execution for a whole queue (`app/models/solid_queue/queue.rb:41-47`), not instrumented.
@@ -91,15 +92,19 @@ solid_cache 1.0.10; #2065):
   ActiveSupport::Cache::Store` (`solid_cache/store.rb:4`), so `cache_read` carries `hit: true/false`
   and `super_operation: :fetch` inside a `fetch` (`active_support/cache.rb:473-474`); a fetch hit
   also emits `cache_fetch_hit`, a miss `cache_generate` then `cache_write` (the write is skipped for
-  a nil result under `skip_nil`). A transient database error (timeout, lost connection, deadlock, lock wait, cancelled query) is
-  swallowed by Solid Cache's failsafe: the read returns nil and the payload says `hit: false`, with no
-  `exception`. Only a non-transient error raises and carries `exception` in the `cache_read` payload.
+  a nil result under `skip_nil`). A transient database error (the six in `Failsafe::TRANSIENT_ACTIVE_RECORD_ERRORS`, `failsafe.rb:6-13`)
+  is swallowed: the read returns nil, the payload says `hit: false` with no `exception`, and the error
+  goes to `Rails.error` and the store's `error_handler`, so a hit-rate dashboard counts it as a miss.
+  Only a non-transient error raises and carries `exception` in the `cache_read` payload (verified at
+  solid_cache 1.0.10).
 - **`strict_loading_mode = :n_plus_one_only` does not report the classic N+1.** The owner's own
   lazy loads pass (`associations/association.rb:240-244`); only records it loaded through a
   `has_many` are marked strict (`:123-128`), so `user.comments.first.ratings` is reported and
   `User.all.each { |u| u.comments.to_a }` is **not** (measured: 0 events for the loop, 1 for the
-  second level). For a sampled N+1 signal in production use mode `:all` with
-  `action_on_strict_loading_violation = :log` (the default action is `:raise`), or a detector.
+  second level). Mode `:all` is the default, and `:all` with
+  `action_on_strict_loading_violation = :log` (the default action is `:raise`) reports EVERY lazy load
+  on a strict record, which is noisy, not a sampled N+1 signal; a detector is the alternative. A
+  reflection declared `strict_loading: true` reports in either mode.
 
 Exception convention: any hook's payload gains `:exception` (`[class_name,
 message]`) and `:exception_object` when the instrumented block raised —
