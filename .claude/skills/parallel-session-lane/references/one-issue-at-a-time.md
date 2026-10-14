@@ -14,7 +14,8 @@ when you may make the next one, and what you owe the last one.
 1. **One issue at a time per session.** An issue is in progress until its PR **merges**.
 2. **A new assignment that arrives mid-issue is queued, or handed back.** Tell the assigner to give it to
    someone else if it cannot wait. It never gets a second worktree.
-3. **Clean up when done.** `git worktree remove <path>` (never `--force`, §1) when the PR merges, or when a
+3. **Clean up when done, with the teardown.** `python3 <rails-flow>/scripts/worktree_teardown.py <path>` (it stops the worktree's own servers, drops its databases,
+   then runs `git worktree remove`, never `--force`, §1) when the PR merges, or when a
    review or a measurement finishes. Reviews prefer a `git archive` export, and a review is not an issue.
 4. **Resume in place.** After a restart or a spend-limit cutoff, continue in the abandoned worktree
    (`git worktree list`, `HANDOFF.md`, the session-start pointer). Never create a new worktree for work
