@@ -91,7 +91,9 @@ solid_cache 1.0.10; #2065):
   ActiveSupport::Cache::Store` (`solid_cache/store.rb:4`), so `cache_read` carries `hit: true/false`
   and `super_operation: :fetch` inside a `fetch` (`active_support/cache.rb:473-474`); a fetch hit
   also emits `cache_fetch_hit`, a miss `cache_generate` then `cache_write` (the write is skipped for
-  a nil result under `skip_nil`). A failed read carries `exception` in the `cache_read` payload.
+  a nil result under `skip_nil`). A transient database error (timeout, lost connection, deadlock, lock wait, cancelled query) is
+  swallowed by Solid Cache's failsafe: the read returns nil and the payload says `hit: false`, with no
+  `exception`. Only a non-transient error raises and carries `exception` in the `cache_read` payload.
 - **`strict_loading_mode = :n_plus_one_only` does not report the classic N+1.** The owner's own
   lazy loads pass (`associations/association.rb:240-244`); only records it loaded through a
   `has_many` are marked strict (`:123-128`), so `user.comments.first.ratings` is reported and
