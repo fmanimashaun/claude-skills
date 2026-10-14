@@ -1,0 +1,2 @@
+section: Repository hygiene
+- **A bare dollar-digit in a command's or skill's markdown fails the shell lint — `scripts/lint_markdown_shell.py`, `scripts/mutations/lint_markdown_shell.py`** (#2022). A new `positional-substitution` rule scans every `commands/*.md` and `SKILL.md` (fences and prose, since both are substituted) for `$0`..`$9` not preceded by a backslash; its selftest has a bad and a good twin for a fence, prose, an escaped token, `$$` and a file Claude Code does not expand, and three mutations hold it.

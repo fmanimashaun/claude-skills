@@ -160,7 +160,7 @@ Before any budget arithmetic, `--run` checks that every outstanding row's kind h
 ```
 
 This is deliberately **not** a budget comparison. A ceiling can only refuse a number, and the whole
-problem with an unpriced row is that there is no number: it scores `$0.00`, fits inside every budget,
+problem with an unpriced row is that there is no number: it scores `\$0.00`, fits inside every budget,
 and arrives at the executor as the cheapest thing in the plan. `--confirm-partial` does not bypass
 it either — "buy what the budget affords" is a decision about rows whose price is known, and there is
 no partial answer for a row whose price is not.
@@ -180,7 +180,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/asset_plan.py" --render
 
 writes `docs/design/assets/plan.md`: one row per asset, with the surface, kind, status, group, priority,
 per-row cost estimate, produced file and `why`. Unpriced rows are marked **unpriced** rather than
-shown as `$0.00`, so the reason a run will refuse is visible in the document you read to decide.
+shown as `\$0.00`, so the reason a run will refuse is visible in the document you read to decide.
 
 It is **generated, never hand-maintained**. A hand-kept table is a second source of truth that
 disagrees with the first within a week and disagrees *silently*, because a stale table still looks
