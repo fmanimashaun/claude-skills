@@ -91,7 +91,9 @@ function queueCompact($, due) {
 // (measured under `claude -p` 2.1.293: the shell `$.process.run` starts has the claude process as parent).
 // The claim is a directory made with mkdir, which is atomic: of two simultaneous starts exactly one makes it.
 // A claim is live only while its pid exists AND its process start time matches (a recycled pid after a
-// reboot is not the coordinator). A stale claim is replaced under a second mkdir lock, so two takers cannot
+// reboot is not the coordinator) AND that process is not a pre-warmed spare. A \`claude bg-spare --bg-spare ...\` process is not a
+// user session: it starts fresh (no turns), so it looked like a new session, won the claim and left every real session
+// "implementation" (#2068). A spare never claims (it reports \`spare\`, no role) and a claim a spare holds is not live, so the next real start replaces it. A stale claim is replaced under a second mkdir lock, so two takers cannot
 // both win; a taker that finds the lock held reports implementation (fewer coordinators, never more). A claim directory
 // exists a moment before its `claim` file is written, so an EMPTY claim younger than a minute (and not dated in the future,
 // which clock skew can do) is one being made, and is
@@ -101,11 +103,13 @@ function queueCompact($, due) {
 export const ELECT_SCRIPT = `
 d="$HOME/.claude/rails-flow"; c="$d/coordinator"; lk="$d/lock"; me="$PPID"; sid="$1"; force="$2"; resumed="$3"
 mkdir -p "$d" || { echo error; exit 0; }
+spare() { case "$(ps -o command= -p "$1" 2>/dev/null)" in *--bg-spare*) return 0 ;; esac; return 1; }
 start() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//'; }
 claim() { mkdir "$c" 2>/dev/null || return 1; printf '%s\\n%s\\n%s\\n%s\\n' "$me" "$sid" "$(date +%s)" "$(start "$me")" > "$c/claim"; }
-alive() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null && [ "$(start "$1")" = "$2" ]; }
+alive() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null && [ "$(start "$1")" = "$2" ] && ! spare "$1"; }
 read_claim() { hp=$(sed -n 1p "$c/claim" 2>/dev/null); hs=$(sed -n 2p "$c/claim" 2>/dev/null); hl=$(sed -n 4p "$c/claim" 2>/dev/null); }
 report() { echo "implementation $hp $hs"; exit 0; }
+if [ "$force" != "1" ] && spare "$me"; then echo spare; exit 0; fi
 if [ "$force" = "1" ]; then rm -rf "$c"; fi
 if [ "$resumed" = "1" ] && [ "$force" != "1" ]; then
   read_claim
@@ -134,6 +138,7 @@ rmdir "$lk"; read_claim; report
 // What the script printed -> { role, coordinator }, or null when it said nothing usable.
 export function parseElection(out) {
   const [role, pid, sid] = String(out ?? '').trim().split(/\s+/)
+  if (role === 'spare') return null      // a pre-warmed spare takes no part in the election (#2068)
   if (role === 'coordinator') return { role, coordinator: null }
   // pid and id are read from a file any process of this user can write: only digits and word characters survive
   if (role === 'implementation') return { role, coordinator: /^\d+$/.test(pid ?? '') ? `session ${/^[\w-]+$/.test(sid ?? '') ? sid : 'unknown'} (pid ${pid})` : null }

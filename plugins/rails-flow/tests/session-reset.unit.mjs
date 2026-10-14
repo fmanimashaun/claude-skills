@@ -42,8 +42,9 @@ const reset = await import('../hooks/session-reset.mjs') // the one instance con
 
 // A simulated session process: a long-lived sh. What it runs has it as $PPID.
 class Proc {
-  constructor(home) {
-    this.sh = spawn('sh', [], { env: { ...process.env, HOME: home, ELECT: reset.ELECT_SCRIPT }, stdio: ['pipe', 'pipe', 'ignore'] })
+  // spare: the process looks like Claude Code's pre-warmed `claude bg-spare --bg-spare ...` (its command line carries --bg-spare, #2068)
+  constructor(home, { spare = false } = {}) {
+    this.sh = spawn('sh', spare ? ['-s', '--', '--bg-spare'] : [], { env: { ...process.env, HOME: home, ELECT: reset.ELECT_SCRIPT }, stdio: ['pipe', 'pipe', 'ignore'] })
     this.buf = ''
     this.sh.stdout.on('data', (d) => (this.buf += d))
     cleanups.push(() => this.kill())
@@ -552,6 +553,27 @@ await check('a live coordinator is not displaced by a later start', async () => 
   await a.run(['sh', '-c', '', 'sh', 'a', '0'])
   for (let i = 0; i < 3; i++) assert.equal(reset.parseElection(await new Proc(h).run(['sh', '-c', '', 'sh', `x${i}`, '0'])).role, 'implementation')
   assert.equal(reset.parseElection(await a.run(['sh', '-c', '', 'sh', 'a', '0'])).role, 'coordinator', 'the same process asking again keeps it')
+})
+
+await check('#2068: a pre-warmed spare never claims, and a real start after it is the coordinator', async () => {
+  const h = home()
+  const spare = new Proc(h, { spare: true })
+  assert.equal(reset.parseElection(await spare.run(['sh', '-c', '', 'sh', 'spare-s', '0'])), null, 'a spare reports no role')
+  assert.ok(!existsSync(join(h, '.claude/rails-flow/coordinator')), 'a spare made no claim')
+  assert.equal(reset.parseElection(await new Proc(h).run(['sh', '-c', '', 'sh', 'real-s', '0'])).role, 'coordinator')
+})
+
+await check('#2068: a claim held by a spare is not live: the next real start replaces it', async () => {
+  const h = home()
+  const spare = new Proc(h, { spare: true })
+  assert.equal(reset.parseElection(await spare.run(['sh', '-c', '', 'sh', 'spare-s', '1'])).role, 'coordinator', 'forced (the owner override) it can still claim')
+  assert.equal(reset.parseElection(await new Proc(h).run(['sh', '-c', '', 'sh', 'real-s', '0'])).role, 'coordinator', 'a spare is no live coordinator')
+})
+
+await check('#2068: a real live coordinator is still not displaced (the control)', async () => {
+  const h = home()
+  assert.equal(reset.parseElection(await new Proc(h).run(['sh', '-c', '', 'sh', 'first', '0'])).role, 'coordinator')
+  assert.equal(reset.parseElection(await new Proc(h).run(['sh', '-c', '', 'sh', 'second', '0'])).role, 'implementation')
 })
 
 await check('a claim whose pid is recycled by another process is stale (start time differs)', async () => {
