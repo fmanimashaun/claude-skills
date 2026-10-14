@@ -329,6 +329,9 @@ config_write_key() {
     case "$a" in
       --) endopts=1; continue ;;
       -f|-t|--file|--blob|--type|--default|--comment|--value|--url) skip=1; continue ;;   # -t is --type's short form (a0, review of #2062)
+      # A bare `-` is not an option: git takes it as a VALUE (fa, review of #2062: `git config pager.log -` was read as a one-positional READ
+      # and wrote pager.log; `init.templateDir -` led to a hook run by the real git). It is a positional.
+      -) pos+=("$a"); continue ;;
       -e) CFG_WRITE=1; continue ;;
       -l) read=1; continue ;;
       # A COMBINED short cluster (`-ze` = -z -e, `-zf FILE`, an attached `-fFILE`) is parsed by git letter by letter, so this shim cannot tell
@@ -354,6 +357,9 @@ config_write_key() {
         done
         [ "$known" = 1 ] || CLUSTER=1
         continue ;;
+      -z) continue ;;
+      # Any OTHER single-letter option is not one this parser knows; git may read the next argument as its value, so a write is unjudgeable.
+      -?) CLUSTER=1; continue ;;
       -*) continue ;;
     esac
     pos+=("$a")

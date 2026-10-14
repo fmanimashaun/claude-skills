@@ -524,6 +524,15 @@ def _(base):
                  ("config", "--ty", "bool", "user.name", "true"), ("config", "--", "pager.log", "x")):
         refused(r, label, *args)
     check(label, not (r.work / "user.name").exists(), "a short cluster or an abbreviated option wrote a config file past the key check")
+    # a bare `-` is a VALUE to git, not an option (fa, review of #2062): each of these WRITES its key, so each is judged as a write
+    for args in (("config", "pager.log", "-"), ("config", "init.templateDir", "-"), ("config", "core.askpass", "-"), ("config", "-z", "pager.log", "-"),
+                 ("config", "--no-type", "pager.log", "-"), ("config", "--file", ".git/config", "pager.log", "-")):
+        refused(r, label, *args)
+    for key in ("pager.log", "init.templatedir", "core.askpass"):
+        check(label, r.real("config", "--local", "--get-all", key).stdout.strip() != "-", f"`git config {key} -` was written anyway")
+    runs(r, label, "config", "user.name", "-")                                       # an allowlisted key may still take `-` as its value
+    # an unknown single-letter option is unjudgeable in a write (git may read the next argument as its value)
+    refused(r, label, "config", "-X", "user.name", "pager.log", "x")
     runs(r, label, "config", "--add", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
     runs(r, label, "config", "--unset", "color.ui")
     for args in (("config", "--get", "pager.log"), ("config", "--list"), ("config", "-l"), ("config", "get", "user.name"), ("config", "list"),

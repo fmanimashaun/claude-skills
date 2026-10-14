@@ -270,5 +270,9 @@ GUARD = Guard(
         Mutation('-t (the short form of --type) does not skip its value, so the type word is read as the key (a0, review of #2062)',
                  '      -f|-t|--file|--blob|--type|--default|--comment|--value|--url) skip=1; continue ;;   # -t is --type\'s short form (a0, review of #2062)',
                  '      -f|--file|--blob|--type|--default|--comment|--value|--url) skip=1; continue ;;', 'allowlist; reads run'),
+        Mutation('a bare `-` is dropped as an option, so `git config pager.log -` reads as a one-positional READ (fa, review of #2062)',
+                 '      -) pos+=("$a"); continue ;;', '      -) continue ;;', 'allowlist; reads run'),
+        Mutation('an unknown single-letter option is ignored instead of making a write unjudgeable (fa, review of #2062)',
+                 '      -?) CLUSTER=1; continue ;;', '      -?) continue ;;', 'allowlist; reads run'),
     ),
 )
