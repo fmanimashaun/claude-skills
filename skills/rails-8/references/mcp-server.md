@@ -42,13 +42,15 @@ The MCP server is an **OAuth 2.1 resource server** ([authorization][spec-auth]):
   per-connection or as a side effect of other requests on the connection ([tools][spec-tools]; new in
   2026-07-28, which removed protocol-level sessions).
 
-**Registering clients, and the mix-up defence** (both new in 2026-07-28, [changelog][spec-changelog]), for
-the authorization server, whether that is the app or an identity provider in front of it:
+**Registering clients, and the mix-up defence**, for the authorization server, whether that is the app or
+an identity provider in front of it. Two of these points are new in 2026-07-28: Dynamic Client
+Registration's deprecation and the `iss` rule ([changelog][spec-changelog]).
 
 - Clients are identified by **OAuth Client ID Metadata Documents**, which authorization servers and
-  clients **SHOULD** support. Dynamic Client Registration (RFC 7591) is now a **MAY**: deprecated and
-  kept only for authorization servers that lack Client ID Metadata Documents. It is not removed, and a
-  deprecated feature keeps a twelve-month window.
+  clients **SHOULD** support; Dynamic Client Registration (RFC 7591) is a **MAY**. Both are unchanged
+  from 2025-11-25. New in 2026-07-28 is that Dynamic Client Registration is **deprecated**, kept only for
+  authorization servers that lack Client ID Metadata Documents. It is not removed: a deprecated feature
+  keeps at least a twelve-month window.
 - **RFC 9207 `iss`.** The authorization server **SHOULD** include `iss` in authorization responses,
   error responses included, and one that does **MUST** advertise it with
   `authorization_response_iss_parameter_supported: true`. A client **MUST** validate a present `iss`
