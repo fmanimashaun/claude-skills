@@ -535,12 +535,19 @@ decide() {
     read-tree)
       if seen reset && seen update; then RULE="git read-tree --reset -u overwrites the working tree"; return 1; fi ;;
     config)
-      local x
+      local x alias_key=0 shell_value=0
       for x in "$@"; do
         if ci_match "$x" "*core.hookspath*" || ci_match "$x" "*include.path*" || ci_match "$x" "*includeif.*" || ci_match "$x" "*core.fsmonitor*" || ci_match "$x" "*core.sshcommand*"; then
           RULE="git config naming core.hooksPath, include.*, core.fsmonitor or core.sshCommand can switch the #1789 git hooks off"; return 1
         fi
-      done ;;
+        ci_match "$x" "alias.*" && alias_key=1
+        case "${x#"${x%%[! ]*}"}" in "!"*) shell_value=1 ;; esac      # the value, leading spaces aside, starts with `!`
+      done
+      # #2015: a SHELL alias (`!…`) runs any command the next time it is used, and this shim cannot see inside it; writing one is refused, in a
+      # fixture too (the exemption above covers only `core.hooksPath`). A plain alias is judged again when it is used, and reading one writes nothing.
+      if [ "$alias_key" = 1 ] && [ "$shell_value" = 1 ]; then
+        RULE="git config writing a shell alias (a value starting with !) runs a command this shim cannot see"; return 1
+      fi ;;
     commit|push|merge|rebase|pull|am|cherry-pick|revert)
       if seen no-verify; then RULE="--no-verify skips the pre-commit and pre-push guards"; return 1; fi ;;
   esac

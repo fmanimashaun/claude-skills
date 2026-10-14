@@ -436,6 +436,18 @@ def _(base):
     runs(r, label, "config", "--get", "user.name")
 
 
+@case("shim: writing a shell alias (`!…`) through git config is refused; a plain alias write and an alias read run (#2015)")
+def _(base):
+    label = "shim: writing a shell alias (`!…`) through git config is refused; a plain alias write and an alias read run (#2015)"
+    r = Repo(base, "alias2015")
+    for args in (("config", "alias.x", "!sh"), ("config", "--add", "alias.x", "!rm -rf ."), ("config", "--local", "ALIAS.x", "!sh"), ("config", "alias.x", "  !sh")):
+        refused(r, label, *args)
+    check(label, r.real("config", "--get", "alias.x").returncode != 0, "a refused shell alias was written anyway")
+    runs(r, label, "config", "alias.st", "status")
+    check(label, r.real("config", "--get", "alias.st").stdout.strip() == "status", "a plain alias write did not land")
+    runs(r, label, "config", "--get", "alias.st")
+
+
 @case("shim: -c core.hooksPath on the command line is refused")
 def _(base):
     label = "shim: -c core.hooksPath on the command line is refused"
@@ -664,6 +676,10 @@ def _(base):
     attempt("`config core.hooksPath` in the fixture's own config IS exempt (#1999): it switches off the fixture's hooks, never the session's", fx, env_for(fx), ok=True, args=("config", "core.hooksPath", "/tmp/h"), stray_check=False)
     attempt("`config --global core.hooksPath` is not exempt in the fixture", fx, env_for(fx), ok=False, args=("config", "--global", "core.hooksPath", "/tmp/h"), stray_check=False)
     attempt("`config core.fsmonitor` is not exempt in the fixture", fx, env_for(fx), ok=False, args=("config", "core.fsmonitor", "true"), stray_check=False)
+    # #2015: a SHELL alias (`!…`) runs any command the next time it is used, and the shim cannot see inside it, so writing one is refused in a fixture too, in every spelling.
+    for what, args in (("`config alias.x '!sh'`", ("config", "alias.x", "!sh")), ("`config --local alias.x '!sh'`", ("config", "--local", "alias.x", "!sh")),
+                       ("`config --add alias.x '!sh'`", ("config", "--add", "alias.x", "!sh")), ("`config Alias.X ' !sh'` (case, leading space)", ("config", "Alias.X", " !sh"))):
+        attempt(f"{what} is not exempt in the fixture (#2015)", fx, env_for(fx), ok=False, args=args, stray_check=False)
 
 
 @case("shim: a downstream project's own spec fixtures, run from the repository's directory, may stage their temp repositories once marked (#1999)")
