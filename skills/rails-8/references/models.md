@@ -406,8 +406,8 @@ page = page.where("(created_at, id) > (?, ?)", last.created_at, last.id) if last
   PostgreSQL compares a row constructor left to right, so `(created_at, id) > (a, b)` means `created_at > a`,
   or equal and `id > b`. Three consequences: end the order with a unique column (`id`) so no row is skipped or
   repeated; the comparison applies one operator to every column, so **all sort columns go the same direction**;
-  and a NULL in a compared column makes the comparison unknown, so those rows drop out: keep the sort columns
-  `NOT NULL`. The price is that a reader cannot jump to page 40.
+  and a NULL in the first pair that is not equal (a NULL leading sort column always is) makes the comparison
+  unknown, so those rows drop out: keep the sort columns `NOT NULL`. The price is that a reader cannot jump to page 40.
 - **A function on the column side** (`lower(name) = ?`) makes the comparison about the function's result: compare
   the bare column where the data allows, and check the plan before and after.
 - **`COUNT` to `EXISTS`**: `exists?` for a yes/no question (§8); **`SELECT *` to `select`/`pluck`** (§8).
