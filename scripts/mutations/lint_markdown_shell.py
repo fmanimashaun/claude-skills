@@ -48,5 +48,24 @@ GUARD = Guard(
             "(?=[^\\n]*\\\\b)",
             "git-grep-ere-boundary fired across a pipe",
         ),
+        # #2022: a bare dollar-digit in a command's markdown is replaced by the invocation's arguments.
+        Mutation(
+            "a bare positional parameter in a command is no longer reported",
+            "    for number, text in positional_substitutions(path):",
+            "    for number, text in []:",
+            "positional-substitution: commands/bad-fence.md",
+        ),
+        Mutation(
+            "a file Claude Code does not expand is judged as if it were one",
+            '    if not _EXPANDED_MARKDOWN.search(path.replace(os.sep, "/")):',
+            "    if False:",
+            "positional-substitution: docs/not-expanded.md",
+        ),
+        Mutation(
+            "a backslash-escaped token is reported as if it were bare",
+            '_POSITIONAL = re.compile(r"(?<![\\\\$])\\$[0-9]")',
+            '_POSITIONAL = re.compile(r"(?<![$])\\$[0-9]")',
+            "positional-substitution: commands/good-escaped.md",
+        ),
     ),
 )

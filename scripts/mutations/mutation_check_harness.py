@@ -559,6 +559,12 @@ GUARD = Guard(
             "never STARVED",             # both the pure-failure fixture (#2000) and the mixed one (#2014) say it
         ),
         Mutation(
+            "a selftest's own tally header is not recognised, so a header plus only timeouts reads INERT (#2017)",
+            '_SELFTEST_SUMMARY = re.compile(r"FAILED --|failure\\(s\\)|checks? passed|STARVED")',
+            '_SELFTEST_SUMMARY = re.compile(r"(?!)")',
+            "tally header plus only timeout rows must be STARVED",
+        ),
+        Mutation(
             "a real failure row beside a timeout row reads STARVED, so INERT is hidden (the substring test, #2014)",
             "    return not any(_FAILURE_LINE.search(line) for line in rest)",
             "    return bool(timeouts)",

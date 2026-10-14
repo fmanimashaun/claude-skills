@@ -391,7 +391,7 @@ The gate still runs in full. It approves, then hands back a brief:
 #### Check the provider's response shape BEFORE you call it
 
 This is the single most expensive thing on this page to get wrong, and it was reported twice — a
-good result, $0.04 spent, nothing recorded, both times. **After the call you have been billed
+good result, \$0.04 spent, nothing recorded, both times. **After the call you have been billed
 whatever happens next**, so the decision has to be made first.
 
 | the MCP returns | what to do | why |
@@ -500,7 +500,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/generate_asset.py" --request req.json \
 
 `--model` is the model you actually called. `--spent` is what it actually cost — the flow cannot see
 a charge it did not make itself, so an agent-path spend is invisible unless you say so, and an
-invisible spend is how a budget is blown while reading `$0.00`.
+invisible spend is how a budget is blown while reading `\$0.00`.
 
 ## Verifying a change to this path
 

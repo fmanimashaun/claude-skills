@@ -436,6 +436,35 @@ def _(base):
     runs(r, label, "config", "--get", "user.name")
 
 
+@case("shim: writing a shell alias (`!…`) through git config is refused, so is any section rename (#2015, #2026); a plain alias write and an alias read run")
+def _(base):
+    label = "shim: writing a shell alias (`!…`) through git config is refused, so is any section rename (#2015, #2026); a plain alias write and an alias read run"
+    r = Repo(base, "alias2015")
+    for args in (("config", "alias.x", "!sh"), ("config", "--add", "alias.x", "!rm -rf ."), ("config", "--local", "ALIAS.x", "!sh"), ("config", "alias.x", "  !sh")):
+        refused(r, label, *args)
+    check(label, r.real("config", "--get", "alias.x").returncode != 0, "a refused shell alias was written anyway")
+    runs(r, label, "config", "alias.st", "status")
+    check(label, r.real("config", "--get", "alias.st").stdout.strip() == "status", "a plain alias write did not land")
+    runs(r, label, "config", "--get", "alias.st")
+    # A SECTION RENAME is refused outright, whatever the target (#2026): onto `alias` it made a shell alias (#2023); onto `core` or `include` it set
+    # core.hooksPath / core.fsmonitor / core.sshCommand / include.path past the per-key rules (a0, measured). Every unique prefix and the subcommand.
+    r.real("config", "foo.x", "!sh")
+    # UNIQUE values: the hermetic repository may already carry a `core.hooksPath` of its own (it does on Linux), so the check below asks whether THIS
+    # value arrived, not whether the key is set at all.
+    # each target its OWN source section, so a rename that got through (under a mutant) cannot use up the section the next row needs
+    r.real("config", "hk.hookspath", "/tmp/renamed-2026-hooks")
+    r.real("config", "hk.fsmonitor", "renamed-2026-fsmonitor")
+    r.real("config", "hk.sshcommand", "renamed-2026-ssh")
+    r.real("config", "bar.path", "/tmp/renamed-2026-include")
+    for args in (("config", "--rename-section", "foo", "alias"), ("config", "--ren", "foo", "ALIAS"), ("config", "--rename-s", "foo", "alias.sub"),
+                 ("config", "--rename-section", "hk", "core"), ("config", "--ren", "hk", "Core"), ("config", "--rename-section", "bar", "include"),
+                 ("config", "rename-section", "hk", "core"), ("config", "--rename-section", "foo", "harmless")):
+        refused(r, label, *args)
+    for key, planted in (("alias.x", "!sh"), ("core.hookspath", "/tmp/renamed-2026-hooks"), ("core.fsmonitor", "renamed-2026-fsmonitor"),
+                         ("core.sshcommand", "renamed-2026-ssh"), ("include.path", "/tmp/renamed-2026-include")):
+        check(label, planted not in r.real("config", "--get-all", key).stdout, f"a section rename wrote {key}={planted} anyway")
+
+
 @case("shim: -c core.hooksPath on the command line is refused")
 def _(base):
     label = "shim: -c core.hooksPath on the command line is refused"
@@ -675,6 +704,10 @@ def _(base):
     attempt("`config core.hooksPath` in the fixture's own config IS exempt (#1999): it switches off the fixture's hooks, never the session's", fx, env_for(fx), ok=True, args=("config", "core.hooksPath", "/tmp/h"), stray_check=False)
     attempt("`config --global core.hooksPath` is not exempt in the fixture", fx, env_for(fx), ok=False, args=("config", "--global", "core.hooksPath", "/tmp/h"), stray_check=False)
     attempt("`config core.fsmonitor` is not exempt in the fixture", fx, env_for(fx), ok=False, args=("config", "core.fsmonitor", "true"), stray_check=False)
+    # #2015: a SHELL alias (`!…`) runs any command the next time it is used, and the shim cannot see inside it, so writing one is refused in a fixture too, in every spelling.
+    for what, args in (("`config alias.x '!sh'`", ("config", "alias.x", "!sh")), ("`config --local alias.x '!sh'`", ("config", "--local", "alias.x", "!sh")),
+                       ("`config --add alias.x '!sh'`", ("config", "--add", "alias.x", "!sh")), ("`config Alias.X ' !sh'` (case, leading space)", ("config", "Alias.X", " !sh"))):
+        attempt(f"{what} is not exempt in the fixture (#2015)", fx, env_for(fx), ok=False, args=args, stray_check=False)
 
 
 @case("shim: a downstream project's own spec fixtures, run from the repository's directory, may stage their temp repositories once marked (#1999)")

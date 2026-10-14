@@ -1561,6 +1561,21 @@ def run() -> int:
     finally:
         mc.REPO = original_repo
 
+    # #2017: a real selftest prints its tally header before its rows; the header (`FAILED --`, `failure(s)`) is not a failure, so a header plus ONLY timeout rows is STARVED.
+    header_only_timeouts = ("import sys\nprint('SELFTEST FAILED -- 2 failure(s) in 1 case(s), 0 checks:')\n"
+                            "print(\"  - case A: the case itself failed to run: TimeoutExpired: Command ['git'] timed out after 20 seconds\")\n"
+                            "print(\"  - case B: the case itself failed to run: TimeoutExpired: Command ['git'] timed out after 20 seconds\")\nsys.exit(1)\n")
+    guard, root = _fixture_guard((mc.Mutation("unused", "n % 2 == 0", "True", "fixture-odd"),), selftest=header_only_timeouts)
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        failures, not_judged = mc.split_starved(problems)
+        if failures or len(not_judged) != 1:
+            FAILURES.append(f"#2017: a selftest tally header plus only timeout rows must be STARVED (the header is not a failure); got {problems}")
+    finally:
+        mc.REPO = original_repo
+
     fails_for_real = 'import sys\nprint("AssertionError: fixture-odd broke")\nsys.exit(1)\n'
     guard, root = _fixture_guard((mc.Mutation("unused", "n % 2 == 0", "True", "fixture-odd"),), selftest=fails_for_real)
     mc.REPO = root
