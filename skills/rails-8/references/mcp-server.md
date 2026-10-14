@@ -14,10 +14,15 @@ call them, so a CLI could be a thin client of the same layer later if a real nee
 
 ## 1. What the platform gives you (verified 2026-09-24, MCP spec revision 2026-07-28)
 
-- **The official Ruby SDK is the `mcp` gem** (v1.6.0, [modelcontextprotocol/ruby-sdk][sdk]). It
+- **The official Ruby SDK is the `mcp` gem** (1.7.0, released 2026-10-05, [modelcontextprotocol/ruby-sdk][sdk];
+  verified 2026-10-14 on rubygems.org). It
   serves tools, prompts and resources, over stdio or **Streamable HTTP**, "including mounted inside a
   Rails application". The mount is shown in the repo's `examples/rails` and in the
   [SDK docs][sdk-docs], so follow those rather than a tutorial.
+- **The gem supports spec revision 2026-07-28** (since 1.1.0, verified 2026-10-14 in `lib/mcp/configuration.rb`
+  at v1.7.0: `LATEST_STABLE_PROTOCOL_VERSION = "2026-07-28"`). The SDK docs page does not say so; the source does.
+  One boundary: the legacy `initialize` handshake still defaults to `2025-03-26` and never negotiates
+  `2026-07-28`, which is the stateless revision where each request carries its own version in `_meta`.
 - **Use Streamable HTTP.** The older HTTP+SSE transport is deprecated since protocol `2025-03-26`,
   and the spec says new implementations SHOULD NOT adopt it ([transports][spec-transport]).
 - **claude.ai custom connectors** reach a remote MCP server over the internet, with OAuth, on Free,
@@ -38,7 +43,7 @@ So the agent is **never** a shared API key that sees everything. It holds a toke
 that person's permissions are the ceiling.
 
 **The gem does not do this part for you.** The `mcp` gem's OAuth support is **client-side only**:
-everything is under `lib/mcp/client/oauth/` at v1.6.0. It covers the case where your code is the
+everything is under `lib/mcp/client/oauth/` at v1.7.0 (verified 2026-10-14: no server-side OAuth code in `lib/`). It covers the case where your code is the
 client of someone else's protected server. When the app is the server, the app writes, for example as
 Rack middleware in front of the mount:
 - the validation of the incoming bearer token, including its audience;
@@ -63,8 +68,8 @@ yours to write, or the tokens come from an external identity provider.
    whose source does not state both (it reads the source, because the gem emits all four hints once any
    one is set). The spec says clients **MUST** treat tool
    annotations as untrusted ([tools][spec-tools]), so the hint describes the tool and guarantees
-   nothing. The guarantee is that no tool's code path writes. Write tools are a separate, later
-   decision.
+   nothing. The guarantee is that no tool's code path writes. **Write tools are out of scope until a
+   project needs them** (maintainer ruling, #2034); this file covers reporting (read-only) tools.
 3. **One tool per report, with typed arguments**, for example `overdue_tasks_by_team(period:)`. No
    query language, no SQL, and no "run this scope". A tool's arguments are the only thing an agent
    controls, so they are validated like form params.
@@ -88,9 +93,63 @@ Request specs against the MCP endpoint, each paired with a control that succeeds
 - **No tool writes:** run every registered tool and assert that no table's row count changed.
 - **A sensitive field is absent** from every tool's result unless that tool is on the allow-list.
 
+## 5. Designing the tools for an agent, and testing them (verified 2026-10-14)
+
+Sections 3 and 4 say what the server must guarantee. This one is about whether an agent uses the tools well. Each rule
+names its source; a rule marked *advice* is vendor guidance, not a requirement of the spec.
+
+**Descriptions and names**
+
+- Describe a tool as you would to a new hire on your team, name arguments unambiguously (`user_id`, not `user`), and
+  consider namespacing tool names by service (`asana_search`). *Advice* ([Anthropic, 2025-09-11][anthropic-tools]).
+- The spec (revision 2026-07-28, [tools][spec-tools]): tool names **SHOULD** be 1 to 128 characters of `A-Z a-z 0-9 _ - .`,
+  and **SHOULD** be unique within a server; servers **SHOULD** return `tools/list` in a deterministic order (the same
+  across requests while the set is unchanged), so clients can cache it and prompt caches hit. All three are SHOULD, not MUST.
+
+**Bounded output**
+
+- Bound what a tool returns: pagination, range selection, filtering or truncation, and when you truncate, tell the agent
+  how to narrow the request. Letting the agent pick a concise or a detailed response is one way. *Advice* (the Anthropic post).
+- Claude Code limits an MCP tool's output to 25,000 tokens by default and warns above 10,000. `MAX_MCP_OUTPUT_TOKENS`
+  raises it, and a tool can set its own with `anthropic/maxResultSizeChars`; a result over the limit is saved to a file and
+  replaced in the conversation by its path, not truncated in place ([Claude Code MCP docs][cc-mcp], read 2026-10-14, an
+  undated page). So the server bounds its own output.
+
+**Structured output and errors**
+
+- A tool that declares `outputSchema`: the server **MUST** return `structuredContent` that conforms to it, and clients
+  **SHOULD** validate it; a tool that returns structured content **SHOULD** also return the serialized JSON in a text block.
+  In this revision `structuredContent` may be any JSON value, not only an object ([tools][spec-tools]).
+- Report a tool's *execution* failure (an invalid argument, an upstream API failure, a business rule) in the result with
+  `isError: true`, with feedback the model can use to correct itself and retry. *Protocol* errors (an unknown tool, a malformed
+  request) are JSON-RPC errors, a separate channel ([tools][spec-tools]).
+- In the Ruby SDK (`mcp` 1.7.0, [SDK tools page][sdk-tools]): `output_schema`, `structured_content:` and `error: true` (sent
+  as `isError`). **`validate_tool_call_results` is off by default** (opt-in since 0.16.0), so the gem does not enforce the
+  MUST above unless the app turns it on.
+
+**Annotations beyond the two this file requires (§3 rule 2)**
+
+- `ToolAnnotations` also has `title` and `idempotentHint` (default `false`). `destructiveHint` and `idempotentHint` are
+  meaningful only when `readOnlyHint` is `false`, so a read-only reporting tool needs neither. All of them are hints
+  ([schema.ts, 2026-07-28][schema-ts]).
+
+**Testing**
+
+- Beyond section 4: run MCP Inspector's CLI mode in CI, `npx @modelcontextprotocol/inspector --cli <server> --method tools/list`,
+  and `--method tools/call --tool-name <name> --tool-arg key=value` ([Inspector docs][inspector]; it needs Node 22.19.0 or
+  newer, per the page read 2026-10-14).
+- When a tool's name or description changes, run an evaluation: realistic tasks that need several tool calls, each paired
+  with a verifiable outcome, recording the runtime of each call and task, and refine the descriptions from what it shows.
+  *Advice* (the Anthropic post). Re-running it on every description change is this project's advice; no official source states it.
+
 [sdk]: https://github.com/modelcontextprotocol/ruby-sdk
 [sdk-docs]: https://ruby.sdk.modelcontextprotocol.io/server/transports/
 [spec-transport]: https://modelcontextprotocol.io/specification/2026-07-28/basic/transports
 [spec-auth]: https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization
 [spec-tools]: https://modelcontextprotocol.io/specification/2026-07-28/server/tools
+[sdk-tools]: https://ruby.sdk.modelcontextprotocol.io/server/tools/
+[schema-ts]: https://raw.githubusercontent.com/modelcontextprotocol/modelcontextprotocol/main/schema/2026-07-28/schema.ts
+[anthropic-tools]: https://www.anthropic.com/engineering/writing-tools-for-agents
+[cc-mcp]: https://code.claude.com/docs/en/mcp
+[inspector]: https://modelcontextprotocol.io/docs/tools/inspector
 [connectors]: https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp
