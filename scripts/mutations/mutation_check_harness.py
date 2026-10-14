@@ -548,15 +548,27 @@ GUARD = Guard(
         # #2000: a timeout in the UNMUTATED selftest is the machine's (STARVED, not judged), not a failure of the guard.
         Mutation(
             "a selftest's own timeout is not recognised, so a starved baseline reads INERT",
-            '    return "TimeoutExpired" in text and "timed out after" in text',
+            "    return not any(_FAILURE_LINE.search(line) for line in rest)",
             "    return False",
             "must be STARVED (not judged), never INERT",
         ),
         Mutation(
             "every failure is taken for a timeout, so a real failure reads STARVED",
-            '    return "TimeoutExpired" in text and "timed out after" in text',
+            "    return not any(_FAILURE_LINE.search(line) for line in rest)",
             "    return True",
-            "must stay INERT, never STARVED",
+            "never STARVED",             # both the pure-failure fixture (#2000) and the mixed one (#2014) say it
+        ),
+        Mutation(
+            "a selftest's own tally header is not recognised, so a header plus only timeouts reads INERT (#2017)",
+            '_SELFTEST_SUMMARY = re.compile(r"FAILED --|failure\\(s\\)|checks? passed|STARVED")',
+            '_SELFTEST_SUMMARY = re.compile(r"(?!)")',
+            "tally header plus only timeout rows must be STARVED",
+        ),
+        Mutation(
+            "a real failure row beside a timeout row reads STARVED, so INERT is hidden (the substring test, #2014)",
+            "    return not any(_FAILURE_LINE.search(line) for line in rest)",
+            "    return bool(timeouts)",
+            "beside a timeout row is INERT, never STARVED",
         ),
         Mutation(
             "a starved baseline is not retried",
