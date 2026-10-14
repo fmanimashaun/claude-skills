@@ -33,6 +33,28 @@ The MCP server is an **OAuth 2.1 resource server** ([authorization][spec-auth]):
   server.
 - It **MUST NOT** pass the client's token through to another service.
 - Authorization **MUST** be on every HTTP request, not remembered from an earlier one.
+- **Say which scope is missing.** The `401`'s `WWW-Authenticate` **SHOULD** carry `scope` (RFC 6750 §3).
+  A token whose scope is too narrow for the call it makes **SHOULD** get `403 Forbidden` with
+  `error="insufficient_scope"`, the `scope` the operation needs and `resource_metadata`
+  (`error_description` is optional), so the client can step up rather than start over.
+- **`tools/list` follows the token, never the connection.** The set **MAY** vary by the authorization
+  presented on the request (only the tools the granted scopes permit), and **MUST NOT** vary
+  per-connection or as a side effect of other requests on the connection ([tools][spec-tools]; new in
+  2026-07-28, which removed protocol-level sessions).
+
+**Registering clients, and the mix-up defence** (both new in 2026-07-28, [changelog][spec-changelog]), for
+the authorization server, whether that is the app or an identity provider in front of it:
+
+- Clients are identified by **OAuth Client ID Metadata Documents**, which authorization servers and
+  clients **SHOULD** support. Dynamic Client Registration (RFC 7591) is now a **MAY**: deprecated and
+  kept only for authorization servers that lack Client ID Metadata Documents. It is not removed, and a
+  deprecated feature keeps a twelve-month window.
+- **RFC 9207 `iss`.** The authorization server **SHOULD** include `iss` in authorization responses,
+  error responses included, and one that does **MUST** advertise it with
+  `authorization_response_iss_parameter_supported: true`. A client **MUST** validate a present `iss`
+  against the issuer it recorded (RFC 9207 §2.4) before sending the code to any token endpoint. A
+  missing `iss` is rejected only where the metadata advertised it. The spec expects a future revision to
+  make the server's `iss` a **MUST**, so emit it now.
 
 So the agent is **never** a shared API key that sees everything. It holds a token for one person, and
 that person's permissions are the ceiling.
@@ -70,7 +92,14 @@ yours to write, or the tokens come from an external identity provider.
    controls, so they are validated like form params.
 4. **Every call is audited**: who asked, which tool, which arguments, and when. The audit is how you
    answer "which agent saw this, for whom".
-5. **Sensitive data is excluded by default.** Results carry aggregates and display numbers
+5. **Tool calls are rate limited, and tool output is sanitized: both are the spec's MUSTs, not ours.**
+   Servers **MUST** rate limit tool invocations and **MUST** sanitize tool outputs ([tools][spec-tools],
+   Security Considerations, with "validate all tool inputs" and "implement proper access controls").
+   Key the limiter by the **token's user**, not the address, for the reason and the `:null_store` trap in
+   `auth-security.md`'s "Rate limiting, and a trap". Sanitizing matters most for a read tool that returns
+   text people typed (titles, comments). The spec names no concrete mitigation beyond the MUST, so how
+   far to go for write tools is decision #2034's, not this file's.
+6. **Sensitive data is excluded by default.** Results carry aggregates and display numbers
    (`TSK-0001`, `models.md` §12), each a link to the record. A category the app marks sensitive (for
    example Retask's enrollee data) reaches a result only from a tool explicitly allowed to return it,
    and that allowance is recorded in the project's CLAUDE.md.
@@ -87,10 +116,14 @@ Request specs against the MCP endpoint, each paired with a control that succeeds
 - **Every call writes one audit row** naming the user, tool and arguments.
 - **No tool writes:** run every registered tool and assert that no table's row count changed.
 - **A sensitive field is absent** from every tool's result unless that tool is on the allow-list.
+- **Over the limit, a call is refused:** one user's calls past the tool limit get the refusal. Control: the
+  same user's first call, under the limit, succeeds, and another user's call at the same moment
+  succeeds, so the limiter is keyed per user and not globally.
 
 [sdk]: https://github.com/modelcontextprotocol/ruby-sdk
 [sdk-docs]: https://ruby.sdk.modelcontextprotocol.io/server/transports/
 [spec-transport]: https://modelcontextprotocol.io/specification/2026-07-28/basic/transports
 [spec-auth]: https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization
 [spec-tools]: https://modelcontextprotocol.io/specification/2026-07-28/server/tools
+[spec-changelog]: https://modelcontextprotocol.io/specification/2026-07-28/changelog
 [connectors]: https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp
