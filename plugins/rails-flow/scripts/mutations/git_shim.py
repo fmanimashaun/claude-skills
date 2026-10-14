@@ -190,5 +190,9 @@ GUARD = Guard(
                  '    3) [ "$1" = --local ] || return 1; key="$2"; val="$3" ;;', '    3) key="$2"; val="$3" ;;', 'run from the repository\'s directory'),
         Mutation('the config exemption is not scoped to a fixture, so `config core.hooksPath` passes in any repository',
                  '  case "$val" in \'\'|-*) return 1 ;; esac\n  fixture_repo', '  case "$val" in \'\'|-*) return 1 ;; esac\n  :', 'run from the repository\'s directory'),
+        Mutation('a shell alias (`!…`) may be written through git config again (#2015)',
+                 '      if [ "$alias_key" = 1 ] && [ "$shell_value" = 1 ]; then', '      if false; then', 'writing a shell alias'),
+        Mutation('a shell alias written with a leading space is not seen (#2015)',
+                 '        case "${x#"${x%%[! ]*}"}" in "!"*) shell_value=1 ;; esac', '        case "$x" in "!"*) shell_value=1 ;; esac', 'writing a shell alias'),
     ),
 )
