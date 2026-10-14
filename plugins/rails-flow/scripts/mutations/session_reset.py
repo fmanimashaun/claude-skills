@@ -119,8 +119,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a live pid is the coordinator whatever process it is now (a recycled pid after a reboot)",
-            ' && [ "$(start "$1")" = "$2" ]; }',
-            "; }",
+            ' && [ "$(start "$1")" = "$2" ] && ! spare "$1"; }',
+            " && ! spare \"$1\"; }",
             "a claim whose pid is recycled",
         ),
         Mutation(
@@ -336,7 +336,7 @@ GUARD = Guard(
         # #2068: a pre-warmed `claude bg-spare` process is not a user session; it must never win the election.
         Mutation(
             "a pre-warmed spare claims the coordinator role like a real session",
-            '  if [ "$force" != "1" ] && spare "$me"; then echo spare; exit 0; fi\n',
+            'if [ "$force" != "1" ] && spare "$me"; then echo spare; exit 0; fi\n',
             "",
             "a pre-warmed spare never claims",
         ),
