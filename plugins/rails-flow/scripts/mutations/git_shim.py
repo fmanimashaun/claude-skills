@@ -194,5 +194,11 @@ GUARD = Guard(
                  '      if [ "$alias_key" = 1 ] && [ "$shell_value" = 1 ]; then', '      if false; then', 'writing a shell alias'),
         Mutation('a shell alias written with a leading space is not seen (#2015)',
                  '        case "${x#"${x%%[! ]*}"}" in "!"*) shell_value=1 ;; esac', '        case "$x" in "!"*) shell_value=1 ;; esac', 'writing a shell alias'),
+        Mutation('a section renamed to alias is not refused (the security review of #2020)',
+                 '          if [ "${section_move:-0}" = 1 ]; then', '          if false; then', 'writing a shell alias'),
+        Mutation('the unique-prefix spelling (`--ren`) of --rename-section is not read (the security review of #2020)',
+                 '            case "--rename-section" in "$y"?*|"$y") [ "${#y}" -ge 5 ] && section_move=1 ;; esac', '            case "$y" in --rename-section) section_move=1 ;; esac', 'writing a shell alias'),
+        Mutation('the alias key is matched case-sensitively, so ALIAS.x passes (a0, review of #2020)',
+                 '        ci_match "$x" "alias.*" && alias_key=1', '        [[ $x == alias.* ]] && alias_key=1', 'writing a shell alias'),
     ),
 )
