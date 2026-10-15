@@ -1,4 +1,5 @@
 ---
+disable-model-invocation: true
 description: 'Take the machine-wide coordinator role for THIS session, from inside it, without going to the other session to fight for it. The override a session was elected the wrong role needs: same claim as RAILS_FLOW_ROLE=coordinator, no restart.'
 ---
 

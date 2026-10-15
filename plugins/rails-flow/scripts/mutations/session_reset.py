@@ -19,7 +19,7 @@ GUARD = Guard(
     subject="hooks/session-reset.mjs",
     selftest="scripts/check_mods.py",
     selftest_args=("session-reset",),
-    needs=("tests/session-reset.unit.mjs", "hooks/context-nudge.mjs", "hooks/budget-guard.mjs"),
+    needs=("tests/session-reset.unit.mjs", "hooks/context-nudge.mjs", "hooks/budget-guard.mjs", "scripts/claim_coordinator.mjs"),
     mutations=(
         Mutation(
             "a Bash call that errored or was denied is recorded as if it ran",
@@ -131,8 +131,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a coordinator asking again is not recognised as the holder",
-            'if [ "$hp" = "$me" ] && [ "$hl" = "$(start "$me")" ]; then echo coordinator; exit 0; fi',
-            ":",
+            '\nif [ "$hp" = "$me" ] && [ "$hl" = "$(start "$me")" ]; then echo coordinator; exit 0; fi',
+            "\n:",
             "a live coordinator is not displaced",
         ),
         Mutation(
