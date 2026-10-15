@@ -1868,8 +1868,8 @@ def selftest() -> int:
             for _attempt in range(3):
                 half, full = cpu(build(25000)), cpu(build(50000))
                 ratio = full / max(half, 0.01)
-                if ratio < 3.0 and full < 10.0:
-                    break
+                if ratio < 3.0 and full < 10.0 or not (ratio < 6.0 and full < 10.0):
+                    break           # passed, or grossly over (a hang reads as inf, a backtracker times out): measuring again would only cost 30 s a time
             check(f"(#1645 CodeQL) {why_}: decided in linear time (half {half:.2f}s, full {full:.2f}s, ratio {ratio:.1f}, under 3.0) and under 10 CPU seconds",
                   ratio < 3.0 and full < 10.0)
         spent = cpu("bash <(echo " * 40)
