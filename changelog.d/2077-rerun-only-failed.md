@@ -1,0 +1,2 @@
+section: Repository hygiene
+- **AGENTS.md states a rule: after a red run, re-run only what failed, and run the full sweep once at the release run** — `AGENTS.md` (#2077). Read the log, name the failing gate, guard or job, reproduce just that item (`mutation_check.py --guard <name>`, one selftest, or "Re-run failed jobs"), and prove a fix by that item on its own dev PR. The owner's rule, 2026-10-15, after a full 2-hour local proof was started for one Mac-only selftest failure.

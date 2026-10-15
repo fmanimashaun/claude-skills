@@ -120,3 +120,13 @@ writes to a file and returns the path — `plugins/rails-flow/reference/agent-ou
 and a pointer beat a list that grows without bound; a finding beats the narration of the search
 that produced it; a path beats a pasted report. Say what you measured, not how you measured it,
 unless the how is the finding.
+
+## Re-run only what failed
+
+When a run goes red, the next run is the failed part, never the whole sweep.
+
+- **Read the log first.** Name the failing gate, guard or job from the log: `[ FAIL ]` lines, the `MUTATION CHECK FAILED` block. Do not start anything until you can say which item failed and why.
+- **Reproduce that one item.** One guard: `python3 scripts/mutation_check.py --guard <name>`. One selftest: run its script. One CI job: re-run the failed job only (`gh run rerun <id> --failed`, or "Re-run failed jobs"), never the workflow.
+- **The full sweep runs once**, at the `dev` → `main` release run (it reuses a recorded proof only for an identical tree). A fix to a red gate is proved on its own dev PR by the one item that failed, with the result in the PR body.
+- **Why:** a full local proof is 1 to 2 hours. One v1.157.2 attempt was re-run in full for a single Mac-only selftest failure, and would have failed again on a second item nobody had read yet. Reading the log and re-running the one item took about 6 minutes and found both causes.
+- **A flaky check is a defect to fix**, not a reason to re-run until green: file it, fix the check (#2075), and re-run only that guard.
