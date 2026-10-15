@@ -581,17 +581,17 @@ tools silently. For code-review-graph, wire it to coexist with the rails-flow ho
    ```
    Also close the branch-switch gap with `.git/hooks/post-checkout` (branch changes
    rewrite the tree with no edit hook firing — the exact staleness the Stop hook
-   cannot see). `chmod +x` after writing:
+   cannot see). **Copy the shipped file; do not retype it.** The hook reads git's three arguments
+   as positional parameters (dollar-one to dollar-three), and Claude Code replaces a dollar sign
+   followed by a digit in a command's own markdown with the arguments the command was invoked with
+   (skills docs, "Available string substitutions"), so a hook printed here and run as
+   `/rails-flow:setup-flow audit` was written with the argument words in place of the
+   parameters and never fired (#2022). `scripts/lint_markdown_shell.py` now refuses a bare
+   dollar-digit in a command's shell block. `chmod +x` after copying:
 
-   ```sh
-   #!/bin/sh
-   [ "$3" = "1" ] || exit 0   # branch switches only, not file checkouts
-   command -v code-review-graph >/dev/null 2>&1 && [ -d .code-review-graph ] || exit 0
-   pgrep -f 'code-review-graph (update|build)' >/dev/null 2>&1 && exit 0
-   N=$(git diff --name-only "$1" "$2" 2>/dev/null | wc -l | tr -d ' ')
-   if [ "${N:-0}" -gt 5 ]; then CMD='code-review-graph build'
-   else CMD='code-review-graph update --skip-flows && code-review-graph embed'; fi
-   nohup timeout 300 sh -c "$CMD" > "$HOME/.cache/crg-checkout.log" 2>&1 < /dev/null &
+   ```bash
+   cp "${CLAUDE_PLUGIN_ROOT}/templates/post-checkout-graph.sh" .git/hooks/post-checkout
+   chmod +x .git/hooks/post-checkout
    ```
 
       Portability: `timeout` is absent on stock macOS — install coreutils (`brew install

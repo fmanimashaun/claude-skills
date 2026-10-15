@@ -198,8 +198,8 @@ GUARD = Guard(
         # #1510: baselines and mutants run with git auto-maintenance off.
         Mutation(
             "a BASELINE runs with git's own auto-maintenance",
-            '                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=BASELINE_TIMEOUT)',
-            '                                timeout=BASELINE_TIMEOUT)',
+            '                              env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                              timeout=BASELINE_TIMEOUT)',
+            '                              timeout=BASELINE_TIMEOUT)',
             '#1510: the baseline and the mutant must run with git maintenance off',
         ),
         Mutation(
@@ -318,8 +318,8 @@ GUARD = Guard(
         Mutation(
             # #1493, baseline half
             "a non-UTF-8 byte in a BASELINE's output raises before the INERT report prints",
-            '                                text=True, errors="replace",\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=BASELINE_TIMEOUT)',
-            '                                text=True,\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=BASELINE_TIMEOUT)',
+            '                              text=True, errors="replace",\n                              env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                              timeout=BASELINE_TIMEOUT)',
+            '                              text=True,\n                              env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                              timeout=BASELINE_TIMEOUT)',
             "a non-UTF-8 byte in a BASELINE's output raised before the INERT report printed",
         ),
         Mutation(
@@ -333,15 +333,15 @@ GUARD = Guard(
         Mutation(
             # #1531: the INERT report shares the 300-character cut.
             "the INERT report is no longer cut to 300 characters",
-            '                + tail_block(result.stdout, 6)',
-            '                + "\\n" + "\\n".join(f"      {r}" for r in result.stdout.strip().splitlines()[-6:])',
+            '                "or not it breaks anything. Add what it reads to the guard\'s `needs`."\n                + tail_block(result.stdout, 6)',
+            '                "or not it breaks anything. Add what it reads to the guard\'s `needs`."\n                + "\\n" + "\\n".join(f"      {r}" for r in result.stdout.strip().splitlines()[-6:])',
             "the INERT report does not cut each output line to 300 characters",
         ),
         Mutation(
             # #1530: both timeout branches keep what the child printed before the limit.
             "a BASELINE's timeout drops what it printed",
-            '                + tail_block(exc.stdout, 12)], BASELINE_TIMEOUT',
-            '                ], BASELINE_TIMEOUT',
+            '                       + tail_block(exc.stdout, 12)), BASELINE_TIMEOUT',
+            '                       ), BASELINE_TIMEOUT',
             "a BASELINE's timeout report drops what it printed before the limit",
         ),
         Mutation(
@@ -544,6 +544,61 @@ GUARD = Guard(
             "        shutil.copymode(REPO / guard.base / relative, target)",
             "        pass",
             "a staged subject that is executable in the repo is not executable once staged",
+        ),
+        # #2000: a timeout in the UNMUTATED selftest is the machine's (STARVED, not judged), not a failure of the guard.
+        Mutation(
+            "a selftest's own timeout is not recognised, so a starved baseline reads INERT",
+            "    return not any(_FAILURE_LINE.search(line) for line in rest)",
+            "    return False",
+            "must be STARVED (not judged), never INERT",
+        ),
+        Mutation(
+            "every failure is taken for a timeout, so a real failure reads STARVED",
+            "    return not any(_FAILURE_LINE.search(line) for line in rest)",
+            "    return True",
+            "never STARVED",             # both the pure-failure fixture (#2000) and the mixed one (#2014) say it
+        ),
+        Mutation(
+            "a selftest's own tally header is not recognised, so a header plus only timeouts reads INERT (#2017)",
+            '_SELFTEST_SUMMARY = re.compile(r"FAILED --|failure\\(s\\)|checks? passed|STARVED")',
+            '_SELFTEST_SUMMARY = re.compile(r"(?!)")',
+            "tally header plus only timeout rows must be STARVED",
+        ),
+        Mutation(
+            "a real failure row beside a timeout row reads STARVED, so INERT is hidden (the substring test, #2014)",
+            "    return not any(_FAILURE_LINE.search(line) for line in rest)",
+            "    return bool(timeouts)",
+            "beside a timeout row is INERT, never STARVED",
+        ),
+        Mutation(
+            "a starved baseline is not retried",
+            '            result = attempt()\n            if result.returncode != 0 and selftest_timed_out(result.stdout):\n                return starved(f"{guard.name}: the unmutated baseline',
+            '            if result.returncode != 0 and selftest_timed_out(result.stdout):\n                return starved(f"{guard.name}: the unmutated baseline',
+            "times out once and passes on the retry",
+        ),
+        Mutation(
+            "a starved narrowed control is not called starved",
+            "            result = attempt()                    # STARVED (#2000): once more before it is called not judged\n            if result.returncode != 0 and selftest_timed_out(result.stdout):",
+            "            result = attempt()                    # STARVED (#2000): once more before it is called not judged\n            if False:",
+            "narrowed control whose own calls time out twice must be STARVED",
+        ),
+        Mutation(
+            "a starved entry is counted as a failure",
+            "    return [f for f in found if not f.startswith(STARVED_PREFIX)], [f[len(STARVED_PREFIX):] for f in found if f.startswith(STARVED_PREFIX)]",
+            "    return list(found), []",
+            "must be STARVED (not judged), never INERT",
+        ),
+        Mutation(
+            "an all-starved run exits 1, claiming a failure",
+            "        return EXIT_STARVED\n",
+            "        return 1\n",
+            "every guard was starved must exit",
+        ),
+        Mutation(
+            "an all-starved run exits 0, claiming a pass",
+            "        return EXIT_STARVED\n",
+            "        return 0\n",
+            "every guard was starved must exit",
         ),
     ),
 )

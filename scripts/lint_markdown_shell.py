@@ -104,6 +104,22 @@ _PLUGIN_ROOT = re.compile(r"\$\{?CLAUDE_PLUGIN_ROOT\b")
 _ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=\$\{?CLAUDE_PLUGIN_ROOT\b[^\s;|&]*\s*$")
 
 
+# #2022. Claude Code replaces `$0`, `$1`, `$2`... in a COMMAND's or SKILL's own markdown with the arguments the command was invoked with ("Available string substitutions", skills
+# docs; an indexed placeholder with no argument is left alone, which is why a bare invocation looks fine). A hook written as `[ "$3" = "1" ]` inside `/rails-flow:setup-flow` therefore
+# printed as `[ "Audit" = "1" ]` when it was invoked with arguments, and never fired. The documented escape is a backslash directly before the token (`\$1`); the fix this repo
+# prefers is no such token at all: ship the script as a template file the command copies. The whole file is scanned, not only the fences: prose is substituted too.
+_POSITIONAL = re.compile(r"(?<![\\$])\$[0-9]")
+_EXPANDED_MARKDOWN = re.compile(r"(?:^|/)(?:commands/[^/]+|SKILL)\.md$")
+
+
+def positional_substitutions(path: str) -> list[tuple[int, str]]:
+    """(line, text) of each bare dollar-digit in a file Claude Code expands on invocation."""
+    if not _EXPANDED_MARKDOWN.search(path.replace(os.sep, "/")):
+        return []
+    return [(n, line.strip()) for n, line in enumerate(read_source(path).splitlines(), start=1)
+            if _POSITIONAL.search(line)]
+
+
 def unquoted_plugin_root(line: str) -> bool:
     if _ASSIGNMENT.match(line):
         return False
@@ -159,6 +175,13 @@ def syntax_check(code: str) -> str | None:
 
 def lint_file(path: str) -> list[Finding]:
     findings: list[Finding] = []
+    for number, text in positional_substitutions(path):
+        findings.append(Finding(
+            path, number, "positional-substitution",
+            "Claude Code replaces a bare $0..$9 in a command's or skill's markdown with the arguments the "
+            "command was invoked with, so this reads as the caller's words, not a shell parameter (#2022). "
+            "Ship the script as a template file the command copies, or escape the token with a backslash.",
+            text))
     for start, code in iter_blocks(path):
         problem = syntax_check(code)
         if problem:
@@ -231,6 +254,26 @@ def selftest() -> int:
                 checks += 1
                 if got is not want:
                     failures.append(f"{rule}: {label} line {line!r} -> {'fired' if got else 'quiet'}")
+        # #2022: a bare dollar-digit in a COMMAND's or SKILL's markdown is replaced by the invocation's arguments. Fires in a shell fence AND in prose; quiet when escaped, for `$$`,
+        # and in a file Claude Code does not expand (the path decides, so each case is written under the directory it names).
+        (Path(tmp) / "commands").mkdir()
+        (Path(tmp) / "docs").mkdir()
+        (Path(tmp) / "skills" / "x").mkdir(parents=True)
+        positional_cases = [
+            ("commands/bad-fence.md", '```sh\n[ "$3" = "1" ] || exit 0\n```\n', True),
+            ("commands/bad-prose.md", "The hook reads `$1` and `$2`.\n", True),
+            ("skills/x/SKILL.md", '```sh\ngit diff "$1" "$2"\n```\n', True),
+            ("commands/good-escaped.md", '```sh\n[ "\\$3" = "1" ] || exit 0\n```\n', False),
+            ("commands/good-pid.md", "```sh\necho $$ and $HOME and ${N:-0}\n```\n", False),
+            ("docs/not-expanded.md", '```sh\n[ "$3" = "1" ] || exit 0\n```\n', False),
+        ]
+        for name, text, want in positional_cases:
+            md = Path(tmp) / name
+            md.write_text(text, encoding="utf-8")
+            got = any(f.kind == "positional-substitution" for f in lint_file(str(md)))
+            checks += 1
+            if got is not want:
+                failures.append(f"positional-substitution: {name} -> {'fired' if got else 'quiet'}, wanted {'fired' if want else 'quiet'}")
         for j, line in enumerate(quiet_extra):
             md = Path(tmp) / f"x{j}.md"
             md.write_text(f"```bash\n{line}\n```\n", encoding="utf-8")

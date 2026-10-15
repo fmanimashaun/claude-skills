@@ -42,6 +42,7 @@ import argparse
 import dataclasses
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -542,10 +543,18 @@ def run_baseline_timed(guard: Guard) -> tuple[list[str], float]:
         # BASELINE's output raised before the INERT report could print.
         # stderr folded into stdout: one stream in the order it was written, so a tail of it is
         # what a person watching would have seen (#1532). Its own process group (#1459).
-        result = run_costed(guard.name, argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, errors="replace",
-                                env=hermetic_git.env(),  # no detached git maintenance (#1510)
-                                timeout=BASELINE_TIMEOUT)
+        def attempt():
+            return run_costed(guard.name, argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              text=True, errors="replace",
+                              env=hermetic_git.env(),  # no detached git maintenance (#1510)
+                              timeout=BASELINE_TIMEOUT)
+        result = attempt()
+        if result.returncode != 0 and selftest_timed_out(result.stdout):
+            # STARVED (#2000): the selftest's own subprocess ran out of time, which is the machine and not the guard. Once more, then it is not judged.
+            result = attempt()
+            if result.returncode != 0 and selftest_timed_out(result.stdout):
+                return starved(f"{guard.name}: the unmutated baseline's own calls timed out twice (machine load), so the guard was not judged"
+                               + tail_block(result.stdout, 6)), time.monotonic() - started
         elapsed = time.monotonic() - started
         if result.returncode != 0:
             return [
@@ -557,12 +566,46 @@ def run_baseline_timed(guard: Guard) -> tuple[list[str], float]:
     except subprocess.TimeoutExpired as exc:
         # The whole process group is killed (#1459), and what it printed before the limit is in
         # hand; without it a CI-only timeout has no clue (#1530).
-        return [f"{guard.name}: the unmutated baseline timed out after {BASELINE_TIMEOUT}s"
-                + tail_block(exc.stdout, 12)], BASELINE_TIMEOUT
+        return starved(f"{guard.name}: the unmutated baseline timed out after {BASELINE_TIMEOUT}s (machine load), so the guard was not judged"
+                       + tail_block(exc.stdout, 12)), BASELINE_TIMEOUT
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
     return [], elapsed
 
+
+
+# A MACHINE THAT CANNOT FINISH THE UNMUTATED SELFTEST HAS NOT JUDGED THE GUARD (#2000). On a loaded laptop a selftest's own 20 s git call times out, the selftest records that as its failure
+# and exits 1, and the harness read that as "the unmutated selftest fails": 'cannot be narrowed' or INERT, a FAIL, with no mutant ever having survived (three runs of #1994: 27, 11, 8
+# of 100 'failed', every one a TimeoutExpired, none a survivor). A timeout in an UNMUTATED run is therefore its own verdict, STARVED: it is retried once, and when it is starved again it
+# is reported as not judged (exit EXIT_STARVED, the convention check_hook_gates and the doctor already use: a skip, never a pass). A failure that is not a timeout stays a FAIL, a
+# survivor stays a FAIL, and a MUTATED run's timeout is not touched (a mutant that hangs is a different fact).
+STARVED_PREFIX = "STARVED: "
+
+
+def selftest_timed_out(output: str | None) -> bool:
+    """True when EVERY failure in a selftest's output is one of its own subprocess calls running out of time (`TimeoutExpired ... timed out after N seconds`).
+
+    A real failure row beside a timeout row is a failure (#2014): the substring test alone read that mix as STARVED and hid an INERT guard behind a loaded machine."""
+    lines = [line for line in (output or "").splitlines() if line.strip()]
+    timeouts = [line for line in lines if "TimeoutExpired" in line and "timed out after" in line]
+    if not timeouts:
+        return False
+    rest = [line for line in lines if line not in timeouts and not _SELFTEST_SUMMARY.search(line)]
+    return not any(_FAILURE_LINE.search(line) for line in rest)
+
+
+_SELFTEST_SUMMARY = re.compile(r"FAILED --|failure\(s\)|checks? passed|STARVED")      # a selftest's own tally line: it counts the failures, it is not one
+_FAILURE_LINE = re.compile(r"^\s*[-*] |fail|error|assert|traceback", re.IGNORECASE)    # a failure row (`  - label: ...`) or the words a failure is reported in
+
+
+def starved(message: str) -> list[str]:
+    """One STARVED entry, in the problems list's own shape; `split_starved` takes it back out."""
+    return [STARVED_PREFIX + message]
+
+
+def split_starved(found: list[str]) -> tuple[list[str], list[str]]:
+    """`(failures, starved)`: STARVED entries are not failures."""
+    return [f for f in found if not f.startswith(STARVED_PREFIX)], [f[len(STARVED_PREFIX):] for f in found if f.startswith(STARVED_PREFIX)]
 
 
 def narrowing(guard: Guard, mutation: Mutation) -> tuple[str, ...]:
@@ -590,8 +633,16 @@ def narrow_control(guard: Guard, mutation: Mutation, narrow: tuple[str, ...], ti
             argv.append("--selftest")
         argv.extend(guard.selftest_args)
         argv.extend(narrow)
-        result = run_costed(guard.name, argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, errors="replace", env=hermetic_git.env(), timeout=timeout)
+
+        def attempt():
+            return run_costed(guard.name, argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              text=True, errors="replace", env=hermetic_git.env(), timeout=timeout)
+        result = attempt()
+        if result.returncode != 0 and selftest_timed_out(result.stdout):
+            result = attempt()                    # STARVED (#2000): once more before it is called not judged
+            if result.returncode != 0 and selftest_timed_out(result.stdout):
+                return starved(f"{guard.name}: {mutation.name!r} was not judged: the unmutated control's own calls timed out twice (machine load)"
+                               + tail_block(result.stdout, 6))
         if result.returncode == 0:
             return []
         return [f"{guard.name}: {mutation.name!r} cannot be narrowed: the UNMUTATED selftest fails (exit "
@@ -599,8 +650,8 @@ def narrow_control(guard: Guard, mutation: Mutation, narrow: tuple[str, ...], ti
                 "another fixture sets up, or `expects` selects no check; fix the fixture or the label, or set "
                 "`narrow=False` on this mutation." + tail_block(result.stdout, 8)]
     except subprocess.TimeoutExpired as exc:
-        return [f"{guard.name}: {mutation.name!r} cannot be narrowed: the unmutated control timed out after "
-                f"{timeout:.0f}s" + tail_block(exc.stdout, 8)]
+        return starved(f"{guard.name}: {mutation.name!r} was not judged: the unmutated control timed out after "
+                       f"{timeout:.0f}s (machine load)" + tail_block(exc.stdout, 8))
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
@@ -859,6 +910,7 @@ def main(argv: list[str] | None = None) -> int:
     with _COST_LOCK:
         cost: dict[str, float] = {g.name: _COST.get(g.name, 0.0) for g in guards}
     problems: list[str] = []
+    starved_entries: list[str] = []
     notes: list[str] = []
     total = 0
     for guard in every:
@@ -869,10 +921,12 @@ def main(argv: list[str] | None = None) -> int:
         if guard.name not in cost:
             continue                    # another shard's guard
         total += len(guard.mutations)
-        found = by_guard[guard.name]
-        status = "ok" if not found else "FAIL"
-        print(f"  [{status:4}] {guard.name}: {len(guard.mutations)} mutation(s), {cost[guard.name]:.0f}s")
+        found, not_judged = split_starved(by_guard[guard.name])
+        status = "FAIL" if found else ("STARV" if not_judged else "ok")
+        print(f"  [{status:5}] {guard.name}: {len(guard.mutations)} mutation(s), {cost[guard.name]:.0f}s"
+              + (f", {len(not_judged)} NOT JUDGED (machine load)" if not_judged else ""))
         problems.extend(found)
+        starved_entries.extend(not_judged)
 
     over_floor = sorted(((n, s) for n, s in cost.items() if s > RATCHET_FLOOR), key=lambda kv: -kv[1])
     warnings: list[str] = []
@@ -896,8 +950,13 @@ def main(argv: list[str] | None = None) -> int:
     if warnings:
         print(f"warning: {context}")
     if problems:
-        print(failure_report(problems, notes, total), file=sys.stderr)
+        print(failure_report(problems, notes + [f"not judged (STARVED, machine load): {entry.splitlines()[0]}" for entry in starved_entries], total), file=sys.stderr)
         return 1
+    if starved_entries:
+        # NOT A PASS, NOT A FAILURE (#2000): the machine decided. Exit EXIT_STARVED, which the doctor treats as a skip and a proof refuses; no shard record is written.
+        print(f"\nMUTATION CHECK NOT JUDGED — {len(starved_entries)} of {total} STARVED by machine load (load at start {start_load}); no mutant survived and nothing was caught there. Run again on a quiet machine:", file=sys.stderr)
+        print("\n".join(f"  - {entry}" for entry in starved_entries), file=sys.stderr)
+        return EXIT_STARVED
     if args.shard_out:
         result = {"shard": shard[0], "of": shard[1], "os": system, "commit": commit_id(), "harness": harness, "jobs": jobs,
                   "full": full or not skipped, "guards": {n: hashes[n] for n in sorted(cost)},

@@ -1519,6 +1519,108 @@ def run() -> int:
     finally:
         mc.REPO = original_repo
 
+    # #2000: a TIMEOUT in the UNMUTATED selftest is the machine's, not the guard's. It is retried once, and when it is starved again it is STARVED (not judged), never INERT or
+    # 'cannot be narrowed'; a failure that is not a timeout stays INERT; a survivor stays a failure; and the exit code for an all-starved run is EXIT_STARVED, not 1 and not 0.
+    timeout_line = 'print("x: the case itself failed to run: TimeoutExpired: Command [\'git\', \'add\'] timed out after 20 seconds")\nsys.exit(1)\n'
+    starved_every_time = "import sys\n" + timeout_line
+    guard, root = _fixture_guard((mc.Mutation("unused", "n % 2 == 0", "True", "fixture-odd"),), selftest=starved_every_time)
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        failures, not_judged = mc.split_starved(problems)
+        if failures or len(not_judged) != 1 or "INERT" in " ".join(problems):
+            FAILURES.append(f"#2000: a baseline whose own calls time out on both tries must be STARVED (not judged), never INERT; got {problems}")
+    finally:
+        mc.REPO = original_repo
+
+    marker = Path(tempfile.mkdtemp(prefix="mutcheck-flaky-")) / "ran-once"
+    flaky = f"import os, sys\nM = {str(marker)!r}\nif not os.path.exists(M):\n    open(M, 'w').close()\n    " + timeout_line.replace("\n", "\n    ").rstrip(" ") + SELFTEST
+    guard, root = _fixture_guard((mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),), selftest=flaky)
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        if problems:
+            FAILURES.append(f"#2000: a baseline that times out once and passes on the retry must be judged normally (all mutants caught); got {problems}")
+    finally:
+        mc.REPO = original_repo
+        shutil.rmtree(marker.parent, ignore_errors=True)
+
+    # #2014: a REAL failure row beside a timeout row is a failure: INERT, never STARVED.
+    mixed = ("import sys\nprint('SELFTEST FAILED -- 2 failure(s) in 5 case(s)')\nprint('  - case A: expected refused, got staged')\n"
+             "print(\"  - case B: the case itself failed to run: TimeoutExpired: Command ['git'] timed out after 20 seconds\")\nsys.exit(1)\n")
+    guard, root = _fixture_guard((mc.Mutation("unused", "n % 2 == 0", "True", "fixture-odd"),), selftest=mixed)
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        failures, not_judged = mc.split_starved(problems)
+        if not any("INERT" in f for f in failures) or not_judged:
+            FAILURES.append(f"#2014: a real failure row beside a timeout row is INERT, never STARVED; got {problems}")
+    finally:
+        mc.REPO = original_repo
+
+    # #2017: a real selftest prints its tally header before its rows; the header (`FAILED --`, `failure(s)`) is not a failure, so a header plus ONLY timeout rows is STARVED.
+    header_only_timeouts = ("import sys\nprint('SELFTEST FAILED -- 2 failure(s) in 1 case(s), 0 checks:')\n"
+                            "print(\"  - case A: the case itself failed to run: TimeoutExpired: Command ['git'] timed out after 20 seconds\")\n"
+                            "print(\"  - case B: the case itself failed to run: TimeoutExpired: Command ['git'] timed out after 20 seconds\")\nsys.exit(1)\n")
+    guard, root = _fixture_guard((mc.Mutation("unused", "n % 2 == 0", "True", "fixture-odd"),), selftest=header_only_timeouts)
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        failures, not_judged = mc.split_starved(problems)
+        if failures or len(not_judged) != 1:
+            FAILURES.append(f"#2017: a selftest tally header plus only timeout rows must be STARVED (the header is not a failure); got {problems}")
+    finally:
+        mc.REPO = original_repo
+
+    fails_for_real = 'import sys\nprint("AssertionError: fixture-odd broke")\nsys.exit(1)\n'
+    guard, root = _fixture_guard((mc.Mutation("unused", "n % 2 == 0", "True", "fixture-odd"),), selftest=fails_for_real)
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        failures, not_judged = mc.split_starved(problems)
+        if not any("INERT" in f for f in failures) or not_judged:
+            FAILURES.append(f"#2000: a baseline that fails for a reason that is not a timeout must stay INERT, never STARVED; got {problems}")
+    finally:
+        mc.REPO = original_repo
+
+    # ...the same for the narrowed CONTROL: the whole baseline passes, the control (run with --match) times out twice
+    control_starved = "import sys\nif '--match' in sys.argv:\n    " + timeout_line.replace("\n", "\n    ").rstrip(" ") + SELFTEST
+    guard, root = _fixture_guard((mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),), selftest=control_starved)
+    guard = dataclasses.replace(guard, narrow_with="--match")
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        failures, not_judged = mc.split_starved(problems)
+        if failures or len(not_judged) != 1 or "cannot be narrowed" in " ".join(problems):
+            FAILURES.append(f"#2000: a narrowed control whose own calls time out twice must be STARVED, never 'cannot be narrowed'; got {problems}")
+    finally:
+        mc.REPO = original_repo
+    # ...and the PROCESS EXIT of main(): an all-starved run exits EXIT_STARVED (neither 0, which would claim a pass, nor 1, which would claim a failure), and says NOT JUDGED
+    guard, root = _fixture_guard((mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),), selftest=starved_every_time)
+    saved = (mc.REPO, mc.GUARDS)
+    mc.REPO, mc.GUARDS = root, [guard]
+    try:
+        import contextlib, io
+        _tick()
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            rc = mc.main(["--jobs", "1"])
+        if rc != mc.EXIT_STARVED or "NOT JUDGED" not in err.getvalue():
+            FAILURES.append(f"#2000: a run in which every guard was starved must exit {mc.EXIT_STARVED} and say NOT JUDGED, got exit {rc}: {err.getvalue()[:200]!r}")
+    finally:
+        mc.REPO, mc.GUARDS = saved
+    # ...and a SURVIVOR beside a starved entry is still a failure (the split does not hide it)
+    failures, not_judged = mc.split_starved(["g: SURVIVED — x", mc.STARVED_PREFIX + "g: y was not judged"])
+    _tick()
+    if failures != ["g: SURVIVED — x"] or not_judged != ["g: y was not judged"]:
+        FAILURES.append(f"#2000: split_starved must keep a survivor a failure and a STARVED entry not one; got {failures} / {not_judged}")
+
     # ...and the report carries the mutant's own output, or a catch seen only on CI cannot be
     # diagnosed (#1493: two CI-only wrong-fixture catches, no output kept). A NOISY mutant, so each
     # bound is observable: the last 12 lines exactly, the first line gone, every line <= 300 chars,

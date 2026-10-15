@@ -34,8 +34,8 @@ LIMITS. A filter driver or hook the USER configured in their OWN (global or syst
 they run; this scrubs what a repository or the environment can add, it does not turn git into a sandbox. It cannot recover work a session lost before the turn ended.
 
 RUN BY HAND FROM THE CLAUDE CODE BASH TOOL it is REFUSED by rails-flow's git shim (first on PATH there): it commits with hooks off (`-c core.hooksPath=/dev/null`, `--no-verify`), which is
-exactly what the shim stops an agent doing by hand (#1994). The normal path, the Stop hook, is launched by Claude Code without the shim on PATH and is unaffected. Its `--selftest` also
-fails under the shim (it uses `-c protocol.file.allow=always`, which the shim does not allow); run it with the shim off PATH.
+exactly what the shim stops an agent doing by hand (#1994). The normal path, the Stop hook, is launched by Claude Code without the shim on PATH and is unaffected. Its `--selftest` runs
+the same under the shim: its fixtures use the real git past the shim's directory (#1998).
 Stdlib only.
 """
 from __future__ import annotations
@@ -302,6 +302,17 @@ def main(argv: list[str]) -> int:
     return 0
 
 
+def real_git_outside_shims(path: str) -> str | None:
+    """The first executable regular-file `git` on `path` whose directory is not a `git-shim` one (rails-flow's git shim), or None (#1998)."""
+    for q in path.split(os.pathsep):
+        if not q or Path(q).name == "git-shim":
+            continue
+        c = str(Path(q) / "git")
+        if os.path.isfile(c) and os.access(c, os.X_OK):
+            return c
+    return None
+
+
 def selftest(match: str = "") -> int:
     import inspect
     import shutil
@@ -315,7 +326,10 @@ def selftest(match: str = "") -> int:
         if not ok:
             failures.append(f"{label} {detail}".rstrip())
 
-    real_git = shutil.which("git")
+    # The REAL git, not rails-flow's git shim: run from the Claude Code Bash tool the shim is first on PATH, so `shutil.which("git")` is the shim, and the fixture's own setup
+    # (`-c protocol.file.allow=always submodule add` into a temp repository) is refused by it. The fixture touches only its own temp repositories, so it takes the first
+    # executable `git` whose directory is not a `git-shim` one (#1998).
+    real_git = real_git_outside_shims(os.environ.get("PATH", "")) or shutil.which("git")
     if not real_git:
         print("wip_commit selftest: no git on PATH, nothing to test", file=sys.stderr)
         return 2
@@ -440,6 +454,20 @@ def selftest(match: str = "") -> int:
                 cases.append((label, fn))
                 return fn
             return register
+
+        @case('the selftest finds the real git past a git-shim directory (#1998)')
+        def _():
+            shimdir, realdir = base / "fake" / "git-shim", base / "fake" / "bin"
+            for d in (shimdir, realdir):
+                d.mkdir(parents=True)
+                (d / "git").write_text("#!/bin/sh\n")
+                (d / "git").chmod(0o755)
+            plain = base / "fake" / "plain"
+            plain.mkdir()
+            (plain / "git").write_text("not executable")        # a candidate that is not executable is skipped too
+            found = real_git_outside_shims(os.pathsep.join([str(shimdir), str(plain), str(realdir)]))
+            expect("a git-shim directory first on PATH is skipped, and so is a non-executable git", found == str(realdir / "git"), found)
+            expect("a PATH of only shim directories finds none", real_git_outside_shims(str(shimdir)) is None)
 
         @case('happy path and rolling amend')
         def _():
@@ -762,6 +790,9 @@ def selftest(match: str = "") -> int:
             bare_home = base / "nohome"
             bare_home.mkdir()
             noid = make_repo("noid")
+            # `user.useConfigOnly`: without it git AUTO-DETECTS an identity from the account and the host name (macOS does, a bare Linux container does not), so this row passed or failed
+            # with the machine it ran on, and only ever passed on a Mac because rails-flow's git shim refused the commit first (#1998). With it, "no identity configured" is the same everywhere.
+            git(noid, "config", "user.useConfigOnly", "true")
             (noid / "a.txt").write_text("changed\n")
             action, _ = decide(noid, {"HOME": str(bare_home), "PATH": git_dir})
             expect("with no git identity configured it commits nothing and invents none", action == "skip:commit-failed" and count(noid) == 1, (action, count(noid)))

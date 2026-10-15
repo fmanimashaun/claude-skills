@@ -12,6 +12,19 @@ GUARD = Guard(
     narrow_with="--match",                   # #1942: each mutant runs only the case that names it (658 s of work over the whole selftest)
     needs=("scripts/test_preflight.py",),   # it imports the one trusted_which resolver
     mutations=(
+        # #1998: the selftest's own git is the real one, found past a `git-shim` directory.
+        Mutation(
+            "a git-shim directory is not skipped when the selftest looks for its git",
+            '        if not q or Path(q).name == "git-shim":',
+            '        if not q:',
+            "a git-shim directory first on PATH is skipped",
+        ),
+        Mutation(
+            "a candidate git that is not an executable file is taken",
+            '        if os.path.isfile(c) and os.access(c, os.X_OK):',
+            '        if os.path.isfile(c):',
+            "a git-shim directory first on PATH is skipped",
+        ),
         Mutation(
             "the skip reason names the secret-looking paths again, so --dry-run prints them (CodeQL py/clear-text-logging-sensitive-data)",
             '        return "skip:secret-looking-path", f"skipped: {flagged} changed file(s) matching secret patterns, so nothing is auto-committed"',
