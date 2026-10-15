@@ -108,7 +108,7 @@ export const ELECT_SCRIPT = `
 d="$HOME/.claude/rails-flow"; c="$d/coordinator"; lk="$d/lock"; me="$PPID"; sid="$1"; force="$2"; resumed="$3"
 case "$4" in ''|*[!0-9]*) ;; *) me="$4" ;; esac
 mkdir -p "$d" || { echo error; exit 0; }
-spare() { case "$(ps -o command= -p "$1" 2>/dev/null)" in *--bg-spare*) return 0 ;; esac; return 1; }
+spare() { case " $(ps -o command= -p "$1" 2>/dev/null) " in *" bg-spare --bg-spare "*) return 0 ;; esac; return 1; }
 start() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//'; }
 claim() { mkdir "$c" 2>/dev/null || return 1; printf '%s\\n%s\\n%s\\n%s\\n' "$me" "$sid" "$(date +%s)" "$(start "$me")" > "$c/claim"; }
 alive() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null && [ "$(start "$1")" = "$2" ] && ! spare "$1"; }
