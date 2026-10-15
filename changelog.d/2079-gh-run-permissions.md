@@ -1,0 +1,2 @@
+section: Repository hygiene
+- **`settings.example.json` lists the four `gh run` permissions that re-running only the failed CI job needs — `.claude/settings.example.json`** (#2079). `gh run list`, `view`, `watch` and `rerun` are named, with a note to put the same lines in `~/.claude/settings.json` to share them across projects; a read of a release workflow's jobs was refused by Claude Code's permission check as a production deploy until a rule allowed it (2026-10-15). The owner added them to their user settings the same day. The example stays inert: nothing reads it.
