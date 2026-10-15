@@ -480,7 +480,7 @@ def _(base):
         refused(r, label, *args)
     check(label, "/tmp/helper-2042" not in r.real("config", "--get-all", "credential.helper").stdout, "a credential helper path was written anyway")
     runs(r, label, "config", "credential.helper", "store")
-    check(label, r.real("config", "--get-all", "credential.helper").stdout.strip() == "store", "a named credential helper did not land")
+    check(label, r.real("config", "--local", "--get-all", "credential.helper").stdout.strip() == "store", "a named credential helper did not land")
 
 
 @case("shim: -c core.hooksPath on the command line is refused")
