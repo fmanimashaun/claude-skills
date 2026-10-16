@@ -487,7 +487,7 @@ def _(base):
         refused(r, label, *args)
     check(label, "/tmp/helper-2042" not in r.real("config", "--get-all", "credential.helper").stdout, "a credential helper path was written anyway")
     # Fable, attack on #2062: git runs any helper through `sh -c`, so a metacharacter after a plain word is a command too
-    for v in ("foo; touch /tmp/marker-2062", "x $(touch /tmp/marker-2062)", "x`id`", "x|id", "x&id", "a\nb"):
+    for v in ("foo; touch /tmp/marker-2062", "x $(touch /tmp/marker-2062)", "x`id`", "x|id", "x&id", "a\nb", "\udcff; touch /tmp/marker-2062"):
         refused(r, label, "config", "credential.helper", v)
         check(label, r.real("config", "--local", "--get-all", "credential.helper").stdout == "", f"a helper with a metacharacter was written: {v!r}")
     runs(r, label, "config", "credential.helper", "store")

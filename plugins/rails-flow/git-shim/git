@@ -613,7 +613,7 @@ decide() {
     read-tree)
       if seen reset && seen update; then RULE="git read-tree --reset -u overwrites the working tree"; return 1; fi ;;
     config)
-      local x alias_key=0 shell_value=0 section_move=0 cred_key=0 path_value=0 meta_value=0 cfg_plain='[^A-Za-z0-9 ._:/@=+,%-]'
+      local x alias_key=0 shell_value=0 section_move=0 cred_key=0 path_value=0 meta_value=0 cfg_rest
       for x in "$@"; do
         if ci_match "$x" "*core.hookspath*" || ci_match "$x" "*include.path*" || ci_match "$x" "*includeif.*" || ci_match "$x" "*core.fsmonitor*" || ci_match "$x" "*core.sshcommand*"; then
           RULE="git config naming core.hooksPath, include.*, core.fsmonitor or core.sshCommand can switch the #1789 git hooks off"; return 1
@@ -629,8 +629,10 @@ decide() {
         case "${x#"${x%%[! ]*}"}" in "!"*) shell_value=1 ;; "/"*) path_value=1 ;; esac      # the value, leading spaces aside, starts with `!` (a shell command) or `/` (a program path)
         # Fable, attack on #2062: git runs ANY helper value through `sh -c` (`git credential-foo; touch /x`), so a shell metacharacter anywhere
         # in it runs a command. A CHARACTER ALLOWLIST, not a list of metacharacters: anything outside it (`;`, `$`, a backtick, a quote, a newline, a
-        # non-ASCII letter) counts.
-        [[ $x =~ $cfg_plain ]] && meta_value=1
+        # non-ASCII letter) counts. Stripped byte by byte under LC_ALL=C, not matched with a regex: in a UTF-8 locale an invalid byte makes `=~`
+        # return 1 (no match), so `\xff; touch /x` passed (commit security review). Whatever survives the strip is refused.
+        cfg_rest=$(LC_ALL=C; printf '%s.' "${x//[A-Za-z0-9 ._:\/@=+,%-]/}"); cfg_rest=${cfg_rest%.}   # the `.` keeps a trailing newline from $(...)
+        [ -n "$cfg_rest" ] && meta_value=1
       done
       # The `rename-section` SUBCOMMAND (newer gits) is the same rename, spelled as the first word.
       [ "${1:-}" = rename-section ] && section_move=1

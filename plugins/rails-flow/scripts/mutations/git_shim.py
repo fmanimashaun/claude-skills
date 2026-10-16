@@ -214,7 +214,7 @@ GUARD = Guard(
                  '      if [ "$cred_key" = 1 ] && [ "$meta_value" = 1 ]; then',
                  '      if false; then', 'runs a program'),
         Mutation('the metacharacter allowlist is never applied (Fable, attack on #2062)',
-                 '        [[ $x =~ $cfg_plain ]] && meta_value=1', '        :', 'runs a program'),
+                 '        [ -n "$cfg_rest" ] && meta_value=1', '        :', 'runs a program'),
         Mutation('a credential.helper that is a program path (/abs) is not refused (a0, review of #2042)',
                  '      if [ "$cred_key" = 1 ] && { [ "$shell_value" = 1 ] || [ "$path_value" = 1 ]; }; then',
                  '      if [ "$cred_key" = 1 ] && [ "$shell_value" = 1 ]; then', 'runs a program'),
