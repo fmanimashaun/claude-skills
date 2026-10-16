@@ -66,17 +66,45 @@ Payload keys shown are the ones you'll actually use.
 | `redirect.action_dispatch` | `:status, :location, :source_location` | Route-level redirects (8.1 verbose dev logs use this) |
 | `sql.active_record` | `:sql, :name, :binds, :cached, :connection` | Query counting, slow-query log (skip `SCHEMA`/`TRANSACTION` names) |
 | `instantiation.active_record` | `:record_count, :class_name` | "This action built 5,000 AR objects" |
-| `strict_loading_violation.active_record` | `:owner, :reflection` | N+1 telemetry when strict_loading is `:log` |
+| `strict_loading_violation.active_record` | `:owner, :reflection` | N+1 telemetry when strict_loading is `:log`; `:n_plus_one_only` misses the top-level loop (note below) |
 | `transaction.active_record` | `:connection, :outcome` (commit/rollback) | Rollback-rate monitoring |
 | `render_template/render_partial.action_view` | `:identifier, :layout` / `:identifier, :cache_hit` | View timing, cache hit ratios |
 | `render_collection.action_view` | `:identifier, :count, :cache_hits` | Collection-cache effectiveness |
 | `deliver.action_mailer` | `:mailer, :message_id, :subject, :to` | Mail volume/failures |
-| `enqueue.active_job` / `perform.active_job` | `:job, :adapter` (+ `:db_runtime` on perform) | Queue latency = perform start − enqueue |
-| `cache_read/cache_write/cache_fetch_hit.active_support` | `:key, :store, :hit, :super_operation` | Hit-rate dashboards |
+| `enqueue.active_job` / `perform_start.active_job` / `perform.active_job` | `:job, :adapter` (+ `:db_runtime, :aborted` on perform) | Queue latency, on `perform_start`: `event.time - payload[:job].enqueued_at.to_f` (note below) |
+| `cache_read/cache_write/cache_fetch_hit/cache_generate.active_support` | `:key, :store, :hit, :super_operation` | Hit-rate dashboards, Solid Cache included (note below) |
 | `perform_action.action_cable` / `broadcast.action_cable` | `:channel_class, :action` / `:broadcasting` | Realtime volume |
 | `process.action_mailbox` | `:mailbox, :inbound_email` | Inbound mail pipeline |
 | `service_upload.active_storage` (and download/delete) | `:key, :service, :checksum` | Storage ops |
 | `deprecation.rails` | `:message, :callstack, :gem_name` | Fail CI on new deprecations |
+
+**Three of these, measured and read from source** (verified at rails 8.1.4, solid_queue 1.7.0,
+solid_cache 1.0.10; #2065):
+
+- **Queue latency comes from Active Job, not Solid Queue.** `perform_start.active_job` carries
+  `:job`, and `enqueued_at` is stamped in `serialize` and restored on deserialize
+  (`active_job/core.rb:129`, `:170`), so latency is `event.time - payload[:job].enqueued_at.to_f` (`event.time` is a Float, and a Float
+  minus a Time raises); a
+  scheduled job counts from `scheduled_at`, since `enqueued_at` is the enqueue moment. Solid Queue
+  instruments no per-job latency; its `SolidQueue::Queue#latency` is the age of the oldest ready
+  execution for a whole queue (`app/models/solid_queue/queue.rb:41-47`), not instrumented.
+- **Solid Cache reports hits through the standard events.** `SolidCache::Store <
+  ActiveSupport::Cache::Store` (`solid_cache/store.rb:4`), so `cache_read` carries `hit: true/false`
+  and `super_operation: :fetch` inside a `fetch` (`active_support/cache.rb:473-474`); a fetch hit
+  also emits `cache_fetch_hit`, a miss `cache_generate` then `cache_write` (the write is skipped for
+  a nil result under `skip_nil`). A transient database error (the six in `Failsafe::TRANSIENT_ACTIVE_RECORD_ERRORS`, `failsafe.rb:6-13`)
+  is swallowed: the read returns nil, the payload says `hit: false` with no `exception`, and the error
+  goes to `Rails.error` and the store's `error_handler`, so a hit-rate dashboard counts it as a miss.
+  Only a non-transient error raises and carries `exception` in the `cache_read` payload (verified at
+  solid_cache 1.0.10).
+- **`strict_loading_mode = :n_plus_one_only` does not report the classic N+1.** The owner's own
+  lazy loads pass (`associations/association.rb:240-244`); only records it loaded through a
+  `has_many` are marked strict (`:123-128`), so `user.comments.first.ratings` is reported and
+  `User.all.each { |u| u.comments.to_a }` is **not** (measured: 0 events for the loop, 1 for the
+  second level). Mode `:all` is the default, and `:all` with
+  `action_on_strict_loading_violation = :log` (the default action is `:raise`) reports EVERY lazy load
+  on a strict record, which is noisy, not a sampled N+1 signal; a detector is the alternative. A
+  reflection declared `strict_loading: true` reports in either mode.
 
 Exception convention: any hook's payload gains `:exception` (`[class_name,
 message]`) and `:exception_object` when the instrumented block raised —
@@ -339,6 +367,22 @@ observes job speed and failure rate; Mission Control operates the queue
 (retry, discard, pause). Run both. Do **not** run Pulse beside a hosted APM
 from the list above — two collectors on the same hooks is the double
 overhead this section warns against.
+
+**Its defaults, read from source (0.4.2):** thresholds in ms — routes `slow 500 / very_slow
+1500 / critical 3000`, requests `700 / 2000 / 4000`, queries `100 / 500 / 1000`, jobs `5000 / 30000
+/ 60000`; exceptions are counts (`warning 10, critical 100`) (`lib/rails_pulse/configuration.rb:62-68`).
+Regressions need a ratio **and** an absolute floor plus enough samples (`ratio 1.5`, `min_delta_ms
+50`, `min_samples 100`, `min_baseline_periods 3`, `:158-167`). SQL is stored **normalised** (literals
+become `?`, `app/services/rails_pulse/sql_query_normalizer.rb`); raw SQL is opt-in
+(`capture_actual_sql`, default false, because unparameterised SQL would keep emails and passwords).
+Requests are **not sampled**; under pressure the bounded queue drops instead. `track_jobs`,
+`track_exceptions` and `track_assets` default to off.
+
+**Noise control for a slow-page or N+1 finder — advice, not doctrine** (a design, not yet run
+against real traffic): judge a route by p95 only above a minimum request count, against a
+baseline of several prior periods, over consecutive windows; report one finding per route and
+query, cap findings per run, and exclude health checks and deploy windows. Rails Pulse's regression
+rules above (ratio plus absolute floor, minimum samples, baseline periods) are one shipped instance.
 
 **When to adopt:** the app serves real users in production and has no APM.
 Before launch there is no traffic to measure — Bullet and the log cover
