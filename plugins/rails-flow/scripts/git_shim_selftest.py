@@ -486,10 +486,15 @@ def _(base):
                  ("config", "credential.helper", "/tmp/helper-2042"), ("config", "credential.helper", " /tmp/helper-2042")):    # a0, review of #2042: a program path runs too
         refused(r, label, *args)
     check(label, "/tmp/helper-2042" not in r.real("config", "--get-all", "credential.helper").stdout, "a credential helper path was written anyway")
+    # Fable, attack on #2062: git runs any helper through `sh -c`, so a metacharacter after a plain word is a command too
+    for v in ("foo; touch /tmp/marker-2062", "x $(touch /tmp/marker-2062)", "x`id`", "x|id", "x&id", "a\nb"):
+        refused(r, label, "config", "credential.helper", v)
+        check(label, r.real("config", "--local", "--get-all", "credential.helper").stdout == "", f"a helper with a metacharacter was written: {v!r}")
     runs(r, label, "config", "credential.helper", "store")
     # --local: the REPOSITORY's config only. A machine's system config can carry its own helper (Xcode's git ships credential.helper=osxkeychain),
     # and --get-all would list it too, failing this row for a reason that has nothing to do with the shim (72 hit it locally on #2062).
     check(label, r.real("config", "--local", "--get-all", "credential.helper").stdout.strip() == "store", "a named credential helper did not land")
+    runs(r, label, "config", "credential.helper", "cache --timeout 300")
 
 
 @case("shim: git config WRITES are an allowlist; reads run (#2043)")

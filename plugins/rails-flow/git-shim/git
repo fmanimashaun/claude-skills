@@ -613,7 +613,7 @@ decide() {
     read-tree)
       if seen reset && seen update; then RULE="git read-tree --reset -u overwrites the working tree"; return 1; fi ;;
     config)
-      local x alias_key=0 shell_value=0 section_move=0 cred_key=0 path_value=0
+      local x alias_key=0 shell_value=0 section_move=0 cred_key=0 path_value=0 meta_value=0 cfg_plain='[^A-Za-z0-9 ._:/@=+,%-]'
       for x in "$@"; do
         if ci_match "$x" "*core.hookspath*" || ci_match "$x" "*include.path*" || ci_match "$x" "*includeif.*" || ci_match "$x" "*core.fsmonitor*" || ci_match "$x" "*core.sshcommand*"; then
           RULE="git config naming core.hooksPath, include.*, core.fsmonitor or core.sshCommand can switch the #1789 git hooks off"; return 1
@@ -627,6 +627,10 @@ decide() {
         # Exact spelling only: an abbreviation (`--ren`) is an unknown long option, which makes the write unjudgeable below (#2043).
         [ "$x" = --rename-section ] && section_move=1
         case "${x#"${x%%[! ]*}"}" in "!"*) shell_value=1 ;; "/"*) path_value=1 ;; esac      # the value, leading spaces aside, starts with `!` (a shell command) or `/` (a program path)
+        # Fable, attack on #2062: git runs ANY helper value through `sh -c` (`git credential-foo; touch /x`), so a shell metacharacter anywhere
+        # in it runs a command. A CHARACTER ALLOWLIST, not a list of metacharacters: anything outside it (`;`, `$`, a backtick, a quote, a newline, a
+        # non-ASCII letter) counts.
+        [[ $x =~ $cfg_plain ]] && meta_value=1
       done
       # The `rename-section` SUBCOMMAND (newer gits) is the same rename, spelled as the first word.
       [ "${1:-}" = rename-section ] && section_move=1
@@ -639,6 +643,9 @@ decide() {
       # `/` (a `--file /path`) also counts, so `git config --file /x credential.helper store` is refused too: an accepted cost on a rare command.
       if [ "$cred_key" = 1 ] && { [ "$shell_value" = 1 ] || [ "$path_value" = 1 ]; }; then
         RULE="git config writing a credential.helper that is a shell command (!) or a program path (/) runs a program this shim cannot see"; return 1
+      fi
+      if [ "$cred_key" = 1 ] && [ "$meta_value" = 1 ]; then
+        RULE="git config writing a credential.helper with a shell metacharacter runs a command through sh -c"; return 1
       fi
       # #2043: everything above refuses a named danger; this lets a WRITE through only for a key a session sets in ordinary work.
       config_write_key "$@"
