@@ -66,6 +66,29 @@ def repo_marker_above(path) -> str | None:
         probe = probe.parent
 
 
+def path_without_git_shim(path: str) -> str:
+    """PATH as a real hook process gets it: with every rails-flow `git-shim` directory removed (#2104).
+
+    The SessionStart hook prepends the shim through `CLAUDE_ENV_FILE`, which reaches the Bash tool's commands only; the Claude Code process
+    that spawns hooks has no shim on its PATH (measured, #2104). Run from a session, this harness inherited the Bash tool's shim-first PATH
+    and drove every hook under it: the release gate's own `git` calls went through the shim, and 7 + 25 checks failed on clean dev that
+    pass on CI, which has no shim. `git_shim_selftest.py` tests the shim; here it is an environment production never has."""
+    return os.pathsep.join(d for d in path.split(os.pathsep) if d and Path(d).name != "git-shim")
+
+
+def resolve_real_git() -> str:
+    """The git a fixture's stub may exec: the first `git` on PATH outside a rails-flow `git-shim` directory, else /usr/bin/git (#2100).
+
+    In a Claude Code session `shutil.which("git")` IS the shim (first on PATH). A stub doing `exec <shim>` under a fixture's PATH loops: the shim's
+    "first git that is not a shim" (#2003) is that stub, which execs the shim again, until the hook's budget runs out. The selftest then reports
+    STARVED and the mutation guard INERT, on a quiet machine too, while CI (no shim) stays green. Same rule as the shim and `remote_evidence.py`."""
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        cand = Path(d) / "git"
+        if d and Path(d).name != "git-shim" and cand.is_file() and os.access(cand, os.X_OK):
+            return str(cand)
+    return "/usr/bin/git"
+
+
 @contextlib.contextmanager
 def scratch_dir():
     """A temp directory a fixture owns, removed on exit WITHOUT ever failing the run (#1800).
@@ -3602,6 +3625,11 @@ def release_gate_refs_fixtures() -> None:
     if not QA_HOOK.is_file():
         check("release-gate (#1600): release-gate.sh present beside rails-flow", False, str(QA_HOOK))
         return
+    check("harness (#2104): hooks run with no rails-flow git-shim on PATH, as a real hook process does",
+          not any(Path(d).name == "git-shim" for d in os.environ.get("PATH", "").split(os.pathsep)), os.environ.get("PATH", "")[:200])
+    fake = os.pathsep.join(["/opt/x/rails-flow/1.0.0/git-shim", "/usr/bin", "/a/git-shim-notes"])
+    check("harness (#2104): ...and the filter drops exactly the `git-shim` directories, on a machine without one too",
+          path_without_git_shim(fake) == os.pathsep.join(["/usr/bin", "/a/git-shim-notes"]), path_without_git_shim(fake))
     with scratch_dir() as td:
         repo = Path(td) / "repo"
         _git_repo(repo)
@@ -3766,7 +3794,7 @@ def release_gate_refs_fixtures() -> None:
         gitbin = Path(td) / "gitbin"
         gitbin.mkdir(exist_ok=True)
         gitlog = Path(td) / "git.log"
-        real_git = shutil.which("git")
+        real_git = resolve_real_git()
         (gitbin / "git").write_text(
             f'#!/bin/sh\nprintf \'%s\\n\' "$*" >> "{gitlog}"\ncase "$1" in\n'
             f'  ls-remote) printf \'%s\\trefs/tags/v9\\n\' "{evil}"; exit 0 ;;\nesac\nexec {real_git} "$@"\n', encoding="utf-8")
@@ -4230,7 +4258,7 @@ def release_gate_repos_fixtures() -> None:
         # ahead of the promotion) is the one a slow remote stops, by its own budget, and it must record NOTHING when it does.
         gitbin = Path(td) / "gitbin"
         gitbin.mkdir()
-        real_git = shutil.which("git")
+        real_git = resolve_real_git()
         (gitbin / "git").write_text(f'#!/bin/sh\ncase " $* " in *" fetch "*) sleep 20 ;; esac\nexec {real_git} "$@"\n', encoding="utf-8")
         (gitbin / "git").chmod(0o755)
         rc, err = foreign(sha_good, s2, ev_files)           # records the verdict (and permits) with the real git
@@ -5018,7 +5046,20 @@ def guard_worktree_failopen_fixtures() -> None:
     with scratch_dir() as td:
         repo = new_repo(td)
         add_wt(repo, "lane-band", "feature/lane-band")
-        real_git = shutil.which("git")
+        real_git = resolve_real_git()
+        check("harness (#2100): the git a stub execs is not a rails-flow git-shim (a stub exec'ing the shim loops until the budget runs out)",
+              Path(real_git).parent.name != "git-shim", real_git)
+        fake_shim = Path(td) / "plugin" / "git-shim"
+        fake_shim.mkdir(parents=True)
+        _stub(fake_shim, "git", "exit 99")
+        saved_path = os.environ.get("PATH", "")
+        os.environ["PATH"] = f"{fake_shim}{os.pathsep}{saved_path}"
+        try:
+            resolved = resolve_real_git()
+        finally:
+            os.environ["PATH"] = saved_path
+        check("harness (#2100): ...and a `git-shim` directory first on PATH is skipped, on a machine without one too",
+              Path(resolved).parent != fake_shim, resolved)
 
         def stage_bin(name: str, git_body: str | None) -> dict[str, str]:
             b = Path(td) / name
@@ -5173,7 +5214,7 @@ def guard_worktree_pointer_fixtures() -> None:
         done_wt = add_wt(repo, "done", "feature/done", unmerged=False)
         out = start(repo)[1]
         check("resume pointer: a merged, clean worktree is listed as finished, with how to remove it",
-              "finished worktree" in out and str(done_wt) in out and "git worktree remove" in out, out[-300:])
+              "finished worktree" in out and str(done_wt) in out and "git worktree remove" in out and "worktree_teardown.py" in out, out[-300:])
         done_wt.mkdir(parents=True, exist_ok=True)   # a `--match` survey stubs `git worktree add`
         (done_wt / "scratch.txt").write_text("uncommitted\n")
         check("resume pointer: a merged worktree with uncommitted work is NOT listed as finished",
@@ -7009,6 +7050,7 @@ def main(argv: list[str] | None = None) -> int:
     # script that printed usage there would be INERT -- every mutation "caught" by an exit 2.
     global STRICT_TIMING
     STRICT_TIMING = args.strict_timing
+    os.environ["PATH"] = path_without_git_shim(os.environ.get("PATH", ""))
     return selftest(groups, args.match, args.fail_fast)
 
 

@@ -230,7 +230,7 @@ redeploy with your app:
 ```yaml
 accessories:
   db:
-    image: postgres:17
+    image: postgres:18
     host: 192.168.0.2
     port: "127.0.0.1:5432:5432"   # bind to localhost; app reaches it via private net
     env:
@@ -240,8 +240,21 @@ accessories:
       secret:
         - POSTGRES_PASSWORD
     directories:
-      - data:/var/lib/postgresql/data
+      - data:/var/lib/postgresql   # postgres:18 and later; postgres:17 and earlier: data:/var/lib/postgresql/data
 ```
+
+**The data path depends on the image's major version.** From `postgres:18` the image declares `VOLUME /var/lib/postgresql` and sets
+`PGDATA=/var/lib/postgresql/18/docker` (`/var/lib/postgresql/<major>/docker` for later majors); `postgres:17` and earlier use
+`/var/lib/postgresql/data` for both (Docker Hub `postgres` page, the images' Dockerfiles, docker-library/postgres PR #1259). Mount at the new
+location on 18: `data:/var/lib/postgresql`. On 18 a mount at `/var/lib/postgresql/data` stops the container from starting: the entrypoint exits 1 with
+`... there appears to be PostgreSQL data in: /var/lib/postgresql/data (unused mount/volume)` when `/var/lib/postgresql/data` is a mount point (even an
+empty one) or any of `/var/lib/postgresql`, `/var/lib/postgresql/data` and `/var/lib/postgresql/*/docker` already holds a `PG_VERSION` (measured on
+`postgres:18.6`; Docker does not document it), so mount `/var/lib/postgresql`. On 17 and below keep the old path; the Docker Hub page warns against mounting at `/var/lib/postgresql` there.
+
+**A major version is never a tag bump.** The server refuses a data directory from an older major (PostgreSQL 18, *Upgrading a PostgreSQL
+Cluster*: "There are checks in place that prevent you from using a data directory with an incompatible version of PostgreSQL"). Move with a
+`pg_dumpall` dump and restore, or with `pg_upgrade`: the 18 layout exists so `pg_upgrade --link` can run against one `/var/lib/postgresql`
+mount; link mode needs the old and new data directories on the same file system, and the old cluster is unusable once the new one starts.
 
 Manage with `kamal accessory boot db`, `... reboot db`, `... logs db`. Point
 `config/database.yml` at it via `DB_HOST`/`POSTGRES_PASSWORD` env. Same
