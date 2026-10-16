@@ -26,7 +26,24 @@ import fixture_git  # noqa: E402  (#1588: a fixture's git touches only its own t
 PLUGIN = Path(__file__).resolve().parent.parent
 SHIM_DIR = PLUGIN / "git-shim"
 HOOK = PLUGIN / "hooks" / "scripts" / "session-start.sh"
-REAL_GIT = shutil.which("git") or "/usr/bin/git"
+
+
+def real_git_on(path: str) -> str:
+    """The first executable `git` on `path` outside a `git-shim` directory, else /usr/bin/git (#2091).
+
+    `shutil.which("git")` read the AMBIENT PATH, where the SessionStart hook puts the INSTALLED shim first: the fixtures' setup writes then
+    went through that older shim, which refused them (14 checks failed for the wrong reason). Same rule as `wip_commit.real_git_outside_shims`,
+    kept here so the three shim guards need no extra staged file."""
+    for q in path.split(os.pathsep):
+        if not q or Path(q).name == "git-shim":
+            continue
+        c = Path(q) / "git"
+        if c.is_file() and os.access(c, os.X_OK):
+            return str(c)
+    return "/usr/bin/git"
+
+
+REAL_GIT = real_git_on(os.environ.get("PATH", ""))
 
 FAILURES: list[str] = []
 CHECKS = 0
@@ -105,6 +122,20 @@ def runs(repo: Repo, label: str, *args: str, cwd: Path | None = None) -> subproc
     p = repo.g(*args, cwd=cwd)
     check(label, p.returncode == 0 and "git-shim" not in p.stderr, f"`git {' '.join(args)}`: exit {p.returncode}: {p.stderr.strip()[:160]}")
     return p
+
+
+@case("selftest: REAL_GIT skips a git-shim directory first on PATH (#2091)")
+def _(base):
+    label = "selftest: REAL_GIT skips a git-shim directory first on PATH (#2091)"
+    shim, real = base / "x" / "git-shim", base / "y" / "bin"
+    for d, code in ((shim, 99), (real, 0)):
+        d.mkdir(parents=True)
+        (d / "git").write_text(f"#!/bin/sh\nexit {code}\n")
+        (d / "git").chmod(0o755)
+    found = real_git_on(os.pathsep.join([str(shim), str(real)]))
+    check(label, found == str(real / "git"), f"resolved {found}, not the git after the shim")
+    check(label, real_git_on(str(shim)) == "/usr/bin/git", "with only a shim on PATH it did not fall back to /usr/bin/git")
+    check(label, Path(REAL_GIT).parent.name != "git-shim", f"REAL_GIT is a shim: {REAL_GIT}")
 
 
 @case("shim: add --all and every prefix of it is refused and nothing is staged")
