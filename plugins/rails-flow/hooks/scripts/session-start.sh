@@ -11,7 +11,21 @@ _payload=""
 # env file, no plugin root or no shim it does nothing, and an env file it cannot write is ignored. Rewritten every start (the plugin root moves on
 # update), once per distinct line (this hook runs again after every compaction). Before the git check below: a session outside a repository gets it too.
 if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -x "${CLAUDE_PLUGIN_ROOT}/git-shim/git" ]; then
-  _shim_line="$(printf 'export PATH=%q:"$PATH"' "${CLAUDE_PLUGIN_ROOT}/git-shim")"
+  # #2110: EXACTLY ONE shim on PATH, the running version's. The line used to be `export PATH=<shim>:"$PATH"` and the env file kept every version's line, so after a plugin update an OLDER
+  # shim stayed first (1.61.0 ahead of 1.62.1) and the fixes of the newer one never ran. Now the line itself strips every rails-flow `git-shim` directory from PATH (the cache layout
+  # `rails-flow/<version>/git-shim` and a checkout's `rails-flow/git-shim`) before putting this version's first, and the earlier versions' lines are dropped from the env file. If the strip
+  # leaves nothing (a PATH of shims only, or a missing tool) PATH is kept as it was, so a failure can never empty it: the new shim is still first.
+  read -r -d '' _shim_tail <<'RAILS_FLOW_SHIM_TAIL' || true
+"$(_p="$(printf %s "$PATH" | tr : '\n' | awk '$0 !~ "rails-flow(/[^/]+)?/git-shim/?$"' | paste -sd: -)"; [ -n "$_p" ] || _p="$PATH"; printf %s "$_p")"
+RAILS_FLOW_SHIM_TAIL
+  _shim_line="$(printf 'export PATH=%q:' "${CLAUDE_PLUGIN_ROOT}/git-shim")${_shim_tail}"
+  _shim_old='^export PATH=.*rails-flow(/[^/]+)?/git-shim'
+  _shim_stale="$(grep -E -- "$_shim_old" "$CLAUDE_ENV_FILE" 2>/dev/null | grep -vxF -- "$_shim_line")"
+  if [ -n "$_shim_stale" ]; then
+    # an earlier version's line is in the file: rewrite WITHOUT any rails-flow shim line (other hooks' lines stay), then add this version's. A file it cannot write is left as it is.
+    _shim_keep="$(grep -vE -- "$_shim_old" "$CLAUDE_ENV_FILE" 2>/dev/null)"
+    { [ -z "$_shim_keep" ] || printf '%s\n' "$_shim_keep"; printf '%s\n' "$_shim_line"; } > "$CLAUDE_ENV_FILE" 2>/dev/null || true
+  fi
   grep -qxF -- "$_shim_line" "$CLAUDE_ENV_FILE" 2>/dev/null || printf '%s\n' "$_shim_line" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true
   # #1982: THE SESSION'S PROJECT, recorded for the shim's fixture exemption (a hermetic fixture may stage its own temp repository whole, never this one). `git rev-parse
   # --show-toplevel` is already physical. Unset outside a repository, and the exemption then does not apply (the shim fails closed).

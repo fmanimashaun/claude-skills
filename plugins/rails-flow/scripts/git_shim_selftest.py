@@ -1255,6 +1255,68 @@ def _(base):
     check(label, f"CLAUDE_SESSION_PROJECT_TOP={shlex.quote(top)}" in e3.read_text() or f"CLAUDE_SESSION_PROJECT_TOP={top}" in e3.read_text(), "from a subdirectory the TOPLEVEL is recorded, not the subdirectory")
 
 
+def _ver_dir(base: Path, name: str, version: str) -> Path:
+    return base / name / "rails-flow" / version / "git-shim"
+
+
+@case("hook: an env file carrying older versions' lines is rewritten to ONE shim line, the running version's, and other hooks' lines stay (#2110)")
+def _(base):
+    label = "hook: an env file carrying older versions' lines is rewritten to ONE shim line, the running version's, and other hooks' lines stay (#2110)"
+    root = copy_plugin(base / "cache" / "rails-flow" / "1.62.1")
+    env_file = base / "claude-env-old"
+    out = base / "not-a-repo-old"; out.mkdir()
+    old1, old2 = _ver_dir(base, "cache", "1.60.1"), _ver_dir(base, "cache", "1.61.0")
+    env_file.write_text(f'export PATH={old1}:"$PATH"\nexport FOO=bar\nexport PATH={old2}:"$PATH"\nexport PATH=/opt/other/bin:"$PATH"\n')
+    p = run_hook(env_file, root, out)
+    lines = env_file.read_text().splitlines()
+    shim_lines = [l for l in lines if "rails-flow" in l and "git-shim" in l]
+    check(label, p.returncode == 0 and len(shim_lines) == 1 and str(root / "git-shim") in shim_lines[0], f"exit {p.returncode}; shim lines: {shim_lines}")
+    check(label, not any("1.60.1" in l or "1.61.0" in l for l in lines), f"an older version's line is still there: {lines}")
+    check(label, "export FOO=bar" in lines and 'export PATH=/opt/other/bin:"$PATH"' in lines, f"another hook's lines must stay: {lines}")
+    again = env_file.read_text()
+    run_hook(env_file, root, out)
+    check(label, env_file.read_text() == again, "a second start must not change a file that is already right")
+
+
+def _path_after(env_file: Path, start: str, shell: str = "/bin/bash") -> list[str]:
+    r = subprocess.run([shell, "-c", f'. "{env_file}"; printf %s "$PATH"'], env={**os.environ, "PATH": start}, capture_output=True, text=True)
+    return r.stdout.split(":")
+
+
+@case("hook: the written line leaves exactly one rails-flow git-shim on PATH, the running version's, first, with every other entry in order (#2110)")
+def _(base):
+    label = "hook: the written line leaves exactly one rails-flow git-shim on PATH, the running version's, first, with every other entry in order (#2110)"
+    root = copy_plugin(base / "cache2" / "rails-flow" / "1.62.1")
+    env_file = base / "claude-env-path"
+    out = base / "not-a-repo-path"; out.mkdir()
+    run_hook(env_file, root, out)
+    o59, o60, o61 = (_ver_dir(base, "cache2", v) for v in ("1.59.0", "1.60.0", "1.61.0"))
+    start = os.pathsep.join([str(o61), "/usr/bin", str(o60), "/bin", str(o61), str(o59), "/usr/local/bin"])
+    for shell in ("/bin/bash", shutil.which("zsh")):
+        if shell is None:
+            print(f"  skip: zsh is not on PATH, so \"{label}\" did NOT run under zsh -- not a pass.", file=sys.stderr)
+            continue
+        entries = _path_after(env_file, start, shell)
+        shims = [e for e in entries if e.endswith("git-shim")]
+        check(label, shims == [str(root / "git-shim")], f"{os.path.basename(shell)}: shim entries on PATH {shims}")
+        check(label, entries[0] == str(root / "git-shim") and entries[1:] == ["/usr/bin", "/bin", "/usr/local/bin"], f"{os.path.basename(shell)}: PATH is {entries}")
+    # sourced twice (every Bash call sources it) it stays one
+    twice = subprocess.run(["/bin/bash", "-c", f'. "{env_file}"; . "{env_file}"; printf %s "$PATH"'], env={**os.environ, "PATH": start}, capture_output=True, text=True).stdout.split(":")
+    check(label, [e for e in twice if e.endswith("git-shim")] == [str(root / "git-shim")], f"sourced twice: {twice}")
+
+
+@case("hook: when the strip cannot run or leaves nothing, PATH is not emptied and the running shim is still first (#2110)")
+def _(base):
+    label = "hook: when the strip cannot run or leaves nothing, PATH is not emptied and the running shim is still first (#2110)"
+    root = copy_plugin(base / "cache3" / "rails-flow" / "1.62.1")
+    env_file = base / "claude-env-empty"
+    out = base / "not-a-repo-empty"; out.mkdir()
+    run_hook(env_file, root, out)
+    only_old = str(_ver_dir(base, "cache3", "1.61.0"))
+    entries = _path_after(env_file, only_old)      # no tr, awk or paste on this PATH, so the strip itself cannot run
+    check(label, entries[0] == str(root / "git-shim") and "" not in entries and len(entries) >= 2, f"PATH is {entries}")
+
+
 @case("hook: running the SessionStart hook again does not repeat the line")
 def _(base):
     label = "hook: running the SessionStart hook again does not repeat the line"
@@ -1262,7 +1324,7 @@ def _(base):
     env_file = base / "claude-env"
     for _ in range(3):
         run_hook(env_file, root, base)
-    n = env_file.read_text().count("git-shim")
+    n = sum(1 for l in env_file.read_text().splitlines() if l.startswith("export PATH="))
     check(label, n == 1, f"{n} lines after three starts")
 
 
