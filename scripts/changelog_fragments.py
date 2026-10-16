@@ -18,9 +18,11 @@ A FRAGMENT is one bullet for one component, so traceability stays one bullet per
     - **The headline — `path/it/changed`** (#1234). The body, as it would stand in CHANGELOG.md.
       Continuation lines are indented two spaces.
 
-* `section:` is a PREFIX of the `## ` heading it belongs to (`rails-flow`, `qa-flow`, `Repository hygiene`). It must name ONE heading: where two headings share the
-  prefix, the one that has a `### Unreleased` wins; if that still leaves two (or the arm has converted them all), write more of the heading. An unknown or
-  ambiguous prefix is an error, never a guess.
+* `section:` is the heading's NAME or the WHOLE heading, never a prefix of it (#2099). The name is the heading's text before its first ` (`: `rails-flow`
+  for `## rails-flow (agentic flow plugin)`, `Repository hygiene` for `## Repository hygiene`. Where two DIFFERENT headings have that name (`rails-stack` has
+  two), the name is ambiguous: write the whole heading of the one you mean. A heading that merely STARTS with what you wrote is not a match: a prefix of an
+  old heading's title filed a note under a stale `### Unreleased` (#2035 into v1.157.4). An unknown or ambiguous section is an error naming the headings, never
+  a guess, and an `### Unreleased` never breaks a tie between different headings.
 * The bullet must cite a path in backticks that exists in the repo, and one that belongs to the component of the section: the same rule the CHANGELOG's own
   bullets are held to (`changelog-bullet-unplaceable`, `changelog-bullet-misfiled`), read from `lint_self_consistency.py`, so there is one home for it.
 * A change that spans two components is two files: `1234-rails-flow.md` and `1234-qa-flow.md`. The name starts with the issue number, which is the fold's order.
@@ -76,7 +78,7 @@ def parse(text: str, name: str) -> tuple[str, list[str]]:
         raise FragmentError(f"{name}: empty")
     m = re.match(r"^section:[ \t]*(\S.*?)[ \t]*$", lines[first])
     if m is None:
-        raise FragmentError(f"{name}: the first line must be `section: <heading prefix>`")
+        raise FragmentError(f"{name}: the first line must be `section: <heading name or whole heading>`")
     body = [l.rstrip() for l in lines[first + 1:]]
     while body and not body[0].strip():
         body.pop(0)
@@ -110,22 +112,59 @@ def sections(changelog: str) -> list[tuple[int, str, bool, frozenset]]:
     return [(i, h, u, frozenset(t)) for i, h, u, t in out]
 
 
-def resolve(prefix: str, secs: list[tuple[int, str, bool, frozenset]], name: str, into: str | None = None) -> tuple[int, str]:
-    """The `## ` section a prefix names. Where several share it: the one with a `### Unreleased`; else, for `--into`, the one holding that release block;
-    else, if they are the SAME heading (`## Repository hygiene` appears twice), the first, which is the live one at the top. Different headings with
-    nothing to tell them apart are an error: guessing which rails-stack section is live would file a note under a dead one."""
-    hits = [s for s in secs if s[1].startswith(prefix)]
+def heading_name(heading: str) -> str:
+    """The name of a `## ` heading: its text before the first ` (` (`rails-flow (agentic flow plugin)` is `rails-flow`)."""
+    return heading.split(" (", 1)[0].strip()
+
+
+def _newest(tags: frozenset) -> tuple:
+    """The highest release in a set of `(release vX.Y.Z)` tags, as a tuple of numbers; () when a heading has none."""
+    return max((tuple(int(n) for n in re.findall(r"\d+", t)) for t in tags), default=())
+
+
+def listing(secs: list[tuple[int, str, bool, frozenset]], only: list[str] | None = None) -> str:
+    """The headings a fragment could name, each marked: `[live]`, or `[older: newest release vX]` / `[older: no release block]` where another heading with the same
+    NAME carries a newer release (the stale rails-stack heading still holds a `### Unreleased`, so `### Unreleased` cannot say which one is live). A name that
+    only one heading has is shown as the name; a shared one, as the whole heading, because the name alone would be ambiguous."""
+    newest: dict[str, tuple] = {}
+    for _, h, _, tags in secs:
+        newest[h] = max(newest.get(h, ()), _newest(tags))
+    groups: dict[str, list[str]] = {}
+    for h in newest:
+        groups.setdefault(heading_name(h), []).append(h)
+    out = []
+    for h in newest:
+        if only is not None and h not in only:
+            continue
+        group = groups[heading_name(h)]
+        top = max(newest[g] for g in group)
+        mark = "[live]" if newest[h] == top else (f"[older: newest release v{'.'.join(map(str, newest[h]))}]" if newest[h] else "[older: no release block]")
+        out.append(f"{heading_name(h)!r} {mark}" if len(group) == 1 else f"{h!r} {mark}")
+    return "; ".join(out)
+
+
+def resolve(section: str, secs: list[tuple[int, str, bool, frozenset]], name: str, into: str | None = None) -> tuple[int, str]:
+    """The `## ` section a fragment names: the heading EXACTLY, else the heading NAME (the text before ` (`), never a prefix (#2099: a prefix of an old
+    heading's title filed a note under a stale `### Unreleased`). Two DIFFERENT headings with the name are an error naming both, whatever `### Unreleased`
+    either holds; `--into` alone may choose between them, by the armed release block it names. One heading text that appears twice (`## Repository
+    hygiene`) is one section: the copy with a `### Unreleased`, else for `--into` the one holding that release block, else the first (the live one at the top)."""
+    want = section.strip()
+    hits = [s for s in secs if s[1] == want] or [s for s in secs if heading_name(s[1]) == want]
     if not hits:
-        raise FragmentError(f"{name}: no `## ` heading of the CHANGELOG starts with {prefix!r}")
-    if len(hits) > 1:
-        pool = [s for s in hits if s[2]] or hits
-        if into is not None:
-            pool = [s for s in pool if into in s[3]] or pool
-        if len(pool) == 1 or len({s[1] for s in pool}) == 1:
-            hits = [pool[0]]
-        else:
-            raise FragmentError(f"{name}: {prefix!r} starts {len(hits)} headings ({'; '.join(repr(s[1]) for s in hits)}): write more of the heading")
-    return hits[0][0], hits[0][1]
+        raise FragmentError(f"{name}: no `## ` heading of the CHANGELOG is exactly {want!r} or has it as its name (the text before ` (`). "
+                            f"The sections a fragment can name: {listing(secs)}")
+    headings = list(dict.fromkeys(s[1] for s in hits))
+    if len(headings) > 1 and into is not None:
+        held = [s for s in hits if into in s[3]]
+        if len({s[1] for s in held}) == 1:
+            hits, headings = held, [held[0][1]]
+    if len(headings) > 1:
+        raise FragmentError(f"{name}: {want!r} names {len(headings)} different headings ({listing(secs, headings)}): write the whole heading of the one you mean (the live one, unless you are filing a late note into an older release)")
+    pool = [s for s in hits if s[1] == headings[0]]
+    pool = [s for s in pool if s[2]] or pool
+    if into is not None:
+        pool = [s for s in pool if into in s[3]] or pool
+    return pool[0][0], pool[0][1]
 
 
 def _section_end(lines: list[str], start: int) -> int:
@@ -414,8 +453,9 @@ def selftest() -> int:
     two = folded(cl, [f[0], ("21-qa.md", "qa-flow", ["- **qa second — `plugins/qa-flow/d.sh`** (#21). second qa note long enough here."])])
     ck("two fragments for one section keep their order", in_order(two, "#20", "#21", "#4"), two[two.find("## qa-flow"):][:400])
     ck("an unknown section is an error", err(fold_text, cl, [("1-x.md", "nope", ["- x"])]) is not None)
-    ck("an ambiguous prefix is an error",
-       "starts 2 headings" in (err(fold_text, "## rails-flow a\n\n## rails-flow b\n", [("1-x.md", "rails-flow", ["- x"])]) or ""))
+    ck("an ambiguous name is an error naming both headings",
+       "names 2 different headings" in (err(fold_text, "## rails-flow (a)\n\n## rails-flow (b)\n", [("1-x.md", "rails-flow", ["- x"])]) or "")
+       and "'rails-flow (a)'" in (err(fold_text, "## rails-flow (a)\n\n## rails-flow (b)\n", [("1-x.md", "rails-flow", ["- x"])]) or ""))
     dup = "## Repository hygiene\n\n### 2026-10-08 (release v1.155.0)\n\n- a\n\n## rails-flow x\n\n## Repository hygiene\n\n### 2026-09-01 (release v1.100.0)\n\n- b\n"
     ck("two IDENTICAL headings with no Unreleased resolve to the first (the live one at the top)",
        "### Unreleased" in (folded(dup, [("1-x.md", "Repository hygiene", ["- n (#1)"])]) or "") and folded(dup, [("1-x.md", "Repository hygiene", ["- n (#1)"])]).index("### Unreleased") < dup.index("## rails-flow") + 40)
@@ -423,11 +463,30 @@ def selftest() -> int:
     ck("--into on identical headings goes to the one holding the release block (the SECOND here, not the first)",
        in_order(folded(armed_dup, [("3-x.md", "Repository hygiene", ["- n (#3)"])], "v9.0.0"), "(release v9.0.0)", "- n (#3)", "- b (#2)"))
     two_rs = "## rails-stack (old)\n\n### 1.0 (release v1.0.0)\n\n- a\n\n## rails-stack (live)\n\n### 2.0 (release v9.0.0)\n\n- b\n"
-    ck("DIFFERENT headings with nothing to tell them apart are still an error", "write more of the heading" in (err(fold_text, two_rs, [("1-x.md", "rails-stack", ["- n"])]) or ""))
+    ck("DIFFERENT headings with nothing to tell them apart are still an error", "write the whole heading" in (err(fold_text, two_rs, [("1-x.md", "rails-stack", ["- n"])]) or ""))
     ck("...but --into picks the one holding the armed block", in_order(folded(two_rs, [("1-x.md", "rails-stack", ["- n (#1)"])], "v9.0.0"), "(release v9.0.0)", "- n (#1)", "- b"))
     ck("a fragment with CRLF endings parses", parse(good.replace("\n", "\r\n"), "12-a-thing.md")[0] == "rails-flow")
-    ck("...unless exactly one has an Unreleased",
-       err(fold_text, "## rails-flow a\n\n### Unreleased\n\n- o\n\n## rails-flow b\n", [("1-x.md", "rails-flow", ["- x (#1)"])]) is None)
+    ck("a `### Unreleased` in one of two different headings does NOT break the tie: still an error",
+       "names 2 different headings" in (err(fold_text, "## rails-flow (a)\n\n### Unreleased\n\n- o\n\n## rails-flow (b)\n", [("1-x.md", "rails-flow", ["- x (#1)"])]) or ""))
+    # #2099: TWO SECTIONS THAT SHARE A PREFIX, the old one still holding a stale `### Unreleased`. A fragment that writes a prefix of the OLD title used to be filed there.
+    stale = ("## rails-stack (rails-8 + hotwire + fidara-design skills)\n\n### Unreleased\n\n- stale\n\n"
+             "## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)\n\n### 2026-10-16 (release v9.0.0)\n\n- live\n")
+    ck("a PREFIX of an older heading's title is refused, not filed under that stale section",
+       "no `## ` heading of the CHANGELOG is exactly" in (err(fold_text, stale, [("1-x.md", "rails-stack (rails-8 + hotwire", ["- n (#1)"])]) or ""))
+    ck("...and the refusal names the headings that start with the same word",
+       "rails-stack (skills plugin: rails-8" in (err(fold_text, stale, [("1-x.md", "rails-stack (rails-8 + hotwire", ["- n (#1)"])]) or ""))
+    typo = err(fold_text, cl, [("1-x.md", "rails-fow", ["- x (#1)"])]) or ""
+    ck("a typo lists EVERY valid section, not only the ones starting with the same word", all(n in typo for n in ("'rails-flow'", "'qa-flow'", "'Repository hygiene'")), typo)
+    refused = err(fold_text, stale, [("1-x.md", "rails-stack (rails-8 + hotwire", ["- n (#1)"])]) or ""
+    ck("every listing marks the LIVE heading and the older one, so nobody picks the stale heading on purpose",
+       "'rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)' [live]" in refused
+       and "'rails-stack (rails-8 + hotwire + fidara-design skills)' [older: no release block]" in refused, refused)
+    two_ver = ("## rails-stack (old)\n\n### 1.0 (release v1.2.0)\n\n- a\n\n## rails-stack (live)\n\n### 2.0 (release v9.0.0)\n\n- b\n")
+    ambiguous = err(fold_text, two_ver, [("1-x.md", "rails-stack", ["- n (#1)"])]) or ""
+    ck("the ambiguity error marks them too, and says which release the older one stopped at",
+       "'rails-stack (live)' [live]" in ambiguous and "'rails-stack (old)' [older: newest release v1.2.0]" in ambiguous, ambiguous)
+    ck("the WHOLE heading of the live section is accepted", in_order(folded(stale, [("1-x.md", "rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)", ["- n (#1)"])]), "(release v9.0.0)", "- live") is not None and "### Unreleased\n\n- stale" in folded(stale, [("1-x.md", "rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)", ["- n (#1)"])]))
+    ck("a NAME with one heading still works (`rails-flow` for `## rails-flow (agentic flow plugin)`)", err(fold_text, cl, [("1-x.md", "rails-flow", ["- x (#1)"])]) is None)
     armed = cl.replace("### Unreleased\n\nThe release number is assigned at promotion.\n\n- **old repo", "### 2026-10-10 (release v1.156.0)\n\n- **old repo")
     into = folded(armed, [f[1]], "v1.156.0")
     ck("--into puts a late fragment in the armed block", in_order(into, "(release v1.156.0)", "#21", "#1)"), into[:500])

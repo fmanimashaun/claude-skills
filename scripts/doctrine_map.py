@@ -629,14 +629,17 @@ CLAIMS: tuple[Claim, ...] = (
              "does not have.",
     ),
     Claim(
-        claim="A session removes its worktree when its PR merges or its review finishes.",
+        claim="A session ends its worktree with the teardown when its PR merges or its review finishes.",
         stated_in="skills/parallel-session-lane/SKILL.md",
-        anchor="3. **Clean up when done.**",
+        anchor="3. **Clean up when done, with the teardown.**",
         kind=ADVICE,
-        refs=(1581,),
-        note="Advice with an advisory behind it: the session-start hook lists merged, clean worktrees for "
-             "removal, but nothing removes them, and `--force` is refused by doctrine because a session "
-             "destroyed a finished fix that way.",
+        refs=(1581, 2058),
+        note="Advice with an advisory behind it: the session-start hook lists merged, clean worktrees and names "
+             "`worktree_teardown.py`, but nothing makes a session run it. What IS enforced is the script (its "
+             "selftest and mutation guard: it refuses a dirty, unmerged, locked or main worktree, drops only its own "
+             "databases, stops only its own processes, never passes `--force`) and that the four places that tell a "
+             "session how to end a worktree name it (`--check-wording`, a doctor gate). `--force` stays refused by "
+             "doctrine because a session destroyed a finished fix that way.",
     ),
 
     # ---- what the marketplace ships ---------------------------------------------------------

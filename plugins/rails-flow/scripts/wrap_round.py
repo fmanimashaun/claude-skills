@@ -32,8 +32,9 @@ ROUND = (
     "Handoff round from the coordinator. Reply READY only when all four are done:\n"
     "1. commit and push your work in progress;\n"
     "2. write your handoff (step, next command, open review findings, unfinished edits);\n"
-    "3. remove each FINISHED worktree with `git worktree remove <path>` -- never `--force`;\n"
-    "4. drop the test databases you created.\n"
+    "3. end each FINISHED worktree with `python3 <rails-flow>/scripts/worktree_teardown.py <path>`: it stops its servers, drops its databases, then runs\n"
+    "   `git worktree remove` -- never `--force`;\n"
+    "4. drop any other test database you created.\n"
     'Reply as JSON: {"name": <your name>, "ready": true, "branch": <branch>, "head": <`git rev-parse HEAD`, '
     'all 40 characters>, "removed": [<worktree paths you removed>]}.'
 )

@@ -9,7 +9,7 @@ section: rails-flow
   A continuation line is indented two spaces.
 ```
 
-- `section:` is a prefix of the `## ` heading (`rails-flow`, `qa-flow`, `Repository hygiene`). Where two headings share it, write more of it.
+- `section:` is the heading's **name** (the text before its first ` (`: `rails-flow`, `qa-flow`, `Repository hygiene`) or the **whole heading**, never a prefix of it (#2099). Where two different headings have that name (`rails-stack` has two), write the whole heading of the one you mean; an unknown or ambiguous section is an error that names the headings.
 - One file is ONE bullet for ONE component. A change in two components is two files (`1234-rails-flow.md`, `1234-qa-flow.md`).
 - The bullet names a path it changed, in backticks, that exists and belongs to that component, and cites its issue as `(#1234)`; the file name starts with the same number.
 - Check yours: `python3 scripts/changelog_fragments.py --check`. The arm runs `--fold`; after the arm, a late fragment is folded with `--fold --into vX.Y.Z`.
