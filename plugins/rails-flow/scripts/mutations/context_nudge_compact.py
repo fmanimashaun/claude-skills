@@ -9,7 +9,7 @@ GUARD = Guard(
     subject="hooks/context-nudge.mjs",
     selftest="scripts/check_mods.py",
     selftest_args=("session-reset",),
-    needs=("tests/session-reset.unit.mjs", "hooks/budget-guard.mjs", "hooks/session-reset.mjs"),
+    needs=("tests/session-reset.unit.mjs", "hooks/budget-guard.mjs", "hooks/session-reset.mjs", "scripts/claim_coordinator.mjs"),
     mutations=(
         Mutation(
             "a source compacts on every measure past the threshold, not once per climb",

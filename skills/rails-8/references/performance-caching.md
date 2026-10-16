@@ -207,6 +207,7 @@ end
 - **Indexes** — every foreign key, every column in a frequent WHERE/ORDER.
   Missing indexes dwarf every other optimization; check with `EXPLAIN`
   (`Product.where(...).explain(:analyze)`).
+  Index kinds, keyset paging and the other techniques are in `models.md` §13; the order to try them in is §7 below.
 
 ## 5. Runtime performance: YJIT, jemalloc, Puma, Thruster
 
@@ -252,6 +253,38 @@ The generated Dockerfile already does the right things — keep them:
    low-level caching. Each layer only where measurements justify it.
 4. Verify with `bin/rails dev:cache` on and realistic data volumes
    (`db/seeds.rb` should create enough rows to expose N+1s).
+
+### The fix menu: from a production finding to a change
+
+Take the steps **in this order** and stop at the first that explains the finding. Each needs its evidence
+**before** the change; "it feels slow" is not evidence. The techniques are in `models.md` §13 (and §5, §9);
+this table holds the order and what each step must show.
+
+| # | Fix | Precondition evidence | Verify with | Rollback | Risk |
+|---|---|---|---|---|---|
+| 1 | Add an index (composite, partial, covering) | the slow statement's plan scans the table, and the query is frequent or slow enough to matter | the plan now uses the index; the statement's time drops | `remove_index ... algorithm: :concurrently` | build lock (use `:concurrently`), write cost, size |
+| 2 | Rewrite the query (keyset for OFFSET, bare column, `exists?`, `select`/`pluck`) | the plan or the SQL shows the pattern | same result rows; plan and time | revert the change | behaviour change: paging order, nulls |
+| 3 | Eager-load an N+1 | the same statement repeated per row: Sentry's detector flags usually more than five repeated spans (the threshold is configurable) whose total exceeds 50 ms, a sensible bar for "worth fixing" | a query-count assertion or Prosopite fails before, passes after | revert the change | loading more than the page needs |
+| 4 | Counter cache | a `COUNT` per row on a hot page | the per-row `COUNT` is gone | drop the column and the option | a new column to backfill (`reset_counters`, `models.md` §5) |
+| 5 | Cache (HTTP, fragment, low-level; §§1-3) | steps 1-4 are done or ruled out by evidence; **never the first fix for an unindexed or N+1 query** | hit rate and the endpoint's time | remove the cache call | stale data, invalidation bugs |
+| 6 | Materialised view or summary table | one expensive aggregate, read far more often than it changes | the page reads the stored result; the refresh finishes inside its window | drop the view or table | staleness: **how stale is allowed is the owner's rule**, ask |
+| 7 | Structural levers (partitioning, pool size, vacuum tuning) | named evidence for that lever (a pool wait in the metrics, bloat in the table stats), not a general slowness | the metric that named it | per lever | the widest blast radius: last |
+
+Dropping an **unused index** is not a step here yet: it needs a measured evidence recipe first (#2045).
+
+### Verify that the metric moved
+
+A fix is accepted only when all three hold:
+
+1. **The plan change reproduces on a staging copy with production-like row counts.** A plan on a ten-row
+   development table says nothing about a ten-million-row one.
+2. **A regression test fails before the change and passes after it** (Prosopite, or a query-count assertion,
+   `ecosystem-gems.md` §10), where the finding is a query count. For an index, keep the plan check from 1.
+3. **After deploy, the metric beats the recorded "before" over an equal-traffic window.** Record the
+   "before" (the metric, the window, the number of calls) *before* the change. Choose a **minimum number of calls**
+   for that endpoint, write it beside the measurement, and re-measure against the **same** floor: a
+   quiet window with few calls cannot pass. There is no universal number; the floor is per app, so
+   record the one you chose.
 
 ## 8. When native code (Rust) earns its place, and how to bridge it
 

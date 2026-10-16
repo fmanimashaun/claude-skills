@@ -66,6 +66,45 @@ def imported_by_sibling_canvas(p: Path) -> bool:
         if p.name in CANVAS_IMPORT.findall(text):
             return True
     return False
+
+
+EVIDENCE_REPORT = "REPORT.md"
+HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
+
+
+def cites_path(text: str, rel: str) -> bool:
+    """True when `rel` stands alone in `text`: not the tail of a longer path (`myruby/bench.rb`), not the head of a longer name (`bench.rb.bak`, `bench.rbx`). A leading `./`
+    and the punctuation of a sentence after it are allowed."""
+    return re.search(r"(?<![\w./-])(?:\./)?" + re.escape(rel) + r"(?![\w-]|\.\w)", text) is not None
+
+
+def cited_by_evidence_report(p: Path, docs: Path) -> bool:
+    """True for a script that a measurement REPORT.md in its own evidence bundle runs by its relative path (#2093).
+
+    `docs/evidence/<kind>/<run>/` is a reproduction bundle: the report's Commands block is run from that folder (`ruby --yjit ruby/bench.rb`), so the scripts have to sit
+    beside it, and a move to scripts/ would break every command. Only a bundle counts: a folder at least two levels under `evidence/` (never `evidence/` itself or a
+    kind folder), a REPORT.md in it or in an ancestor still inside it (a real file: a symlink is not read), and the script's path from that folder, which must include a
+    folder (a bare file name is not a path, so a script at the bundle root is never exempt), standing alone in the report outside HTML comments (a fenced block counts:
+    that is where the Commands are)."""
+    parts = p.relative_to(docs).parts
+    if len(parts) < 4 or parts[0] != "evidence":
+        return False
+    for depth in range(3, len(parts)):
+        rel = "/".join(parts[depth:])
+        if "/" not in rel:
+            continue
+        report = docs.joinpath(*parts[:depth]) / EVIDENCE_REPORT
+        if report.is_symlink():
+            continue
+        try:
+            text = HTML_COMMENT.sub("", report.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+        if cites_path(text, rel):
+            return True
+    return False
+
+
 BINARY_EXT = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".pdf", ".webp", ".ico", ".mp4", ".mov", ".zip", ".woff", ".woff2", ".ttf"}
 PROSE_EXT = {".md", ".markdown", ".txt", ".html", ".rst"}
 GENERATED_HEADER = re.compile(r"generated (by|from|at)|do not (hand-)?edit|auto-?generated", re.I)
@@ -109,6 +148,9 @@ def kind_of(p: Path, docs: Path) -> str:
         # not code that wandered in: design-flow's `canvas_manifest.py extract` reads the canvas's literals
         # through that very import (#935), so the file has to stay where the canvas can find it (#942).
         if p.suffix.lower() in CANVAS_MODULE_EXT and imported_by_sibling_canvas(p):
+            return "authored"
+        # A script a measurement report beside it runs by its relative path is the evidence, not code that wandered in: its commands run from that folder (#2093).
+        if cited_by_evidence_report(p, docs):
             return "authored"
         return "code"
     if p.suffix.lower() in BINARY_EXT or (p.suffix.lower() not in PROSE_EXT and is_binary(p)):
@@ -629,6 +671,9 @@ def selftest() -> int:
         (d / "assets" / "manifest.json").write_text('{"assets": []}\n', encoding="utf-8")   # design-flow's library, before #1779
         (d / "Retask-Sitemap.png").write_bytes(b"\x89PNG\r\n\x1a\n\0\0fake")
         subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        # THE FIXTURE MARKER (downstream-spec-fixtures.md, #1999): a repository that carries `.git/rails-flow-fixture`, inside TMPDIR, may be staged with
+        # `add -A` under the rails-flow git shim. Without it this selftest was refused there (`toolchain-selftests`, Retask #1971) and passed only with no shim.
+        (root / ".git" / "rails-flow-fixture").touch()
         subprocess.run(["git", "add", "-A"], cwd=root, check=True)   # a fixture repo, not this one
 
     with tempfile.TemporaryDirectory() as td:
@@ -645,6 +690,54 @@ def selftest() -> int:
             (loose_root / "docs/design/note.dc.html").write_text("<x-dc></x-dc>\n", encoding="utf-8")
             loose = {r["path"]: r for r in classify(loose_root)}
             check("a .js no canvas imports is still code, even beside a canvas", loose["docs/design/loose.js"]["kind"] == "code", loose["docs/design/loose.js"]["kind"])
+        with tempfile.TemporaryDirectory() as td3:
+            ev_root = Path(td3)
+            ev = "docs/evidence/benchmarks/"
+
+            def script(rel: str) -> None:
+                (ev_root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (ev_root / rel).write_text("puts 1\n", encoding="utf-8")
+
+            def report(rel: str, text: str) -> None:
+                (ev_root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (ev_root / rel).write_text(text, encoding="utf-8")
+
+            bundle = ev + "2026-01-01-run/"
+            for name in ("ruby/bench.rb", "ruby/uncited.rb", "ruby/basename_only.rb", "ruby/sentence.rb", "ruby/dotted.rb", "ruby/fenced.rb", "root_script.rb"):
+                script(bundle + name)
+            report(bundle + "REPORT.md", "Run `ruby --yjit ruby/bench.rb csv 3`, see basename_only.rb, run root_script.rb, then ruby/sentence.rb.\nAlso ./ruby/dotted.rb\n```sh\nruby ruby/fenced.rb\n```\n")
+            # a path that only appears inside a longer one, in three ways
+            tail = ev + "2026-01-02-tails/"
+            for name in ("ruby/a.rb", "ruby/b.rb", "ruby/c.rb"):
+                script(tail + name)
+            report(tail + "REPORT.md", "Run ruby/a.rb.bak, myruby/b.rb and ruby/c.rbx.\n")
+            # a symlinked REPORT.md (it could point anywhere) and a citation only in an HTML comment
+            linked = ev + "2026-01-03-linked/"
+            script(linked + "ruby/d.rb")
+            report(ev + "2026-01-03-elsewhere.md", "Run ruby/d.rb\n")
+            (ev_root / linked / "REPORT.md").symlink_to(ev_root / ev / "2026-01-03-elsewhere.md")
+            commented = ev + "2026-01-04-commented/"
+            script(commented + "ruby/e.rb")
+            report(commented + "REPORT.md", "<!--\nRun ruby/e.rb\n-->\nNothing runs here.\n")
+            # the same shape outside docs/evidence/, and a REPORT.md above the bundle level
+            report("docs/notes/runs/2026-01-01/REPORT.md", "Run `ruby ruby/helper.rb`.\n")
+            script("docs/notes/runs/2026-01-01/ruby/helper.rb")
+            report(ev + "REPORT.md", "Run `ruby shallow/run.rb`.\n")
+            script(ev + "shallow/run.rb")
+            kinds = {r["path"]: r["kind"] for r in classify(ev_root)}
+            kind = lambda rel: kinds[rel]   # noqa: E731
+            check("a script an evidence report beside it runs by its relative path is evidence, not code (#2093)", kind(bundle + "ruby/bench.rb") == "authored", kind(bundle + "ruby/bench.rb"))
+            check("a path at the end of a sentence, in ./ form, or in a fenced block is a citation",
+                  all(kind(bundle + n) == "authored" for n in ("ruby/sentence.rb", "ruby/dotted.rb", "ruby/fenced.rb")), str([kind(bundle + n) for n in ("ruby/sentence.rb", "ruby/dotted.rb", "ruby/fenced.rb")]))
+            check("a script in the same bundle that the report never names is still code", kind(bundle + "ruby/uncited.rb") == "code", kind(bundle + "ruby/uncited.rb"))
+            check("a bare file name in the report is not a citation of its path", kind(bundle + "ruby/basename_only.rb") == "code", kind(bundle + "ruby/basename_only.rb"))
+            check("a script at the bundle root cited by its bare name is not exempt", kind(bundle + "root_script.rb") == "code", kind(bundle + "root_script.rb"))
+            check("a path that only appears inside a longer one is not a citation (.bak, a longer folder name, an extra letter)",
+                  all(kind(tail + n) == "code" for n in ("ruby/a.rb", "ruby/b.rb", "ruby/c.rb")), str([kind(tail + n) for n in ("ruby/a.rb", "ruby/b.rb", "ruby/c.rb")]))
+            check("a symlinked REPORT.md is not read", kind(linked + "ruby/d.rb") == "code", kind(linked + "ruby/d.rb"))
+            check("a citation only inside an HTML comment is not a citation", kind(commented + "ruby/e.rb") == "code", kind(commented + "ruby/e.rb"))
+            check("a REPORT.md outside docs/evidence/ does not exempt the script it names", kind("docs/notes/runs/2026-01-01/ruby/helper.rb") == "code", kind("docs/notes/runs/2026-01-01/ruby/helper.rb"))
+            check("a REPORT.md above the bundle level (the kind folder) does not exempt", kind(ev + "shallow/run.rb") == "code", kind(ev + "shallow/run.rb"))
         check("a PNG is binary, at the root it is a finding homed under design/assets/",
               rows["docs/Retask-Sitemap.png"]["kind"] == "binary" and rows["docs/Retask-Sitemap.png"]["dest"] == "docs/design/assets/Retask-Sitemap.png")
         check("under architecture/ a file is generated by location and fine where it is",
