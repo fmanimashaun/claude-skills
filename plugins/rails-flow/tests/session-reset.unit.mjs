@@ -43,8 +43,8 @@ const reset = await import('../hooks/session-reset.mjs') // the one instance con
 // A simulated session process: a long-lived sh. What it runs has it as $PPID.
 class Proc {
   // spare: the process looks like Claude Code's pre-warmed `claude bg-spare --bg-spare ...` (its command line carries --bg-spare, #2068)
-  constructor(home, { spare = false } = {}) {
-    this.sh = spawn('sh', spare ? ['-s', '--', '--bg-spare'] : [], { env: { ...process.env, HOME: home, ELECT: reset.ELECT_SCRIPT }, stdio: ['pipe', 'pipe', 'ignore'] })
+  constructor(home, { spare = false, args = null } = {}) {
+    this.sh = spawn('sh', args ?? (spare ? ['-s', '--', 'bg-spare', '--bg-spare', '/tmp/spare.sock'] : []), { env: { ...process.env, HOME: home, ELECT: reset.ELECT_SCRIPT }, stdio: ['pipe', 'pipe', 'ignore'] })
     this.buf = ''
     this.sh.stdout.on('data', (d) => (this.buf += d))
     cleanups.push(() => this.kill())
@@ -568,6 +568,12 @@ await check('#2068: a claim held by a spare is not live: the next real start rep
   const spare = new Proc(h, { spare: true })
   assert.equal(reset.parseElection(await spare.run(['sh', '-c', '', 'sh', 'spare-s', '1'])).role, 'coordinator', 'forced (the owner override) it can still claim')
   assert.equal(reset.parseElection(await new Proc(h).run(['sh', '-c', '', 'sh', 'real-s', '0'])).role, 'coordinator', 'a spare is no live coordinator')
+})
+
+await check('#2072: a real session whose command line only MENTIONS --bg-spare (a prompt) still claims', async () => {
+  const h = home()
+  const real = new Proc(h, { args: ['-s', '--', '-p', 'fix the --bg-spare election', 'and the bg-spare flag'] })
+  assert.equal(reset.parseElection(await real.run(['sh', '-c', '', 'sh', 'real-s', '0'])).role, 'coordinator', 'a prompt that names the flag is not a spare')
 })
 
 await check('#2068: a real live coordinator is still not displaced (the control)', async () => {

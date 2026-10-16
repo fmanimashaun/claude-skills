@@ -371,5 +371,12 @@ GUARD = Guard(
             "",
             "a session that claimed it back becomes coordinator",
         ),
+        # #2072: the spare is recognised by its own command shape (`bg-spare --bg-spare`), not by the flag appearing anywhere.
+        Mutation(
+            "any command line that mentions --bg-spare is a spare, so a prompt that names the flag gets no role",
+            'case " $(ps -o command= -p "$1" 2>/dev/null) " in *" bg-spare --bg-spare "*) return 0 ;; esac',
+            'case " $(ps -o command= -p "$1" 2>/dev/null) " in *--bg-spare*) return 0 ;; esac',
+            "whose command line only MENTIONS --bg-spare",
+        ),
     ),
 )
