@@ -636,7 +636,10 @@ spans are folded in process into aggregates and written to the app's own databas
 
 - **`CREATE EXTENSION pg_stat_statements` is not enough.** The library must be in
   `shared_preload_libraries` (a server restart; PostgreSQL 18 docs), and the extension
-  is created per database. Retask measured on `postgres:16` (16.15; not re-measured on 18) that reading the
+  is created per database: its views are "not available globally but can be enabled for
+  a specific database with CREATE EXTENSION" (PostgreSQL 18 docs). Measured on
+  `postgres:18` (18.6): created in one database, the view in a second one was *relation
+  "pg_stat_statements" does not exist* until `CREATE EXTENSION` ran there too. Retask measured on `postgres:16` (16.15; not re-measured on 18) that reading the
   view then fails with *"pg_stat_statements must be loaded via
   shared_preload_libraries"* while `CREATE EXTENSION` succeeds; the error text is
   measured, not documented. Availability must therefore be decided by **trying the
@@ -695,8 +698,13 @@ spans are folded in process into aggregates and written to the app's own databas
   (needed to see other users' text and `queryid`), **not** `pg_monitor`: `pg_monitor`
   includes `pg_stat_scan_tables`, whose functions "may take ACCESS SHARE locks on
   tables, potentially for a long time". That role is also what `pgstattuple` requires,
-  so a `pg_read_all_stats` reader cannot run `pgstattuple` (it can still read
-  `n_dead_tup`). Set `statement_timeout`,
+  so a `pg_read_all_stats` reader cannot run `pgstattuple`. Reading `n_dead_tup` needs
+  no grant at all: measured on `postgres:18` (18.6), a role with **no** grants read it
+  from `pg_stat_user_tables` while being refused `SELECT` on the table itself. The docs
+  say `pg_read_all_stats` "allows reading all pg_stat_* views … even those normally
+  visible only to superusers", and the restriction they describe is on the session
+  information in `pg_stat_activity`; the measurement is the authority that table
+  statistics need no grant. Set `statement_timeout`,
   `lock_timeout` and `idle_in_transaction_session_timeout` per role
   (`ALTER ROLE … SET`); the docs call setting the first two in `postgresql.conf` "not
   recommended because it would affect all sessions".
