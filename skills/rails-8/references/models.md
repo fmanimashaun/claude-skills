@@ -431,5 +431,9 @@ When one expensive aggregate is read far more often than it changes, store its r
 
 `EXPLAIN (GENERIC_PLAN) SELECT ... WHERE id > $1 AND id < $2` accepts parameter placeholders and returns a
 **generic** plan that does not depend on the values. It arrived in PostgreSQL 16 (16.0 release notes) and is in the 18 docs, and it **cannot be combined with `ANALYZE`**. A generic plan can differ from the custom plans a
-prepared statement uses when the data is skewed, so label what you read as generic and confirm on a real value
-with `explain(:analyze)`.
+prepared statement uses when the data is skewed: "a custom plan is generated for a specific execution using the
+parameter values given in that call", and "in some situations a custom plan will be much more efficient"
+(PostgreSQL 18 docs, PREPARE). Measured on `postgres:18` (18.6), 500,000 rows, `status` 99.99% one value and
+indexed: for the common value the custom plan was a Seq Scan, while the same statement under
+`plan_cache_mode = force_generic_plan` was an Index Scan. So label what you read as generic and confirm on a real
+value with `explain(:analyze)`.
