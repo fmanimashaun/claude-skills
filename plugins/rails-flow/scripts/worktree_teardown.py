@@ -393,14 +393,14 @@ def selftest() -> int:
         fixture_git.init(main, "-b", "dev")
         os.makedirs(os.path.join(main, "bin"))
         Path(main, "bin", "rails").write_text(FAKE_RAILS)
-        os.chmod(os.path.join(main, "bin", "rails"), 0o755)
+        os.chmod(os.path.join(main, "bin", "rails"), 0o700)
         Path(main, ".gitignore").write_text("tmp/\n")
         Path(main, "a.txt").write_text("a\n")
         g("add", ".gitignore", "a.txt", "bin/rails")
         g("commit", "-qm", "base")
         for tool, body in (("psql", FAKE_PSQL), ("dropdb", FAKE_DROPDB)):
             Path(binpath, tool).write_text(body)
-            os.chmod(os.path.join(binpath, tool), 0o755)
+            os.chmod(os.path.join(binpath, tool), 0o700)
 
         def add(name: str, merged=True, parent: str = "") -> str:
             p = os.path.join(root, parent, name)
