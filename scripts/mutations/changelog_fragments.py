@@ -42,6 +42,18 @@ GUARD = Guard(
             "a PREFIX of an older heading's title is refused",
         ),
         Mutation(
+            "a typo lists only the headings that start with the same word",
+            "f\"The sections a fragment can name: {listing(secs)}\")",
+            "f\"The sections a fragment can name: {listing(secs, [h for h in {x[1] for x in secs} if h.split(' ', 1)[0] == want.split(' ', 1)[0]])}\")",
+            "a typo lists EVERY valid section",
+        ),
+        Mutation(
+            "every heading is marked live, so the stale one cannot be told from the live one",
+            "        mark = \"[live]\" if newest[h] == top else (",
+            "        mark = \"[live]\" if True else (",
+            "every listing marks the LIVE heading and the older one",
+        ),
+        Mutation(
             "an `### Unreleased` breaks a tie between different headings again",
             "    headings = list(dict.fromkeys(s[1] for s in hits))\n",
             "    headings = list(dict.fromkeys(s[1] for s in (hits if len({s[1] for s in hits}) < 2 else ([h for h in hits if h[2]] or hits))))\n",

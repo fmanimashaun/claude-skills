@@ -117,6 +117,32 @@ def heading_name(heading: str) -> str:
     return heading.split(" (", 1)[0].strip()
 
 
+def _newest(tags: frozenset) -> tuple:
+    """The highest release in a set of `(release vX.Y.Z)` tags, as a tuple of numbers; () when a heading has none."""
+    return max((tuple(int(n) for n in re.findall(r"\d+", t)) for t in tags), default=())
+
+
+def listing(secs: list[tuple[int, str, bool, frozenset]], only: list[str] | None = None) -> str:
+    """The headings a fragment could name, each marked: `[live]`, or `[older: newest release vX]` / `[older: no release block]` where another heading with the same
+    NAME carries a newer release (the stale rails-stack heading still holds a `### Unreleased`, so `### Unreleased` cannot say which one is live). A name that
+    only one heading has is shown as the name; a shared one, as the whole heading, because the name alone would be ambiguous."""
+    newest: dict[str, tuple] = {}
+    for _, h, _, tags in secs:
+        newest[h] = max(newest.get(h, ()), _newest(tags))
+    groups: dict[str, list[str]] = {}
+    for h in newest:
+        groups.setdefault(heading_name(h), []).append(h)
+    out = []
+    for h in newest:
+        if only is not None and h not in only:
+            continue
+        group = groups[heading_name(h)]
+        top = max(newest[g] for g in group)
+        mark = "[live]" if newest[h] == top else (f"[older: newest release v{'.'.join(map(str, newest[h]))}]" if newest[h] else "[older: no release block]")
+        out.append(f"{heading_name(h)!r} {mark}" if len(group) == 1 else f"{h!r} {mark}")
+    return "; ".join(out)
+
+
 def resolve(section: str, secs: list[tuple[int, str, bool, frozenset]], name: str, into: str | None = None) -> tuple[int, str]:
     """The `## ` section a fragment names: the heading EXACTLY, else the heading NAME (the text before ` (`), never a prefix (#2099: a prefix of an old
     heading's title filed a note under a stale `### Unreleased`). Two DIFFERENT headings with the name are an error naming both, whatever `### Unreleased`
@@ -125,16 +151,15 @@ def resolve(section: str, secs: list[tuple[int, str, bool, frozenset]], name: st
     want = section.strip()
     hits = [s for s in secs if s[1] == want] or [s for s in secs if heading_name(s[1]) == want]
     if not hits:
-        near = [s[1] for s in secs if s[1].split(" ", 1)[0] == want.split(" ", 1)[0]]
-        raise FragmentError(f"{name}: no `## ` heading of the CHANGELOG is exactly {want!r} or has it as its name (the text before ` (`)"
-                            + (f"; headings that start with the same word: {'; '.join(repr(h) for h in dict.fromkeys(near))}" if near else ""))
+        raise FragmentError(f"{name}: no `## ` heading of the CHANGELOG is exactly {want!r} or has it as its name (the text before ` (`). "
+                            f"The sections a fragment can name: {listing(secs)}")
     headings = list(dict.fromkeys(s[1] for s in hits))
     if len(headings) > 1 and into is not None:
         held = [s for s in hits if into in s[3]]
         if len({s[1] for s in held}) == 1:
             hits, headings = held, [held[0][1]]
     if len(headings) > 1:
-        raise FragmentError(f"{name}: {want!r} names {len(headings)} different headings ({'; '.join(repr(h) for h in headings)}): write the whole heading of the one you mean")
+        raise FragmentError(f"{name}: {want!r} names {len(headings)} different headings ({listing(secs, headings)}): write the whole heading of the one you mean (the live one, unless you are filing a late note into an older release)")
     pool = [s for s in hits if s[1] == headings[0]]
     pool = [s for s in pool if s[2]] or pool
     if into is not None:
@@ -450,6 +475,16 @@ def selftest() -> int:
        "no `## ` heading of the CHANGELOG is exactly" in (err(fold_text, stale, [("1-x.md", "rails-stack (rails-8 + hotwire", ["- n (#1)"])]) or ""))
     ck("...and the refusal names the headings that start with the same word",
        "rails-stack (skills plugin: rails-8" in (err(fold_text, stale, [("1-x.md", "rails-stack (rails-8 + hotwire", ["- n (#1)"])]) or ""))
+    typo = err(fold_text, cl, [("1-x.md", "rails-fow", ["- x (#1)"])]) or ""
+    ck("a typo lists EVERY valid section, not only the ones starting with the same word", all(n in typo for n in ("'rails-flow'", "'qa-flow'", "'Repository hygiene'")), typo)
+    refused = err(fold_text, stale, [("1-x.md", "rails-stack (rails-8 + hotwire", ["- n (#1)"])]) or ""
+    ck("every listing marks the LIVE heading and the older one, so nobody picks the stale heading on purpose",
+       "'rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)' [live]" in refused
+       and "'rails-stack (rails-8 + hotwire + fidara-design skills)' [older: no release block]" in refused, refused)
+    two_ver = ("## rails-stack (old)\n\n### 1.0 (release v1.2.0)\n\n- a\n\n## rails-stack (live)\n\n### 2.0 (release v9.0.0)\n\n- b\n")
+    ambiguous = err(fold_text, two_ver, [("1-x.md", "rails-stack", ["- n (#1)"])]) or ""
+    ck("the ambiguity error marks them too, and says which release the older one stopped at",
+       "'rails-stack (live)' [live]" in ambiguous and "'rails-stack (old)' [older: newest release v1.2.0]" in ambiguous, ambiguous)
     ck("the WHOLE heading of the live section is accepted", in_order(folded(stale, [("1-x.md", "rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)", ["- n (#1)"])]), "(release v9.0.0)", "- live") is not None and "### Unreleased\n\n- stale" in folded(stale, [("1-x.md", "rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)", ["- n (#1)"])]))
     ck("a NAME with one heading still works (`rails-flow` for `## rails-flow (agentic flow plugin)`)", err(fold_text, cl, [("1-x.md", "rails-flow", ["- x (#1)"])]) is None)
     armed = cl.replace("### Unreleased\n\nThe release number is assigned at promotion.\n\n- **old repo", "### 2026-10-10 (release v1.156.0)\n\n- **old repo")
