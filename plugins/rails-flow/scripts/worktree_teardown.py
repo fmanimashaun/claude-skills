@@ -16,6 +16,9 @@ WHOSE IT IS, DECIDED BY CONFIGURATION AND BY DIRECTORY, NEVER BY A PATTERN.
   * Processes: the PIDs written in the worktree's own `tmp/pids/*.pid`, each accepted only while the process's working
     directory is inside the worktree. Never `pkill`, never a name match: a puma retitles itself, and another session's
     server must not be hit.
+  * Never another's: a database that the main checkout, ANY other registered worktree, or the production config resolves to is
+    never dropped. A process with its working directory inside the worktree but no pid file is not guessed at: it is named and the
+    teardown REFUSES, so "nothing left" is never printed while one still runs.
   * Removal: `git worktree remove`, never `--force`. A dirty tree, an unmerged head, a locked worktree and the main
     checkout are REFUSED before anything is stopped or dropped.
 
@@ -28,7 +31,7 @@ databases are gone, the PIDs are gone, the path is gone.
 
 `--assume-merged` is for a squash-merged branch, whose head is not an ancestor of the integration branch: confirm the PR
 merged (`gh pr view`), then pass it. The tree must still be clean. `--pg-bin` (or `PG_BIN`) names the directory holding
-`psql` and `dropdb` when they are not on PATH.
+`psql` and `dropdb` when they are not on PATH. Gitignored files in the worktree (a copied `config/master.key`, logs, QA output) go with it, silently.
 """
 from __future__ import annotations
 
@@ -47,8 +50,8 @@ INTEGRATION = ("origin/dev", "dev", "origin/main", "main", "origin/master", "mas
 GIT_REMOVE = ("worktree", "remove")                                                      # never `--force`, never `-f`
 DROP_FLAGS = ("--if-exists", "--force")
 SHARD = r"_p\d+"
-RUNNER = ("ActiveRecord::Base.configurations.configs_for(env_name: 'development').each{|c| puts [c.adapter, c.database].join(\"\\t\")}; "
-          "ActiveRecord::Base.configurations.configs_for(env_name: 'test').each{|c| puts [c.adapter, c.database].join(\"\\t\")}")
+RUNNER = ("%w[development test production].each{|e| ActiveRecord::Base.configurations.configs_for(env_name: e).each{|c| "
+          "puts [e, c.adapter, c.database].join(\"\\t\")}}")
 STOP_WAIT = 5.0
 
 
@@ -109,21 +112,26 @@ def refusal(path: str, assume_merged: bool) -> str | None:
     return None
 
 
-def database_names(path: str) -> list[str] | None:
-    """The PostgreSQL databases this checkout's own config resolves to; [] when it has none; None when it cannot be read."""
+def database_config(path: str) -> dict | None:
+    """The PostgreSQL databases this checkout's own config resolves to: {"own": development + test, "production": production};
+    both empty when it has no bin/rails; None when the config cannot be read."""
     rails = Path(path) / "bin" / "rails"
     if not rails.exists():
-        return []
+        return {"own": [], "production": []}
     env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}      # the file's config decides, not an override
     rc, out = run([str(rails), "runner", RUNNER], cwd=path, env=env, timeout=180)
     if rc != 0:
         return None
-    names = []
+    config: dict = {"own": [], "production": []}
     for line in out.splitlines():
-        adapter, _, database = line.partition("\t")
-        if adapter.strip() == "postgresql" and database.strip() and database.strip() not in names:
-            names.append(database.strip())
-    return names
+        env_name, _, rest = line.partition("\t")
+        adapter, _, database = rest.partition("\t")
+        if adapter.strip() != "postgresql" or not database.strip():
+            continue
+        bucket = config["production"] if env_name.strip() == "production" else config["own"]
+        if database.strip() not in bucket:
+            bucket.append(database.strip())
+    return config
 
 
 def pg_tool(pg_bin: str | None, name: str) -> str | None:
@@ -177,6 +185,44 @@ def own_pids(path: str) -> list[int]:
     return found
 
 
+def ancestors() -> set[int]:
+    """This process and its parents: a teardown run from a shell inside the worktree must not count that shell as a stray."""
+    found, pid = set(), os.getpid()
+    while pid > 1 and pid not in found:
+        found.add(pid)
+        rc, text = run(["ps", "-o", "ppid=", "-p", str(pid)])
+        try:
+            pid = int(text.strip())
+        except ValueError:
+            break
+    return found
+
+
+def processes_in(path: str) -> dict[int, str]:
+    """Every process whose working directory is inside PATH, with its command, whether or not a pid file names it."""
+    found: dict[int, str] = {}
+    rc, out = run(["lsof", "-d", "cwd", "-Fpn"], timeout=60)
+    if rc != 127 and out:
+        pid = None
+        for line in out.splitlines():
+            if line.startswith("p") and line[1:].isdigit():
+                pid = int(line[1:])
+            elif line.startswith("n") and pid is not None:
+                where = os.path.realpath(line[1:])
+                if where == path or where.startswith(path + os.sep): found[pid] = ""
+    else:
+        for entry in Path("/proc").glob("[0-9]*"):
+            try:
+                where = os.path.realpath(os.readlink(entry / "cwd"))
+            except OSError:
+                continue
+            if where == path or where.startswith(path + os.sep):
+                found[int(entry.name)] = ""
+    for pid in found:
+        found[pid] = run(["ps", "-o", "command=", "-p", str(pid)])[1].strip()[:80]
+    return found
+
+
 def stop(pid: int) -> None:
     os.kill(pid, signal.SIGTERM)
     deadline = time.time() + STOP_WAIT
@@ -194,11 +240,17 @@ def teardown(path: str, dry_run=False, assume_merged=False, pg_bin: str | None =
         say(f"worktree_teardown: REFUSED, {why}")
         return 1
     main = worktrees(path)[0]["path"]
-    names = database_names(path)
-    shared = database_names(main)
-    if names is None or shared is None:
-        say("worktree_teardown: FAILED CLOSED, could not read the databases from config/database.yml (`bin/rails runner` failed); nothing was changed")
+    config = database_config(path)
+    shared_cfgs = {w["path"]: database_config(w["path"]) for w in worktrees(path) if w["path"] != path}      # the main checkout and every other worktree
+    if config is None or any(c is None for c in shared_cfgs.values()):
+        broken = ([path] if config is None else []) + [w for w, c in shared_cfgs.items() if c is None]
+        say("worktree_teardown: FAILED CLOSED, could not read the databases from config/database.yml (`bin/rails runner` failed) in: " + ", ".join(broken)
+            + "; without every registered worktree's names it cannot tell which databases are shared. Nothing was changed.")
         return 1
+    names = config["own"]
+    shared = set(config["production"])                   # a production name is never dropped, whatever this config says
+    for c in shared_cfgs.values():
+        shared |= set(c["own"]) | set(c["production"])   # nor one another registered worktree resolves to
     existing: list[str] = []
     if names:
         psql, dropdb = pg_tool(pg_bin or os.environ.get("PG_BIN"), "psql"), pg_tool(pg_bin or os.environ.get("PG_BIN"), "dropdb")
@@ -207,12 +259,18 @@ def teardown(path: str, dry_run=False, assume_merged=False, pg_bin: str | None =
             say("worktree_teardown: FAILED CLOSED, cannot reach PostgreSQL (psql/dropdb missing or the server is down; see --pg-bin); nothing was changed")
             return 1
         existing = listed
-    doomed = owned(existing, names, set(shared))
+    doomed = owned(existing, names, shared)
     skipped = [n for n in names if n in shared]
     pids = own_pids(path)
+    known = set(pids) | ancestors()
+    strays = {p: c for p, c in processes_in(path).items() if p not in known}
     say(f"worktree_teardown: {path}")
     say(f"  stop {len(pids)} process(es): {pids}")
-    say(f"  drop {len(doomed)} database(s): {doomed}" + (f" (shared with the main checkout, left alone: {skipped})" if skipped else ""))
+    say(f"  drop {len(doomed)} database(s): {doomed}" + (f" (shared with the main checkout, another worktree or production, left alone: {skipped})" if skipped else ""))
+    if strays:
+        say(f"worktree_teardown: REFUSED, {len(strays)} process(es) have their working directory inside the worktree but no pid file naming them: "
+            + "; ".join(f"{p} {c}" for p, c in strays.items()) + ". Stop them, then run this again; nothing was changed.")
+        return 1
     if dry_run:
         say("  --dry-run: nothing changed")
         return 0
@@ -229,7 +287,7 @@ def teardown(path: str, dry_run=False, assume_merged=False, pg_bin: str | None =
         return 1
     left = []
     now = existing_databases(psql) if names else []
-    left += ["databases (PostgreSQL could not be asked afterwards)"] if now is None else [f"database {d}" for d in owned(now, names, set(shared))]
+    left += ["databases (PostgreSQL could not be asked afterwards)"] if now is None else [f"database {d}" for d in owned(now, names, shared)]
     left += [f"process {p}" for p in pids if alive(p)]
     left += [f"worktree {path}"] if os.path.exists(path) or any(r["path"] == path for r in worktrees(main)) else []
     if left:
@@ -271,11 +329,16 @@ def check_wording(root: str) -> list[str]:
 # ---------------------------------------------------------------------------------------------------------------- selftest
 
 FAKE_RAILS = """#!/bin/sh
-# prints what a Rails app with a checkout suffix resolves to: the main checkout has no suffix, `shared` resolves to main's names
+# prints (env, adapter, database) as a Rails app with a checkout suffix resolves them: the main checkout has no suffix, `shared` resolves to main's
+# names, `prodnamed` resolves its development database to the production name, `prodown` to a production name of its OWN (no other checkout
+# lists it), `badcfg` cannot boot; every other checkout shares the production name
 d=$(basename "$(pwd)")
 case "$d" in
-  main|shared) printf 'postgresql\\tapp_dev\\npostgresql\\tapp_test\\n' ;;
-  *) printf "postgresql\\tapp_dev_$d\\npostgresql\\tapp_test_$d\\nsqlite3\\tstorage/$d.sqlite3\\n" ;;
+  badcfg) echo boom >&2; exit 3 ;;
+  prodown) printf 'development\\tpostgresql\\tapp_production_prodown\\ntest\\tpostgresql\\tapp_test_prodown\\nproduction\\tpostgresql\\tapp_production_prodown\\n' ;;
+  main|shared) printf 'development\\tpostgresql\\tapp_dev\\ntest\\tpostgresql\\tapp_test\\nproduction\\tpostgresql\\tapp_production\\n' ;;
+  prodnamed) printf 'development\\tpostgresql\\tapp_production\\ntest\\tpostgresql\\tapp_test_prodnamed\\nproduction\\tpostgresql\\tapp_production\\n' ;;
+  *) printf "development\\tpostgresql\\tapp_dev_$d\\ntest\\tpostgresql\\tapp_test_$d\\ndevelopment\\tsqlite3\\tstorage/$d.sqlite3\\nproduction\\tpostgresql\\tapp_production\\n" ;;
 esac
 """
 FAKE_PSQL = """#!/bin/sh
@@ -320,17 +383,18 @@ def selftest() -> int:
             Path(binpath, tool).write_text(body)
             os.chmod(os.path.join(binpath, tool), 0o755)
 
-        def add(name: str, merged=True) -> str:
-            p = os.path.join(root, name)
+        def add(name: str, merged=True, parent: str = "") -> str:
+            p = os.path.join(root, parent, name)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
             if merged:
-                g("worktree", "add", "-q", "-b", f"b-{name}", p)
+                g("worktree", "add", "-q", "-b", f"b-{name}-{parent or 'r'}", p)
             else:       # a branch with a commit dev does not have, made in the main repository, then checked out as a worktree
-                g("checkout", "-q", "-b", f"b-{name}")
+                g("checkout", "-q", "-b", f"b-{name}-{parent or 'r'}")
                 Path(main, "new.txt").write_text("n\n")
                 g("add", "new.txt")
                 g("commit", "-qm", "work")
                 g("checkout", "-q", "dev")
-                g("worktree", "add", "-q", p, f"b-{name}")
+                g("worktree", "add", "-q", p, f"b-{name}-{parent or 'r'}")
             return os.path.realpath(p)
 
         def universe(*dbs: str) -> None:
@@ -426,6 +490,65 @@ def selftest() -> int:
             universe("app_dev_squashed")
             check("--assume-merged ends a branch whose head is not an ancestor", teardown(wq, assume_merged=True, pg_bin=binpath, say=quiet) == 0
                   and dropped() == ["app_dev_squashed"] and not listed(wq))
+
+            def td(path, **kw):      # a raise inside the teardown is a failed fixture with a label, not a crashed selftest
+                try:
+                    return teardown(path, pg_bin=binpath, say=quiet, **kw)
+                except Exception as e:      # noqa: BLE001
+                    failures.append(f"the teardown raised on {os.path.basename(path)}: {e!r}")
+                    return 99
+
+            # 8. a path that is not a worktree of this repository is refused, and nothing is touched
+            plain = os.path.join(root, "plain")
+            os.makedirs(plain)
+            other = os.path.join(root, "other")
+            fixture_git.init(other, "-b", "dev")
+            wsub = add("subw")
+            os.makedirs(os.path.join(wsub, "inner"))
+            universe("app_dev_subw", "app_test_subw", "app_dev", "app_test")
+            srv_sub = serve(wsub)
+            spawned.append(srv_sub)
+            check("a plain directory is refused", td(plain) == 1 and dropped() == [])
+            check("another repository's checkout is refused, not ended", td(other) == 1 and dropped() == [])
+            check("a subdirectory of a worktree is refused (it is not a worktree of this repository)",
+                  td(os.path.join(wsub, "inner")) == 1 and dropped() == [] and srv_sub.poll() is None and listed(wsub))
+
+            # 9. an unreadable database config fails closed: nothing dropped, stopped or removed
+            wbad = add("badcfg")
+            universe("app_dev_badcfg", "app_test_badcfg")
+            srv_bad = serve(wbad)
+            spawned.append(srv_bad)
+            check("an unreadable database config fails closed and removes nothing",
+                  td(wbad) == 1 and dropped() == [] and srv_bad.poll() is None and listed(wbad))
+            srv_bad.kill()
+            srv_bad.wait()
+            g("worktree", "remove", "--force", wbad)      # the fixture's own cleanup: the broken worktree would block every later teardown, by design
+
+            # 10. another registered worktree's databases, and a production name, are never dropped
+            wax, wbx = add("x", parent="a"), add("x", parent="b")
+            universe("app_dev_x", "app_test_x", "app_dev", "app_test", "app_production")
+            check("a worktree that resolves to the same names as another registered worktree still ends", td(wax) == 0)
+            check("a database another registered worktree resolves to is never dropped", dropped() == [] and listed(wbx), str(dropped()))
+            wprod = add("prodnamed")
+            universe("app_production", "app_test_prodnamed", "app_dev", "app_test")
+            check("a worktree whose config resolves to the production name still ends", td(wprod) == 0)
+            check("a production database name is never dropped, whatever the worktree's config says", dropped() == ["app_test_prodnamed"], str(dropped()))
+
+            wown = add("prodown")
+            universe("app_production_prodown", "app_test_prodown", "app_production")
+            check("a worktree whose own production name is its development name still ends", td(wown) == 0)
+            check("a production database name is never dropped, even one only this worktree's config lists", dropped() == ["app_test_prodown"], str(dropped()))
+
+            # 11. a process with no pid file is noticed: the teardown refuses and never reports 'nothing left'
+            wstray = add("stray")
+            universe("app_dev_stray", "app_test_stray")
+            stray = subprocess.Popen(["sleep", "60"], cwd=wstray)
+            spawned.append(stray)
+            check("a process with no pid file is noticed and the teardown refuses", td(wstray) == 1 and dropped() == [] and stray.poll() is None and listed(wstray))
+            check("a dry run says so too, and changes nothing", td(wstray, dry_run=True) == 1 and dropped() == [] and listed(wstray))
+            stray.kill()
+            stray.wait()
+            check("once the stray is gone the same worktree ends", td(wstray) == 0 and sorted(dropped()) == ["app_dev_stray", "app_test_stray"], str(dropped()))
 
             # 7. the git call is never forced
             check("git worktree remove is never forced", GIT_REMOVE == ("worktree", "remove"), str(GIT_REMOVE))
