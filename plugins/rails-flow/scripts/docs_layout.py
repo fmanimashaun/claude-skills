@@ -629,6 +629,9 @@ def selftest() -> int:
         (d / "assets" / "manifest.json").write_text('{"assets": []}\n', encoding="utf-8")   # design-flow's library, before #1779
         (d / "Retask-Sitemap.png").write_bytes(b"\x89PNG\r\n\x1a\n\0\0fake")
         subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        # THE FIXTURE MARKER (downstream-spec-fixtures.md, #1999): a repository that carries `.git/rails-flow-fixture`, inside TMPDIR, may be staged with
+        # `add -A` under the rails-flow git shim. Without it this selftest was refused there (`toolchain-selftests`, Retask #1971) and passed only with no shim.
+        (root / ".git" / "rails-flow-fixture").touch()
         subprocess.run(["git", "add", "-A"], cwd=root, check=True)   # a fixture repo, not this one
 
     with tempfile.TemporaryDirectory() as td:

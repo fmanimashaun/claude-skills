@@ -607,6 +607,45 @@ spans are folded in process into aggregates and written to the app's own databas
   when the container is recreated: `kamal accessory reboot NAME` (prepare, pull the
   image, stop, remove, boot) does that, restarting the database once and pulling the
   image; `kamal accessory restart` (stop, start) does not apply a changed `cmd`.
+- **Know what the view cannot tell you (PostgreSQL 16 docs).** `queryid` is a function
+  of internal object identifiers: it changes when an object (for example a table) is
+  dropped and recreated, is "not safe to assume" stable across major versions, and is
+  not a useful identifier across logical replicas (physical replicas match). The stored
+  text is that of the *first* query with that `queryid`. There are no percentiles, only
+  `min`/`max`/`mean`/`stddev_exec_time`. A rising `pg_stat_statements_info.dealloc`
+  means the least-executed statements were evicted (`pg_stat_statements.max` exceeded),
+  so the tail is missing. On 16 the window starts at `pg_stat_statements_info.stats_reset`;
+  `stats_since`/`minmax_stats_since` arrive in 17. Rank by the delta between two
+  snapshots rather than calling `pg_stat_statements_reset()` from a monitor (superuser
+  only by default), and poll with `pg_stat_statements(showtext := false)` to skip
+  reading the texts.
+- **Two switches cost on a busy server, and both default off.**
+  `pg_stat_statements.track_planning` "may incur a noticeable performance penalty"
+  under concurrent identical statements; `track_io_timing` repeatedly queries the OS
+  clock, "significant overhead on some platforms". Turn them on deliberately.
+- **`auto_explain` does nothing until `auto_explain.log_min_duration` is set** (default
+  -1). `log_analyze` times every plan node of every statement ("an extremely negative
+  impact on performance"): pair it with `auto_explain.sample_rate` below 1 and
+  `log_timing = off`. `auto_explain.log_parameter_max_length` (new in 16) defaults to -1, which logs
+  bind values **in full**, which means personal data in the logs; set it to 0. Load it
+  via `session_preload_libraries` or `shared_preload_libraries`.
+- **Logging companions (all present on 16):** `log_min_duration_sample` with
+  `log_statement_sample_rate` (sampled slow-statement logging, default off),
+  `log_lock_waits` (default off) and `log_temp_files` (default -1, off).
+- **Least privilege for the reader.** Grant the monitoring role `pg_read_all_stats`
+  (needed to see other users' text and `queryid`), **not** `pg_monitor`: `pg_monitor`
+  includes `pg_stat_scan_tables`, whose functions "may take ACCESS SHARE locks on
+  tables, potentially for a long time". That role is also what `pgstattuple` requires,
+  so a `pg_read_all_stats` reader cannot run `pgstattuple` (it can still read
+  `n_dead_tup`). Set `statement_timeout`,
+  `lock_timeout` and `idle_in_transaction_session_timeout` per role
+  (`ALTER ROLE … SET`); the docs call setting the first two in `postgresql.conf` "not
+  recommended because it would affect all sessions".
+- **Each standby keeps its own statistics.** Scans and index usage are recorded on the
+  node that served them, but "WAL replay will not increment" `pg_stat_all_tables`
+  counters such as `n_tup_ins`, and autovacuum is not active during recovery; recovery
+  conflicts can cancel standby queries. Read statistics from every node that serves
+  traffic.
 
 **Alerts from an error store (one defensible design)**
 
