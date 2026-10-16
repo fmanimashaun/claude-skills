@@ -5,8 +5,8 @@ The #2057 verifier pass (PR #2106) left these unchanged and uncited. Each was me
 | id | sentence | verdict | 18 docs | measured | edit |
 |---|---|---|---|---|---|
 | A | `observability.md`: the extension "is created per database" | CONFIRMED | pgstatstatements.html: "not available globally but can be enabled for a specific database with CREATE EXTENSION"; sql-createextension.html: "loads a new extension into the current database" | the view is absent in a second database until `CREATE EXTENSION` runs there | quoted and the measurement stated |
-| B | `observability.md`: a `pg_read_all_stats` reader "can still read `n_dead_tup`" | TRUE BUT MISLEADING | monitoring-stats.html scopes `pg_read_all_stats` to session information | a role with no grants reads `n_dead_tup` (300) and is refused `SELECT` on the table | reworded: no grant is needed |
-| C | `models.md`: a generic plan can differ from the custom plans on skewed data | CONFIRMED | sql-prepare.html: a custom plan uses "the parameter values given in that call"; "in some situations a custom plan will be much more efficient" | common value: custom Seq Scan, generic Index Scan; the generic plan was not slower here (37.9 against 58.2 ms), so no cost is claimed | quoted and the measurement stated |
+| B | `observability.md`: a `pg_read_all_stats` reader "can still read `n_dead_tup`" | TRUE BUT MISLEADING | predefined-roles.html: `pg_read_all_stats` "allows reading all pg_stat_* views and use various statistics related extensions, even those normally visible only to superusers"; monitoring-stats.html restricts only the session information ("Superusers and roles with privileges of built-in role pg_read_all_stats can see all the information about all sessions"). Neither page says the table statistics need no grant: the measurement is the authority | a role with no grants reads `n_dead_tup` (300) and is refused `SELECT` on the table | reworded: no grant is needed |
+| C | `models.md`: a generic plan can differ from the custom plans on skewed data | CONFIRMED | sql-prepare.html: a custom plan uses "the parameter values given in that call"; "in some situations a custom plan will be much more efficient" | common value: custom Seq Scan, generic Index Scan; no cost is claimed: timings are machine-specific, and the reviewer measured the opposite order | quoted and the measurement stated |
 
 ## Script
 
@@ -62,6 +62,22 @@ EXPLAIN (COSTS OFF) EXECUTE q('rare');
 \echo '-- GENERIC_PLAN with ANALYZE is refused:'
 EXPLAIN (GENERIC_PLAN, ANALYZE) SELECT * FROM t_c WHERE status = $1;
 ```
+
+The "C (cont.)" output below came from these extra statements, run on the same container after the script:
+
+```sql
+PREPARE q2(text) AS SELECT * FROM t_c WHERE status = $1;
+SET plan_cache_mode = force_custom_plan;
+EXPLAIN (COSTS OFF) EXECUTE q2('common');
+SET plan_cache_mode = force_generic_plan;
+EXPLAIN (COSTS OFF) EXECUTE q2('common');
+SET plan_cache_mode = force_custom_plan;
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY ON) EXECUTE q2('common');
+SET plan_cache_mode = force_generic_plan;
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY ON) EXECUTE q2('common');
+```
+
+The execution times in that output are machine-specific: they depend on cache state, and a second run can reverse their order. Only the plan shapes are evidence.
 
 ## Output
 

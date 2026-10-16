@@ -700,8 +700,11 @@ spans are folded in process into aggregates and written to the app's own databas
   tables, potentially for a long time". That role is also what `pgstattuple` requires,
   so a `pg_read_all_stats` reader cannot run `pgstattuple`. Reading `n_dead_tup` needs
   no grant at all: measured on `postgres:18` (18.6), a role with **no** grants read it
-  from `pg_stat_user_tables` while being refused `SELECT` on the table itself (the docs
-  scope `pg_read_all_stats` to session information, not to the table statistics views). Set `statement_timeout`,
+  from `pg_stat_user_tables` while being refused `SELECT` on the table itself. The docs
+  say `pg_read_all_stats` "allows reading all pg_stat_* views … even those normally
+  visible only to superusers", and the restriction they describe is on the session
+  information in `pg_stat_activity`; the measurement is the authority that table
+  statistics need no grant. Set `statement_timeout`,
   `lock_timeout` and `idle_in_transaction_session_timeout` per role
   (`ALTER ROLE … SET`); the docs call setting the first two in `postgresql.conf` "not
   recommended because it would affect all sessions".
