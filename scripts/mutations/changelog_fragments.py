@@ -30,10 +30,22 @@ GUARD = Guard(
             "the bullet-count assertion refuses a dropped bullet",
         ),
         Mutation(
-            "an ambiguous section prefix is resolved to the first heading",
-            "    if len(hits) > 1:\n        pool = [s for s in hits if s[2]] or hits",
-            "    if False:\n        pool = [s for s in hits if s[2]] or hits",
-            "an ambiguous prefix is an error",
+            "an ambiguous section name is resolved to the first heading instead of refused",
+            "    if len(headings) > 1:\n        raise FragmentError(",
+            "    if False:\n        raise FragmentError(",
+            "an ambiguous name is an error naming both headings",
+        ),
+        Mutation(
+            "a section is matched by PREFIX again, so a prefix of an old heading's title is filed under a stale `### Unreleased`",
+            "    hits = [s for s in secs if s[1] == want] or [s for s in secs if heading_name(s[1]) == want]\n",
+            "    hits = [s for s in secs if s[1].startswith(want)]\n",
+            "a PREFIX of an older heading's title is refused",
+        ),
+        Mutation(
+            "an `### Unreleased` breaks a tie between different headings again",
+            "    headings = list(dict.fromkeys(s[1] for s in hits))\n",
+            "    headings = list(dict.fromkeys(s[1] for s in (hits if len({s[1] for s in hits}) < 2 else ([h for h in hits if h[2]] or hits))))\n",
+            "does NOT break the tie",
         ),
         Mutation(
             "a section with no `### Unreleased` gets none, so its fragment is lost",
@@ -91,14 +103,14 @@ GUARD = Guard(
         ),
         Mutation(
             'identical headings are no longer treated as one, so `## Repository hygiene` twice is ambiguous again',
-            '        if len(pool) == 1 or len({s[1] for s in pool}) == 1:',
-            '        if len(pool) == 1:',
+            '    headings = list(dict.fromkeys(s[1] for s in hits))\n',
+            '    headings = [s[1] for s in hits]\n',
             'two IDENTICAL headings with no Unreleased resolve',
         ),
         Mutation(
             '--into does not look for the heading that holds the armed block',
-            '            pool = [s for s in pool if into in s[3]] or pool\n',
-            '            pass\n',
+            '        pool = [s for s in pool if into in s[3]] or pool\n',
+            '        pass\n',
             '--into on identical headings goes to the one holding the release block',
         ),
         Mutation(
