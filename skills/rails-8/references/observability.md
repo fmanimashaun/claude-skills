@@ -267,9 +267,10 @@ the 8.1 guide does not document it.
   `:sqlcommenter` the default (Rails configuring guide, 8.1, read 2026-10-14).
   The guide warns that the `:source_location` tag "can be slow" to compute —
   weigh that before adding it in production. A tagged comment does **not** change
-  `pg_stat_statements`' `queryid` (measured on PostgreSQL 18.6, see the
-  `pg_stat_statements` section below): the tags attribute a query to a route per
-  execution, in `pg_stat_activity`, and never split a view row.
+  the query identifier `pg_stat_statements` groups by (measured on PostgreSQL 18.6 as
+  the core Query Identifier, `EXPLAIN (VERBOSE)`; see the `pg_stat_statements` section
+  below). So a `pg_stat_statements` row cannot be read as one route: per-route
+  attribution comes from the tags on a statement while it runs, in `pg_stat_activity`.
 - One-format-per-app: if you adopt JSON logs (via a `Rails.event` subscriber
   or a formatter), convert everything; mixed text/JSON streams are the worst
   of both.
