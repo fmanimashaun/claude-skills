@@ -40,6 +40,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -188,13 +189,15 @@ def own_pids(path: str) -> list[int]:
 
 
 def own_tree() -> set[int]:
-    """This process, its parents and everything it started: a teardown run from a shell inside the worktree must count neither that shell nor
-    its own `lsof`/`ps` children as a stray (they run with the worktree as their working directory unless given another)."""
+    """This process, its parents, everything it started, and everything in ITS PROCESS GROUP: a teardown run from a shell inside the worktree must count
+    neither that shell, nor its own `lsof`/`ps` children, nor the other stages of its own pipeline (`... 2>&1 | tail`, whose working directory is also the
+    worktree) as a stray. A process in ANOTHER group (a server started elsewhere) still is one."""
     parent: dict[int, int] = {}
-    for line in run(["ps", "-A", "-o", "pid=,ppid="], cwd="/")[1].splitlines():
-        pair = line.split()
-        if len(pair) == 2 and pair[0].isdigit() and pair[1].isdigit():
-            parent[int(pair[0])] = int(pair[1])
+    group: dict[int, int] = {}
+    for line in run(["ps", "-A", "-o", "pid=,ppid=,pgid="], cwd="/")[1].splitlines():
+        row = line.split()
+        if len(row) == 3 and all(x.isdigit() for x in row):
+            parent[int(row[0])], group[int(row[0])] = int(row[1]), int(row[2])
     me = os.getpid()
     tree, pid = {me}, me
     while parent.get(pid, 0) > 1 and parent[pid] not in tree:      # the parents: a sibling of this process is NOT one of them
@@ -207,7 +210,9 @@ def own_tree() -> set[int]:
             if up in below and child not in below:
                 below.add(child)
                 grown = True
-    return tree | below
+    mine = group.get(me)
+    same_group = {q for q, g in group.items() if g == mine} if mine is not None else set()
+    return tree | below | same_group
 
 
 def processes_in(path: str) -> dict[int, str]:
@@ -564,10 +569,18 @@ def selftest() -> int:
             check("run with its working directory inside the worktree, the CLI ends it (its own children are not strays)",
                   ran[0] == 0 and not listed(wcli) and sorted(dropped()) == ["app_dev_fromin", "app_test_fromin"], ran[1][-300:])
 
+            # 13. A PIPELINE: `teardown ... 2>&1 | cat` from inside the worktree, the way our sessions always run it: cat is a sibling in the same process group
+            wpipe = add("piped")
+            universe("app_dev_piped", "app_test_piped")
+            piped = subprocess.run(f"{shlex.quote(sys.executable)} {shlex.quote(os.path.abspath(__file__))} {shlex.quote(wpipe)} --pg-bin {shlex.quote(binpath)} 2>&1 | cat",
+                                   shell=True, cwd=wpipe, capture_output=True, text=True, timeout=300)
+            check("run from inside the worktree and piped into cat, it ends it (a stage of its own pipeline is not a stray)",
+                  not listed(wpipe) and sorted(dropped()) == ["app_dev_piped", "app_test_piped"], piped.stdout[-300:])
+
             # 11. a process with no pid file is noticed: the teardown refuses and never reports 'nothing left'
             wstray = add("stray")
             universe("app_dev_stray", "app_test_stray")
-            stray = subprocess.Popen(["sleep", "60"], cwd=wstray)
+            stray = subprocess.Popen(["sleep", "60"], cwd=wstray, start_new_session=True)      # its own process group: the selftest's group is excluded by design
             spawned.append(stray)
             check("a process with no pid file is noticed and the teardown refuses", cli(wstray)[0] == 1 and dropped() == [] and stray.poll() is None and listed(wstray))
             check("a dry run says so too, and changes nothing", cli(wstray, "--dry-run")[0] == 1 and dropped() == [] and listed(wstray))

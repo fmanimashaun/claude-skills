@@ -51,6 +51,8 @@ GUARD = Guard(
                  'if True: found[pid] = ""', "a clean merged worktree ends with status 0"),
         Mutation("the script's own process and children count as strays", "known = set(pids) | own_tree()", "known = set(pids)",
                  "run with its working directory inside the worktree"),
+        Mutation("a stage of its own pipeline counts as a stray", "return tree | below | same_group", "return tree | below",
+                 "piped into cat"),
         Mutation("the wording check stops requiring the teardown's name", "elif token not in \" \".join(lines[at:at + span]):", "elif False:",
                  "the wording check names"),
         Mutation("the wording check stops noticing a missing file", "if not f.exists():", "if False:", ""),
