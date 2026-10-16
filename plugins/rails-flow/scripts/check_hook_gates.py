@@ -66,6 +66,16 @@ def repo_marker_above(path) -> str | None:
         probe = probe.parent
 
 
+def path_without_git_shim(path: str) -> str:
+    """PATH as a real hook process gets it: with every rails-flow `git-shim` directory removed (#2104).
+
+    The SessionStart hook prepends the shim through `CLAUDE_ENV_FILE`, which reaches the Bash tool's commands only; the Claude Code process
+    that spawns hooks has no shim on its PATH (measured, #2104). Run from a session, this harness inherited the Bash tool's shim-first PATH
+    and drove every hook under it: the release gate's own `git` calls went through the shim, and 7 + 25 checks failed on clean dev that
+    pass on CI, which has no shim. `git_shim_selftest.py` tests the shim; here it is an environment production never has."""
+    return os.pathsep.join(d for d in path.split(os.pathsep) if d and Path(d).name != "git-shim")
+
+
 @contextlib.contextmanager
 def scratch_dir():
     """A temp directory a fixture owns, removed on exit WITHOUT ever failing the run (#1800).
@@ -3602,6 +3612,11 @@ def release_gate_refs_fixtures() -> None:
     if not QA_HOOK.is_file():
         check("release-gate (#1600): release-gate.sh present beside rails-flow", False, str(QA_HOOK))
         return
+    check("harness (#2104): hooks run with no rails-flow git-shim on PATH, as a real hook process does",
+          not any(Path(d).name == "git-shim" for d in os.environ.get("PATH", "").split(os.pathsep)), os.environ.get("PATH", "")[:200])
+    fake = os.pathsep.join(["/opt/x/rails-flow/1.0.0/git-shim", "/usr/bin", "/a/git-shim-notes"])
+    check("harness (#2104): ...and the filter drops exactly the `git-shim` directories, on a machine without one too",
+          path_without_git_shim(fake) == os.pathsep.join(["/usr/bin", "/a/git-shim-notes"]), path_without_git_shim(fake))
     with scratch_dir() as td:
         repo = Path(td) / "repo"
         _git_repo(repo)
@@ -7009,6 +7024,7 @@ def main(argv: list[str] | None = None) -> int:
     # script that printed usage there would be INERT -- every mutation "caught" by an exit 2.
     global STRICT_TIMING
     STRICT_TIMING = args.strict_timing
+    os.environ["PATH"] = path_without_git_shim(os.environ.get("PATH", ""))
     return selftest(groups, args.match, args.fail_fast)
 
 
