@@ -71,7 +71,7 @@ Payload keys shown are the ones you'll actually use.
 | `render_template/render_partial.action_view` | `:identifier, :layout` / `:identifier, :cache_hit` | View timing, cache hit ratios |
 | `render_collection.action_view` | `:identifier, :count, :cache_hits` | Collection-cache effectiveness |
 | `deliver.action_mailer` | `:mailer, :message_id, :subject, :to` | Mail volume/failures |
-| `enqueue.active_job` / `perform_start.active_job` / `perform.active_job` | `:job, :adapter` (+ `:db_runtime, :aborted` on perform) | Queue latency = `perform_start` time − `payload[:job].enqueued_at` (note below) |
+| `enqueue.active_job` / `perform_start.active_job` / `perform.active_job` | `:job, :adapter` (+ `:db_runtime, :aborted` on perform) | Queue latency, on `perform_start`: `event.time - payload[:job].enqueued_at.to_f` (note below) |
 | `cache_read/cache_write/cache_fetch_hit/cache_generate.active_support` | `:key, :store, :hit, :super_operation` | Hit-rate dashboards, Solid Cache included (note below) |
 | `perform_action.action_cable` / `broadcast.action_cable` | `:channel_class, :action` / `:broadcasting` | Realtime volume |
 | `process.action_mailbox` | `:mailbox, :inbound_email` | Inbound mail pipeline |
