@@ -1,0 +1,39 @@
+# doctrine-verifier verdicts for #2057 (the rails-8 doctrine moves to PostgreSQL 18), 2026-10-16
+
+Two read-only verifier runs (the `doctrine-verifier` protocol, `WebFetch` of the pages below on 2026-10-16). The owner decided on 2026-10-14 that everything runs on
+PostgreSQL 18. Edits in `skills/rails-8/references/deployment-kamal.md`, `observability.md` and `models.md` follow CONFIRMED rows only; INCONCLUSIVE rows were
+left as they were or labelled, and the REFUTED row corrected a sentence that #2047 had written. Pages were read through a summarising fetch tool, so quotes are as
+returned, not checked against raw page text.
+
+## The official Docker `postgres` image
+
+| id | claim | verdict | authority | what the doctrine does |
+|---|---|---|---|---|
+| K1 | from 18 the image declares `VOLUME /var/lib/postgresql` and a version-specific `PGDATA` (`/var/lib/postgresql/18/docker`, later majors replace `18`) | CONFIRMED: "The defined `VOLUME` was changed in 18 and above to `/var/lib/postgresql`"; "the `PGDATA` environment variable of the image was changed to be version specific in PostgreSQL 18 and above" | https://hub.docker.com/_/postgres; the 17 and 18 Dockerfiles (`docker-library/postgres`); docker-library/postgres PR #1259 (merged 6 Jun 2025), docker-library/docs PR #2582 (merged 9 Jun 2025) | stated, with 18 as the boundary; `postgres:17` and earlier keep `/var/lib/postgresql/data` for both |
+| K2 | a mount at `/var/lib/postgresql/data` on 18 does not keep the data | **INCONCLUSIVE as a docs claim**: the docs say only "Mounts and volumes should be targeted at the updated location"; the warning they carry is the reverse case (17 and below: mount at `/var/lib/postgresql/data` and not `/var/lib/postgresql`). The Dockerfile gives `ENV PGDATA /var/lib/postgresql/18/docker` and `VOLUME /var/lib/postgresql`, so the mount is not `PGDATA`; the data-loss consequence was not run | the same pages | worded as "is not `PGDATA`, so the cluster is not stored there (derived from the Dockerfile, not a documented warning)"; no claim about what is lost |
+| K3 | a major version is not a tag bump: the server refuses an incompatible data directory; use dump/restore or `pg_upgrade` | CONFIRMED: "There are checks in place that prevent you from using a data directory with an incompatible version of PostgreSQL"; "you must use a logical backup tool like pg_dumpall; file system level backup methods will not work" | https://www.postgresql.org/docs/18/upgrading.html, https://www.postgresql.org/docs/18/pgupgrade.html | stated; all majors |
+| K3c | the 18 layout is meant to let `pg_upgrade --link` run against one `/var/lib/postgresql` mount | CONFIRMED (Docker Hub: "This will allow users upgrading between PostgreSQL major releases to use the faster `--link` when running `pg_upgrade` and mounting `/var/lib/postgresql`"); link mode "requires that the old and new cluster data directories be in the same file system" | Docker Hub; pgupgrade.html | stated, with the same-file-system limit and that the old cluster is unusable once the new one starts |
+
+## PostgreSQL 18 docs and the 16.0, 17.0, 18.0 release notes (observability.md, models.md)
+
+| claim | verdict on 18 | what the doctrine does |
+|---|---|---|
+| `pg_stat_statements` needs `shared_preload_libraries` and a restart | CONFIRMED (pgstatstatements.html) | attribution changed from "16 docs" to "18 docs" |
+| the extension is "created per database" | INCONCLUSIVE (not stated on the 18 page) | unchanged; not newly cited to the docs |
+| the "must be loaded via shared_preload_libraries" error text | INCONCLUSIVE (not documented) | stays labelled measured, on `postgres:16` (16.15), "not re-measured on 18" |
+| `queryid` "changes when an object (for example a table) is dropped and recreated" | **REFUTED.** The docs: "if a table is dropped and recreated between the executions of queries, two apparently-identical queries may be considered the same"; they split on a recreated FUNCTION: "two apparently-identical queries to be distinct, if they reference for example a function that was dropped and recreated" | sentence corrected (it was wrong as written by #2047, on 16 as on 18) |
+| `queryid` "not safe to assume" stable across major versions; not useful across logical replicas; physical replicas match | CONFIRMED, unchanged in 18 | kept |
+| stored text is the first query's; only min/max/mean/stddev; `dealloc`; `showtext := false`; reset is superuser by default | CONFIRMED (the first major for `dealloc` and `showtext` is not in the release notes) | kept, undated |
+| `stats_since` / `minmax_stats_since` | CONFIRMED, 17.0 notes ("Add `pg_stat_statements` columns `stats_since` and `minmax_stats_since`") | now stated as present, "since 17" (the "on 16 the window starts at `stats_reset`" sentence is gone) |
+| constant-list squashing in 18 | CONFIRMED: "the list will get squashed down to a single element but shown with a commented-out list indicator", `IN ($1 /*, ... */)`; 18.0 notes "Have query id computation of constant lists consider only the first and last constants" | one sentence added; **no setting is named** (`query_id_squash_values` is INCONCLUSIVE: not on the 18 pages) |
+| utility statements keep literals | CONFIRMED with a boundary: 16.0 began normalising constants in utility commands; 17.0 added CALL, savepoint names, 2PC GIDs, DEALLOCATE; 18.0 added SET values. The `create role ... password` result is measured on 16 only | the example is labelled "Measured on 16" and the growth in 17 and 18 is stated |
+| `track_utility`, `track_planning`, `track_io_timing` defaults and warnings; `track_activity_query_size` 1024 | CONFIRMED | kept |
+| `auto_explain`: `log_min_duration` -1, `log_analyze` warning, `sample_rate`, `log_timing`, `log_parameter_max_length` -1 (since 16, 16.0 notes), loading | CONFIRMED | "(new in 16)" is now "(since 16)" |
+| `log_min_duration_sample`, `log_statement_sample_rate`, `log_lock_waits`, `log_temp_files` | CONFIRMED; `log_lock_waits` is still `off` on 18; `log_statement_sample_rate` defaults to 1.0 and only `log_min_duration_sample` (-1) is off | "(all present on 16)" is now "(PostgreSQL 18 docs)", with both defaults |
+| `pg_monitor` includes `pg_stat_scan_tables`, the lock warning; `pgstattuple` needs `pg_stat_scan_tables` | CONFIRMED (predefined-roles.html, pgstattuple.html) | kept |
+| a `pg_read_all_stats` reader "can still read `n_dead_tup`" | INCONCLUSIVE (the page says only "Estimated number of dead rows") | unchanged; flagged here |
+| per-role timeouts and the `postgresql.conf` quote (first two only) | CONFIRMED | kept |
+| hot standby statistics quotes | CONFIRMED | kept |
+| models.md section 13: partial indexes, `INCLUDE`, `CREATE INDEX [CONCURRENTLY]`, invalid indexes, `DROP INDEX CONCURRENTLY`, `OFFSET`, row comparison, `REFRESH MATERIALIZED VIEW CONCURRENTLY` | CONFIRMED on the 18 pages | attribution moved to the 18 docs (checked 2026-10-16); the Rails 8.1 `add_index`/`remove_index` part keeps its 2026-10-14 date |
+| `EXPLAIN (GENERIC_PLAN)` | CONFIRMED, arrived in 16.0; cannot be combined with `ANALYZE` | "in the 16 docs and not in 15" is now "arrived in 16, in the 18 docs" |
+| "a generic plan can differ from the custom plans a prepared statement uses when the data is skewed" | INCONCLUSIVE (the EXPLAIN page does not say it) | unchanged: it stays as advice |

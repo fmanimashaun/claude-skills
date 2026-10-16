@@ -635,8 +635,8 @@ spans are folded in process into aggregates and written to the app's own databas
 **`pg_stat_statements` for slow queries**
 
 - **`CREATE EXTENSION pg_stat_statements` is not enough.** The library must be in
-  `shared_preload_libraries` (a server restart; PostgreSQL 16 docs), and the extension
-  is created per database. Retask measured on `postgres:16` (16.15) that reading the
+  `shared_preload_libraries` (a server restart; PostgreSQL 18 docs), and the extension
+  is created per database. Retask measured on `postgres:16` (16.15; not re-measured on 18) that reading the
   view then fails with *"pg_stat_statements must be loaded via
   shared_preload_libraries"* while `CREATE EXTENSION` succeeds; the error text is
   measured, not documented. Availability must therefore be decided by **trying the
@@ -644,7 +644,7 @@ spans are folded in process into aggregates and written to the app's own databas
 - **Utility statements keep their literals.** `pg_stat_statements.track_utility`
   defaults to on and tracks every command other than SELECT, INSERT, UPDATE, DELETE
   and MERGE; constants are replaced by `$n` only in the statements it normalises.
-  Measured: `create role … password '…'` appeared verbatim. Set
+  Measured on 16: `create role … password '…'` appeared verbatim (the set of utility commands it normalises grew in 17 and 18: re-check on your version). Set
   `pg_stat_statements.track_utility = off` and read data statements only before
   showing the text to anyone.
 - **On Kamal 2.12.0 the preload flag is the accessory's `cmd:`** (for example
@@ -652,15 +652,19 @@ spans are folded in process into aggregates and written to the app's own databas
   when the container is recreated: `kamal accessory reboot NAME` (prepare, pull the
   image, stop, remove, boot) does that, restarting the database once and pulling the
   image; `kamal accessory restart` (stop, start) does not apply a changed `cmd`.
-- **Know what the view cannot tell you (PostgreSQL 16 docs).** `queryid` is a function
-  of internal object identifiers: it changes when an object (for example a table) is
-  dropped and recreated, is "not safe to assume" stable across major versions, and is
-  not a useful identifier across logical replicas (physical replicas match). The stored
+- **Know what the view cannot tell you (PostgreSQL 18 docs).** `queryid` is a function
+  of internal object identifiers: two apparently identical queries are distinct if they
+  reference a function that was dropped and recreated between them, while a table dropped
+  and recreated can make two apparently identical queries count as the same. It is "not
+  safe to assume" stable across major versions, and is not a useful identifier across
+  logical replicas (physical replicas match). The stored
   text is that of the *first* query with that `queryid`. There are no percentiles, only
   `min`/`max`/`mean`/`stddev_exec_time`. A rising `pg_stat_statements_info.dealloc`
   means the least-executed statements were evicted (`pg_stat_statements.max` exceeded),
-  so the tail is missing. On 16 the window starts at `pg_stat_statements_info.stats_reset`;
-  `stats_since`/`minmax_stats_since` arrive in 17. Rank by the delta between two
+  so the tail is missing. `pg_stat_statements_info.stats_reset` is the time of the last full reset; each row
+  also carries `stats_since` (when its statistics began) and `minmax_stats_since` (when its
+  min/max last reset), both since 17. On 18 a list of constants that differs only in length
+  is squashed to one entry shown as `IN ($1 /*, ... */)` (18.0 release notes). Rank by the delta between two
   snapshots rather than calling `pg_stat_statements_reset()` from a monitor (superuser
   only by default), and poll with `pg_stat_statements(showtext := false)` to skip
   reading the texts.
@@ -681,11 +685,11 @@ spans are folded in process into aggregates and written to the app's own databas
 - **`auto_explain` does nothing until `auto_explain.log_min_duration` is set** (default
   -1). `log_analyze` times every plan node of every statement ("an extremely negative
   impact on performance"): pair it with `auto_explain.sample_rate` below 1 and
-  `log_timing = off`. `auto_explain.log_parameter_max_length` (new in 16) defaults to -1, which logs
+  `log_timing = off`. `auto_explain.log_parameter_max_length` (since 16) defaults to -1, which logs
   bind values **in full**, which means personal data in the logs; set it to 0. Load it
   via `session_preload_libraries` or `shared_preload_libraries`.
-- **Logging companions (all present on 16):** `log_min_duration_sample` with
-  `log_statement_sample_rate` (sampled slow-statement logging, default off),
+- **Logging companions (PostgreSQL 18 docs):** `log_min_duration_sample` (default -1, off) with
+  `log_statement_sample_rate` (default 1.0, every sampled statement),
   `log_lock_waits` (default off) and `log_temp_files` (default -1, off).
 - **Least privilege for the reader.** Grant the monitoring role `pg_read_all_stats`
   (needed to see other users' text and `queryid`), **not** `pg_monitor`: `pg_monitor`

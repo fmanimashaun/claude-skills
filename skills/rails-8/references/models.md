@@ -363,7 +363,7 @@ aloud, and is unique by construction.
 This section holds the **techniques**. The **order** to try them in, the evidence each needs and how to
 prove the metric moved live in `performance-caching.md` §7: read that first, and do not skip ahead to a
 technique because it is familiar. The statements about PostgreSQL and `add_index` / `remove_index` below were checked against the
-PostgreSQL 16 docs and the Rails 8.1 API docs (`schema_statements`) on 2026-10-14; Active Record's other adapters
+PostgreSQL 18 docs on 2026-10-16 and the Rails 8.1 API docs (`schema_statements`) on 2026-10-14; Active Record's other adapters
 are not covered. The keyset recipe, the advice on rewrites and the summary-table paragraph are our own design
 (#2039).
 
@@ -430,7 +430,6 @@ When one expensive aggregate is read far more often than it changes, store its r
 ### Reading a plan you cannot run with real values
 
 `EXPLAIN (GENERIC_PLAN) SELECT ... WHERE id > $1 AND id < $2` accepts parameter placeholders and returns a
-**generic** plan that does not depend on the values. It is in the PostgreSQL 16 docs and not in 15 (docs compared
-2026-10-14), and it **cannot be combined with `ANALYZE`**. A generic plan can differ from the custom plans a
+**generic** plan that does not depend on the values. It arrived in PostgreSQL 16 (16.0 release notes) and is in the 18 docs, and it **cannot be combined with `ANALYZE`**. A generic plan can differ from the custom plans a
 prepared statement uses when the data is skewed, so label what you read as generic and confirm on a real value
 with `explain(:analyze)`.
