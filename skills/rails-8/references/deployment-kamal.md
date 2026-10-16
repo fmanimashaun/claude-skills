@@ -246,9 +246,10 @@ accessories:
 **The data path depends on the image's major version.** From `postgres:18` the image declares `VOLUME /var/lib/postgresql` and sets
 `PGDATA=/var/lib/postgresql/18/docker` (`/var/lib/postgresql/<major>/docker` for later majors); `postgres:17` and earlier use
 `/var/lib/postgresql/data` for both (Docker Hub `postgres` page, the images' Dockerfiles, docker-library/postgres PR #1259). Mount at the new
-location on 18: `data:/var/lib/postgresql`. A mount at `/var/lib/postgresql/data` on 18 is not `PGDATA`, so the cluster is not stored there
-(derived from the Dockerfile, not a documented warning: check where `PGDATA` points before trusting a volume). On 17 and below keep the old
-path; the Docker Hub page warns against mounting at `/var/lib/postgresql` there.
+location on 18: `data:/var/lib/postgresql`. On 18 a mount at `/var/lib/postgresql/data` stops the container from starting: the entrypoint exits 1 with
+`... there appears to be PostgreSQL data in: /var/lib/postgresql/data (unused mount/volume)` when `/var/lib/postgresql/data` is a mount point (even an
+empty one) or any of `/var/lib/postgresql`, `/var/lib/postgresql/data` and `/var/lib/postgresql/*/docker` already holds a `PG_VERSION` (measured on
+`postgres:18.6`; Docker does not document it), so mount `/var/lib/postgresql`. On 17 and below keep the old path; the Docker Hub page warns against mounting at `/var/lib/postgresql` there.
 
 **A major version is never a tag bump.** The server refuses a data directory from an older major (PostgreSQL 18, *Upgrading a PostgreSQL
 Cluster*: "There are checks in place that prevent you from using a data directory with an incompatible version of PostgreSQL"). Move with a
