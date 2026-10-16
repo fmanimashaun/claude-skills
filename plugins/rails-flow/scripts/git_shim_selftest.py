@@ -75,13 +75,14 @@ class Repo:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
 
+    # errors="replace": a refusal echoes the value, and one row passes a non-UTF-8 byte (the credential-helper locale row)
     def real(self, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
-        return subprocess.run([REAL_GIT, *args], cwd=cwd or self.work, env=fixture_git.hermetic(self.env), capture_output=True, text=True)
+        return subprocess.run([REAL_GIT, *args], cwd=cwd or self.work, env=fixture_git.hermetic(self.env), capture_output=True, text=True, errors="replace")
 
     def g(self, *args: str, cwd: Path | None = None, env: dict[str, str] | None = None, stdin: str = "") -> subprocess.CompletedProcess:
         e = dict(self.path_env)
         e.update(env or {})
-        return subprocess.run(["git", *args], cwd=cwd or self.work, env=e, capture_output=True, text=True, input=stdin, timeout=20)
+        return subprocess.run(["git", *args], cwd=cwd or self.work, env=e, capture_output=True, text=True, errors="replace", input=stdin, timeout=20)
 
     def snapshot(self) -> tuple:
         status = self.real("status", "--porcelain=v1", "-uall").stdout
