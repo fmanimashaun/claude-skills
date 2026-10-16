@@ -85,6 +85,10 @@ function queueCompact($, due) {
   }
 }
 
+// $3 = "2" is a SYNC: it only reads the claim and never makes, takes or removes one. It reports coordinator when the claim
+// is this process's, implementation when another live process holds it, and `none` otherwise (a dead or missing claim
+// changes nothing). $4, when all digits, is the pid to claim for instead of $PPID: /rails-flow:claim-coordinator passes
+// the engine pid, because its own shell is not the engine (#2070).
 // POSIX sh, run with $1 = this session's id, $2 = "1" to force a claim, $3 = "1" for a RESUMED session: it never
 // makes or takes a claim, it only keeps one that already carries its own session id (owner rule, 2026-10-09, #1724).
 // A resumed session whose claim holds another id, or none, reports implementation. $PPID is the engine's own pid
@@ -102,14 +106,21 @@ function queueCompact($, due) {
 // live holder, which keeps believing it coordinates until it next starts.
 export const ELECT_SCRIPT = `
 d="$HOME/.claude/rails-flow"; c="$d/coordinator"; lk="$d/lock"; me="$PPID"; sid="$1"; force="$2"; resumed="$3"
+case "$4" in ''|*[!0-9]*) ;; *) me="$4" ;; esac
 mkdir -p "$d" || { echo error; exit 0; }
-spare() { case "$(ps -o command= -p "$1" 2>/dev/null)" in *--bg-spare*) return 0 ;; esac; return 1; }
+spare() { case " $(ps -o command= -p "$1" 2>/dev/null) " in *" bg-spare --bg-spare "*) return 0 ;; esac; return 1; }
 start() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//'; }
 claim() { mkdir "$c" 2>/dev/null || return 1; printf '%s\\n%s\\n%s\\n%s\\n' "$me" "$sid" "$(date +%s)" "$(start "$me")" > "$c/claim"; }
 alive() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null && [ "$(start "$1")" = "$2" ] && ! spare "$1"; }
 read_claim() { hp=$(sed -n 1p "$c/claim" 2>/dev/null); hs=$(sed -n 2p "$c/claim" 2>/dev/null); hl=$(sed -n 4p "$c/claim" 2>/dev/null); }
 report() { echo "implementation $hp $hs"; exit 0; }
 if [ "$force" != "1" ] && spare "$me"; then echo spare; exit 0; fi
+if [ "$resumed" = "2" ]; then
+  read_claim
+  if [ "$hp" = "$me" ] && [ "$hl" = "$(start "$me")" ]; then echo coordinator; exit 0; fi
+  if [ -n "$hp" ] && alive "$hp" "$hl"; then report; fi
+  echo none; exit 0
+fi
 if [ "$force" = "1" ]; then rm -rf "$c"; fi
 if [ "$resumed" = "1" ] && [ "$force" != "1" ]; then
   read_claim
@@ -181,6 +192,23 @@ export async function electRole($) {
 }
 
 // What this session has done in its current job. Reset after a clear.
+// Re-read the machine-wide claim, so a session that claimed it back (or lost it) learns that without a restart (#2070).
+// A RAILS_FLOW_ROLE override and any error leave the role alone.
+export async function syncRole($) {
+  try {
+    if (roleOf(await $.env.get('RAILS_FLOW_ROLE'))) return
+    const r = await $.process.run(['sh', '-c', ELECT_SCRIPT, 'sh', String(await $.session.id()), '0', '2'], { timeoutMs: 8000 })
+    const e = r.exitCode === 0 ? parseElection(r.stdout) : null
+    if (e === null || e.role === state.role) return
+    say($, `role ${state.role} -> ${e.role} (the machine-wide claim changed)`)
+    state.role = e.role
+    state.coordinator = e.coordinator
+    state.line = electionLine(e)
+  } catch {
+    /* fails open: the role stays as it was */
+  }
+}
+
 export const job = freshJob()
 function freshJob(epoch = 0) {
   return { epoch, touched: false, checked: null, turnEnd: null, worktrees: new Map(), removedPaths: new Set(), prs: new Set(), handoff: null, removed: false, background: 0, pending: false, cleared: false }
@@ -553,6 +581,7 @@ export function register(on) {
   // A new turn is new work: a cached turn end belongs to the turn before it, and must not let a merge answer that
   // arrives mid-turn queue a clear (Fable's second review of #1728, P1).
   on('turn.start', async ($, e, next) => {
+    await syncRole($)
     job.turnEnd = null
     job.touched = false
     return next(e)

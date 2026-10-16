@@ -43,8 +43,8 @@ const reset = await import('../hooks/session-reset.mjs') // the one instance con
 // A simulated session process: a long-lived sh. What it runs has it as $PPID.
 class Proc {
   // spare: the process looks like Claude Code's pre-warmed `claude bg-spare --bg-spare ...` (its command line carries --bg-spare, #2068)
-  constructor(home, { spare = false } = {}) {
-    this.sh = spawn('sh', spare ? ['-s', '--', '--bg-spare'] : [], { env: { ...process.env, HOME: home, ELECT: reset.ELECT_SCRIPT }, stdio: ['pipe', 'pipe', 'ignore'] })
+  constructor(home, { spare = false, args = null } = {}) {
+    this.sh = spawn('sh', args ?? (spare ? ['-s', '--', 'bg-spare', '--bg-spare', '/tmp/spare.sock'] : []), { env: { ...process.env, HOME: home, ELECT: reset.ELECT_SCRIPT }, stdio: ['pipe', 'pipe', 'ignore'] })
     this.buf = ''
     this.sh.stdout.on('data', (d) => (this.buf += d))
     cleanups.push(() => this.kill())
@@ -54,7 +54,7 @@ class Proc {
   // Run the election script as this process's child; resolve with its stdout.
   run(argv) {
     const tag = `__DONE_${++fresh}__`
-    this.sh.stdin.write(`sh -c "$ELECT" sh '${argv[4]}' '${argv[5]}' '${argv[6] ?? 0}'; echo ${tag}\n`)
+    this.sh.stdin.write(`sh -c "$ELECT" sh '${argv[4]}' '${argv[5]}' '${argv[6] ?? 0}' '${argv[7] ?? ''}'; echo ${tag}\n`)
     return new Promise((resolve) => {
       const t = setInterval(() => {
         if (this.buf.includes(tag)) {
@@ -570,10 +570,77 @@ await check('#2068: a claim held by a spare is not live: the next real start rep
   assert.equal(reset.parseElection(await new Proc(h).run(['sh', '-c', '', 'sh', 'real-s', '0'])).role, 'coordinator', 'a spare is no live coordinator')
 })
 
+await check('#2072: a real session whose command line only MENTIONS --bg-spare (a prompt) still claims', async () => {
+  const h = home()
+  const real = new Proc(h, { args: ['-s', '--', '-p', 'fix the --bg-spare election', 'and the bg-spare flag'] })
+  assert.equal(reset.parseElection(await real.run(['sh', '-c', '', 'sh', 'real-s', '0'])).role, 'coordinator', 'a prompt that names the flag is not a spare')
+})
+
 await check('#2068: a real live coordinator is still not displaced (the control)', async () => {
   const h = home()
   assert.equal(reset.parseElection(await new Proc(h).run(['sh', '-c', '', 'sh', 'first', '0'])).role, 'coordinator')
   assert.equal(reset.parseElection(await new Proc(h).run(['sh', '-c', '', 'sh', 'second', '0'])).role, 'implementation')
+})
+
+// #2070: claim the role from inside a session, and learn at the next turn that it changed hands.
+const claimer = await import('../scripts/claim_coordinator.mjs')
+const sync = (proc, sid = 'x') => proc.run(['sh', '-c', '', 'sh', sid, '0', '2'])
+
+await check('#2070: a sync only reads: it reports the holder, the others and a missing claim, and makes no claim', async () => {
+  const h = home()
+  const a = new Proc(h)
+  const b = new Proc(h)
+  assert.equal(reset.parseElection(await sync(a)), null, 'no claim: no change')
+  assert.ok(!existsSync(join(h, '.claude/rails-flow/coordinator')), 'a sync never makes a claim')
+  await a.run(['sh', '-c', '', 'sh', 'a', '0'])
+  assert.equal(reset.parseElection(await sync(a)).role, 'coordinator')
+  assert.equal(reset.parseElection(await sync(b)).role, 'implementation')
+})
+
+await check('#2070: claim_coordinator takes the claim for the ENGINE pid it is given, from any shell, and the old holder is demoted', async () => {
+  const h = home()
+  const a = new Proc(h) // the current coordinator
+  const b = new Proc(h) // the session that wants it; its pid is what the command passes as $PPID
+  await a.run(['sh', '-c', '', 'sh', 'a-sid', '0'])
+  assert.equal(claimer.currentHolder(h).pid, String(a.pid))
+  assert.equal(claimer.claim(String(b.pid), 'b-sid', { ...process.env, HOME: h }), true)
+  assert.equal(claimer.currentHolder(h).pid, String(b.pid), 'the claim names the pid it was given, not the node process')
+  assert.equal(claimer.currentHolder(h).sid, 'b-sid')
+  assert.equal(reset.parseElection(await sync(b)).role, 'coordinator')
+  assert.equal(reset.parseElection(await sync(a)).role, 'implementation', 'the old holder learns it lost the claim')
+})
+
+await check('#2070: claim_coordinator refuses a pid or session id that is not plain digits and word characters', async () => {
+  assert.equal(claimer.validArgs('123', 'aa-bb_1'), true)
+  for (const [p, s] of [['', 'x'], ['12a', 'x'], ['1', ''], ['1', 'a b'], ['1', 'a;rm'], [undefined, undefined]]) assert.equal(claimer.validArgs(p, s), false, `${p}/${s}`)
+})
+
+await check('#2070: a session that claimed it back becomes coordinator at its next turn; one that lost it becomes implementation', async () => {
+  const h = home()
+  const me = new Proc(h)
+  const other = new Proc(h)
+  await other.run(['sh', '-c', '', 'sh', 'other', '0'])
+  const s = await session({ role: 'implementation', proc: me })
+  await s.turnStart()
+  assert.equal(reset.state.role, 'implementation', 'the other session holds it: no change')
+  assert.equal(claimer.claim(String(me.pid), 'x', { ...process.env, HOME: h }), true)
+  await s.turnStart()
+  assert.equal(reset.state.role, 'coordinator', 'the claim is this process\'s now')
+  assert.match(reset.state.line, /elected coordinator/)
+  assert.equal(claimer.claim(String(other.pid), 'other', { ...process.env, HOME: h }), true)
+  await s.turnStart()
+  assert.equal(reset.state.role, 'implementation', 'the claim went back: this session learns it')
+})
+
+await check('#2070: a RAILS_FLOW_ROLE override is never rewritten by the sync', async () => {
+  const h = home()
+  const me = new Proc(h)
+  const other = new Proc(h)
+  await other.run(['sh', '-c', '', 'sh', 'other', '0'])
+  const s = await session({ role: 'implementation', proc: me, env: { RAILS_FLOW_ROLE: 'implementation' } })
+  assert.equal(claimer.claim(String(me.pid), 'x', { ...process.env, HOME: h }), true)
+  await s.turnStart()
+  assert.equal(reset.state.role, 'implementation')
 })
 
 await check('a claim whose pid is recycled by another process is stale (start time differs)', async () => {

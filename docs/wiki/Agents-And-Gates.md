@@ -2,7 +2,7 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**31 shipped agents · 53 shipped commands · 4 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
+**31 shipped agents · 54 shipped commands · 4 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
@@ -10,7 +10,7 @@
 | `flow-suite` | 1.0.0 | — | — | — |
 | `pipeline` | 1.5.2 | 2 | 9 | 2 |
 | `qa-flow` | 1.38.1 | 11 | 8 | 11 |
-| `rails-flow` | 1.61.0 | 13 | 24 | 13 |
+| `rails-flow` | 1.62.0 | 13 | 25 | 13 |
 
 ## Agents
 

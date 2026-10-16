@@ -19,7 +19,7 @@ GUARD = Guard(
     subject="hooks/session-reset.mjs",
     selftest="scripts/check_mods.py",
     selftest_args=("session-reset",),
-    needs=("tests/session-reset.unit.mjs", "hooks/context-nudge.mjs", "hooks/budget-guard.mjs"),
+    needs=("tests/session-reset.unit.mjs", "hooks/context-nudge.mjs", "hooks/budget-guard.mjs", "scripts/claim_coordinator.mjs"),
     mutations=(
         Mutation(
             "a Bash call that errored or was denied is recorded as if it ran",
@@ -131,8 +131,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a coordinator asking again is not recognised as the holder",
-            'if [ "$hp" = "$me" ] && [ "$hl" = "$(start "$me")" ]; then echo coordinator; exit 0; fi',
-            ":",
+            '\nif [ "$hp" = "$me" ] && [ "$hl" = "$(start "$me")" ]; then echo coordinator; exit 0; fi',
+            "\n:",
             "a live coordinator is not displaced",
         ),
         Mutation(
@@ -345,6 +345,38 @@ GUARD = Guard(
             ' && [ "$(start "$1")" = "$2" ] && ! spare "$1"; }',
             ' && [ "$(start "$1")" = "$2" ]; }',
             "a claim held by a spare is not live",
+        ),
+        # #2070: /rails-flow:claim-coordinator claims for the engine pid and every session re-reads the claim each turn.
+        Mutation(
+            "the claim names the pid of the shell that ran the election, not the engine pid it was given",
+            'case "$4" in \'\'|*[!0-9]*) ;; *) me="$4" ;; esac\n',
+            "",
+            "claim_coordinator takes the claim for the ENGINE pid",
+        ),
+        Mutation(
+            "a sync reports no holder, so a session that lost the claim never learns it",
+            '  if [ -n "$hp" ] && alive "$hp" "$hl"; then report; fi\n  echo none; exit 0',
+            "  echo none; exit 0",
+            "a sync only reads",
+        ),
+        Mutation(
+            "a sync never reports coordinator, so a session that claimed it back never learns it",
+            '  if [ "$hp" = "$me" ] && [ "$hl" = "$(start "$me")" ]; then echo coordinator; exit 0; fi\n  if [ -n "$hp" ] && alive',
+            '  if [ -n "$hp" ] && alive',
+            "a sync only reads",
+        ),
+        Mutation(
+            "the sync is never run at a turn start",
+            "    await syncRole($)\n",
+            "",
+            "a session that claimed it back becomes coordinator",
+        ),
+        # #2072: the spare is recognised by its own command shape (`bg-spare --bg-spare`), not by the flag appearing anywhere.
+        Mutation(
+            "any command line that mentions --bg-spare is a spare, so a prompt that names the flag gets no role",
+            'case " $(ps -o command= -p "$1" 2>/dev/null) " in *" bg-spare --bg-spare "*) return 0 ;; esac',
+            'case " $(ps -o command= -p "$1" 2>/dev/null) " in *--bg-spare*) return 0 ;; esac',
+            "whose command line only MENTIONS --bg-spare",
         ),
     ),
 )
