@@ -280,7 +280,7 @@ GUARD = Guard(
         Mutation('an unknown single-letter option is ignored instead of making a write unjudgeable (fa, review of #2062)',
                  '      -?) CLUSTER=1; continue ;;', '      -?) continue ;;', 'allowlist; reads run'),
         Mutation('the credential-value strip is not pinned to LC_ALL=C (#2092): a collation can then pass a non-ASCII letter (bash 3.2 + en_US.UTF-8), and on Linux only the source row sees it',
-                 "        cfg_rest=$(LC_ALL=C; printf '%s.' ", "        cfg_rest=$(printf '%s.' ", 'pinned to LC_ALL=C'),
+                 "        cfg_rest=$(LC_ALL=C; printf '%s.' ", "        cfg_rest=$(printf '%s.' ", 'a key that runs a program'),
         Mutation('the `--` arm is gone, so `config -- user.name b` is an unknown option and refused (#2092)',
                  '      --) endopts=1; continue ;;\n', '', 'allowlist; reads run'),
         Mutation('`--` is ignored instead of ending the options, so a value that looks like an option after it is parsed as one (#2092)',
