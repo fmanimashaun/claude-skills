@@ -1,0 +1,2 @@
+section: rails-flow
+- **The `docs_layout.py` selftest marks its fixture repository, so it runs under the git shim — `plugins/rails-flow/scripts/docs_layout.py`** (#2085). The selftest staged its fixture with `git add -A` without the `.git/rails-flow-fixture` marker, so the shim refused it and `toolchain-selftests` errored in any session that has the shim (it passed only with none on PATH, as in CI). It now writes the marker right after `git init`: under the 1.61.0 shim the selftest gives 49 checks, 0 failures (it died at `git add -A` before).
