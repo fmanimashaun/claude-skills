@@ -1,0 +1,18 @@
+# MCP server authorization: the 2026-07-28 spec points and the rate-limit and sanitize MUSTs (#2035, #2034)
+
+Verified 2026-10-14 by `doctrine-verifier`, against the raw source of the **2026-07-28** revision only (every page HTTP 200; no older revision used). The edit is
+`skills/rails-8/references/mcp-server.md` §2, §3 rule 5 and §4.
+
+| # | Claim | Verdict | Source and verbatim quote | Version boundary |
+|---|---|---|---|---|
+| 1 | Client ID Metadata Documents; DCR deprecated | CONFIRMED | [authorization](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization): "Authorization servers and MCP clients **SHOULD** support OAuth Client ID Metadata Documents"; "... **MAY** support the OAuth 2.0 Dynamic Client Registration ... deprecated and retained for backwards compatibility with authorization servers that do not support Client ID Metadata Documents." | CIMD SHOULD and DCR MAY are unchanged from 2025-11-25; only DCR's deprecation is new in 2026-07-28 ([changelog](https://modelcontextprotocol.io/specification/2026-07-28/changelog), Deprecated item 4). DCR stays a MAY, with a deprecation window of at least twelve months (SEP-2596: "a minimum twelve-month deprecation window") |
+| 2 | 401 `scope`; runtime 403 `insufficient_scope` | CONFIRMED | authorization: "MCP servers **SHOULD** include a `scope` parameter in the `WWW-Authenticate` header as defined in RFC 6750 Section 3"; "the server **SHOULD** respond with: `HTTP 403 Forbidden` ... `error="insufficient_scope"` ... `scope` ... `resource_metadata` ... `error_description` (optional)" | Not a 2026-07-28 change. Both SHOULD; not raised to MUST |
+| 3 | RFC 9207 `iss` | CONFIRMED, precision | authorization: AS "**SHOULD** include the `iss` parameter in authorization responses, including error responses"; one that does "**MUST** advertise this by setting `authorization_response_iss_parameter_supported` to `true`"; clients "**MUST** apply the validation in RFC9207 Section 2.4 before transmitting the authorization code"; "A future revision ... is expected to upgrade ... `iss` from **SHOULD** to **MUST**." | New in 2026-07-28 (changelog item 7, SEP-2468). The client MUST covers a **present** `iss`; a missing one is not automatically a rejection |
+| 4 | `tools/list` variance | CONFIRMED | [tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools): "**MUST NOT** vary per-connection or as a side effect of other requests on the connection. The set **MAY** vary by the authorization presented on the request" | New in 2026-07-28 (changelog item 1, SEP-2567: sessions removed) |
+| 5 | Rate limit tool invocations | CONFIRMED | tools, Security Considerations: "Servers **MUST**: ... Rate limit tool invocations" | Not in the 2026-07-28 changelog; earlier revisions not checked |
+| 6 | Sanitize tool outputs | CONFIRMED | same list: "Servers **MUST**: ... Sanitize tool outputs" (also "Validate all tool inputs", "Implement proper access controls") | Not in the 2026-07-28 changelog; earlier revisions not checked |
+
+**Kept out of the doctrine on purpose:** a proof that a tool returns `403 insufficient_scope`. Per-tool scopes are the open maintainer decision #2034, and the spec's
+403 is a SHOULD, so §4 does not require it. Likewise any concrete prompt-injection mitigation for sanitized output: #2034's research found no authoritative source.
+
+**Review correction (claude-skills-99, #2060):** the first edit called client registration "new in 2026-07-28" and said DCR is "now" a MAY. Only DCR's deprecation and the `iss` rule are new; CIMD SHOULD and DCR MAY date from 2025-11-25, and the window is a minimum, not exactly twelve months. Both the doctrine and row 1 now say so.
