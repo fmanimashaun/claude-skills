@@ -713,6 +713,66 @@ spans are folded in process into aggregates and written to the app's own databas
   counters such as `n_tup_ins`, and autovacuum is not active during recovery; recovery
   conflicts can cancel standby queries. Read statistics from every node that serves
   traffic.
+- **An "unused" index needs a window, and `stats_reset` alone is not it.** All counters
+  are reset "when starting from an unclean shutdown (e.g., after an immediate shutdown,
+  a server crash, starting from a base backup, and point-in-time recovery)"
+  (PostgreSQL 16 docs). Measured on `postgres:16` (16.15), and again on 18.6: after an immediate stop
+  `idx_scan` went from 1 to 0 and `last_idx_scan` to null, while
+  `pg_stat_database.stats_reset` **stayed null**. The tables and indexes views have no
+  reset column of their own. So take the window from the later of the two:
+  `greatest(stats_reset, pg_postmaster_start_time())`. A clean restart keeps the
+  counters, which makes this conservative but never wrong. `last_idx_scan` is in the
+  16 docs, not in 15.
+- **Four index checks, each one measured on `postgres:16` and 18.6 against a planted case:**
+
+  ```sql
+  -- window start (see above)
+  SELECT coalesce(greatest(stats_reset, pg_postmaster_start_time()), pg_postmaster_start_time())
+  FROM pg_stat_database WHERE datname = current_database();
+  -- unused since then: skip unique indexes and any index backing a constraint
+  SELECT s.relname, s.indexrelname, s.idx_scan, s.last_idx_scan, pg_relation_size(s.indexrelid)
+  FROM pg_stat_user_indexes s JOIN pg_index i USING (indexrelid)
+  WHERE s.idx_scan = 0 AND NOT i.indisunique
+    AND NOT EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = s.indexrelid)
+  ORDER BY pg_relation_size(s.indexrelid) DESC;
+  -- invalid: a failed CREATE INDEX CONCURRENTLY
+  SELECT indexrelid::regclass, indrelid::regclass FROM pg_index WHERE NOT indisvalid;
+  -- duplicates: same columns, opclasses, collations, expression and predicate
+  SELECT indrelid::regclass, array_agg(indexrelid::regclass)
+  FROM pg_index
+  GROUP BY indrelid, indkey::text, indclass::text, indcollation::text,
+           coalesce(pg_get_expr(indexprs, indrelid), ''), coalesce(pg_get_expr(indpred, indrelid), '')
+  HAVING count(*) > 1;
+  -- foreign keys with no index leading on their columns
+  SELECT c.conrelid::regclass, c.conname FROM pg_constraint c
+  WHERE c.contype = 'f' AND NOT EXISTS (
+    SELECT 1 FROM pg_index i WHERE i.indrelid = c.conrelid
+      AND (string_to_array(i.indkey::text, ' ')::int2[])[1:cardinality(c.conkey)] @> c.conkey
+      AND (string_to_array(i.indkey::text, ' ')::int2[])[1:cardinality(c.conkey)] <@ c.conkey);
+  ```
+
+  An invalid index "will be ignored for querying purposes … however it will still
+  consume update overhead". The docs recommend dropping it and running
+  `CREATE INDEX CONCURRENTLY` again, or `REINDEX INDEX CONCURRENTLY`. Drop an index
+  only when its window is long enough to include your rare jobs (month-end, yearly),
+  and only after checking every node that serves reads.
+- **Bloat: screen cheaply, measure on demand, with a role of its own.** The screen is
+  `n_dead_tup` against `n_live_tup` plus `last_vacuum`/`last_autovacuum` from
+  `pg_stat_user_tables`; both counts are documented as *estimated*, and reading them
+  touches no table. The measurement, `pgstattuple`, "always performs a full-table
+  scan". `pgstattuple_approx` skips pages the visibility map marks all-visible, so it
+  only saves work on a table VACUUM has visited. Measured: 100% of pages scanned on a
+  never-vacuumed table, 58% after one VACUUM and a 1% delete. Its dead-tuple count is
+  exact (2,000 against `pgstattuple`'s 2,000); only the live tuples and free space are
+  estimates. On 16, by default, only `pg_stat_scan_tables` may execute these functions
+  (superusers bypass it). Measured (16.15, and the same on 18.6): a
+  `pg_read_all_stats` role reads the screen but gets *"permission denied for function
+  pgstattuple_approx"*. **Our design (#2045):** give the bloat measurement a separate
+  login role granted `pg_stat_scan_tables` and nothing else, never `pg_monitor`, and
+  use it on demand for one flagged table at a time. Measured: that role ran
+  `pgstattuple_approx` and was refused `SELECT` on the table's rows. The always-on
+  reader stays `pg_read_all_stats`, so nothing that polls on a schedule can take the
+  long ACCESS SHARE locks.
 
 **Alerts from an error store (one defensible design)**
 
