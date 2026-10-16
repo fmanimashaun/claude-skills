@@ -269,7 +269,7 @@ the 8.1 guide does not document it.
   weigh that before adding it in production. A tagged comment does **not** change
   `pg_stat_statements`' `queryid` (measured on PostgreSQL 18.6, see the
   `pg_stat_statements` section below): the tags attribute a query to a route per
-  execution, in the server log and `pg_stat_activity`, and never split a view row.
+  execution, in `pg_stat_activity`, and never split a view row.
 - One-format-per-app: if you adopt JSON logs (via a `Rails.event` subscriber
   or a formatter), convert everything; mixed text/JSON streams are the worst
   of both.
@@ -624,12 +624,11 @@ spans are folded in process into aggregates and written to the app's own databas
   representation of the queries", so a comment does not change it: the same `SELECT`
   with no comment, with a tag comment at either end, and with different
   `controller`/`action` values gave one Query Identifier (`SET compute_query_id = on`,
-  `EXPLAIN (VERBOSE)`). Every route's executions fold into one row whose text is "that
-  of the first query that had the particular `queryid`". The tags attribute a query to
-  a route **per execution** only: in the server log and in `pg_stat_activity.query`
-  while it runs. That column is truncated at `track_activity_query_size` (1024 bytes
-  by default), so a tag at the end of a long query can be cut off; raise the setting,
-  or put the tags first with `config.active_record.query_log_tags_prepend_comment = true`.
+  `EXPLAIN (VERBOSE)`). Every route's executions fold into one row. The tags attribute
+  a query to a route **per execution** only: in `pg_stat_activity.query` while it
+  runs. That column is truncated at `track_activity_query_size` (1024 bytes by
+  default), so a tag at the end of a long query can be cut off; raise the setting, or
+  put the tags first with `config.active_record.query_log_tags_prepend_comment = true`.
 - **Two switches cost on a busy server, and both default off.**
   `pg_stat_statements.track_planning` "may incur a noticeable performance penalty"
   under concurrent identical statements; `track_io_timing` repeatedly queries the OS
