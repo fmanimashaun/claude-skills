@@ -266,10 +266,11 @@ the 8.1 guide does not document it.
   `:sqlcommenter` or `:legacy`, and `config.load_defaults 7.1` or later makes
   `:sqlcommenter` the default (Rails configuring guide, 8.1, read 2026-10-14).
   The guide warns that the `:source_location` tag "can be slow" to compute —
-  weigh that before adding it in production. Whether a tagged comment changes
-  `pg_stat_statements`' `queryid` has **not been measured here**: do not use
-  the tags as the bridge from a query to a route until you have checked it on
-  your own database.
+  weigh that before adding it in production. A tagged comment does **not** change
+  the query identifier `pg_stat_statements` groups by (measured on PostgreSQL 18.6 as
+  the core Query Identifier, `EXPLAIN (VERBOSE)`; see the `pg_stat_statements` section
+  below). So a `pg_stat_statements` row cannot be read as one route: per-route
+  attribution comes from the tags on a statement while it runs, in `pg_stat_activity`.
 - One-format-per-app: if you adopt JSON logs (via a `Rails.event` subscriber
   or a formatter), convert everything; mixed text/JSON streams are the worst
   of both.
@@ -619,6 +620,16 @@ spans are folded in process into aggregates and written to the app's own databas
   snapshots rather than calling `pg_stat_statements_reset()` from a monitor (superuser
   only by default), and poll with `pg_stat_statements(showtext := false)` to skip
   reading the texts.
+- **`query_log_tags` do not split a statement by route here (PostgreSQL 18 docs;
+  measured on 18.6).** `queryid` "is computed on the post-parse-analysis
+  representation of the queries", so a comment does not change it: the same `SELECT`
+  with no comment, with a tag comment at either end, and with different
+  `controller`/`action` values gave one Query Identifier (`SET compute_query_id = on`,
+  `EXPLAIN (VERBOSE)`). Every route's executions fold into one row. The tags attribute
+  a query to a route **per execution** only: in `pg_stat_activity.query` while it
+  runs. That column is truncated at `track_activity_query_size` (1024 bytes by
+  default), so a tag at the end of a long query can be cut off; raise the setting, or
+  put the tags first with `config.active_record.query_log_tags_prepend_comment = true`.
 - **Two switches cost on a busy server, and both default off.**
   `pg_stat_statements.track_planning` "may incur a noticeable performance penalty"
   under concurrent identical statements; `track_io_timing` repeatedly queries the OS
