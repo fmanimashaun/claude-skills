@@ -13,6 +13,7 @@
 10. Transactions, locking, bulk writes
 11. Encryption, multiple databases
 12. Display numbers — the id a person reads (`TSK-0001`)
+13. Fixing a slow query: index and query-rewrite techniques (the order of fixes is `performance-caching.md` §7)
 
 ---
 
@@ -238,7 +239,7 @@ Product.find_by(slug: "x")            # nil if absent; find_by! raises
 Product.where(status: :active, category: cats)         # IN for arrays/ranges
 Product.where.not(supplier: nil).where(created_at: 1.week.ago..)
 Product.where("lower(name) LIKE ?", "#{q.downcase}%")   # ALWAYS placeholders
-Product.order(created_at: :desc).limit(20).offset(40)
+Product.order(created_at: :desc).limit(20).offset(40)   # fine for small tables; at scale see §13 (keyset)
 Product.select(:id, :name)            # a relation of partial records
 Product.pluck(:name)                  # bare values, no models  (.pick = pluck + limit(1))
 Product.distinct.count                # also: .sum(:price), .group(:status).count
@@ -356,3 +357,80 @@ readable **display number** (#1274, maintainer decision):
 Why a sequence and not a short hash: the first seven characters of a hex id collide with a
 probability of 17% at 10,000 records and near certainty at 100,000. A sequence is shorter, reads
 aloud, and is unique by construction.
+
+## 13. Fixing a slow query: index and query-rewrite techniques
+
+This section holds the **techniques**. The **order** to try them in, the evidence each needs and how to
+prove the metric moved live in `performance-caching.md` §7: read that first, and do not skip ahead to a
+technique because it is familiar. The statements about PostgreSQL and `add_index` / `remove_index` below were checked against the
+PostgreSQL 16 docs and the Rails 8.1 API docs (`schema_statements`) on 2026-10-14; Active Record's other adapters
+are not covered. The keyset recipe, the advice on rewrites and the summary-table paragraph are our own design
+(#2039).
+
+### Indexes
+
+```ruby
+add_index :orders, :customer_id, where: "billed = false"          # partial
+add_index :accounts, [:branch_id, :party_id]                       # composite
+add_index :accounts, :branch_id, include: :party_id                # covering (PostgreSQL only)
+```
+
+- **Partial** (`where:`; Rails supports it on PostgreSQL and SQLite only). The index holds only the rows the
+  predicate selects, so it suits a query that always carries the same predicate on a small, hot part of a
+  big table. PostgreSQL limits the predicate to the table's own columns: no subqueries, no aggregates.
+- **Covering** (`include:`, PostgreSQL only). The extra columns are non-key: they cannot be searched on and
+  play no part in uniqueness, but an index-only scan can return them without visiting the table, so a query
+  that selects only the key and those columns can stop using the table. The index gets larger; add the columns
+  a hot query actually returns, not every column.
+- **Build on a big table without blocking writes**: `disable_ddl_transaction!` and `algorithm: :concurrently`
+  (§1). A standard build locks out writes until it finishes. A concurrent build cannot run inside a
+  transaction, and when it fails it leaves an **invalid** index that is ignored for queries but still costs
+  writes: drop it and build again, or `REINDEX INDEX CONCURRENTLY`.
+- **Roll back** with `remove_index :orders, name: :index_orders_on_customer_id, algorithm: :concurrently`
+  (PostgreSQL only, not in a transaction), which runs `DROP INDEX CONCURRENTLY`. It takes one index at a time,
+  cannot drop an index that backs a UNIQUE or PRIMARY KEY constraint, and does not work on a partitioned
+  table. A plain `DROP INDEX` takes an ACCESS EXCLUSIVE lock on the table.
+- Check that the plan actually uses the new index (`Order.where(...).explain(:analyze)`, or `EXPLAIN
+  (GENERIC_PLAN)` below) before keeping it: an index nothing chooses is only write cost.
+
+### Query rewrites
+
+- **OFFSET to keyset.** PostgreSQL still computes the rows an `OFFSET` skips ("a large `OFFSET` might be inefficient"), so
+  `offset(40)` does work for every earlier row and a deep page costs more than page 1. A keyset page asks for "the rows after the last one you showed":
+
+```ruby
+page = Product.order(:created_at, :id).limit(20)
+page = page.where("(created_at, id) > (?, ?)", last.created_at, last.id) if last   # last = previous page's final row
+```
+
+  PostgreSQL compares a row constructor left to right, so `(created_at, id) > (a, b)` means `created_at > a`,
+  or equal and `id > b`. Three consequences: end the order with a unique column (`id`) so no row is skipped or
+  repeated; the comparison applies one operator to every column, so **all sort columns go the same direction**;
+  and a NULL in the first pair that is not equal (a NULL leading sort column always is) makes the comparison
+  unknown, so those rows drop out: keep the sort columns `NOT NULL`. The price is that a reader cannot jump to page 40.
+- **A function on the column side** (`lower(name) = ?`) makes the comparison about the function's result: compare
+  the bare column where the data allows, and check the plan before and after.
+- **`COUNT` to `EXISTS`**: `exists?` for a yes/no question (§8); **`SELECT *` to `select`/`pluck`** (§8).
+- **N+1** is §9, and **counter caches** are §5.
+
+### Materialised view or summary table
+
+When one expensive aggregate is read far more often than it changes, store its result.
+
+- **Materialised view**: `REFRESH MATERIALIZED VIEW CONCURRENTLY name` refreshes without locking out readers, but
+  needs at least one UNIQUE index on the view that uses only column names and covers all rows (no expression, no
+  `WHERE`), cannot run on a view that is not yet populated (the first refresh is the plain form), cannot be
+  combined with `WITH NO DATA`, and only one refresh at a time can run against a given view. The plain form
+  can block readers. Run the statement through the connection (`lease_connection.execute`, §8), from a job.
+- **Summary table**: a table your code updates itself (in the write path or a job). More code than a view, and
+  the same staleness question.
+- **How stale may the number be is a product rule**, not an engineering call: ask the owner and write the answer
+  next to the view or table.
+
+### Reading a plan you cannot run with real values
+
+`EXPLAIN (GENERIC_PLAN) SELECT ... WHERE id > $1 AND id < $2` accepts parameter placeholders and returns a
+**generic** plan that does not depend on the values. It is in the PostgreSQL 16 docs and not in 15 (docs compared
+2026-10-14), and it **cannot be combined with `ANALYZE`**. A generic plan can differ from the custom plans a
+prepared statement uses when the data is skewed, so label what you read as generic and confirm on a real value
+with `explain(:analyze)`.
