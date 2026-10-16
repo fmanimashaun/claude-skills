@@ -95,8 +95,8 @@ yours to write, or the tokens come from an external identity provider.
    whose source does not state both (it reads the source, because the gem emits all four hints once any
    one is set). The spec says clients **MUST** treat tool
    annotations as untrusted ([tools][spec-tools]), so the hint describes the tool and guarantees
-   nothing. The guarantee is that no tool's code path writes. **Write tools are out of scope for
-   now** (maintainer ruling, #2034; future work tracked in #2049); this file covers reporting (read-only) tools.
+   nothing. The guarantee is that no tool's code path writes. **A write tool ships only after
+   the checklist in section 6** (owner ruling, #2056); these rules cover reporting (read-only) tools.
 3. **One tool per report, with typed arguments**, for example `overdue_tasks_by_team(period:)`. No
    query language, no SQL, and no "run this scope". A tool's arguments are the only thing an agent
    controls, so they are validated like form params.
@@ -108,7 +108,7 @@ yours to write, or the tokens come from an external identity provider.
    Key the limiter by the **token's user**, not the address, for the reason and the `:null_store` trap in
    `auth-security.md`'s "Rate limiting, and a trap". Sanitizing matters most for a read tool that returns
    text people typed (titles, comments). The spec names no concrete mitigation beyond the MUST, so how
-   far to go for write tools is decision #2034's, not this file's.
+   far to go for write tools is section 6's checklist.
 6. **Sensitive data is excluded by default.** Results carry aggregates and display numbers
    (`TSK-0001`, `models.md` §12), each a link to the record. A category the app marks sensitive (for
    example Retask's enrollee data) reaches a result only from a tool explicitly allowed to return it,
@@ -182,6 +182,43 @@ names its source; a rule marked *advice* is vendor guidance, not a requirement o
   with a verifiable outcome, recording the total runtime of individual tool calls and tasks, the total number of tool calls, the total token consumption and tool errors, and refine the descriptions from what it shows.
   *Advice* (the Anthropic post). Re-running it on every description change is this project's advice; no official source states it.
 
+## 6. Before you add a write tool (owner ruling, #2056; citations verified 2026-10-17 against MCP spec revision 2026-07-28, #2051)
+
+**If you cannot answer these, do not ship a write tool.** A write tool is any tool that changes data. Answer each
+question in writing in your project's CLAUDE.md before the first one ships; "this project has no write tools" is a
+complete answer. Where the spec gives a mechanism it is cited; where it defines none, the item says so and the
+answer is *our design*: yours to choose and record.
+
+1. **Who may write?** Name the scope each write needs. The spec's mechanism is a 403 with
+   `error="insufficient_scope"` naming the scopes the operation needs, all in one challenge (both SHOULDs,
+   [authorization][spec-auth]). Its security guidance suggests a minimal initial scope and step-up by a
+   `WWW-Authenticate` challenge ([security best practices][spec-security]; guidance, not a requirement). The spec
+   defines no per-tool scope scheme.
+2. **How is a change confirmed before it applies?** The spec puts confirmation on the client: clients SHOULD
+   "prompt for user confirmation on sensitive operations", and "there SHOULD always be a human in the loop with the
+   ability to deny tool invocations" ([tools][spec-tools], Security Considerations and User Interaction Model). It
+   defines no server-side confirmation protocol. A preview token you issue is a state handle: the spec says servers
+   "MUST NOT treat possession of a state handle as authentication" and SHOULD bind it to the user derived from the
+   verified token ([security best practices][spec-security]), and for `requestState` it requires integrity
+   protection and server-side one-time redemption (MUSTs, [MRTR][spec-mrtr]). A client that declares no elicitation
+   support must not be sent `elicitation/create` ([MRTR][spec-mrtr]), and the spec defines no fallback: decide
+   whether such a client is refused.
+3. **What stops a retried call writing twice?** The spec defines no idempotency key on `tools/call`, and
+   `idempotentHint` is an untrusted hint that defaults to false ([schema][schema-ts]). *Our design:* the key, and
+   what a replay returns.
+4. **How does the audit tell an agent's write from a person's?** The spec defines no such marker. *Our design:*
+   extend rule 4's audit row with the OAuth client, the identifiers before and after, and the outcome, refused
+   writes included.
+5. **How is a wrong write undone?** The spec defines no undo or soft-delete pattern. *Our design:* name the actions
+   you refuse because they cannot be undone.
+
+OWASP's Excessive Agency entry ([LLM06:2025][owasp-llm06]) points the same way: minimize permissions, act in the
+user's context, require a human to approve high-impact actions, and mediate every request; it lists logging and
+rate limiting as limiting the damage, not preventing it. Rule 5's rate limit and sanitizing (spec MUSTs) still
+apply to a write tool. Set `destructiveHint` and `idempotentHint` truthfully (meaningful only when `readOnlyHint`
+is false; the defaults are true and false, [schema][schema-ts]), and remember clients treat every annotation as
+untrusted.
+
 [sdk]: https://github.com/modelcontextprotocol/ruby-sdk
 [sdk-docs]: https://ruby.sdk.modelcontextprotocol.io/server/transports/
 [spec-transport]: https://modelcontextprotocol.io/specification/2026-07-28/basic/transports
@@ -194,3 +231,6 @@ names its source; a rule marked *advice* is vendor guidance, not a requirement o
 [cc-mcp]: https://code.claude.com/docs/en/mcp
 [inspector]: https://modelcontextprotocol.io/docs/tools/inspector
 [connectors]: https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp
+[spec-mrtr]: https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/mrtr
+[spec-security]: https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices
+[owasp-llm06]: https://genai.owasp.org/llmrisk/llm062025-excessive-agency/
