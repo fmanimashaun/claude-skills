@@ -649,14 +649,14 @@ spans are folded in process into aggregates and written to the app's own databas
 - **An "unused" index needs a window, and `stats_reset` alone is not it.** All counters
   are reset "when starting from an unclean shutdown (e.g., after an immediate shutdown,
   a server crash, starting from a base backup, and point-in-time recovery)"
-  (PostgreSQL 16 docs). Measured on `postgres:16` (16.15): after an immediate stop
+  (PostgreSQL 16 docs). Measured on `postgres:16` (16.15), and again on 18.6: after an immediate stop
   `idx_scan` went from 1 to 0 and `last_idx_scan` to null, while
   `pg_stat_database.stats_reset` **stayed null**. The tables and indexes views have no
   reset column of their own. So take the window from the later of the two:
   `greatest(stats_reset, pg_postmaster_start_time())`. A clean restart keeps the
-  counters, which makes this conservative but never wrong. `last_idx_scan` is new
-  in 16.
-- **Four index checks, each one measured on `postgres:16` against a planted case:**
+  counters, which makes this conservative but never wrong. `last_idx_scan` is in the
+  16 docs, not in 15.
+- **Four index checks, each one measured on `postgres:16` and 18.6 against a planted case:**
 
   ```sql
   -- window start (see above)
@@ -697,7 +697,8 @@ spans are folded in process into aggregates and written to the app's own databas
   only saves work on a table VACUUM has visited. Measured: 100% of pages scanned on a
   never-vacuumed table, 58% after one VACUUM and a 1% delete. Its dead-tuple count is
   exact (2,000 against `pgstattuple`'s 2,000); only the live tuples and free space are
-  estimates. On 16 only `pg_stat_scan_tables` may execute these functions. Measured: a
+  estimates. On 16, by default, only `pg_stat_scan_tables` may execute these functions
+  (superusers bypass it). Measured (16.15, and the same on 18.6): a
   `pg_read_all_stats` role reads the screen but gets *"permission denied for function
   pgstattuple_approx"*. **Our design (#2045):** give the bloat measurement a separate
   login role granted `pg_stat_scan_tables` and nothing else, never `pg_monitor`, and

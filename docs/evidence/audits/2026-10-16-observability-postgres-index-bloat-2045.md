@@ -8,7 +8,7 @@ M = https://www.postgresql.org/docs/16/monitoring-stats.html
 
 | id | claim | verdict | authority | what the doctrine does |
 |---|---|---|---|---|
-| 1 | `last_idx_scan` exists; it is new in 16 | CONFIRMED | M; 0 hits on the docs/15 page | tagged "new in 16" |
+| 1 | `last_idx_scan` is in the 16 docs, not in 15 | CONFIRMED | M; 0 hits on the docs/15 page | stated as "in the 16 docs, not in 15" |
 | 2 | counters reset on an unclean shutdown (immediate stop, crash, base backup, PITR) | CONFIRMED and MEASURED: `idx_scan` went 1 → 0 after `pg_ctl stop -m immediate` | M §28.2 (docs' own wording used); run3 | stated |
 | 3 | "check `stats_reset` first" (the issue's wording) | **REFUTED by measurement**: `pg_stat_database.stats_reset` stayed null across the crash reset; the tables and indexes views have no reset column (verifier) | run3; M | the window is `greatest(stats_reset, pg_postmaster_start_time())` |
 | 4 | an invalid index is ignored for queries but still costs on update; recover by dropping and running `CREATE INDEX CONCURRENTLY` again, or `REINDEX INDEX CONCURRENTLY` | CONFIRMED | https://www.postgresql.org/docs/16/sql-createindex.html; https://www.postgresql.org/docs/16/catalog-pg-index.html | stated, quoted |
@@ -18,3 +18,4 @@ M = https://www.postgresql.org/docs/16/monitoring-stats.html
 | 8 | `pg_stat_scan_tables` can be granted alone | CONFIRMED and MEASURED: a role with only that grant ran `pgstattuple_approx` and was refused `SELECT` on the rows; a `pg_read_all_stats` role was refused the function | https://www.postgresql.org/docs/16/predefined-roles.html; run2 | the design row below |
 | Q | the five catalog queries (window, unused, invalid, duplicate, unindexed FK) | MEASURED: the doctrine's block, extracted verbatim, returns exactly the planted case per query on a fresh container | run4 | shipped as written |
 | D | the role choice (#2037 finding 2) | **DESIGN, ours**: a separate on-demand bloat role granted `pg_stat_scan_tables` only, never `pg_monitor`; the always-on reader stays `pg_read_all_stats` | decision recorded on #2045 | stated as "our design (#2045)" |
+| R | the same runs on `postgres:18` (18.6) | MEASURED by reviewer ff (claude-skills-3d): every query, role result, visibility-map figure and the `stats_reset` correction identical to 16 | https://github.com/fmanimashaun/claude-skills/pull/2096#issuecomment-6219921352 | doctrine says "and again on 18.6" |
