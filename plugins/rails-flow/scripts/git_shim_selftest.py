@@ -546,10 +546,9 @@ def _(base):
     runs(r, label, "config", "--", "user.name", "b")
     runs(r, label, "config", "--", "user.name", "-x")
     refused(r, label, "config", "--", "pager.log", "-x")
-    # an attached value (`--opt=value`) is ONE argument (#2092): it neither moves the key nor hides it
+    # an attached value (`--opt=value`) is ONE argument (#2092): it neither moves the key nor hides it (`--comment=` is git 2.45+, so it is not used: Ubuntu 24.04 ships 2.43)
     runs(r, label, "config", "--file=.git/config", "user.name", "c")
     runs(r, label, "config", "--type=bool", "commit.gpgsign", "false")
-    runs(r, label, "config", "--comment=why", "user.name", "d")
     refused(r, label, "config", "--file=.git/config", "pager.log", "x")
     # a bare `-` is a VALUE to git, not an option (fa, review of #2062): each of these WRITES its key, so each is judged as a write
     for args in (("config", "pager.log", "-"), ("config", "init.templateDir", "-"), ("config", "core.askpass", "-"), ("config", "-z", "pager.log", "-"),
