@@ -75,13 +75,14 @@ class Repo:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
 
+    # errors="replace": a refusal echoes the value, and one row passes a non-UTF-8 byte (the credential-helper locale row)
     def real(self, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
-        return subprocess.run([REAL_GIT, *args], cwd=cwd or self.work, env=fixture_git.hermetic(self.env), capture_output=True, text=True)
+        return subprocess.run([REAL_GIT, *args], cwd=cwd or self.work, env=fixture_git.hermetic(self.env), capture_output=True, text=True, errors="replace")
 
     def g(self, *args: str, cwd: Path | None = None, env: dict[str, str] | None = None, stdin: str = "") -> subprocess.CompletedProcess:
         e = dict(self.path_env)
         e.update(env or {})
-        return subprocess.run(["git", *args], cwd=cwd or self.work, env=e, capture_output=True, text=True, input=stdin, timeout=20)
+        return subprocess.run(["git", *args], cwd=cwd or self.work, env=e, capture_output=True, text=True, errors="replace", input=stdin, timeout=20)
 
     def snapshot(self) -> tuple:
         status = self.real("status", "--porcelain=v1", "-uall").stdout
@@ -458,7 +459,9 @@ def _(base):
     r.real("config", "bar.path", "/tmp/renamed-2026-include")
     for args in (("config", "--rename-section", "foo", "alias"), ("config", "--ren", "foo", "ALIAS"), ("config", "--rename-s", "foo", "alias.sub"),
                  ("config", "--rename-section", "hk", "core"), ("config", "--ren", "hk", "Core"), ("config", "--rename-section", "bar", "include"),
-                 ("config", "rename-section", "hk", "core"), ("config", "--rename-section", "foo", "harmless")):
+                 ("config", "rename-section", "hk", "core"), ("config", "--rename-section", "foo", "harmless"),
+                 # an ALLOWLISTED section name (alias.x, under alias.*): only the rename rule stands between it and core (#2043 keeps the rule for this)
+                 ("config", "--rename-section", "alias.x", "core"), ("config", "--ren", "alias.x", "core"), ("config", "rename-section", "alias.x", "core")):
         refused(r, label, *args)
     for key, planted in (("alias.x", "!sh"), ("core.hookspath", "/tmp/renamed-2026-hooks"), ("core.fsmonitor", "renamed-2026-fsmonitor"),
                          ("core.sshcommand", "renamed-2026-ssh"), ("include.path", "/tmp/renamed-2026-include")):
@@ -473,14 +476,75 @@ def _(base):
     for key in ("diff.external", "core.pager", "core.editor", "sequence.editor", "gpg.program", "gpg.ssh.program", "core.fsmonitor", "core.sshCommand", "Core.Pager"):
         refused(r, label, "config", key, "/tmp/prog-2021")
         check(label, "/tmp/prog-2021" not in r.real("config", "--get-all", key).stdout, f"`git config {key}` was written anyway")
-    refused(r, label, "config", "--get", "core.editor")
+    # a READ of a program key changes nothing; since #2043 the allowlist judges writes, so the read runs (it was refused under #2021's per-key list)
+    p = r.g("config", "--get", "core.editor")
+    check(label, "git-shim" not in p.stderr, f"a read of core.editor was refused: {p.stderr.strip()[:120]}")
+    # core.fsmonitor and core.sshCommand stay refused even to READ: they sit in the #1789 hooks rule with core.hooksPath
+    refused(r, label, "config", "--get", "core.fsmonitor")
+    refused(r, label, "config", "--get", "core.sshCommand")
     # a credential helper that starts with `!` is a shell command; a named helper runs git's own git-credential-<name>
     for args in (("config", "credential.helper", "!sh -c x"), ("config", "--add", "credential.https://example.com.helper", "!x"), ("config", "Credential.Helper", " !x"),
                  ("config", "credential.helper", "/tmp/helper-2042"), ("config", "credential.helper", " /tmp/helper-2042")):    # a0, review of #2042: a program path runs too
         refused(r, label, *args)
     check(label, "/tmp/helper-2042" not in r.real("config", "--get-all", "credential.helper").stdout, "a credential helper path was written anyway")
+    # Fable, attack on #2062: git runs any helper through `sh -c`, so a metacharacter after a plain word is a command too
+    for v in ("foo; touch /tmp/marker-2062", "x $(touch /tmp/marker-2062)", "x`id`", "x|id", "x&id", "a\nb", "\udcff; touch /tmp/marker-2062"):
+        refused(r, label, "config", "credential.helper", v)
+        check(label, r.real("config", "--local", "--get-all", "credential.helper").stdout == "", f"a helper with a metacharacter was written: {v!r}")
     runs(r, label, "config", "credential.helper", "store")
+    # --local: the REPOSITORY's config only. A machine's system config can carry its own helper (Xcode's git ships credential.helper=osxkeychain),
+    # and --get-all would list it too, failing this row for a reason that has nothing to do with the shim (72 hit it locally on #2062).
     check(label, r.real("config", "--local", "--get-all", "credential.helper").stdout.strip() == "store", "a named credential helper did not land")
+    runs(r, label, "config", "credential.helper", "cache --timeout 300")
+
+
+@case("shim: git config WRITES are an allowlist; reads run (#2043)")
+def _(base):
+    label = "shim: git config WRITES are an allowlist; reads run (#2043)"
+    r = Repo(base, "allow2043")
+    # a write to a key outside the allowlist is refused, whatever runs it: a0's measured program-running keys, each class, and a harmless stranger
+    for key in ("pager.log", "core.askpass", "core.gitProxy", "diff.x.textconv", "diff.x.command", "filter.x.clean", "filter.x.smudge",
+                "filter.x.process", "merge.x.driver", "mergetool.x.cmd", "difftool.x.cmd", "web.browser", "uploadpack.packObjectsHook", "some.random"):
+        refused(r, label, "config", key, "/tmp/prog-2043")
+        check(label, "/tmp/prog-2043" not in r.real("config", "--get-all", key).stdout, f"`git config {key}` was written anyway")
+    # every write spelling is judged: the subcommand, the flags (and git's unique prefixes), the old two-positional form; an option's value is not the key
+    for args in (("config", "set", "pager.log", "x"), ("config", "--add", "pager.log", "x"), ("config", "--ad", "pager.log", "x"),
+                 ("config", "--replace-all", "pager.log", "x"), ("config", "--unset", "pager.log"), ("config", "unset", "pager.log"),
+                 ("config", "--file", ".git/config", "pager.log", "x"), ("config", "--type", "bool", "pager.log", "true"),
+                 ("config", "--remove-section", "pager"), ("config", "--edit"), ("config", "-e"), ("config", "edit")):
+        refused(r, label, *args)
+    # the allowlist: each key writes, and reads run
+    for key, value in (("user.name", "someone"), ("user.email", "a@b.c"), ("commit.gpgsign", "false"), ("tag.gpgSign", "false"),  # fixture-git: exempt (these are the KEYS under test, written through the shim on purpose, not a fixture identity)
+                       ("init.defaultBranch", "main"), ("pull.rebase", "true"), ("push.autoSetupRemote", "true"), ("fetch.prune", "true"),
+                       ("branch.main.remote", "origin"), ("remote.origin.url", "https://example.com/r.git"), ("Color.UI", "auto")):
+        runs(r, label, "config", key, value)
+    runs(r, label, "config", "--file", ".git/config", "user.name", "someone")      # an option's value is never the key
+    runs(r, label, "config", "--type", "bool", "commit.gpgsign", "false")
+    runs(r, label, "config", "-t", "bool", "commit.gpgsign", "false")              # -t is --type's short form: its value is not the key
+    refused(r, label, "config", "--un", "pager.log")                                 # git's shortest unique-enough prefix of --unset
+    # a COMBINED short cluster is read letter by letter by git (the commit security review of #2043): `-ze` edits, `-zf FILE` / `-fFILE` move the key
+    for args in (("config", "-ze"), ("config", "-zf", "user.name", "pager.log", "x"), ("config", "-fuser.name", "pager.log", "x")):
+        refused(r, label, *args)
+    # an ABBREVIATED value option takes the next argument as its value, so it moves the key too (the second commit security review of #2043)
+    for args in (("config", "--fil", "user.name", "pager.log", "x"), ("config", "--comm", "user.name", "pager.log", "x"),
+                 ("config", "--ty", "bool", "user.name", "true"), ("config", "--", "pager.log", "x")):
+        refused(r, label, *args)
+    check(label, not (r.work / "user.name").exists(), "a short cluster or an abbreviated option wrote a config file past the key check")
+    # a bare `-` is a VALUE to git, not an option (fa, review of #2062): each of these WRITES its key, so each is judged as a write
+    for args in (("config", "pager.log", "-"), ("config", "init.templateDir", "-"), ("config", "core.askpass", "-"), ("config", "-z", "pager.log", "-"),
+                 ("config", "--no-type", "pager.log", "-"), ("config", "--file", ".git/config", "pager.log", "-")):
+        refused(r, label, *args)
+    for key in ("pager.log", "init.templatedir", "core.askpass"):
+        check(label, r.real("config", "--local", "--get-all", key).stdout.strip() != "-", f"`git config {key} -` was written anyway")
+    runs(r, label, "config", "user.name", "-")                                       # an allowlisted key may still take `-` as its value
+    # an unknown single-letter option is unjudgeable in a write (git may read the next argument as its value)
+    refused(r, label, "config", "-X", "user.name", "pager.log", "x")
+    runs(r, label, "config", "--add", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+    runs(r, label, "config", "--unset", "color.ui")
+    for args in (("config", "--get", "pager.log"), ("config", "--list"), ("config", "-l"), ("config", "get", "user.name"), ("config", "list"),
+                 ("config", "--get-regexp", "remote"), ("config", "--get-all", "remote.origin.fetch")):
+        p = r.g(*args)
+        check(label, "git-shim" not in p.stderr, f"`git {' '.join(args)}` (a read) was refused: {p.stderr.strip()[:120]}")
 
 
 @case("shim: -c core.hooksPath on the command line is refused")

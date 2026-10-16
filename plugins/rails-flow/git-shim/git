@@ -16,7 +16,8 @@
 #   stash      drop, clear
 #   checkout-index  -f / --force            read-tree  --reset together with -u
 #   commit | push | merge | rebase | pull | am | cherry-pick | revert   --no-verify (and `commit -n`; `-n` is a dry run or --no-stat elsewhere)
-#   config     any `git config` that names core.hooksPath, include.* / includeIf.*, core.fsmonitor, core.sshCommand, or a key that runs a program
+#   config     a WRITE to any key outside CONFIG_WRITE_ALLOWED (an allowlist, #2043), and `--edit`; and, read or write,
+#              any `git config` that names core.hooksPath, include.* / includeIf.*, core.fsmonitor, core.sshCommand, or a key that runs a program
 #              (diff.external, core.pager, core.editor, sequence.editor, gpg.*program, #2021); a credential.helper or an alias whose value starts with `!`;
 #              any section rename (#2027). OUT OF SCOPE (#2021): `git clone --config`/`-c` setting such a key in the NEW clone; that is not the session's
 #              repository, and the guarantee moves to the hooks of #1789/#1790.
@@ -305,6 +306,80 @@ fixture_repo() {
 # that redirects git). Why this one write is safe: it lands in the fixture's OWN `.git/config`, so the hooks it can switch off are the fixture's, never the session's (#1789); the repository is the
 # one the real git will use, so `-C`, `--git-dir` and a decoy in the environment cannot aim it at the project. Anything else about `config` stays refused here: every other key, `--global`,
 # `--system`, `--file`/`-f`, `--blob`, `--worktree`, an unset, a value that looks like an option, and extra arguments (a project's spec that needs more asks for it with an adversary pass).
+# #2043 — `git config` WRITES ARE AN ALLOWLIST, the same model as the `-c` allowlist above. Blocking program-running keys one by one never
+# closed the class (#2021 named eight; a0 measured a dozen more: pager.*, core.askpass, core.gitProxy, diff.*.textconv, filter.*.clean, merge.*.driver,
+# *tool.*.cmd, web.browser, uploadpack.packObjectsHook, ...), so a write is let through only for the keys a session sets in ordinary work, measured
+# from our own scripts and the downstream fixtures (commit.gpgsign; core.hooksPath only in a fixture, via `fixture_hooks_config`). alias.* and the credential
+# helper keys are listed because their dangerous values are refused by their own rules above (a `!` alias; a `!` or `/` helper). Reads are not judged here.
+CONFIG_WRITE_ALLOWED="user.name user.email commit.gpgsign tag.gpgsign init.defaultbranch maintenance.auto gc.auto core.quotepath core.autocrlf pull.rebase pull.ff push.default push.autosetupremote fetch.prune rerere.enabled merge.conflictstyle color.ui branch.*.remote branch.*.merge branch.*.rebase remote.*.url remote.*.fetch alias.* credential.helper credential.*.helper"
+
+# config_write_key <config arguments...>: sets CFG_WRITE (1 when the command writes) and CFG_KEY (the key it writes, empty when it cannot name one).
+# A write is a write subcommand (set, unset, rename-section, remove-section, edit), a write flag in any unique-prefix spelling git accepts, or the
+# old two-positional form `key value` with no read flag. Option values (`--file x`, `--type x`, ...) are skipped so they are never read as the key.
+config_write_key() {
+  CFG_WRITE=0; CFG_KEY=""; CLUSTER=0
+  local a pos=() read=0 skip=0 f known endopts=0
+  case "${1:-}" in
+    set|unset|rename-section|remove-section|edit) CFG_WRITE=1; shift ;;
+    get|list) return 0 ;;
+  esac
+  for a in "$@"; do
+    if [ "$skip" = 1 ]; then skip=0; continue; fi
+    if [ "$endopts" = 1 ]; then pos+=("$a"); continue; fi
+    case "$a" in
+      --) endopts=1; continue ;;
+      -f|-t|--file|--blob|--type|--default|--comment|--value|--url) skip=1; continue ;;   # -t is --type's short form (a0, review of #2062)
+      # A bare `-` is not an option: git takes it as a VALUE (fa, review of #2062: `git config pager.log -` was read as a one-positional READ
+      # and wrote pager.log; `init.templateDir -` led to a hook run by the real git). It is a positional.
+      -) pos+=("$a"); continue ;;
+      -e) CFG_WRITE=1; continue ;;
+      -l) read=1; continue ;;
+      # A COMBINED short cluster (`-ze` = -z -e, `-zf FILE`, an attached `-fFILE`) is parsed by git letter by letter, so this shim cannot tell
+      # which argument is the key or whether it edits: treat it as an unjudgeable write, which the allowlist refuses (the commit security
+      # review of #2043: `git config -ze` opened the editor and `-zf user.name pager.log x` wrote pager.log past the key check).
+      -[!-]?*) CFG_WRITE=1; CFG_KEY=""; CLUSTER=1; continue ;;
+      --*=*) continue ;;
+      --*)
+        for f in --add --replace-all --unset --unset-all --remove-section --rename-section --edit; do
+          case "$f" in "$a"?*|"$a") [ "${#a}" -ge 4 ] && CFG_WRITE=1 ;; esac
+        done
+        for f in --get --get-all --get-regexp --get-urlmatch --get-color --get-colorbool --list; do
+          [ "$a" = "$f" ] && read=1
+        done
+        # ONLY EXACT, KNOWN no-value flags are understood. git reads a long option by its unique prefix, so an abbreviation of a VALUE option
+        # (`--fil x` = `--file x`, `--comm x` = `--comment x`) takes the next argument as its value and moves the key (the second commit security
+        # review of #2043: `--fil user.name pager.log x` wrote pager.log past the key check). Any long option not on this list makes a write unjudgeable.
+        known=0
+        for f in --global --system --local --worktree --includes --no-includes --null --name-only --show-origin --show-scope --bool --int \
+                 --bool-or-int --path --expiry-date --fixed-value --append --all --no-type --get --get-all --get-regexp --get-urlmatch --get-color \
+                 --get-colorbool --list --add --replace-all --unset --unset-all --remove-section --rename-section --edit; do
+          [ "$a" = "$f" ] && known=1
+        done
+        [ "$known" = 1 ] || CLUSTER=1
+        continue ;;
+      -z) continue ;;
+      # Any OTHER single-letter option is not one this parser knows; git may read the next argument as its value, so a write is unjudgeable.
+      -?) CLUSTER=1; continue ;;
+      -*) continue ;;
+    esac
+    pos+=("$a")
+  done
+  [ "$read" = 1 ] && [ "$CFG_WRITE" = 0 ] && return 0
+  [ "${#pos[@]}" -ge 2 ] && CFG_WRITE=1
+  [ "$CFG_WRITE" = 1 ] && [ "${CLUSTER:-0}" = 0 ] && CFG_KEY="${pos[0]:-}"
+  return 0
+}
+
+# config_key_allowed <key>: is this key on CONFIG_WRITE_ALLOWED (case-insensitive; `*` is one dotted segment or more)?
+config_key_allowed() {
+  local k="$1" pat
+  [ -n "$k" ] || return 1
+  for pat in $CONFIG_WRITE_ALLOWED; do
+    ci_match "$k" "$pat" && return 0
+  done
+  return 1
+}
+
 fixture_hooks_config() {
   local key val
   case "$#" in
@@ -538,23 +613,26 @@ decide() {
     read-tree)
       if seen reset && seen update; then RULE="git read-tree --reset -u overwrites the working tree"; return 1; fi ;;
     config)
-      local x alias_key=0 shell_value=0 section_move=0 cred_key=0 path_value=0
+      local x alias_key=0 shell_value=0 section_move=0 cred_key=0 path_value=0 meta_value=0 cfg_rest
       for x in "$@"; do
         if ci_match "$x" "*core.hookspath*" || ci_match "$x" "*include.path*" || ci_match "$x" "*includeif.*" || ci_match "$x" "*core.fsmonitor*" || ci_match "$x" "*core.sshcommand*"; then
           RULE="git config naming core.hooksPath, include.*, core.fsmonitor or core.sshCommand can switch the #1789 git hooks off"; return 1
         fi
-        # #2021 (the coordinator's scope decision): keys that make git RUN A PROGRAM. That program finds the real git first on its own PATH, never this shim,
-        # so it could run a refused command unseen (a0 measured it for diff.external). Named at all, as core.hooksPath is: a read is refused too.
-        if ci_match "$x" "*diff.external*" || ci_match "$x" "*core.pager*" || ci_match "$x" "*core.editor*" || ci_match "$x" "*sequence.editor*" || ci_match "$x" "*gpg.*program*"; then
-          RULE="git config naming diff.external, core.pager, core.editor, sequence.editor or gpg.*program sets a program git runs, which this shim cannot see"; return 1
-        fi
+        # (#2021's per-key list of program-running keys is superseded by the write ALLOWLIST below, #2043: a write to any of them is refused there.)
         ci_match "$x" "credential.*helper" && cred_key=1
         ci_match "$x" "alias.*" && alias_key=1
         # A SECTION RENAME is refused OUTRIGHT, whatever the target (#2026): renamed onto `alias` it made a shell alias (#2023), and onto `core` or
         # `include` it set `core.hooksPath`, `core.fsmonitor`, `core.sshCommand` or `include.path` past the per-key rules above (a0, measured), because a
-        # rename never names the key it creates. git reads a long option by its UNIQUE PREFIX, so `--ren` is this option too.
-        case "--rename-section" in "$x"?*|"$x") if [ "${#x}" -ge 5 ]; then section_move=1; fi ;; esac
+        # rename never names the key it creates.
+        # Exact spelling only: an abbreviation (`--ren`) is an unknown long option, which makes the write unjudgeable below (#2043).
+        [ "$x" = --rename-section ] && section_move=1
         case "${x#"${x%%[! ]*}"}" in "!"*) shell_value=1 ;; "/"*) path_value=1 ;; esac      # the value, leading spaces aside, starts with `!` (a shell command) or `/` (a program path)
+        # Fable, attack on #2062: git runs ANY helper value through `sh -c` (`git credential-foo; touch /x`), so a shell metacharacter anywhere
+        # in it runs a command. A CHARACTER ALLOWLIST, not a list of metacharacters: anything outside it (`;`, `$`, a backtick, a quote, a newline, a
+        # non-ASCII letter) counts. Stripped byte by byte under LC_ALL=C, not matched with a regex: in a UTF-8 locale an invalid byte makes `=~`
+        # return 1 (no match), so `\xff; touch /x` passed (commit security review). Whatever survives the strip is refused.
+        cfg_rest=$(LC_ALL=C; printf '%s.' "${x//[A-Za-z0-9 ._:\/@=+,%-]/}"); cfg_rest=${cfg_rest%.}   # the `.` keeps a trailing newline from $(...)
+        [ -n "$cfg_rest" ] && meta_value=1
       done
       # The `rename-section` SUBCOMMAND (newer gits) is the same rename, spelled as the first word.
       [ "${1:-}" = rename-section ] && section_move=1
@@ -567,6 +645,18 @@ decide() {
       # `/` (a `--file /path`) also counts, so `git config --file /x credential.helper store` is refused too: an accepted cost on a rare command.
       if [ "$cred_key" = 1 ] && { [ "$shell_value" = 1 ] || [ "$path_value" = 1 ]; }; then
         RULE="git config writing a credential.helper that is a shell command (!) or a program path (/) runs a program this shim cannot see"; return 1
+      fi
+      if [ "$cred_key" = 1 ] && [ "$meta_value" = 1 ]; then
+        RULE="git config writing a credential.helper with a shell metacharacter runs a command through sh -c"; return 1
+      fi
+      # #2043: everything above refuses a named danger; this lets a WRITE through only for a key a session sets in ordinary work.
+      config_write_key "$@"
+      if [ "$CFG_WRITE" = 1 ]; then
+        case "${1:-}" in edit) CFG_KEY="" ;; esac
+        for x in "$@"; do case "$x" in -e|--ed|--edi|--edit) CFG_KEY="" ;; esac; done
+        if ! config_key_allowed "$CFG_KEY"; then
+          RULE="git config writes only the allowlisted keys (${CONFIG_WRITE_ALLOWED// /, }); ${CFG_KEY:-this write} is not one, and editing the file is refused"; return 1
+        fi
       fi
       # #2015: a SHELL alias (`!…`) runs any command the next time it is used, and this shim cannot see inside it; writing one is refused, in a
       # fixture too (the exemption above covers only `core.hooksPath`). A plain alias is judged again when it is used, and reading one writes nothing.
