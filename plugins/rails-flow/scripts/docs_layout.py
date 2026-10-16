@@ -66,6 +66,29 @@ def imported_by_sibling_canvas(p: Path) -> bool:
         if p.name in CANVAS_IMPORT.findall(text):
             return True
     return False
+
+
+EVIDENCE_REPORT = "REPORT.md"
+
+
+def cited_by_evidence_report(p: Path, docs: Path) -> bool:
+    """True for a script that a measurement REPORT.md in its own evidence bundle runs by its relative path (#2093).
+
+    `docs/evidence/<kind>/<run>/` is a reproduction bundle: the report's Commands block is run from that folder (`ruby --yjit ruby/bench.rb`), so the scripts have to sit
+    beside it, and a move to scripts/ would break every command. Only a bundle counts: a folder at least two levels under `evidence/` (never `evidence/` itself or a
+    kind folder), a REPORT.md in it or in an ancestor still inside it, and the script's path from that folder written out in the report (a bare file name is not a citation)."""
+    parts = p.relative_to(docs).parts
+    if len(parts) < 4 or parts[0] != "evidence":
+        return False
+    for depth in range(3, len(parts)):
+        report = docs.joinpath(*parts[:depth]) / EVIDENCE_REPORT
+        try:
+            text = report.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if "/".join(parts[depth:]) in text:
+            return True
+    return False
 BINARY_EXT = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".pdf", ".webp", ".ico", ".mp4", ".mov", ".zip", ".woff", ".woff2", ".ttf"}
 PROSE_EXT = {".md", ".markdown", ".txt", ".html", ".rst"}
 GENERATED_HEADER = re.compile(r"generated (by|from|at)|do not (hand-)?edit|auto-?generated", re.I)
@@ -109,6 +132,9 @@ def kind_of(p: Path, docs: Path) -> str:
         # not code that wandered in: design-flow's `canvas_manifest.py extract` reads the canvas's literals
         # through that very import (#935), so the file has to stay where the canvas can find it (#942).
         if p.suffix.lower() in CANVAS_MODULE_EXT and imported_by_sibling_canvas(p):
+            return "authored"
+        # A script a measurement report beside it runs by its relative path is the evidence, not code that wandered in: its commands run from that folder (#2093).
+        if cited_by_evidence_report(p, docs):
             return "authored"
         return "code"
     if p.suffix.lower() in BINARY_EXT or (p.suffix.lower() not in PROSE_EXT and is_binary(p)):
@@ -648,6 +674,26 @@ def selftest() -> int:
             (loose_root / "docs/design/note.dc.html").write_text("<x-dc></x-dc>\n", encoding="utf-8")
             loose = {r["path"]: r for r in classify(loose_root)}
             check("a .js no canvas imports is still code, even beside a canvas", loose["docs/design/loose.js"]["kind"] == "code", loose["docs/design/loose.js"]["kind"])
+        with tempfile.TemporaryDirectory() as td3:
+            ev_root = Path(td3)
+            bundle = ev_root / "docs/evidence/benchmarks/2026-01-01-run"
+            (bundle / "ruby").mkdir(parents=True)
+            (bundle / "REPORT.md").write_text("Run `ruby --yjit ruby/bench.rb csv 3`, then see basename_only.rb.\n", encoding="utf-8")
+            for name in ("bench.rb", "uncited.rb", "basename_only.rb"):
+                (bundle / "ruby" / name).write_text("puts 1\n", encoding="utf-8")
+            (ev_root / "docs/notes/runs/2026-01-01/ruby").mkdir(parents=True)   # the same shape as the bundle, outside docs/evidence/
+            (ev_root / "docs/notes/runs/2026-01-01/REPORT.md").write_text("Run `ruby ruby/helper.rb`.\n", encoding="utf-8")
+            (ev_root / "docs/notes/runs/2026-01-01/ruby/helper.rb").write_text("puts 2\n", encoding="utf-8")
+            (ev_root / "docs/evidence/benchmarks/REPORT.md").write_text("Run `ruby shallow/run.rb`.\n", encoding="utf-8")
+            (ev_root / "docs/evidence/benchmarks/shallow").mkdir()
+            (ev_root / "docs/evidence/benchmarks/shallow/run.rb").write_text("puts 3\n", encoding="utf-8")
+            evidence = {r["path"]: r["kind"] for r in classify(ev_root)}
+            b = "docs/evidence/benchmarks/2026-01-01-run/ruby/"
+            check("a script an evidence report beside it runs by its relative path is evidence, not code (#2093)", evidence[b + "bench.rb"] == "authored", evidence[b + "bench.rb"])
+            check("a script in the same bundle that the report never names is still code", evidence[b + "uncited.rb"] == "code", evidence[b + "uncited.rb"])
+            check("a bare file name in the report is not a citation of its path", evidence[b + "basename_only.rb"] == "code", evidence[b + "basename_only.rb"])
+            check("a REPORT.md outside docs/evidence/ does not exempt the script it names", evidence["docs/notes/runs/2026-01-01/ruby/helper.rb"] == "code", evidence["docs/notes/runs/2026-01-01/ruby/helper.rb"])
+            check("a REPORT.md above the bundle level (the kind folder) does not exempt", evidence["docs/evidence/benchmarks/shallow/run.rb"] == "code", evidence["docs/evidence/benchmarks/shallow/run.rb"])
         check("a PNG is binary, at the root it is a finding homed under design/assets/",
               rows["docs/Retask-Sitemap.png"]["kind"] == "binary" and rows["docs/Retask-Sitemap.png"]["dest"] == "docs/design/assets/Retask-Sitemap.png")
         check("under architecture/ a file is generated by location and fine where it is",
