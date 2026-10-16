@@ -22,7 +22,9 @@ WHOSE IT IS, DECIDED BY CONFIGURATION AND BY DIRECTORY, NEVER BY A PATTERN.
   * Removal: `git worktree remove`, never `--force`. A dirty tree, an unmerged head, a locked worktree and the main
     checkout are REFUSED before anything is stopped or dropped.
 
-FAILS CLOSED. If the databases cannot be read or listed, nothing is removed. It ends by checking, not assuming: the
+FAILS CLOSED. If the databases cannot be read or listed, nothing is removed. That includes ANOTHER registered worktree whose `bin/rails runner`
+fails: without its names the script cannot tell which databases are shared, so one broken sibling worktree blocks every teardown until it is
+fixed or removed, and the refusal names it. It ends by checking, not assuming: the
 databases are gone, the PIDs are gone, the path is gone.
 
     python3 worktree_teardown.py <worktree> [--dry-run] [--assume-merged] [--pg-bin DIR]
@@ -153,12 +155,12 @@ def owned(existing: list[str], names: list[str], shared: set[str]) -> list[str]:
 
 
 def alive(pid: int) -> bool:
-    rc, out = run(["ps", "-o", "stat=", "-p", str(pid)])
+    rc, out = run(["ps", "-o", "stat=", "-p", str(pid)], cwd="/")
     return rc == 0 and bool(out.strip()) and not out.strip().startswith("Z")
 
 
 def cwd_of(pid: int) -> str | None:
-    rc, out = run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"])
+    rc, out = run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], cwd="/")
     if rc == 0:
         for line in out.splitlines():
             if line.startswith("n"):
@@ -185,23 +187,33 @@ def own_pids(path: str) -> list[int]:
     return found
 
 
-def ancestors() -> set[int]:
-    """This process and its parents: a teardown run from a shell inside the worktree must not count that shell as a stray."""
-    found, pid = set(), os.getpid()
-    while pid > 1 and pid not in found:
-        found.add(pid)
-        rc, text = run(["ps", "-o", "ppid=", "-p", str(pid)])
-        try:
-            pid = int(text.strip())
-        except ValueError:
-            break
-    return found
+def own_tree() -> set[int]:
+    """This process, its parents and everything it started: a teardown run from a shell inside the worktree must count neither that shell nor
+    its own `lsof`/`ps` children as a stray (they run with the worktree as their working directory unless given another)."""
+    parent: dict[int, int] = {}
+    for line in run(["ps", "-A", "-o", "pid=,ppid="], cwd="/")[1].splitlines():
+        pair = line.split()
+        if len(pair) == 2 and pair[0].isdigit() and pair[1].isdigit():
+            parent[int(pair[0])] = int(pair[1])
+    me = os.getpid()
+    tree, pid = {me}, me
+    while parent.get(pid, 0) > 1 and parent[pid] not in tree:      # the parents: a sibling of this process is NOT one of them
+        pid = parent[pid]
+        tree.add(pid)
+    below, grown = {me}, True                                       # and only what THIS process started, not what its parents did
+    while grown:
+        grown = False
+        for child, up in parent.items():
+            if up in below and child not in below:
+                below.add(child)
+                grown = True
+    return tree | below
 
 
 def processes_in(path: str) -> dict[int, str]:
     """Every process whose working directory is inside PATH, with its command, whether or not a pid file names it."""
     found: dict[int, str] = {}
-    rc, out = run(["lsof", "-d", "cwd", "-Fpn"], timeout=60)
+    rc, out = run(["lsof", "-d", "cwd", "-Fpn"], cwd="/", timeout=60)
     if rc != 127 and out:
         pid = None
         for line in out.splitlines():
@@ -218,8 +230,9 @@ def processes_in(path: str) -> dict[int, str]:
                 continue
             if where == path or where.startswith(path + os.sep):
                 found[int(entry.name)] = ""
+    found = {pid: "" for pid in found if alive(pid)}      # a process that ended while the table was read is not a stray
     for pid in found:
-        found[pid] = run(["ps", "-o", "command=", "-p", str(pid)])[1].strip()[:80]
+        found[pid] = run(["ps", "-o", "command=", "-p", str(pid)], cwd="/")[1].strip()[:80]
     return found
 
 
@@ -262,8 +275,9 @@ def teardown(path: str, dry_run=False, assume_merged=False, pg_bin: str | None =
     doomed = owned(existing, names, shared)
     skipped = [n for n in names if n in shared]
     pids = own_pids(path)
-    known = set(pids) | ancestors()
-    strays = {p: c for p, c in processes_in(path).items() if p not in known}
+    listed_here = processes_in(path)
+    known = set(pids) | own_tree()
+    strays = {p: c for p, c in listed_here.items() if p not in known}
     say(f"worktree_teardown: {path}")
     say(f"  stop {len(pids)} process(es): {pids}")
     say(f"  drop {len(doomed)} database(s): {doomed}" + (f" (shared with the main checkout, another worktree or production, left alone: {skipped})" if skipped else ""))
@@ -498,6 +512,10 @@ def selftest() -> int:
                     failures.append(f"the teardown raised on {os.path.basename(path)}: {e!r}")
                     return 99
 
+            def cli(path, *flags, cwd="/"):      # the script as a separate process: the selftest's own children are then siblings of it, not descendants
+                r = subprocess.run([sys.executable, os.path.abspath(__file__), path, "--pg-bin", binpath, *flags], cwd=cwd, capture_output=True, text=True, timeout=300)
+                return r.returncode, r.stdout + r.stderr
+
             # 8. a path that is not a worktree of this repository is refused, and nothing is touched
             plain = os.path.join(root, "plain")
             os.makedirs(plain)
@@ -539,16 +557,23 @@ def selftest() -> int:
             check("a worktree whose own production name is its development name still ends", td(wown) == 0)
             check("a production database name is never dropped, even one only this worktree's config lists", dropped() == ["app_test_prodown"], str(dropped()))
 
+            # 12. THE DOCUMENTED FLOW: run from a shell whose working directory is the worktree being ended
+            wcli = add("fromin")
+            universe("app_dev_fromin", "app_test_fromin")
+            ran = cli(wcli, cwd=wcli)
+            check("run with its working directory inside the worktree, the CLI ends it (its own children are not strays)",
+                  ran[0] == 0 and not listed(wcli) and sorted(dropped()) == ["app_dev_fromin", "app_test_fromin"], ran[1][-300:])
+
             # 11. a process with no pid file is noticed: the teardown refuses and never reports 'nothing left'
             wstray = add("stray")
             universe("app_dev_stray", "app_test_stray")
             stray = subprocess.Popen(["sleep", "60"], cwd=wstray)
             spawned.append(stray)
-            check("a process with no pid file is noticed and the teardown refuses", td(wstray) == 1 and dropped() == [] and stray.poll() is None and listed(wstray))
-            check("a dry run says so too, and changes nothing", td(wstray, dry_run=True) == 1 and dropped() == [] and listed(wstray))
+            check("a process with no pid file is noticed and the teardown refuses", cli(wstray)[0] == 1 and dropped() == [] and stray.poll() is None and listed(wstray))
+            check("a dry run says so too, and changes nothing", cli(wstray, "--dry-run")[0] == 1 and dropped() == [] and listed(wstray))
             stray.kill()
             stray.wait()
-            check("once the stray is gone the same worktree ends", td(wstray) == 0 and sorted(dropped()) == ["app_dev_stray", "app_test_stray"], str(dropped()))
+            check("once the stray is gone the same worktree ends", cli(wstray)[0] == 0 and sorted(dropped()) == ["app_dev_stray", "app_test_stray"], str(dropped()))
 
             # 7. the git call is never forced
             check("git worktree remove is never forced", GIT_REMOVE == ("worktree", "remove"), str(GIT_REMOVE))
@@ -583,7 +608,9 @@ def selftest() -> int:
 
 
 def main_cli(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description="End a finished worktree: stop its servers, drop its databases, remove it, prove nothing is left.")
+    ap = argparse.ArgumentParser(description="End a finished worktree: stop its servers, drop its databases, remove it, prove nothing is left.",
+                                 epilog="Fails closed. One registered worktree whose config cannot be read (bin/rails runner fails) blocks every teardown, "
+                                        "and the refusal names it: fix or remove that worktree first.")
     ap.add_argument("worktree", nargs="?")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--assume-merged", action="store_true")

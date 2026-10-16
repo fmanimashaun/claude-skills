@@ -49,6 +49,8 @@ GUARD = Guard(
         Mutation("a process with no pid file is no longer noticed", "    if strays:", "    if False:", "a process with no pid file is noticed"),
         Mutation("every process on the machine counts as inside the worktree", 'if where == path or where.startswith(path + os.sep): found[pid] = ""',
                  'if True: found[pid] = ""', "a clean merged worktree ends with status 0"),
+        Mutation("the script's own process and children count as strays", "known = set(pids) | own_tree()", "known = set(pids)",
+                 "run with its working directory inside the worktree"),
         Mutation("the wording check stops requiring the teardown's name", "elif token not in \" \".join(lines[at:at + span]):", "elif False:",
                  "the wording check names"),
         Mutation("the wording check stops noticing a missing file", "if not f.exists():", "if False:", ""),
