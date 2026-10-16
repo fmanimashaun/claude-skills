@@ -66,17 +66,45 @@ Payload keys shown are the ones you'll actually use.
 | `redirect.action_dispatch` | `:status, :location, :source_location` | Route-level redirects (8.1 verbose dev logs use this) |
 | `sql.active_record` | `:sql, :name, :binds, :cached, :connection` | Query counting, slow-query log (skip `SCHEMA`/`TRANSACTION` names) |
 | `instantiation.active_record` | `:record_count, :class_name` | "This action built 5,000 AR objects" |
-| `strict_loading_violation.active_record` | `:owner, :reflection` | N+1 telemetry when strict_loading is `:log` |
+| `strict_loading_violation.active_record` | `:owner, :reflection` | N+1 telemetry when strict_loading is `:log`; `:n_plus_one_only` misses the top-level loop (note below) |
 | `transaction.active_record` | `:connection, :outcome` (commit/rollback) | Rollback-rate monitoring |
 | `render_template/render_partial.action_view` | `:identifier, :layout` / `:identifier, :cache_hit` | View timing, cache hit ratios |
 | `render_collection.action_view` | `:identifier, :count, :cache_hits` | Collection-cache effectiveness |
 | `deliver.action_mailer` | `:mailer, :message_id, :subject, :to` | Mail volume/failures |
-| `enqueue.active_job` / `perform.active_job` | `:job, :adapter` (+ `:db_runtime` on perform) | Queue latency = perform start − enqueue |
-| `cache_read/cache_write/cache_fetch_hit.active_support` | `:key, :store, :hit, :super_operation` | Hit-rate dashboards |
+| `enqueue.active_job` / `perform_start.active_job` / `perform.active_job` | `:job, :adapter` (+ `:db_runtime, :aborted` on perform) | Queue latency, on `perform_start`: `event.time - payload[:job].enqueued_at.to_f` (note below) |
+| `cache_read/cache_write/cache_fetch_hit/cache_generate.active_support` | `:key, :store, :hit, :super_operation` | Hit-rate dashboards, Solid Cache included (note below) |
 | `perform_action.action_cable` / `broadcast.action_cable` | `:channel_class, :action` / `:broadcasting` | Realtime volume |
 | `process.action_mailbox` | `:mailbox, :inbound_email` | Inbound mail pipeline |
 | `service_upload.active_storage` (and download/delete) | `:key, :service, :checksum` | Storage ops |
 | `deprecation.rails` | `:message, :callstack, :gem_name` | Fail CI on new deprecations |
+
+**Three of these, measured and read from source** (verified at rails 8.1.4, solid_queue 1.7.0,
+solid_cache 1.0.10; #2065):
+
+- **Queue latency comes from Active Job, not Solid Queue.** `perform_start.active_job` carries
+  `:job`, and `enqueued_at` is stamped in `serialize` and restored on deserialize
+  (`active_job/core.rb:129`, `:170`), so latency is `event.time - payload[:job].enqueued_at.to_f` (`event.time` is a Float, and a Float
+  minus a Time raises); a
+  scheduled job counts from `scheduled_at`, since `enqueued_at` is the enqueue moment. Solid Queue
+  instruments no per-job latency; its `SolidQueue::Queue#latency` is the age of the oldest ready
+  execution for a whole queue (`app/models/solid_queue/queue.rb:41-47`), not instrumented.
+- **Solid Cache reports hits through the standard events.** `SolidCache::Store <
+  ActiveSupport::Cache::Store` (`solid_cache/store.rb:4`), so `cache_read` carries `hit: true/false`
+  and `super_operation: :fetch` inside a `fetch` (`active_support/cache.rb:473-474`); a fetch hit
+  also emits `cache_fetch_hit`, a miss `cache_generate` then `cache_write` (the write is skipped for
+  a nil result under `skip_nil`). A transient database error (the six in `Failsafe::TRANSIENT_ACTIVE_RECORD_ERRORS`, `failsafe.rb:6-13`)
+  is swallowed: the read returns nil, the payload says `hit: false` with no `exception`, and the error
+  goes to `Rails.error` and the store's `error_handler`, so a hit-rate dashboard counts it as a miss.
+  Only a non-transient error raises and carries `exception` in the `cache_read` payload (verified at
+  solid_cache 1.0.10).
+- **`strict_loading_mode = :n_plus_one_only` does not report the classic N+1.** The owner's own
+  lazy loads pass (`associations/association.rb:240-244`); only records it loaded through a
+  `has_many` are marked strict (`:123-128`), so `user.comments.first.ratings` is reported and
+  `User.all.each { |u| u.comments.to_a }` is **not** (measured: 0 events for the loop, 1 for the
+  second level). Mode `:all` is the default, and `:all` with
+  `action_on_strict_loading_violation = :log` (the default action is `:raise`) reports EVERY lazy load
+  on a strict record, which is noisy, not a sampled N+1 signal; a detector is the alternative. A
+  reflection declared `strict_loading: true` reports in either mode.
 
 Exception convention: any hook's payload gains `:exception` (`[class_name,
 message]`) and `:exception_object` when the instrumented block raised —
@@ -261,6 +289,16 @@ the 8.1 guide does not document it.
   Rails 8.0 and 8.1 (the Rails debugging guide says so, and `ActiveRecord.disable_prepared_statements`
   is set in the railtie): every query is planned each time. Turn it on knowing
   that cost, not as a free log tag.
+  What the tags are: `config.active_record.query_log_tags` defaults to
+  `[:application, :controller, :action, :job]`; `query_log_tags_format` is
+  `:sqlcommenter` or `:legacy`, and `config.load_defaults 7.1` or later makes
+  `:sqlcommenter` the default (Rails configuring guide, 8.1, read 2026-10-14).
+  The guide warns that the `:source_location` tag "can be slow" to compute —
+  weigh that before adding it in production. A tagged comment does **not** change
+  the query identifier `pg_stat_statements` groups by (measured on PostgreSQL 18.6 as
+  the core Query Identifier, `EXPLAIN (VERBOSE)`; see the `pg_stat_statements` section
+  below). So a `pg_stat_statements` row cannot be read as one route: per-route
+  attribution comes from the tags on a statement while it runs, in `pg_stat_activity`.
 - One-format-per-app: if you adopt JSON logs (via a `Rails.event` subscriber
   or a formatter), convert everything; mixed text/JSON streams are the worst
   of both.
@@ -282,6 +320,40 @@ instrumentation itself: see the in-house subsection below for what `c.use` of it
 does and does not install). Your custom `instrument`/`Rails.event` calls then ride
 along as first-class spans/events in whichever backend the app uses.
 
+### Finding slow pages and N+1s on a live app (sampling, thresholds)
+
+Source: each point below was read on the named official page on 2026-10-14; the fetch tool summarises pages, so quotes are not byte-checked.
+
+- **Production N+1 comes from sampled spans, not from Prosopite.** Prosopite's README
+  shows development and test setups and wraps its Rack/Sidekiq middleware and `around_action`
+  examples in `unless Rails.env.production?`; it says nothing about production use, sampling or
+  overhead (<https://github.com/charkost/prosopite>). Keep it as the **post-fix regression test**
+  in the suite (`performance-caching.md`), and look for N+1 on a live app in the traces your
+  APM or OpenTelemetry already collects.
+- **A threshold template.** Sentry detects an N+1 as "a set of sequential, non-overlapping
+  database spans with similar descriptions" whose total duration exceeds 50 ms and whose count
+  exceeds a threshold ("usually five spans"); the thresholds are configurable under Project
+  Settings > Performance (<https://docs.sentry.io/product/issues/issue-details/performance-issues/n-one-queries/>,
+  "Detection Criteria"). Borrow the shape when you write your own rule: a count AND a combined
+  duration, over similar statements, not either alone.
+- **Sample, and say how.** Sentry: `traces_sample_rate` is a uniform rate between 0 and 1;
+  `traces_sampler` decides per transaction from a `sampling_context` and returns a boolean or a
+  float; the two are meant to be mutually exclusive and, if both are set, `traces_sampler` wins
+  (<https://docs.sentry.io/platforms/ruby/guides/rails/tracing/>). OpenTelemetry Ruby:
+  `OTEL_TRACES_SAMPLER="traceidratio"` with `OTEL_TRACES_SAMPLER_ARG="0.1"` exports 10% of
+  traces; the page advises configuring it through the environment rather than in code
+  (<https://opentelemetry.io/docs/languages/ruby/sampling/>). Neither page says a sampler
+  can select only slow transactions, so do not design around that.
+- **What Rails Pulse says and does not say** (README, read 2026-10-14): tracking is "queued off the
+  request thread and dropped rather than blocked under load"; thresholds for slow, very slow and
+  critical are configurable but **no default values are documented**; N+1 patterns are listed
+  among its query views without a description of how they are detected; its words for the SQL it
+  stores are "normalised and fingerprinted" (so execution counts and P95 show per statement
+  shape), which is not a statement that literals are removed. The README does not say whether
+  requests are sampled, nor whether SQL literals are removed before storage. Do not assume
+  either; check the stored rows before putting Pulse in front of data that must not hold
+  literals.
+
 ### Self-hosted performance monitoring — Rails Pulse
 
 When the app needs request, query and job performance (P95 per route, SQL
@@ -295,6 +367,22 @@ observes job speed and failure rate; Mission Control operates the queue
 (retry, discard, pause). Run both. Do **not** run Pulse beside a hosted APM
 from the list above — two collectors on the same hooks is the double
 overhead this section warns against.
+
+**Its defaults, read from source (0.4.2):** thresholds in ms — routes `slow 500 / very_slow
+1500 / critical 3000`, requests `700 / 2000 / 4000`, queries `100 / 500 / 1000`, jobs `5000 / 30000
+/ 60000`; exceptions are counts (`warning 10, critical 100`) (`lib/rails_pulse/configuration.rb:62-68`).
+Regressions need a ratio **and** an absolute floor plus enough samples (`ratio 1.5`, `min_delta_ms
+50`, `min_samples 100`, `min_baseline_periods 3`, `:158-167`). SQL is stored **normalised** (literals
+become `?`, `app/services/rails_pulse/sql_query_normalizer.rb`); raw SQL is opt-in
+(`capture_actual_sql`, default false, because unparameterised SQL would keep emails and passwords).
+Requests are **not sampled**; under pressure the bounded queue drops instead. `track_jobs`,
+`track_exceptions` and `track_assets` default to off.
+
+**Noise control for a slow-page or N+1 finder — advice, not doctrine** (a design, not yet run
+against real traffic): judge a route by p95 only above a minimum request count, against a
+baseline of several prior periods, over consecutive windows; report one finding per route and
+query, cap findings per run, and exclude health checks and deploy windows. Rails Pulse's regression
+rules above (ratio plus absolute floor, minimum samples, baseline periods) are one shipped instance.
 
 **When to adopt:** the app serves real users in production and has no APM.
 Before launch there is no traffic to measure — Bullet and the log cover
@@ -564,6 +652,55 @@ spans are folded in process into aggregates and written to the app's own databas
   when the container is recreated: `kamal accessory reboot NAME` (prepare, pull the
   image, stop, remove, boot) does that, restarting the database once and pulling the
   image; `kamal accessory restart` (stop, start) does not apply a changed `cmd`.
+- **Know what the view cannot tell you (PostgreSQL 16 docs).** `queryid` is a function
+  of internal object identifiers: it changes when an object (for example a table) is
+  dropped and recreated, is "not safe to assume" stable across major versions, and is
+  not a useful identifier across logical replicas (physical replicas match). The stored
+  text is that of the *first* query with that `queryid`. There are no percentiles, only
+  `min`/`max`/`mean`/`stddev_exec_time`. A rising `pg_stat_statements_info.dealloc`
+  means the least-executed statements were evicted (`pg_stat_statements.max` exceeded),
+  so the tail is missing. On 16 the window starts at `pg_stat_statements_info.stats_reset`;
+  `stats_since`/`minmax_stats_since` arrive in 17. Rank by the delta between two
+  snapshots rather than calling `pg_stat_statements_reset()` from a monitor (superuser
+  only by default), and poll with `pg_stat_statements(showtext := false)` to skip
+  reading the texts.
+- **`query_log_tags` do not split a statement by route here (PostgreSQL 18 docs;
+  measured on 18.6).** `queryid` "is computed on the post-parse-analysis
+  representation of the queries", so a comment does not change it: the same `SELECT`
+  with no comment, with a tag comment at either end, and with different
+  `controller`/`action` values gave one Query Identifier (`SET compute_query_id = on`,
+  `EXPLAIN (VERBOSE)`). Every route's executions fold into one row. The tags attribute
+  a query to a route **per execution** only: in `pg_stat_activity.query` while it
+  runs. That column is truncated at `track_activity_query_size` (1024 bytes by
+  default), so a tag at the end of a long query can be cut off; raise the setting, or
+  put the tags first with `config.active_record.query_log_tags_prepend_comment = true`.
+- **Two switches cost on a busy server, and both default off.**
+  `pg_stat_statements.track_planning` "may incur a noticeable performance penalty"
+  under concurrent identical statements; `track_io_timing` repeatedly queries the OS
+  clock, "significant overhead on some platforms". Turn them on deliberately.
+- **`auto_explain` does nothing until `auto_explain.log_min_duration` is set** (default
+  -1). `log_analyze` times every plan node of every statement ("an extremely negative
+  impact on performance"): pair it with `auto_explain.sample_rate` below 1 and
+  `log_timing = off`. `auto_explain.log_parameter_max_length` (new in 16) defaults to -1, which logs
+  bind values **in full**, which means personal data in the logs; set it to 0. Load it
+  via `session_preload_libraries` or `shared_preload_libraries`.
+- **Logging companions (all present on 16):** `log_min_duration_sample` with
+  `log_statement_sample_rate` (sampled slow-statement logging, default off),
+  `log_lock_waits` (default off) and `log_temp_files` (default -1, off).
+- **Least privilege for the reader.** Grant the monitoring role `pg_read_all_stats`
+  (needed to see other users' text and `queryid`), **not** `pg_monitor`: `pg_monitor`
+  includes `pg_stat_scan_tables`, whose functions "may take ACCESS SHARE locks on
+  tables, potentially for a long time". That role is also what `pgstattuple` requires,
+  so a `pg_read_all_stats` reader cannot run `pgstattuple` (it can still read
+  `n_dead_tup`). Set `statement_timeout`,
+  `lock_timeout` and `idle_in_transaction_session_timeout` per role
+  (`ALTER ROLE … SET`); the docs call setting the first two in `postgresql.conf` "not
+  recommended because it would affect all sessions".
+- **Each standby keeps its own statistics.** Scans and index usage are recorded on the
+  node that served them, but "WAL replay will not increment" `pg_stat_all_tables`
+  counters such as `n_tup_ins`, and autovacuum is not active during recovery; recovery
+  conflicts can cancel standby queries. Read statistics from every node that serves
+  traffic.
 
 **Alerts from an error store (one defensible design)**
 
