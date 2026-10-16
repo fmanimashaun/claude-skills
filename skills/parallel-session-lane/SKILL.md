@@ -88,7 +88,10 @@ you may make the next one.
 
 1. **One issue at a time per session.** An issue is in progress until its PR **merges**.
 2. **A new assignment that arrives mid-issue is queued, or handed back**, never given a second worktree.
-3. **Clean up when done.** `git worktree remove <path>` (never `--force`) when the PR merges or a review ends.
+3. **Clean up when done, with the teardown.** `python3 <rails-flow>/scripts/worktree_teardown.py <path>` when the PR merges or a review ends: it stops the
+   worktree's own servers by PID, drops its databases (`dropdb --if-exists --force`, PostgreSQL 13 or later; it can still fail while a prepared transaction or an
+   active logical replication slot holds the database) and then runs `git worktree remove` (never `--force`). A bare `git worktree remove` leaves every database
+   behind: 113 had piled up on one machine (#2058).
 4. **Resume in place.** After a restart or cutoff, continue in the abandoned worktree; never create a new one.
 
 **What makes it true: the rails-flow `guard-worktree` hook.** With rails-flow installed, a `git worktree add`

@@ -5214,7 +5214,7 @@ def guard_worktree_pointer_fixtures() -> None:
         done_wt = add_wt(repo, "done", "feature/done", unmerged=False)
         out = start(repo)[1]
         check("resume pointer: a merged, clean worktree is listed as finished, with how to remove it",
-              "finished worktree" in out and str(done_wt) in out and "git worktree remove" in out, out[-300:])
+              "finished worktree" in out and str(done_wt) in out and "git worktree remove" in out and "worktree_teardown.py" in out, out[-300:])
         done_wt.mkdir(parents=True, exist_ok=True)   # a `--match` survey stubs `git worktree add`
         (done_wt / "scratch.txt").write_text("uncommitted\n")
         check("resume pointer: a merged worktree with uncommitted work is NOT listed as finished",
