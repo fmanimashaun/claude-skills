@@ -98,6 +98,8 @@ USER_ONLY = frozenset({
     "plugins/design-flow/commands/tokens.md",
     "plugins/rails-flow/commands/toolchain-audit.md",
     "plugins/rails-flow/commands/wrap.md",
+    # #2070: run by a person (or at the owner's word) to take the coordinator role; invoked by nothing as a step (grep of commands/ and agents/: no reference).
+    "plugins/rails-flow/commands/claim-coordinator.md",
 })
 
 OUR_SKILLS = ("rails-8", "hotwire", "design-system", "code-review", "quality-pass", "derived-artifacts",

@@ -51,6 +51,7 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 **Ungrouped** — shipped but not yet placed in a group above
 
+- `/rails-flow:claim-coordinator` — 'Take the machine-wide coordinator role for THIS session, from inside it, without going to the other session to fight for it.
 - `/rails-flow:coordinate` — Cross-session coordination computed from the repository — who is idle with finished work, which announced paths collide, which conflicts are generated and which are the author's judgement.
 - `/rails-flow:retro` — Count the review findings that recur across PRs and propose a check or a doctrine line for each.
 - `/rails-flow:slice` — Break a spec, a brief or an issue into dependency-ordered vertical slices.
@@ -160,4 +161,4 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 ---
 
-**53 commands** across 4 plugins.
+**54 commands** across 4 plugins.
