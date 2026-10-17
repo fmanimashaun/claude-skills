@@ -70,5 +70,13 @@ GUARD = Guard(
             "timeout=timeout, cwd=cwd)",
             "a selftest run by the check SEES the project it runs in",
         ),
+        Mutation(
+            # #2137: the walk that ran every cached VERSION of a plugin and none of its siblings. An older cached docs_layout.py (no fixture marker) failed `git add -A` under the
+            # current git shim, which blocked every Retask `gh pr ready`.
+            "the walk is the flat one again: every cached version of the plugin, none of the sibling plugins",
+            "    return project_gates.plugin_roots((start or HERE).resolve())",
+            "    return sorted(p.parent for p in (start or HERE).resolve().parents[1].parent.glob(\"*/checks.json\"))",
+            "ONE directory per plugin",
+        ),
     ),
 )
