@@ -56,6 +56,10 @@ carry it. Decide one of:
 - `spec-misread`: the code does something the words do not say. Quote the words, then say what the
   code does instead.
 
+When the unit has a threat model (`docs/security/threat-models/<slug>.md`), map it too: each `mitigate` row (TM-1 is the first row of its Threats table)
+needs a `[security]` criterion citing `TM-n`. A `mitigate` row with no criterion is `spec-missing`; a `[security]` criterion whose row is absent or is not a `mitigate` row
+is `spec-unasked`. Report both under the Spec heading. The script checks that the citation exists; you check that the criterion's observable would fail if the control were removed.
+
 Then read the diff **for anything no criterion asks for**: `spec-unasked`. A refactor the change
 needed is not unasked-for, and neither is a test or a migration a criterion implies. A new
 behaviour a user or another system can observe is.
