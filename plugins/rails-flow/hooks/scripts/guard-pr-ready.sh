@@ -132,10 +132,24 @@ deny() { echo "BLOCKED by rails-flow pr-ready guard: $1" >&2; echo "Then run, as
 # `gh pr ready` MUST BE ITS OWN COMMAND (shell-adversary on #1831): in `git commit -m x && gh pr ready 5` or `git checkout -b zz && …`
 # an earlier segment moves HEAD after this is judged, so the old HEAD's green record would pass a commit nobody swept. Any other
 # segment refuses; only the tail of a redirection the normaliser split on `&` (`2>&1` → `1`, `&>/dev/null` → `>/dev/null`) is not one.
+# THE ONE EXCEPTION (#2132): `cd <dir> && gh pr ready <n>`, so a PR whose head is checked out in another worktree can be marked ready from
+# a session started elsewhere (the Bash tool does not carry a bare `cd` to the next call). A cd cannot move HEAD, and lib/command_cwd.py
+# judges the record in <dir>'s checkout. Accepted only when the RAW command is exactly that shape: `cd`, ONE plain literal word (letters,
+# digits and `_ . / ~ + -`: no quote, `$`, backtick, glob or brace), `&&`, then a tail with no `&`, `;`, `|` or parenthesis; and that cd
+# is the only other segment. Everything else stays refused: `cd x && git checkout y && gh pr ready`, `cd x; gh pr ready`, a second cd,
+# a cd through a variable or substitution. The helper still refuses a word it cannot judge (`~user`, a leading `-`, a missing directory).
+_cd_word='[A-Za-z0-9_./~+-]+'
+_cd_shape="^[[:space:]]*cd[[:space:]]+${_cd_word}[[:space:]]*&&[^&;|()]*\$"
+_cd_line="^[[:space:]]*cd[[:space:]]+${_cd_word}[[:space:]]*\$"
+# Only a short command can be that shape, so a long one is never scanned for it: the regex is not run past 4096 characters
+# (the #1980 time budget, where a 390 KB command must be judged within the hook's limit).
+_cd_ok=0; [ "${#cmd}" -le 4096 ] && [[ $cmd =~ $_cd_shape ]] && _cd_ok=1
+_cd_seen=0
 while IFS= read -r l; do
   [ "$l" = "$segment" ] && continue
   [ -z "${l//[[:space:]]/}" ] && continue
   [[ $l =~ ^[[:space:]]*([0-9]+|[0-9]*[\<\>].*)$ ]] && continue
+  if [ "$_cd_ok" = 1 ] && [ "$_cd_seen" = 0 ] && [[ $l =~ $_cd_line ]]; then _cd_seen=1; continue; fi
   deny "\`gh pr ready\` must be its own command; this one also runs \`${l:0:60}\`, which can move HEAD after the record is judged."
 done <<< "$seg"
 command -v python3 >/dev/null 2>&1 \
