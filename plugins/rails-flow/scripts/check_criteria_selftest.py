@@ -307,6 +307,52 @@ def run() -> int:
         specs=Path(tempfile.mkdtemp(prefix="railsflow-nospec-")) / "absent",
     )
 
+    # ---- [security] criteria against the threat model (#2118) ---------------------------------
+    rows = [(1, "Forged callback", "mitigate"), (2, "Replay", "accept"), (3, "Leaked body", "mitigate")]
+    sec = (
+        "## Webhook\n"
+        "- **AC-1** Given a callback with a bad signature, when it posts to the webhook, then the response is 401 and no contract changes [error] [security] (TM-1)\n"
+        "- **AC-2** Given a signed callback, when the log is written, then the body is filtered from the log line [security] covers: TM-3\n"
+    )
+    def sec_check(label, body, want_rows, contains):
+        _tick()
+        try:
+            found = cc.check(cc.parse(_write(body)), None, want_rows)
+        except cc.Unusable as exc:
+            FAILURES.append(f"{label}: UNUSABLE ({exc})")
+            return
+        blob = " | ".join(found)
+        if contains is None and found:
+            FAILURES.append(f"{label}: expected clean, got {found}")
+        if contains is not None and contains.lower() not in blob.lower():
+            FAILURES.append(f"{label}: expected {contains!r}, got {found}")
+    sec_check("every mitigate row cited by a [security] criterion is clean", sec, rows, None)
+    sec_check("a mitigate row no [security] criterion cites is a finding", sec.replace(" covers: TM-3", ""), rows, "TM-3")
+    sec_check("a model with mitigate rows and no [security] criterion is a finding", GOOD, rows, "no [security] criterion cites it")
+    sec_check("a [security] criterion citing no row is a finding", sec.replace(" (TM-1)", ""), rows, "cites no threat-model row")
+    sec_check("a [security] criterion citing a row that does not exist is a finding", sec.replace("(TM-1)", "(TM-9)"), rows, "not a row of the threat model")
+    sec_check("a [security] criterion citing an accept row is a finding", sec.replace("(TM-1)", "(TM-2)"), rows, "not a `mitigate` row")
+    sec_check("a tag and a citation inside an html comment do not count", sec.replace("[security] (TM-1)", "<!-- [security] (TM-1) -->"), rows, "TM-1")
+    sec_check("a citation inside an html comment does not count", sec.replace("[security] (TM-1)", "[security] <!-- (TM-1) -->"), rows, "cites no threat-model row")
+    sec_check("a citation inside a code span does not count", sec.replace("[security] (TM-1)", "[security] `(TM-1)`"), rows, "cites no threat-model row")
+    sec_check("a mention mid-sentence is not a citation", sec.replace("[security] (TM-1)", "[security] (unlike TM-1 this one is fine)"), rows, "cites no threat-model row")
+    sec_check("a citation followed by more words is not in the slot", sec.replace("(TM-1)", "(TM-1) and more words follow"), rows, "cites no threat-model row")
+    sec_check("a trailing html comment does not break the citation slot", sec.replace("(TM-1)", "(TM-1) <!-- reviewed -->"), rows, None)
+    sec_check("a list of ids in the slot cites each", sec.replace("[security] (TM-1)", "[security] (TM-1, TM-3)"), rows, None)
+    # an existing model with no readable table is exit 2, never 0
+    import tempfile as _t
+    d = Path(_t.mkdtemp(prefix="railsflow-model-"))
+    (d / "ac.md").write_text(sec, encoding="utf-8")
+    (d / "bad-model.md").write_text("# not a model\n", encoding="utf-8")
+    (d / "old-model.md").write_text("## Threats\n| Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|\n| x | S | y | mitigate | z |\n", encoding="utf-8")
+    for label, mf in (("a model with no table is exit 2", "bad-model.md"), ("a model without the ID column is exit 2", "old-model.md")):
+        _tick()
+        got = cc.main([str(d / "ac.md"), "--threat-model", str(d / mf)])
+        if got != 2:
+            FAILURES.append(f"{label}: expected exit 2, got {got}")
+    sec_check("a model with only accept rows asks for nothing", GOOD, [(1, "Replay", "accept")], None)
+    sec_check("no model, no security rule", GOOD, [], None)
+
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)
         for f in FAILURES:
