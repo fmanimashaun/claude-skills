@@ -19,12 +19,12 @@ sweep record for HEAD (`guard-pr-ready.sh`, #1565). A model with no current secu
 THE RECORD, `docs/evidence/reviews/prs/<slug>/security-audit.md` (`<slug>` is the model's file name), is `security-auditor`'s answer saved
 verbatim. It counts only with a line `Head: <sha>` that is a prefix of the CURRENT HEAD, one line per threat row, and a last line
 `VERDICT: CLEAN` or `VERDICT: BLOCKED`. A row line is `TM-n: <answer>`:
-  * `mitigate` row  `TM-n: implemented <file:line>` (the file must exist at HEAD and have that line) or `TM-n: not implemented` (BLOCKING)
+  * `mitigate` row  `TM-n: implemented <file:line>` (the file must exist at HEAD and that line must be code: not blank, not a comment, not inside =begin/=end) or `TM-n: not implemented` (BLOCKING)
   * `accept` row    `TM-n: holds <why>` or `TM-n: stale <what changed>` (a finding: the model must be updated, the article's fourth question)
   * `transfer` and `eliminate` rows may be answered the same way and are not required.
 A row the model has and the record omits, or a row the record names that the model lacks, is exit 1: the record answers another model.
 
-LIMITS. It proves the record is current, complete and cites code that exists, not that the cited line implements the control; that is the
+LIMITS. It proves the record is current, complete and cites a line of code that exists, not that the cited line implements the control; that is the
 auditor's work and the reviewer's. Nothing stops a session that writes the record by hand, as with `risky_diff.py`. The model is found only
 when the change adds or edits it, so a unit that has a boundary and no model is `security_scope.py`'s concern, not this check's.
 """
@@ -45,6 +45,22 @@ RECORD_DIR = "docs/evidence/reviews/prs"
 MODEL_RE = re.compile(rf"^{re.escape(MODEL_DIR)}/([^/]+)\.md$")
 ROW_RE = re.compile(r"^\s*(?:[-*]\s*)?(?:\*\*)?(TM-\d+)(?:\*\*)?\s*[:—–-]+\s*(implemented|not implemented|holds|stale)\b\s*(.*)$", re.I)
 EVIDENCE_RE = re.compile(r"([\w./@+-]+\.\w+):(\d+)")
+
+
+def is_code_line(lines: list[str], n: int) -> bool:
+    """Whether 1-based line `n` is code: not blank, not a `#`, `//` or `*` comment, not inside a Ruby `=begin`/`=end` block. A minimal reading, not a parser."""
+    inside = False
+    for i, raw in enumerate(lines[:n], 1):
+        if raw.startswith("=begin"):
+            inside = True
+        elif raw.startswith("=end"):
+            inside = False
+            if i == n:
+                return False
+        if i == n:
+            t = raw.strip()
+            return not inside and bool(t) and not t.startswith(("#", "//", "/*", "*"))
+    return False
 
 
 def record_path(slug: str) -> Path:
@@ -83,8 +99,12 @@ def judge(model_text: str, record_text: str, root: Path) -> tuple[list[str], lis
                 f = (root / ev.group(1)) if ev else None
                 if not ev or f is None or not f.is_file():
                     incomplete.append(f"{label}: `implemented` needs evidence as an existing `file:line`, got `{rest[:60]}`")
-                elif int(ev.group(2)) < 1 or int(ev.group(2)) > len(f.read_text(encoding="utf-8", errors="replace").splitlines()):
-                    incomplete.append(f"{label}: {ev.group(0)} is past the end of {ev.group(1)}")
+                else:
+                    src = f.read_text(encoding="utf-8", errors="replace").splitlines()
+                    if int(ev.group(2)) < 1 or int(ev.group(2)) > len(src):
+                        incomplete.append(f"{label}: {ev.group(0)} is past the end of {ev.group(1)}")
+                    elif not is_code_line(src, int(ev.group(2))):
+                        incomplete.append(f"{label}: {ev.group(0)} is blank or a comment, so it cannot be where the control is implemented")
         else:
             if verdict == "stale":
                 blocking.append(f"{label}: the accepted risk no longer matches the code (stale): update the model")
@@ -191,7 +211,7 @@ def selftest() -> int:
 
         git("init", "-q", "-b", "dev")
         (root / "app").mkdir()
-        (root / "app/c.rb").write_text("a\nb\nc\n")
+        (root / "app/c.rb").write_text("a\nb\nc\n# note\n\n=begin\nhidden\n=end\nlast\n")
         git("add", "app/c.rb")
         git("commit", "-q", "-m", "base")
         git("checkout", "-q", "-b", "feat")
@@ -231,6 +251,11 @@ def selftest() -> int:
         case("an accept row with no answer is incomplete", good.replace("TM-2: holds a repeated callback is a no-op\n", ""), 1, "TM-2")
         case("evidence that is not file:line is incomplete", good.replace("app/c.rb:2", "somewhere"), 1, "file:line")
         case("evidence for a file that does not exist is incomplete", good.replace("app/c.rb:2", "app/nope.rb:2"), 1, "file:line")
+        case("evidence on a comment line is incomplete", good.replace("app/c.rb:2", "app/c.rb:4"), 1, "blank or a comment")
+        case("evidence on a blank line is incomplete", good.replace("app/c.rb:2", "app/c.rb:5"), 1, "blank or a comment")
+        case("evidence inside =begin/=end is incomplete", good.replace("app/c.rb:2", "app/c.rb:7"), 1, "blank or a comment")
+        case("evidence on the =end line is incomplete", good.replace("app/c.rb:2", "app/c.rb:8"), 1, "blank or a comment")
+        case("evidence on code after a block comment passes", good.replace("app/c.rb:2", "app/c.rb:9"), 0, "answered")
         case("evidence past the end of the file is incomplete", good.replace("app/c.rb:2", "app/c.rb:99"), 1, "past the end")
         case("a mitigate row not implemented is BLOCKING, exit 3", good.replace("implemented app/c.rb:2", "not implemented"), 3, "not implemented")
         case("a stale accept row is a finding, exit 3", good.replace("holds a repeated callback is a no-op", "stale the signature now has a timestamp"), 3, "stale")
