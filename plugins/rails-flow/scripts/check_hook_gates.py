@@ -6199,14 +6199,38 @@ def guard_pr_ready_fixtures() -> None:
         for cmd in ("gh pr ready 5 -R o/r", "GH_REPO=o/r gh pr ready 5", "gh pr ready https://github.com/o/r/pull/5"):
             expect(f"guard-pr-ready: an explicit remote target is refused even with a green record: {cmd}", guard(repo, cmd), 2,
                    "explicit repository target")
-        expect("guard-pr-ready: `cd <same repo> && gh pr ready` is a compound command: refused", guard(repo, f"cd {repo} && gh pr ready 12"), 2,
-               "must be its own command")
+        # #2132: `cd <plain literal dir> && gh pr ready <n>` is the one compound shape accepted, judged on THAT directory's HEAD record.
+        expect("guard-pr-ready (#2132): `cd <same repo> && gh pr ready` with a green record for its HEAD: allowed",
+               guard(repo, f"cd {repo} && gh pr ready 12"), 0)
         # The checkout it runs in picks the repository judged: the other repository has no record.
         other = new_repo(td, "other")
+        expect("guard-pr-ready (#2132): `cd <another worktree> && gh pr ready` is judged on THAT checkout's HEAD: no record there, refused",
+               guard(repo, f"cd {other} && gh pr ready 3"), 2, head_of(other)[:12])
         expect("guard-pr-ready: run in ANOTHER checkout, it is judged against THAT repo's HEAD",
                guard(other, "gh pr ready 3"), 2, head_of(other)[:12])
+        rec_other = record(other, head_of(other), verdict="red")
+        expect("guard-pr-ready (#2132): ...a RED record in the cd's checkout refuses", guard(repo, f"cd {other} && gh pr ready 3"), 2)
+        record(other, head_of(other), skips=1)
+        expect("guard-pr-ready (#2132): ...a record with a skip in the cd's checkout refuses", guard(repo, f"cd {other} && gh pr ready 3"), 2)
+        rec_other.unlink()
+        record(other, "f" * 40)
+        expect("guard-pr-ready (#2132): ...a record for ANOTHER head (stale) in the cd's checkout refuses",
+               guard(repo, f"cd {other} && gh pr ready 3"), 2, head_of(other)[:12])
         record(other, head_of(other))
         expect("guard-pr-ready: ...and allowed once THAT HEAD has a green record", guard(other, "gh pr ready 3"), 0)
+        expect("guard-pr-ready (#2132): ...and `cd <that worktree> && gh pr ready` from another checkout is allowed too",
+               guard(repo, f"cd {other} && gh pr ready 3"), 0)
+        # Everything else around a cd stays refused, even with green records in both checkouts.
+        for cmd in (f"cd {other} && git checkout -b zz && gh pr ready 3", f"cd {other}; gh pr ready 3", f"cd {other} && cd {repo} && gh pr ready 3",
+                    "cd $HOME && gh pr ready 3", f"cd \"{other}\" && gh pr ready 3", f"cd $(echo {other}) && gh pr ready 3",
+                    f"cd `echo {other}` && gh pr ready 3", f"cd {other} && gh pr ready 3 | cat", f"cd {other} && gh pr ready 3\ngit checkout -b zz",
+                    f"cd {other} || gh pr ready 3", f"(cd {other} && gh pr ready 3)", f"git checkout -b zz && cd {other} && gh pr ready 3"):
+            expect(f"guard-pr-ready (#2132): with green records, still refused: {cmd.replace(str(td), '<td>')[:70]}",
+                   guard(repo, cmd), 2)
+        expect("guard-pr-ready (#2132): `cd <dir> && gh pr ready -R o/r` is still an explicit remote target: refused",
+               guard(repo, f"cd {other} && gh pr ready 3 -R o/r"), 2, "explicit repository target")
+        expect("guard-pr-ready (#2132): `cd <missing dir> && gh pr ready` cannot be judged: refused",
+               guard(repo, f"cd {td}/nope && gh pr ready 3"), 2)
 
     with scratch_dir() as td:
         plain = new_repo(td, "plain", marker=False)
