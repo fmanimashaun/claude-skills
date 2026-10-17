@@ -21,7 +21,7 @@ GUARD = Guard(
         ),
         Mutation(
             "an accept with no reason stops being reported",
-            '                elif decision.lower() == "accept" and not reason:',
+            '                elif decision.lower() == "accept" and (not reason or _is_filler(reason)):',
             '                elif decision.lower() == "accept" and False:',
             "an accept without a reason is found",
         ),
@@ -36,6 +36,30 @@ GUARD = Guard(
             "        if rows == 0:\n            print(f\"UNUSABLE",
             "        if False:\n            print(f\"UNUSABLE",
             "a file with no threat rows is exit 2",
+        ),
+        Mutation(
+            "a placeholder left from the template stops being reported, so the unedited template passes",
+            "    for ph in sorted({m_.group(0) for m_ in PLACEHOLDER.finditer(prose)}):",
+            "    for ph in []:",
+            "the unedited shipped template is refused",
+        ),
+        Mutation(
+            "an empty section stops being reported",
+            "        if s != \"Threats\" and not [ln for ln in lines if not _is_filler(ln.lstrip(\"-* \"))]:",
+            "        if False:",
+            "an empty section is found",
+        ),
+        Mutation(
+            "a section with no bullet stops being reported",
+            "            if not [b for b in bullets if not _is_filler(b)]:",
+            "            if False:",
+            "a boundaries section with no bullet is found",
+        ),
+        Mutation(
+            "a filler word stops counting as filler",
+            "    return cell.strip().strip(\".\").lower() in FILLERS",
+            "    return False",
+            "a filler threat is found",
         ),
     ),
 )

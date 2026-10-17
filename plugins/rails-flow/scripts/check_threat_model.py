@@ -17,7 +17,12 @@ one of those counts: `Spoofing`, `Tampering`...). Decision is exactly one of mit
 empty for `accept` (the one decision that leaves the risk in place); it is expected for the rest and a model that leaves it blank on
 `mitigate` gets no finding, because the control is named in Security requirements.
 
-LIMITS. A row that says `mitigate` and does nothing passes. The check reads the document, not the code.
+HOLLOW IS REFUSED (review of #2131). The unedited template, an empty section, `TBD`/`TODO`/`n/a` as content and an `accept` with a stock reason are all
+the boilerplate D1 exists to prevent, and the first thing a user does is copy the template. So: every section needs body text, `Trust boundaries` and
+`Security requirements` each need a `-` bullet, any `<placeholder>` left outside backticks is a finding, and a Threat, Component, bullet or Reason that is
+only a filler word is a finding.
+
+LIMITS. A row that says `mitigate` and does nothing passes, and so does a sentence that is long and says nothing. The check reads the document, not the code.
 """
 from __future__ import annotations
 
@@ -28,6 +33,18 @@ from pathlib import Path
 SECTIONS = ("What we are building", "Trust boundaries", "Threats", "Security requirements")
 DECISIONS = ("mitigate", "transfer", "accept", "eliminate")
 STRIDE = "STRIDE"
+FILLERS = {"tbd", "tba", "todo", "fixme", "n/a", "na", "none", "nil", "-", "--", "x", "xx", "?", "??", "...", "…", "etc", "later", "see above"}
+PLACEHOLDER = re.compile(r"<[^<>\n`]{1,80}>")
+BULLET_SECTIONS = ("Trust boundaries", "Security requirements")
+
+
+def _is_filler(cell: str) -> bool:
+    return cell.strip().strip(".").lower() in FILLERS
+
+
+def _section_body(text: str, name: str) -> str | None:
+    m = re.search(rf"^##\s+{re.escape(name)}\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S | re.I)
+    return m.group(1) if m else None
 
 
 def _cells(line: str) -> list[str]:
@@ -41,6 +58,20 @@ def check(text: str) -> tuple[list[str], int]:
     for s in SECTIONS:
         if s.lower() not in heads:
             findings.append(f"missing section `## {s}`")
+    prose = re.sub(r"`[^`\n]*`", "", re.sub(r"<!--.*?-->", "", text, flags=re.S))
+    for ph in sorted({m_.group(0) for m_ in PLACEHOLDER.finditer(prose)}):
+        findings.append(f"template placeholder `{ph}` left in the model")
+    for s in SECTIONS:
+        body = _section_body(text, s)
+        if body is None:
+            continue
+        lines = [ln.strip() for ln in re.sub(r"<!--.*?-->", "", body, flags=re.S).splitlines() if ln.strip()]
+        if s != "Threats" and not [ln for ln in lines if not _is_filler(ln.lstrip("-* "))]:
+            findings.append(f"section `## {s}` is empty or only a filler word")
+        if s in BULLET_SECTIONS:
+            bullets = [ln.lstrip("-* ").strip() for ln in lines if ln[:1] in "-*" and len(ln) > 1]
+            if not [b for b in bullets if not _is_filler(b)]:
+                findings.append(f"section `## {s}` needs at least one `-` bullet with content")
     m = re.search(r"^##\s+Threats\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S)
     rows = 0
     if m:
@@ -56,15 +87,19 @@ def check(text: str) -> tuple[list[str], int]:
                     continue
                 rows += 1
                 cells += [""] * (5 - len(cells))
-                threat, stride, _component, decision, reason = cells[:5]
+                threat, stride, component, decision, reason = cells[:5]
                 label = f"threat row `{threat[:50] or '(blank)'}`"
-                if not threat:
+                if not threat or _is_filler(threat):
                     findings.append(f"{label}: no threat named")
+                if not component or _is_filler(component):
+                    findings.append(f"{label}: no component named")
+                if reason and _is_filler(reason):
+                    findings.append(f"{label}: the reason is only a filler word")
                 if not stride or stride[0].upper() not in STRIDE:
                     findings.append(f"{label}: STRIDE must be S, T, R, I, D or E, got `{stride}`")
                 if decision.lower() not in DECISIONS:
                     findings.append(f"{label}: decision must be one of {', '.join(DECISIONS)}, got `{decision}`")
-                elif decision.lower() == "accept" and not reason:
+                elif decision.lower() == "accept" and (not reason or _is_filler(reason)):
                     findings.append(f"{label}: an `accept` needs a reason")
     return findings, rows
 
@@ -74,7 +109,7 @@ def selftest() -> int:
 ## What we are building
 A webhook.
 ## Trust boundaries
-Zoho -> app.
+- Zoho -> app: the callback body
 ## Threats
 | Threat | STRIDE | Component | Decision | Reason |
 |---|---|---|---|---|
@@ -91,6 +126,17 @@ Zoho -> app.
         ("an accept without a reason is found", ok.replace("| accept | idempotent, harmless |", "| accept |  |"), 1, "an `accept` needs a reason"),
         ("a bad STRIDE letter is found", ok.replace("| Spoofing |", "| X |"), 1, "STRIDE must be"),
         ("wrong columns are unusable, not clean", ok.replace("| Reason |", "| Why |"), 2, "needs the columns"),
+        ("the unedited shipped template is refused", Path(__file__).resolve().parent.parent.joinpath("templates", "threat-model.md").read_text(encoding="utf-8") if Path(__file__).resolve().parent.parent.joinpath("templates", "threat-model.md").exists() else ok.replace("A webhook.", "<what we build>"), 1, "template placeholder"),
+        ("a placeholder left in a filled model is found", ok.replace("A webhook.", "A webhook for <feature>."), 1, "template placeholder"),
+        ("a placeholder inside backticks is prose, not a placeholder", ok.replace("A webhook.", "A webhook reading `<body>`."), 0, ""),
+        ("an empty section is found", ok.replace("A webhook.\n", ""), 1, "is empty or only a filler word"),
+        ("a section of TBD is found", ok.replace("A webhook.", "TBD"), 1, "is empty or only a filler word"),
+        ("a boundaries section with no bullet is found", ok.replace("- Zoho -> app: the callback body", "Zoho to app."), 1, "needs at least one `-` bullet"),
+        ("a requirements section with no bullet is found", ok.replace("- verify the signature", "verify the signature"), 1, "needs at least one `-` bullet"),
+        ("a filler threat is found", ok.replace("| Forged callback |", "| TBD |"), 1, "no threat named"),
+        ("a filler component is found", ok.replace("| webhook | mitigate |", "| n/a | mitigate |"), 1, "no component named"),
+        ("an accept whose reason is a filler is found", ok.replace("| accept | idempotent, harmless |", "| accept | TBD |"), 1, "an `accept` needs a reason"),
+        ("a filler reason on a mitigate is found", ok.replace("signature checked", "todo"), 1, "only a filler word"),
         ("a table with no rows is unusable, not clean", ok.split("|---|---|---|---|---|")[0] + "|---|---|---|---|---|\n## Security requirements\n- x\n", 2, ""),
     ]
     bad = 0
