@@ -5,6 +5,7 @@ GUARD = Guard(
     name="check_toolchain_selftests",
     subject="scripts/check_toolchain_selftests.py",
     selftest="scripts/check_toolchain_selftests.py",
+    deps=("scripts/project_gates.py",),   # #2137: plugin_roots is project_gates's, imported by the subject
     mutations=(
         Mutation(
             # The whole point. A shipped gate that has rotted against the project's framework or
