@@ -45,5 +45,30 @@ GUARD = Guard(
             'this proved nothing.")\n        return 0',
             'no shipped selftest found is not applicable (exit 3)',
         ),
+        # #2111: the selftest's environment names the project when the caller has none. Without it the shim's fixture exemption fails closed and every selftest that stages a fixture fails.
+        Mutation(
+            "the project is never named, so a session without CLAUDE_SESSION_PROJECT_TOP runs the selftests without it",
+            "        env[SESSION_TOP] = top\n",
+            "        pass\n",
+            "an environment without the session's project gets the git toplevel of the cwd",
+        ),
+        Mutation(
+            "a value the caller set is overridden by the project's toplevel",
+            "    if env.get(SESSION_TOP):\n        return env\n",
+            "    if False:\n        return env\n",
+            "a value the caller set is never overridden",
+        ),
+        Mutation(
+            "an empty value counts as set, so it is left empty",
+            "    if env.get(SESSION_TOP):\n        return env\n",
+            "    if SESSION_TOP in env:\n        return env\n",
+            "an EMPTY value counts as not set",
+        ),
+        Mutation(
+            "run() does not hand the child the environment selftest_env built",
+            "timeout=timeout, cwd=cwd,\n                              env=selftest_env(cwd=cwd))",
+            "timeout=timeout, cwd=cwd)",
+            "a selftest run by the check SEES the project it runs in",
+        ),
     ),
 )

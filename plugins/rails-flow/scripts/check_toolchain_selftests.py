@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -70,10 +71,35 @@ def supports_selftest(path: Path) -> bool:
     return path.is_file() and "--selftest" in path.read_text(encoding="utf-8", errors="replace")
 
 
-def run(path: Path, timeout: int = 120) -> tuple[bool, str]:
+SESSION_TOP = "CLAUDE_SESSION_PROJECT_TOP"
+
+
+def selftest_env(base: dict | None = None, cwd: Path | str | None = None) -> dict:
+    """The environment a shipped selftest runs under: the caller's, plus the session's project when the caller has none (#2111).
+
+    A selftest that stages a fixture repository whole (`git add -A`: docs_layout, docs_due, ...) is let through by the rails-flow git shim only when the shim
+    knows the session's project, from `CLAUDE_SESSION_PROJECT_TOP`, so it can refuse to treat THAT repository as a fixture. The SessionStart hook exports it only
+    when it started in a repository; without it the shim fails closed and the selftest fails on `git add -A` for a reason that is the environment's, not the
+    gate's or the project's (every Retask `gh pr ready` was blocked this way). This check runs IN the project, so it names the project: its git toplevel, never
+    overriding a value the caller set. It only supplies what the variable exists to say, so the shim's exemption gets no wider."""
+    env = dict(os.environ if base is None else base)
+    if env.get(SESSION_TOP):
+        return env
+    try:
+        done = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=cwd, capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return env
+    top = done.stdout.strip()
+    if done.returncode == 0 and top:
+        env[SESSION_TOP] = top
+    return env
+
+
+def run(path: Path, timeout: int = 120, cwd: Path | str | None = None) -> tuple[bool, str]:
     try:
         done = subprocess.run([sys.executable, str(path), "--selftest"],
-                              capture_output=True, text=True, timeout=timeout)
+                              capture_output=True, text=True, timeout=timeout, cwd=cwd,
+                              env=selftest_env(cwd=cwd))
     except subprocess.TimeoutExpired:
         # A TIMEOUT IS NOT A FAILURE and not a pass -- the same distinction #1097 fixed upstream.
         return True, f"timed out after {timeout}s — NOT run, so nothing is known"
@@ -83,7 +109,7 @@ def run(path: Path, timeout: int = 120) -> tuple[bool, str]:
     return done.returncode == 0, (text[-1] if text else f"exit {done.returncode}")
 
 
-def check(roots: list[Path] | None = None) -> tuple[list[str], int, int]:
+def check(roots: list[Path] | None = None, cwd: Path | str | None = None) -> tuple[list[str], int, int]:
     """(findings, selftests run, checks with no selftest)."""
     roots = roots if roots is not None else plugin_roots()
     findings, ran, unproven = [], 0, 0
@@ -97,7 +123,7 @@ def check(roots: list[Path] | None = None) -> tuple[list[str], int, int]:
             unproven += 1
             continue
         ran += 1
-        ok, detail = run(path)
+        ok, detail = run(path, cwd=cwd)
         if not ok:
             findings.append(
                 f"{plugin}/{ident}: its own selftest FAILED here — {detail}. The gate is broken in "
@@ -171,6 +197,34 @@ def _selftest() -> int:
         f, ran, unproven = check([])
         expect("no plugin at all reports nothing AND says it ran nothing",
                not f and ran == 0 and unproven == 0)
+
+        # #2111: THE SELFTEST'S ENVIRONMENT NAMES THE PROJECT when the caller did not. A real repository and a plain directory, both physical.
+        repo, plain = root / "repo", root / "plain"
+        repo.mkdir(); plain.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)
+        top = str(repo.resolve())
+        expect("an environment without the session's project gets the git toplevel of the cwd",
+               selftest_env({}, cwd=repo).get(SESSION_TOP) == top)
+        expect("an EMPTY value counts as not set", selftest_env({SESSION_TOP: ""}, cwd=repo).get(SESSION_TOP) == top)
+        expect("a value the caller set is never overridden",
+               selftest_env({SESSION_TOP: "/preset/project"}, cwd=repo).get(SESSION_TOP) == "/preset/project")
+        expect("outside a repository nothing is invented", SESSION_TOP not in selftest_env({}, cwd=plain))
+        expect("the rest of the caller's environment is kept", selftest_env({"KEEP": "1"}, cwd=repo).get("KEEP") == "1")
+        # ...and it REACHES the child: a selftest that reports the variable it sees, run through `run()` itself, with the parent's value removed and then preset.
+        (plug / "scripts" / "showenv.py").write_text(
+            f"import os, sys\nif '--selftest' in sys.argv:\n    print('top=' + os.environ.get({SESSION_TOP!r}, '(unset)'))\n    raise SystemExit(0)\n", encoding="utf-8")
+        saved = os.environ.pop(SESSION_TOP, None)
+        try:
+            ok_run, seen = run(plug / "scripts" / "showenv.py", cwd=repo)
+            os.environ[SESSION_TOP] = "/preset/project"
+            ok_preset, seen_preset = run(plug / "scripts" / "showenv.py", cwd=repo)
+        finally:
+            os.environ.pop(SESSION_TOP, None)
+            if saved is not None:
+                os.environ[SESSION_TOP] = saved
+        expect("a selftest run by the check SEES the project it runs in, with none in the caller's environment",
+               ok_run and seen == f"top={top}")
+        expect("...and sees the caller's own value when there is one", ok_preset and seen_preset == "top=/preset/project")
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

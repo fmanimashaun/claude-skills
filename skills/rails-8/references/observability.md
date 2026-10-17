@@ -635,8 +635,11 @@ spans are folded in process into aggregates and written to the app's own databas
 **`pg_stat_statements` for slow queries**
 
 - **`CREATE EXTENSION pg_stat_statements` is not enough.** The library must be in
-  `shared_preload_libraries` (a server restart; PostgreSQL 16 docs), and the extension
-  is created per database. Retask measured on `postgres:16` (16.15) that reading the
+  `shared_preload_libraries` (a server restart; PostgreSQL 18 docs), and the extension
+  is created per database: its views are "not available globally but can be enabled for
+  a specific database with CREATE EXTENSION" (PostgreSQL 18 docs). Measured on
+  `postgres:18` (18.6): created in one database, the view in a second one was *relation
+  "pg_stat_statements" does not exist* until `CREATE EXTENSION` ran there too. Retask measured on `postgres:16` (16.15; not re-measured on 18) that reading the
   view then fails with *"pg_stat_statements must be loaded via
   shared_preload_libraries"* while `CREATE EXTENSION` succeeds; the error text is
   measured, not documented. Availability must therefore be decided by **trying the
@@ -644,7 +647,7 @@ spans are folded in process into aggregates and written to the app's own databas
 - **Utility statements keep their literals.** `pg_stat_statements.track_utility`
   defaults to on and tracks every command other than SELECT, INSERT, UPDATE, DELETE
   and MERGE; constants are replaced by `$n` only in the statements it normalises.
-  Measured: `create role … password '…'` appeared verbatim. Set
+  Measured on 16: `create role … password '…'` appeared verbatim (the set of utility commands it normalises grew in 17 and 18: re-check on your version). Set
   `pg_stat_statements.track_utility = off` and read data statements only before
   showing the text to anyone.
 - **On Kamal 2.12.0 the preload flag is the accessory's `cmd:`** (for example
@@ -652,15 +655,19 @@ spans are folded in process into aggregates and written to the app's own databas
   when the container is recreated: `kamal accessory reboot NAME` (prepare, pull the
   image, stop, remove, boot) does that, restarting the database once and pulling the
   image; `kamal accessory restart` (stop, start) does not apply a changed `cmd`.
-- **Know what the view cannot tell you (PostgreSQL 16 docs).** `queryid` is a function
-  of internal object identifiers: it changes when an object (for example a table) is
-  dropped and recreated, is "not safe to assume" stable across major versions, and is
-  not a useful identifier across logical replicas (physical replicas match). The stored
+- **Know what the view cannot tell you (PostgreSQL 18 docs).** `queryid` is a function
+  of internal object identifiers: two apparently identical queries are distinct if they
+  reference a function that was dropped and recreated between them, while a table dropped
+  and recreated can make two apparently identical queries count as the same. It is "not
+  safe to assume" stable across major versions, and is not a useful identifier across
+  logical replicas (physical replicas match). The stored
   text is that of the *first* query with that `queryid`. There are no percentiles, only
   `min`/`max`/`mean`/`stddev_exec_time`. A rising `pg_stat_statements_info.dealloc`
   means the least-executed statements were evicted (`pg_stat_statements.max` exceeded),
-  so the tail is missing. On 16 the window starts at `pg_stat_statements_info.stats_reset`;
-  `stats_since`/`minmax_stats_since` arrive in 17. Rank by the delta between two
+  so the tail is missing. `pg_stat_statements_info.stats_reset` is the time of the last full reset; each row
+  also carries `stats_since` (when its statistics began) and `minmax_stats_since` (when its
+  min/max last reset), both since 17. On 18 a list of constants that differs only in length
+  is squashed to one entry shown as `IN ($1 /*, ... */)` (18.0 release notes). Rank by the delta between two
   snapshots rather than calling `pg_stat_statements_reset()` from a monitor (superuser
   only by default), and poll with `pg_stat_statements(showtext := false)` to skip
   reading the texts.
@@ -681,18 +688,23 @@ spans are folded in process into aggregates and written to the app's own databas
 - **`auto_explain` does nothing until `auto_explain.log_min_duration` is set** (default
   -1). `log_analyze` times every plan node of every statement ("an extremely negative
   impact on performance"): pair it with `auto_explain.sample_rate` below 1 and
-  `log_timing = off`. `auto_explain.log_parameter_max_length` (new in 16) defaults to -1, which logs
+  `log_timing = off`. `auto_explain.log_parameter_max_length` (since 16) defaults to -1, which logs
   bind values **in full**, which means personal data in the logs; set it to 0. Load it
   via `session_preload_libraries` or `shared_preload_libraries`.
-- **Logging companions (all present on 16):** `log_min_duration_sample` with
-  `log_statement_sample_rate` (sampled slow-statement logging, default off),
+- **Logging companions (PostgreSQL 18 docs):** `log_min_duration_sample` (default -1, off) with
+  `log_statement_sample_rate` (default 1.0, every sampled statement),
   `log_lock_waits` (default off) and `log_temp_files` (default -1, off).
 - **Least privilege for the reader.** Grant the monitoring role `pg_read_all_stats`
   (needed to see other users' text and `queryid`), **not** `pg_monitor`: `pg_monitor`
   includes `pg_stat_scan_tables`, whose functions "may take ACCESS SHARE locks on
   tables, potentially for a long time". That role is also what `pgstattuple` requires,
-  so a `pg_read_all_stats` reader cannot run `pgstattuple` (it can still read
-  `n_dead_tup`). Set `statement_timeout`,
+  so a `pg_read_all_stats` reader cannot run `pgstattuple`. Reading `n_dead_tup` needs
+  no grant at all: measured on `postgres:18` (18.6), a role with **no** grants read it
+  from `pg_stat_user_tables` while being refused `SELECT` on the table itself. The docs
+  say `pg_read_all_stats` "allows reading all pg_stat_* views … even those normally
+  visible only to superusers", and the restriction they describe is on the session
+  information in `pg_stat_activity`; the measurement is the authority that table
+  statistics need no grant. Set `statement_timeout`,
   `lock_timeout` and `idle_in_transaction_session_timeout` per role
   (`ALTER ROLE … SET`); the docs call setting the first two in `postgresql.conf` "not
   recommended because it would affect all sessions".
@@ -701,6 +713,66 @@ spans are folded in process into aggregates and written to the app's own databas
   counters such as `n_tup_ins`, and autovacuum is not active during recovery; recovery
   conflicts can cancel standby queries. Read statistics from every node that serves
   traffic.
+- **An "unused" index needs a window, and `stats_reset` alone is not it.** All counters
+  are reset "when starting from an unclean shutdown (e.g., after an immediate shutdown,
+  a server crash, starting from a base backup, and point-in-time recovery)"
+  (PostgreSQL 16 docs). Measured on `postgres:16` (16.15), and again on 18.6: after an immediate stop
+  `idx_scan` went from 1 to 0 and `last_idx_scan` to null, while
+  `pg_stat_database.stats_reset` **stayed null**. The tables and indexes views have no
+  reset column of their own. So take the window from the later of the two:
+  `greatest(stats_reset, pg_postmaster_start_time())`. A clean restart keeps the
+  counters, which makes this conservative but never wrong. `last_idx_scan` is in the
+  16 docs, not in 15.
+- **Four index checks, each one measured on `postgres:16` and 18.6 against a planted case:**
+
+  ```sql
+  -- window start (see above)
+  SELECT coalesce(greatest(stats_reset, pg_postmaster_start_time()), pg_postmaster_start_time())
+  FROM pg_stat_database WHERE datname = current_database();
+  -- unused since then: skip unique indexes and any index backing a constraint
+  SELECT s.relname, s.indexrelname, s.idx_scan, s.last_idx_scan, pg_relation_size(s.indexrelid)
+  FROM pg_stat_user_indexes s JOIN pg_index i USING (indexrelid)
+  WHERE s.idx_scan = 0 AND NOT i.indisunique
+    AND NOT EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = s.indexrelid)
+  ORDER BY pg_relation_size(s.indexrelid) DESC;
+  -- invalid: a failed CREATE INDEX CONCURRENTLY
+  SELECT indexrelid::regclass, indrelid::regclass FROM pg_index WHERE NOT indisvalid;
+  -- duplicates: same columns, opclasses, collations, expression and predicate
+  SELECT indrelid::regclass, array_agg(indexrelid::regclass)
+  FROM pg_index
+  GROUP BY indrelid, indkey::text, indclass::text, indcollation::text,
+           coalesce(pg_get_expr(indexprs, indrelid), ''), coalesce(pg_get_expr(indpred, indrelid), '')
+  HAVING count(*) > 1;
+  -- foreign keys with no index leading on their columns
+  SELECT c.conrelid::regclass, c.conname FROM pg_constraint c
+  WHERE c.contype = 'f' AND NOT EXISTS (
+    SELECT 1 FROM pg_index i WHERE i.indrelid = c.conrelid
+      AND (string_to_array(i.indkey::text, ' ')::int2[])[1:cardinality(c.conkey)] @> c.conkey
+      AND (string_to_array(i.indkey::text, ' ')::int2[])[1:cardinality(c.conkey)] <@ c.conkey);
+  ```
+
+  An invalid index "will be ignored for querying purposes … however it will still
+  consume update overhead". The docs recommend dropping it and running
+  `CREATE INDEX CONCURRENTLY` again, or `REINDEX INDEX CONCURRENTLY`. Drop an index
+  only when its window is long enough to include your rare jobs (month-end, yearly),
+  and only after checking every node that serves reads.
+- **Bloat: screen cheaply, measure on demand, with a role of its own.** The screen is
+  `n_dead_tup` against `n_live_tup` plus `last_vacuum`/`last_autovacuum` from
+  `pg_stat_user_tables`; both counts are documented as *estimated*, and reading them
+  touches no table. The measurement, `pgstattuple`, "always performs a full-table
+  scan". `pgstattuple_approx` skips pages the visibility map marks all-visible, so it
+  only saves work on a table VACUUM has visited. Measured: 100% of pages scanned on a
+  never-vacuumed table, 58% after one VACUUM and a 1% delete. Its dead-tuple count is
+  exact (2,000 against `pgstattuple`'s 2,000); only the live tuples and free space are
+  estimates. On 16, by default, only `pg_stat_scan_tables` may execute these functions
+  (superusers bypass it). Measured (16.15, and the same on 18.6): a
+  `pg_read_all_stats` role reads the screen but gets *"permission denied for function
+  pgstattuple_approx"*. **Our design (#2045):** give the bloat measurement a separate
+  login role granted `pg_stat_scan_tables` and nothing else, never `pg_monitor`, and
+  use it on demand for one flagged table at a time. Measured: that role ran
+  `pgstattuple_approx` and was refused `SELECT` on the table's rows. The always-on
+  reader stays `pg_read_all_stats`, so nothing that polls on a schedule can take the
+  long ACCESS SHARE locks.
 
 **Alerts from an error store (one defensible design)**
 

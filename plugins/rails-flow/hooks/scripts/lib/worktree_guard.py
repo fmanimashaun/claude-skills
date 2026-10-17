@@ -40,6 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import coordination  # noqa: E402
 
 INTEGRATION = ("origin/dev", "dev", "origin/main", "main", "origin/master", "master")
+TEARDOWN = Path(__file__).resolve().parents[3] / "scripts" / "worktree_teardown.py"      # the plugin's script that ends a worktree (#2058)
 PREFIX = "BLOCKED by rails-flow worktree guard:"
 ZOMBIE_WARN = 50
 STOPPED_ORPHAN_WARN = 3     # a stopped process nobody waits on is never normal, so far fewer than zombies
@@ -438,7 +439,8 @@ def resume(session_id: str, cwd: str) -> int:
     if finished:
         shown = ", ".join(w["path"] for w in finished[:3])
         lines.append(f"- {len(finished)} finished worktree(s) (merged, clean): {shown}{' ...' if len(finished) > 3 else ''}. "
-                     f"Remove each with `git worktree remove <path>` (never --force).")
+                     f"End each with `python3 {TEARDOWN} <path>`: it stops its servers, drops its databases, then runs `git worktree remove` (never --force); "
+                     f"a bare `git worktree remove` leaves the databases behind.")
     count, top = zombies()
     if count >= max(1, _env_int("RAILS_FLOW_ZOMBIE_WARN", ZOMBIE_WARN)):
         parents = "; ".join(f"pid {p} `{c}` ({n})" for p, c, n in top)

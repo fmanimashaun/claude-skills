@@ -13,6 +13,7 @@ Global and system git config are isolated: a maintainer's own aliases or `core.h
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -527,6 +528,17 @@ def _(base):
     # and --get-all would list it too, failing this row for a reason that has nothing to do with the shim (72 hit it locally on #2062).
     check(label, r.real("config", "--local", "--get-all", "credential.helper").stdout.strip() == "store", "a named credential helper did not land")
     runs(r, label, "config", "credential.helper", "cache --timeout 300")
+    # #2092: the byte allowlist is stripped under LC_ALL=C. In a locale whose collation puts non-ASCII letters inside `[A-Za-z]` the strip WITHOUT that pin lets them through
+    # (MEASURED: macOS bash 3.2 under en_US.UTF-8 lets `é`, a full-width `ａ`, `ß`, `ı` and `ſ` pass; Ubuntu 24.04's bash 5.2 differs in no locale it has, so on Linux the pin is
+    # not observable and the SOURCE ROW below is what holds it). Each locale this machine has is tried; one it lacks is skipped, never passed.
+    for loc in ("en_US.UTF-8", "C.UTF-8", "C"):
+        if "setlocale" in subprocess.run(["bash", "-c", ":"], env=dict(os.environ, LC_ALL=loc), capture_output=True, text=True).stderr:
+            continue
+        for v in ("caf\u00e9", "\uff41\uff42", "stra\u00dfe", "\u0131", "\u017f", "\udcff", "foo\udcc0\udcaf"):
+            p = r.g("config", "credential.helper", v, env={"LC_ALL": loc})
+            check(label, p.returncode != 0 and "git-shim" in p.stderr, f"under LC_ALL={loc}, `credential.helper {v!r}` ran: {p.stderr.strip()[:100]}")
+    check(label, re.search(r"cfg_rest=\$\(LC_ALL=C; printf '%s\.' \"\$\{x//", (SHIM_DIR / "git").read_text()) is not None,
+          "the credential-value strip is not pinned to LC_ALL=C (#2092)")
 
 
 @case("shim: git config WRITES are an allowlist; reads run (#2043)")
@@ -561,6 +573,14 @@ def _(base):
                  ("config", "--ty", "bool", "user.name", "true"), ("config", "--", "pager.log", "x")):
         refused(r, label, *args)
     check(label, not (r.work / "user.name").exists(), "a short cluster or an abbreviated option wrote a config file past the key check")
+    # `--` ends the options (#2092): what follows is positional, so a legitimate write after it runs, a value that LOOKS like an option is still the value, and a key outside the allowlist is still judged
+    runs(r, label, "config", "--", "user.name", "b")
+    runs(r, label, "config", "--", "user.name", "-x")
+    refused(r, label, "config", "--", "pager.log", "-x")
+    # an attached value (`--opt=value`) is ONE argument (#2092): it neither moves the key nor hides it (`--comment=` is git 2.45+, so it is not used: Ubuntu 24.04 ships 2.43)
+    runs(r, label, "config", "--file=.git/config", "user.name", "c")
+    runs(r, label, "config", "--type=bool", "commit.gpgsign", "false")
+    refused(r, label, "config", "--file=.git/config", "pager.log", "x")
     # a bare `-` is a VALUE to git, not an option (fa, review of #2062): each of these WRITES its key, so each is judged as a write
     for args in (("config", "pager.log", "-"), ("config", "init.templateDir", "-"), ("config", "core.askpass", "-"), ("config", "-z", "pager.log", "-"),
                  ("config", "--no-type", "pager.log", "-"), ("config", "--file", ".git/config", "pager.log", "-")):
