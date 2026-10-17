@@ -65,7 +65,7 @@ def classify(text: str, paths: list[str]) -> list[str]:
 def selftest() -> int:
     cases = [
         ("a plain CRUD plan names nothing", "Add a notes field to the project page and show it in the list.", [], 0),
-        ("an upload is a boundary", "Let the requester upload a CSV of enrollees.", [], 1),
+        ("an upload is a boundary", "Let the requester upload a spreadsheet of enrollees.", [], 1),
         ("a webhook is a boundary", "Receive the Zoho Sign webhook and mark the contract signed.", [], 1),
         ("an MCP tool is a boundary", "Add an MCP tool that lists open requests.", [], 1),
         ("a role change is a boundary", "Staff can now change another user's role.", [], 1),
@@ -83,8 +83,15 @@ def selftest() -> int:
         if got != want:
             bad += 1
             print(f"FAIL {name}: expected exit {want}, got {got}")
+    # The exit codes of main(): 2 is "could not classify", never 0 (an unknown plan is not "no boundary").
+    for name, argv, want in (("no input at all is exit 2", [], 2), ("an unreadable plan is exit 2", ["--plan", "/nonexistent/plan.md"], 2),
+                             ("a path alone is classified", ["--path", "spec/x_spec.rb"], 0)):
+        got = main(argv)
+        if got != want:
+            bad += 1
+            print(f"FAIL {name}: expected exit {want}, got {got}")
     if bad == 0:
-        print(f"security_scope selftest: {len(cases)} cases pass")
+        print(f"security_scope selftest: {len(cases)} cases and the exit codes pass")
     return 1 if bad else 0
 
 

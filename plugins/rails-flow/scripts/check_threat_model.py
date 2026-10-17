@@ -100,13 +100,26 @@ Zoho -> app.
         if got != want or (needle and not any(needle in f for f in findings)):
             bad += 1
             print(f"FAIL {name}: expected exit {want} naming `{needle}`, got {got} {findings}")
+    # main() reads a FILE: an unusable one is exit 2, a finding is exit 1, a clean one is exit 0.
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        good, broken, empty = Path(d, "good.md"), Path(d, "broken.md"), Path(d, "empty.md")
+        good.write_text(ok)
+        broken.write_text(ok.replace("| mitigate |", "|  |"))
+        empty.write_text("# nothing here\n")
+        for name, argv, want in (("a clean file is exit 0", [str(good)], 0), ("a file with a finding is exit 1", [str(broken)], 1),
+                                 ("a file with no threat rows is exit 2", [str(empty)], 2), ("a missing file is exit 2", [str(Path(d, "no.md"))], 2)):
+            got = main(argv)
+            if got != want:
+                bad += 1
+                print(f"FAIL {name}: expected exit {want}, got {got}")
     if bad == 0:
-        print(f"check_threat_model selftest: {len(cases)} cases pass")
+        print(f"check_threat_model selftest: {len(cases)} cases and the exit codes pass")
     return 1 if bad else 0
 
 
 def main(argv: list[str]) -> int:
-    if argv == ["--selftest"]:
+    if "--selftest" in argv:
         return selftest()
     if not argv:
         print("usage: check_threat_model.py FILE [FILE...]", file=sys.stderr)
