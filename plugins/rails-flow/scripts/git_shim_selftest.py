@@ -1335,7 +1335,7 @@ def _(base):
     start = os.pathsep.join([str(o61), "/usr/bin", str(o60), "/bin", str(o61), str(o59), "/usr/local/bin"])
     for shell in ("/bin/bash", shutil.which("zsh")):
         if shell is None:
-            print(f"  skip: zsh is not on PATH, so \"{label}\" did NOT run under zsh -- not a pass.", file=sys.stderr)
+            sys.stderr.write(f"  skip: zsh is not on PATH, so \"{label}\" did NOT run under zsh -- not a pass.\n")
             continue
         entries = _path_after(env_file, start, shell)
         shims = [e for e in entries if e.endswith("git-shim")]
