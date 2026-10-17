@@ -61,5 +61,17 @@ GUARD = Guard(
             '|\\b(?:hidx|restrict|mask|redact|limit)\\b',
             "hiding a field from everyone else is a boundary",
         ),
+        Mutation(
+            "raw html stops being a boundary",
+            '("raw-html", re.compile(r"\\bhtml_safe\\b|',
+            '("raw-html", re.compile(r"(?!)\\bhtml_safe\\b|',
+            "html_safe is a boundary",
+        ),
+        Mutation(
+            "a redirect to a supplied url stops being a boundary",
+            '("redirect-param", re.compile(r"\\bredirect_to\\s*\\(?\\s*params\\b|',
+            '("redirect-param", re.compile(r"(?!)\\bredirect_to\\s*\\(?\\s*params\\b|',
+            "a redirect to a param is a boundary",
+        ),
     ),
 )
