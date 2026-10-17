@@ -55,13 +55,13 @@ def non_code_lines(lines: list[str]) -> set[int]:
     heredoc. A line-by-line reading, not a parser: a `<<ID` inside a string or a comment still opens a heredoc, and a comment marker inside a string closes nothing."""
     out: set[int] = set()
     begin = block = False
-    heredoc = ""
+    heredocs: list[str] = []
     for n, raw in enumerate(lines, 1):
         t = raw.strip()
-        if heredoc:
+        if heredocs:
             out.add(n)
-            if t == heredoc:
-                heredoc = ""
+            if t == heredocs[0]:
+                heredocs.pop(0)
             continue
         if begin:
             out.add(n)
@@ -80,20 +80,21 @@ def non_code_lines(lines: list[str]) -> set[int]:
             out.add(n)
             block = "*/" not in raw
         else:
-            m = HEREDOC_RE.search(raw)
-            if m:
-                heredoc = m.group(2)
+            heredocs = [m.group(2) for m in HEREDOC_RE.finditer(raw)]
     return out
 
 
 def file_at_head(root: Path, path: str) -> list[str] | None:
-    """The lines of `path` as committed at HEAD, or None: absolute, `..`, not in HEAD, or git failed. Never the working tree."""
+    """The lines of `path` as committed at HEAD, or None: absolute, `..`, not in HEAD, a symlink (mode 120000), or git failed. Never the working tree."""
     import subprocess
     from pathlib import PurePosixPath
 
     p = PurePosixPath(path)
     if p.is_absolute() or ".." in p.parts:
         return None
+    tree = subprocess.run(["git", "-C", str(root), "ls-tree", "HEAD", "--", p.as_posix()], capture_output=True, text=True)
+    if tree.returncode != 0 or not tree.stdout.strip() or tree.stdout.split()[0] == "120000":
+        return None  # not in HEAD, or a symlink: `git show` of a link prints its target path, which would read as code
     proc = subprocess.run(["git", "-C", str(root), "show", f"HEAD:{p.as_posix()}"], capture_output=True)
     return proc.stdout.decode("utf-8", errors="replace").splitlines() if proc.returncode == 0 else None
 
@@ -244,11 +245,16 @@ def selftest() -> int:
 
         git("init", "-q", "-b", "dev")
         (root / "app").mkdir()
-        (root / "app/c.rb").write_text("a\nb\nc\n# note\n\n=begin\nhidden\n=end\nlast\nx = <<~SQL\n  select 1\nSQL\n/* block\nmiddle no star\nend */\ntail\n  *args,\n")
+        (root / "app/c.rb").write_text("a\nb\nc\n# note\n\n=begin\nhidden\n=end\nlast\nx = <<~SQL\n  select 1\nSQL\n/* block\nmiddle no star\nend */\ntail\n  *args,\ny = [<<~X, <<~Y]\n  one\nX\n  two\nY\ndone\n")
         git("add", "app/c.rb")
         git("commit", "-q", "-m", "base")
         git("checkout", "-q", "-b", "feat")
         (root / "app/untracked.rb").write_text("x = 1\n")
+        import os as _os
+
+        _os.symlink("/etc/hosts", root / "app/link.rb")
+        git("add", "app/link.rb")
+        git("commit", "-q", "-m", "link")
         (root / MODEL_DIR).mkdir(parents=True)
         (root / MODEL_DIR / "t.md").write_text(MODEL)
         git("add", f"{MODEL_DIR}/t.md")
@@ -300,6 +306,9 @@ def selftest() -> int:
         case("evidence in the middle of a /* */ span with no leading star is incomplete", good.replace("app/c.rb:2", "app/c.rb:14"), 1, "heredoc")
         case("evidence on code after a /* */ span passes", good.replace("app/c.rb:2", "app/c.rb:16"), 0, "answered")
         case("a splat line is code, not a comment", good.replace("app/c.rb:2", "app/c.rb:17"), 0, "answered")
+        case("evidence in the second of two heredocs opened on one line is incomplete", good.replace("app/c.rb:2", "app/c.rb:21"), 1, "heredoc")
+        case("evidence after two heredocs on one line passes", good.replace("app/c.rb:2", "app/c.rb:23"), 0, "answered")
+        case("a committed symlink is refused, never read through its target", good.replace("app/c.rb:2", "app/link.rb:1"), 1, "committed at HEAD")
         case("an absolute evidence path is refused", good.replace("app/c.rb:2", "/etc/hosts:1"), 1, "inside the repository")
         case("a `..` evidence path is refused", good.replace("app/c.rb:2", "app/../app/c.rb:2"), 1, "inside the repository")
         case("evidence in a file that exists only in the working tree is refused", good.replace("app/c.rb:2", "app/untracked.rb:1"), 1, "committed at HEAD")
