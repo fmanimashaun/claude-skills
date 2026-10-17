@@ -54,7 +54,7 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 - `/rails-flow:claim-coordinator` — 'Take the machine-wide coordinator role for THIS session, from inside it, without going to the other session to fight for it.
 - `/rails-flow:coordinate` — Cross-session coordination computed from the repository — who is idle with finished work, which announced paths collide, which conflicts are generated and which are the author's judgement.
 - `/rails-flow:retro` — Count the review findings that recur across PRs and propose a check or a doctrine line for each.
-- `/rails-flow:secure-design` — Threat-model a planned change before its criteria, only when it adds a security boundary.
+- `/rails-flow:secure-design` — Threat-model a plan that adds a security boundary, before its criteria.
 - `/rails-flow:slice` — Break a spec, a brief or an issue into dependency-ordered vertical slices.
 - `/rails-flow:spec` — Turn an idea or a brief into a technical spec before anything is built.
 - `/rails-flow:toolchain-audit` — Audit an existing project's whole claude-skills setup — update the toolchain, verify the scaffolding, run every check that applies, and report in three states.

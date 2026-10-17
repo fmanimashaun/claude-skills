@@ -1,6 +1,5 @@
 ---
-description: Threat-model a planned change before its criteria, only when it adds a security boundary. Writes and checks docs/security/threat-models/<slug>.md.
-disable-model-invocation: true
+description: Threat-model a plan that adds a security boundary, before its criteria.
 argument-hint: "[the unit, spec slug or issue | blank to use the current plan]"
 ---
 
