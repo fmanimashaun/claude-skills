@@ -43,10 +43,14 @@ HERE = Path(__file__).resolve()
 
 
 def plugin_roots(start: Path | None = None) -> list[Path]:
-    """Every sibling plugin directory carrying a checks.json."""
-    here = (start or HERE).resolve()
-    own = here.parents[1]                       # <plugin>/scripts/x.py -> <plugin>
-    return sorted(p.parent for p in own.parent.glob("*/checks.json"))
+    """One directory per installed PLUGIN that ships a checks.json, never one per cached version: `project_gates.plugin_roots`, the one walk (#2137).
+
+    This used to be its own flat walk (`parents[1].parent.glob("*/checks.json")`), right in a source checkout and wrong where the toolchain runs, the installed
+    `<cache>/<plugin>/<version>/` layout, where `parents[1]` is a VERSION: it ran the selftests of every cached version of rails-flow and none of the sibling plugins'
+    (qa-flow, pipeline, design-flow). An older cached `docs_layout.py` without the fixture marker then failed its `git add -A` under the current git shim, which
+    blocked every Retask `gh pr ready`. `project_gates` fixed the same walk in #706; this reuses it so the two cannot disagree again."""
+    import project_gates                        # a sibling script: this file is run from the same scripts directory
+    return project_gates.plugin_roots((start or HERE).resolve())
 
 
 def declared_checks(roots: list[Path]) -> list[tuple[str, str, Path]]:
@@ -225,6 +229,37 @@ def _selftest() -> int:
         expect("a selftest run by the check SEES the project it runs in, with none in the caller's environment",
                ok_run and seen == f"top={top}")
         expect("...and sees the caller's own value when there is one", ok_preset and seen_preset == "top=/preset/project")
+
+        # #2137: THE INSTALLED LAYOUT, `<cache>/<plugin>/<version>/`, where `parents[1]` of a script is a VERSION directory. Two versions of rails-flow (the older one's selftest
+        # FAILS, as docs_layout's did under the new git shim) and a sibling plugin; the walk must pick one directory per plugin, the invoked version, and the sibling.
+        cache = root / "cache" / "claude-skills"
+
+        def install(name: str, version: str, selftest_ok: bool) -> Path:
+            d = cache / name / version
+            (d / ".claude-plugin").mkdir(parents=True)
+            (d / "scripts").mkdir()
+            (d / ".claude-plugin" / "plugin.json").write_text(json.dumps({"name": name, "version": version}), encoding="utf-8")
+            (d / "checks.json").write_text(json.dumps({"plugin": name, "checks": [{"id": "g", "why": "w", "command": ["python3", "{plugin}/scripts/g.py"]}]}), encoding="utf-8")
+            (d / "scripts" / "g.py").write_text(f"import sys\nif '--selftest' in sys.argv:\n    print('{name} {version}')\n    raise SystemExit({0 if selftest_ok else 1})\n", encoding="utf-8")
+            return d.resolve()
+
+        old_v, new_v, sibling = install("rails-flow", "1.0.0", False), install("rails-flow", "1.1.0", True), install("qa-flow", "2.0.0", True)
+        got = plugin_roots(new_v / "scripts" / "check_toolchain_selftests.py")
+        expect("the installed layout: ONE directory per plugin, the invoked version, and the sibling plugin, never an older cached version",
+               sorted(got) == sorted([new_v, sibling]))
+        f, ran, _ = check(got)
+        expect("an older cached version's FAILING selftest is not run, so it is not reported, and the sibling plugin's selftest IS run",
+               not f and ran == 2)
+        f_old, _, _ = check([old_v])
+        expect("...while that same older version, asked for directly, does fail (the fixture can fail)", len(f_old) == 1)
+
+        # the source-checkout layout still works through the same walk: `plugins/<name>/scripts/x.py`, siblings are the other plugins
+        src = root / "src" / "plugins"
+        for name in ("rails-flow", "qa-flow"):
+            (src / name / "scripts").mkdir(parents=True)
+            (src / name / "checks.json").write_text(json.dumps({"plugin": name, "checks": []}), encoding="utf-8")
+        flat = plugin_roots(src.resolve() / "rails-flow" / "scripts" / "check_toolchain_selftests.py")
+        expect("a source checkout still finds the sibling plugins", sorted(p.name for p in flat) == ["qa-flow", "rails-flow"])
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
