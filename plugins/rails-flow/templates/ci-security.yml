@@ -1,0 +1,93 @@
+# Security pipeline. Scaffolded by /rails-flow:setup-flow to .github/workflows/security.yml (#2124).
+#
+# WHAT RUNS WHEN
+#   every push (any branch) ......... secret scan over the FULL history, Brakeman, bundler-audit, importmap audit
+#   every pull request .............. all of the above, plus dependency review (it diffs the PR's dependency changes, so it only means something on a PR)
+#   weekly, and on demand ........... CodeQL, and the audits again: an advisory published after the last push still fails a week later
+#   before a release (dev -> main) .. this workflow is the gate: a red job here is a red release. Nothing below is advisory.
+#
+# EVERY JOB FAILS CLOSED. No `continue-on-error`, no `|| true`: a security step that cannot fail reads exactly like one that passed.
+# `check_ci_parity.py` (a `project_gates.py` check) fails the sweep if a step below is missing, weakened, or exists in `bin/ci` and not here. It also
+# asks that some workflow runs `project_gates.py` (the toolchain gates): `/rails-flow:setup-flow` scaffolds that job separately, with the toolchain pinned.
+# To drop a job a project cannot run (CodeQL on an unsupported language, dependency review on a private repository without the
+# feature), declare it with a reason in `.rails-flow/ci-parity.json`; deleting the job silently is the failure the check exists for.
+#
+# PINS. Every action is pinned to the commit its tag pointed at when this was written, and the secret scanner to an image tag; bump them
+# deliberately (dependabot proposes the actions). Brakeman, bundler-audit and importmap run the project's own `bin/` stubs so CI and
+# `bin/ci` run the same command: change the flags in `config/ci.rb` and here together, and the parity check will say if they drift.
+name: Security
+
+on:
+  pull_request:
+  push:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # the whole history: a secret removed in a later commit is still in the repository
+      # `git` is gitleaks' current scan mode (it reads `git log -p`); `--exit-code 1` makes a finding fail the job, `--redact` keeps the value out of the log.
+      - name: Scan the full history for secrets
+        run: docker run --rm -v "$PWD:/repo" -w /repo ghcr.io/gitleaks/gitleaks:v8.30.1 git --redact --exit-code 1 --no-banner /repo
+
+  brakeman:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - name: Brakeman
+        run: bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error
+
+  bundler-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - name: Gem advisories
+        run: bin/bundler-audit
+
+  importmap-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - name: Importmap advisories
+        run: bin/importmap audit
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # The threshold is the project's choice: low, moderate, high or critical (the action's own scale). It is a declaration here, not a number
+      # taken from anywhere; lowering it is a reviewed change to this file.
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+
+  codeql:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          languages: ruby, javascript-typescript
+      - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0

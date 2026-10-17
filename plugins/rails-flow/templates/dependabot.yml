@@ -1,0 +1,26 @@
+# Scaffolded by /rails-flow:setup-flow to .github/dependabot.yml (#2124), when the project has none.
+# Keeps what the security workflow audits current: gems, the actions it pins by commit, and JavaScript if the project has a package.json.
+# A pin nobody bumps goes stale silently, so the pins in .github/workflows/security.yml and this file ship together.
+# Edit `target-branch` to the project's integration branch (`dev` under this toolchain's branch model, never the release branch).
+version: 2
+updates:
+  - package-ecosystem: bundler
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+  # Delete this block if the project has no package.json.
+  - package-ecosystem: npm
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: monthly
