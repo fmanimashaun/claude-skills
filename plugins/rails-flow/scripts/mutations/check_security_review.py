@@ -22,8 +22,8 @@ GUARD = Guard(
         ),
         Mutation(
             "evidence past the end of the file is accepted",
-            "> len(f.read_text(encoding=\"utf-8\", errors=\"replace\").splitlines()):",
-            "> 10**9:",
+            "                    if int(ev.group(2)) < 1 or int(ev.group(2)) > len(src):",
+            "                    if int(ev.group(2)) < 1 or int(ev.group(2)) > 10**9:",
             "evidence past the end of the file is incomplete",
         ),
         Mutation(
@@ -49,6 +49,18 @@ GUARD = Guard(
             "    if not threat_rows(model_text):",
             "    if False:",
             "an unreadable model is exit 2",
+        ),
+        Mutation(
+            "a comment, blank or block-comment line is accepted as the line that implements a control",
+            "                    elif not is_code_line(src, int(ev.group(2))):",
+            "                    elif False:",
+            "evidence on a comment line is incomplete",
+        ),
+        Mutation(
+            "a line inside =begin/=end counts as code",
+            "            return not inside and bool(t)",
+            "            return bool(t)",
+            "evidence inside =begin/=end is incomplete",
         ),
     ),
 )
