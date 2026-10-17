@@ -72,6 +72,7 @@ schema impact. Then produce a short plan:
 - Units of work, ordered — each unit is one spec + its implementation
 - Migrations needed (these go to `migration-writer`)
 - Risks / invariants in play (tenancy scoping, authorization, module gates)
+- **Security scope** — run `${CLAUDE_PLUGIN_ROOT}/scripts/security_scope.py` over the plan text and the planned paths (#2117). Exit 0: record `Security: no new boundary`. Exit 1 (a public or token route, upload, webhook, MCP tool, outbound fetch, auth or role change, personal column): run `/rails-flow:secure-design` NOW, before the criteria below; its Security requirements become criteria. Exit 2 is "could not classify", not "none".
 
 ### Acceptance criteria — write them BEFORE any code
 
