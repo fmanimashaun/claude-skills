@@ -35,7 +35,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <main>
 <h1>Doctrine &rarr; enforcement</h1>
 <p class="lede">One row per doctrinal claim in this repo: where it is stated, and what makes it true. <strong>The unenforced rows are the deliverable.</strong> A claim with no enforcement is not automatically a defect &mdash; plenty are judgement, and gating judgement is worse than not gating it. The value is making the distinction visible instead of discovering it by accident.</p>
-<div class="tally"><b>55 claims</b><b>40 enforced guarantees</b><b>15 advisory</b><b>0 tracked gaps</b></div>
+<div class="tally"><b>56 claims</b><b>41 enforced guarantees</b><b>15 advisory</b><b>0 tracked gaps</b></div>
 <div class="controls"><button data-k="all">all</button><button data-k="guarantee">guarantees</button><button data-k="advice">advisory</button><button data-k="gap">gaps</button></div>
 <div class="row" data-k="guarantee">
 <h2>A SessionStart hook&#x27;s output is charged again after every compaction, so its bytes are budgeted and ratcheted; a shipped agent states a bounded output or returns a path.</h2>
@@ -253,6 +253,15 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <li><code>mutation:check_criteria</code></li>
 </ul>
 <p class="note">Our design, no external claim. The check proves the citation exists, not that the criterion&#x27;s observable would fail without the control.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>A change that adds or edits a threat model cannot be marked ready without a current `security-auditor` record that answers every `mitigate` and `accept` row, and a `mitigate` row recorded `not implemented` is a finding for a human.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-flow/commands/feature.md</code> &middot; #2119</span></div>
+<ul class="enf">
+<li><code>script:plugins/rails-flow/scripts/check_security_review.py</code></li>
+<li><code>mutation:check_security_review</code></li>
+</ul>
+<p class="note">Our design, no external claim. It binds `gh pr ready` through the sweep (`project_gates.py` -&gt; `guard-pr-ready.sh`), not by chaining. It proves the record is current, complete and cites code that exists, not that the cited line implements the control.</p>
 </div>
 <div class="row" data-k="guarantee">
 <h2>An acceptance criterion that no spec cites is unproven, and the work order says so.</h2>
