@@ -725,7 +725,7 @@ CLAIMS: tuple[Claim, ...] = (
         note="Our design, no external claim. The scope check says a model is owed, never that one is right.",
     ),
     Claim(
-        claim="A `mitigate` row of a unit's threat model with no `[security]` criterion citing it is refused, and so is a `[security]` criterion that cites no `mitigate` row.",
+        claim="A `mitigate` row of a unit's threat model with no `[security]` criterion citing it in its slot is refused, and so is a `[security]` criterion that cites no `mitigate` row.",
         stated_in="plugins/rails-flow/commands/feature.md",
         anchor="**Security criteria (#2118).**",
         kind=GUARANTEE,

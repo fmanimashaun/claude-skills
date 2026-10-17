@@ -56,7 +56,7 @@ Exit 1 names the row: a missing section, a decision outside the four, an `accept
 
 ## 4. Hand on
 
-- Each `mitigate` row becomes an acceptance criterion in the next step (`/rails-flow:feature`'s criteria), tagged `[security]` and citing the row as `TM-n` (TM-1 is the first row of the Threats table; keep rows in order, or renumber the criteria). Write them as given-when-then like any other. `check_criteria.py` refuses a `mitigate` row no criterion cites.
+- Each `mitigate` row becomes an acceptance criterion in the next step (`/rails-flow:feature`'s criteria), tagged `[security]` and citing the row's ID in its citation slot, `(TM-1)` or `covers: TM-1` at the end of the criterion. The ID is the row's own `ID` cell and never changes. Write them as given-when-then like any other. `check_criteria.py` refuses a `mitigate` row no criterion cites.
 - Commit the model with the unit. It is a living document: a later change to the same boundary edits it in the same PR.
 
 ## What follows (not built by this command)
