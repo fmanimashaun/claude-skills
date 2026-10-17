@@ -22,8 +22,8 @@ GUARD = Guard(
         ),
         Mutation(
             "evidence past the end of the file is accepted",
-            "                    if int(ev.group(2)) < 1 or int(ev.group(2)) > len(src):",
-            "                    if int(ev.group(2)) < 1 or int(ev.group(2)) > 10**9:",
+            "                elif int(ev.group(2)) < 1 or int(ev.group(2)) > len(src):",
+            "                elif int(ev.group(2)) < 1 or int(ev.group(2)) > 10**9:",
             "evidence past the end of the file is incomplete",
         ),
         Mutation(
@@ -52,15 +52,39 @@ GUARD = Guard(
         ),
         Mutation(
             "a comment, blank or block-comment line is accepted as the line that implements a control",
-            "                    elif not is_code_line(src, int(ev.group(2))):",
-            "                    elif False:",
+            "                elif int(ev.group(2)) in non_code_lines(src):",
+            "                elif False:",
             "evidence on a comment line is incomplete",
         ),
         Mutation(
             "a line inside =begin/=end counts as code",
-            "            return not inside and bool(t)",
-            "            return bool(t)",
-            "evidence inside =begin/=end is incomplete",
+            '            begin = not raw.startswith("=end")',
+            "            begin = True",
+            "evidence on code after a block comment passes",
+        ),
+        Mutation(
+            "a heredoc body counts as code",
+            "            if m:\n                heredoc = m.group(2)",
+            "            if False:\n                heredoc = m.group(2)",
+            "evidence inside a heredoc body is incomplete",
+        ),
+        Mutation(
+            "the middle of a /* */ span counts as code",
+            "        if block:\n            out.add(n)\n            block = \"*/\" not in raw\n            continue",
+            "        if False:\n            out.add(n)\n            block = \"*/\" not in raw\n            continue",
+            "evidence in the middle of a /* */ span with no leading star is incomplete",
+        ),
+        Mutation(
+            "an evidence path with `..` is normalised into the repository instead of refused",
+            '    if p.is_absolute() or ".." in p.parts:\n        return None\n    proc = subprocess.run(["git", "-C", str(root), "show", f"HEAD:{p.as_posix()}"], capture_output=True)',
+            '    import os\n\n    proc = subprocess.run(["git", "-C", str(root), "show", f"HEAD:{os.path.normpath(p.as_posix())}"], capture_output=True)',
+            "a `..` evidence path is refused",
+        ),
+        Mutation(
+            "the evidence file is read from the working tree, not HEAD",
+            '    proc = subprocess.run(["git", "-C", str(root), "show", f"HEAD:{p.as_posix()}"], capture_output=True)',
+            '    proc = type("P", (), {"returncode": 0 if (root / p).is_file() else 1, "stdout": (root / p).read_bytes() if (root / p).is_file() else b""})()',
+            "evidence in a file that exists only in the working tree is refused",
         ),
     ),
 )
