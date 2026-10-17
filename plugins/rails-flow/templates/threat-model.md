@@ -18,4 +18,4 @@ One row per threat. STRIDE: Spoofing, Tampering, Repudiation, Information disclo
 | <what an attacker or a mistake could do> | S | <where> | mitigate | <control, or why the risk stays> |
 
 ## Security requirements
-What must be true, one line each, phrased so a criterion can test it (`[security]` criteria, #2118). These become acceptance criteria and the questions `security-auditor` asks.
+What must be true, one line each, phrased so a criterion can test it (`[security]` criteria citing the `mitigate` rows as `TM-1`, `TM-2`... in table order, #2118). These become acceptance criteria and the questions `security-auditor` asks.
