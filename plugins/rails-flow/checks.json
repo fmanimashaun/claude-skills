@@ -383,6 +383,20 @@
       ]
     },
     {
+      "id": "production-config",
+      "why": "Production configuration was validated by nothing: `config.hosts` is empty in production and does nothing, and a downstream app shipped with it commented out (Host-header and DNS-rebinding protection off, an emailed link built from the request host). Fails when config/environments/production.rb does not set `config.hosts` or `force_ssl`, sets `consider_all_requests_local = true`, carries a wildcard CORS origin, or mounts a dev-only route outside a development guard. Static and offline (#2120). Exemptions are declared, with a reason, in .rails-flow/production-config.json. Credential literals are #2121.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_production_config.py"
+      ],
+      "applies_when": [
+        "config/environments/production.rb"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "mcp-end-to-end",
       "why": "An app with an MCP server (the `mcp` gem) names, in .rails-flow/mcp.json, the request-level spec that drives the server end to end: it reaches tools/list and tools/call over the real endpoint, literally or through a spec/support helper. A tool that loads in a unit spec can still fail at the transport, the auth or the JSON-RPC layer (#1930, gate 4 of #1885). No mcp gem is n/a; the gem with no declaration is a finding.",
       "command": [
