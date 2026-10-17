@@ -28,7 +28,7 @@ It is a keyword scan over prose and paths (read the LIMITS in its header): it ov
 Copy `${CLAUDE_PLUGIN_ROOT}/templates/threat-model.md` to `docs/security/threat-models/<slug>.md` (one file per feature or boundary; the slug is the branch slug used for the acceptance file). Fill the four sections by answering the four questions, in order:
 
 1. **What are we building?** The data flow, in a line per hop.
-2. **What can go wrong?** One STRIDE row per threat, per boundary crossed. Read the boundary as the attacker: what do they control, what can they send, replay or skip.
+2. **What can go wrong?** One STRIDE row per threat, per boundary crossed, each with its own ID (`TM-1`, `TM-2`...): the ID names the row for good, so never renumber or reuse one. Read the boundary as the attacker: what do they control, what can they send, replay or skip.
 3. **What do we do about it?** Each row's decision: `mitigate` (name the control), `transfer` (name who holds it), `eliminate` (name what was removed), `accept` (the reason the risk stays, mandatory).
 4. **Did we do a good enough job?** Not yet answerable: the requirements below become `[security]` criteria and the model is verified after the build (see "What follows").
 

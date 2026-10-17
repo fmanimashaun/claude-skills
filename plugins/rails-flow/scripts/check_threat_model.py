@@ -12,7 +12,7 @@ decision, or accept a risk with no reason, is the boilerplate D1 was written to 
 answer; whether the threats are the RIGHT ones is for `security-auditor` and a human.
 
 THE SHAPE (templates/threat-model.md): four `##` sections, `What we are building`, `Trust boundaries`, `Threats`, `Security requirements`.
-`Threats` holds one table, columns `Threat | STRIDE | Component | Decision | Reason`. STRIDE is S, T, R, I, D or E (a word starting with
+`Threats` holds one table, columns `ID | Threat | STRIDE | Component | Decision | Reason`; ID is `TM-n`, unique, and is what a `[security]` criterion cites (#2118). STRIDE is S, T, R, I, D or E (a word starting with
 one of those counts: `Spoofing`, `Tampering`...). Decision is exactly one of mitigate, transfer, accept, eliminate. Reason may not be
 empty for `accept` (the one decision that leaves the risk in place); it is expected for the rest and a model that leaves it blank on
 `mitigate` gets no finding, because the control is named in Security requirements.
@@ -33,6 +33,7 @@ from pathlib import Path
 SECTIONS = ("What we are building", "Trust boundaries", "Threats", "Security requirements")
 DECISIONS = ("mitigate", "transfer", "accept", "eliminate")
 STRIDE = "STRIDE"
+ID_RE = re.compile(r"TM-\d+", re.I)
 FILLERS = {"tbd", "tba", "todo", "fixme", "n/a", "na", "none", "nil", "-", "--", "x", "xx", "?", "??", "...", "…", "etc", "later", "see above"}
 PLACEHOLDER = re.compile(r"<[^<>\n`]{1,80}>")
 BULLET_SECTIONS = ("Trust boundaries", "Security requirements")
@@ -49,6 +50,22 @@ def _section_body(text: str, name: str) -> str | None:
 
 def _cells(line: str) -> list[str]:
     return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def threat_rows(text: str) -> list[tuple[int, str, str]]:
+    """(TM number, threat, decision) per row of `## Threats`, the number read from the row's own ID cell (#2118). Empty when the table cannot be read."""
+    m = re.search(r"^##\s+Threats\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    lines = [ln for ln in m.group(1).splitlines() if ln.strip().startswith("|")] if m else []
+    if not lines or [h.lower() for h in _cells(lines[0])[:6]] != ["id", "threat", "stride", "component", "decision", "reason"]:
+        return []
+    out: list[tuple[int, str, str]] = []
+    for ln in lines[1:]:
+        cells = _cells(ln) + [""] * 6
+        if all(set(c) <= set("-: ") for c in cells[:6]):
+            continue
+        if ID_RE.fullmatch(cells[0]):
+            out.append((int(cells[0][3:]), cells[1], cells[4].lower()))
+    return out
 
 
 def check(text: str) -> tuple[list[str], int]:
@@ -77,18 +94,25 @@ def check(text: str) -> tuple[list[str], int]:
     if m:
         lines = [ln for ln in m.group(1).splitlines() if ln.strip().startswith("|")]
         header = _cells(lines[0]) if lines else []
-        want = ["threat", "stride", "component", "decision", "reason"]
-        if [h.lower() for h in header[:5]] != want:
-            findings.append("`## Threats` table needs the columns Threat | STRIDE | Component | Decision | Reason")
+        want = ["id", "threat", "stride", "component", "decision", "reason"]
+        if [h.lower() for h in header[:6]] != want:
+            findings.append("`## Threats` table needs the columns ID | Threat | STRIDE | Component | Decision | Reason")
         else:
+            ids: set[str] = set()
             for ln in lines[1:]:
                 cells = _cells(ln)
                 if all(set(c) <= set("-: ") for c in cells):
                     continue
                 rows += 1
-                cells += [""] * (5 - len(cells))
-                threat, stride, component, decision, reason = cells[:5]
+                cells += [""] * (6 - len(cells))
+                rid, threat, stride, component, decision, reason = cells[:6]
                 label = f"threat row `{threat[:50] or '(blank)'}`"
+                if not ID_RE.fullmatch(rid):
+                    findings.append(f"{label}: the ID must look like TM-1, got `{rid}`")
+                elif rid.upper() in ids:
+                    findings.append(f"{label}: the ID {rid} is already used by another row")
+                else:
+                    ids.add(rid.upper())
                 if not threat or _is_filler(threat):
                     findings.append(f"{label}: no threat named")
                 if not component or _is_filler(component):
@@ -111,10 +135,10 @@ A webhook.
 ## Trust boundaries
 - Zoho -> app: the callback body
 ## Threats
-| Threat | STRIDE | Component | Decision | Reason |
-|---|---|---|---|---|
-| Forged callback | Spoofing | webhook | mitigate | signature checked |
-| Replay | R | webhook | accept | idempotent, harmless |
+| ID | Threat | STRIDE | Component | Decision | Reason |
+|---|---|---|---|---|---|
+| TM-1 | Forged callback | Spoofing | webhook | mitigate | signature checked |
+| TM-4 | Replay | R | webhook | accept | idempotent, harmless |
 ## Security requirements
 - verify the signature
 """
@@ -137,7 +161,7 @@ A webhook.
         ("a filler component is found", ok.replace("| webhook | mitigate |", "| n/a | mitigate |"), 1, "no component named"),
         ("an accept whose reason is a filler is found", ok.replace("| accept | idempotent, harmless |", "| accept | TBD |"), 1, "an `accept` needs a reason"),
         ("a filler reason on a mitigate is found", ok.replace("signature checked", "todo"), 1, "only a filler word"),
-        ("a table with no rows is unusable, not clean", ok.split("|---|---|---|---|---|")[0] + "|---|---|---|---|---|\n## Security requirements\n- x\n", 2, ""),
+        ("a table with no rows is unusable, not clean", ok.split("|---|---|---|---|---|")[0] + "|---|---|---|---|---|---|\n## Security requirements\n- x\n", 2, ""),
     ]
     bad = 0
     for name, text, want, needle in cases:
@@ -159,6 +183,16 @@ A webhook.
             if got != want:
                 bad += 1
                 print(f"FAIL {name}: expected exit {want}, got {got}")
+    got_rows = threat_rows(ok)
+    if got_rows != [(1, "Forged callback", "mitigate"), (4, "Replay", "accept")]:
+        bad += 1
+        print(f"FAIL threat_rows reads each row's own ID, not its position: got {got_rows}")
+    for name, body, needle in (("a row without an ID is found", ok.replace("| TM-4 |", "|  |"), "the ID must look like TM-1"),
+                               ("a repeated ID is found", ok.replace("| TM-4 |", "| TM-1 |"), "already used")):
+        findings, _ = check(body)
+        if not any(needle in f for f in findings):
+            bad += 1
+            print(f"FAIL {name}: {findings}")
     if bad == 0:
         print(f"check_threat_model selftest: {len(cases)} cases and the exit codes pass")
     return 1 if bad else 0
