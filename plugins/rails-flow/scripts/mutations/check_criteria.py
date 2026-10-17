@@ -78,5 +78,24 @@ GUARD = Guard(
             '    r"|\\b\\w+\\s+(?:is|are|gets?|be|being)\\s+raised\\b"\n',
             "a lowercase \'a request is raised\' is not an error path",
         ),
+        # #2118. A mitigate row nobody turned into a [security] criterion is the gap this exists for.
+        Mutation(
+            "a mitigate row no [security] criterion cites stops being a finding",
+            "        if n not in cited:",
+            "        if False:",
+            "a mitigate row no [security] criterion cites is a finding",
+        ),
+        Mutation(
+            "a [security] criterion that cites no row stops being a finding",
+            "        if not refs:",
+            "        if False:",
+            "a [security] criterion citing no row is a finding",
+        ),
+        Mutation(
+            "citing an accept row stops being a finding",
+            "            elif n not in mitigate:",
+            "            elif False:",
+            "a [security] criterion citing an accept row is a finding",
+        ),
     ),
 )

@@ -307,6 +307,34 @@ def run() -> int:
         specs=Path(tempfile.mkdtemp(prefix="railsflow-nospec-")) / "absent",
     )
 
+    # ---- [security] criteria against the threat model (#2118) ---------------------------------
+    rows = [(1, "Forged callback", "mitigate"), (2, "Replay", "accept"), (3, "Leaked body", "mitigate")]
+    sec = (
+        "## Webhook\n"
+        "- **AC-1** Given a callback with a bad signature, when it posts to the webhook, then the response is 401 and no contract changes [error] [security] TM-1\n"
+        "- **AC-2** Given a signed callback, when the log is written, then the body is filtered from the log line [security] TM-3\n"
+    )
+    def sec_check(label, body, want_rows, contains):
+        _tick()
+        try:
+            found = cc.check(cc.parse(_write(body)), None, want_rows)
+        except cc.Unusable as exc:
+            FAILURES.append(f"{label}: UNUSABLE ({exc})")
+            return
+        blob = " | ".join(found)
+        if contains is None and found:
+            FAILURES.append(f"{label}: expected clean, got {found}")
+        if contains is not None and contains.lower() not in blob.lower():
+            FAILURES.append(f"{label}: expected {contains!r}, got {found}")
+    sec_check("every mitigate row cited by a [security] criterion is clean", sec, rows, None)
+    sec_check("a mitigate row no [security] criterion cites is a finding", sec.replace(" TM-3", ""), rows, "TM-3")
+    sec_check("a model with mitigate rows and no [security] criterion is a finding", GOOD, rows, "no [security] criterion cites it")
+    sec_check("a [security] criterion citing no row is a finding", sec.replace(" TM-1", ""), rows, "cites no threat-model row")
+    sec_check("a [security] criterion citing a row that does not exist is a finding", sec.replace("TM-1", "TM-9"), rows, "not a row of the threat model")
+    sec_check("a [security] criterion citing an accept row is a finding", sec.replace("TM-1", "TM-2"), rows, "not a `mitigate` row")
+    sec_check("a model with only accept rows asks for nothing", GOOD, [(1, "Replay", "accept")], None)
+    sec_check("no model, no security rule", GOOD, [], None)
+
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)
         for f in FAILURES:

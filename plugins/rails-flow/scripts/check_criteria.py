@@ -24,6 +24,10 @@ WHAT THIS GUARANTEES
     error-path criterion. And with --specs, every criterion id appears in some spec file --
     a real 1:1 mapping, which is what makes "the spec proves the criteria" checkable.
 
+SECURITY (#2118). A unit whose threat model (docs/security/threat-models/<slug>.md, TM-1 is the first row of its Threats table) has `mitigate`
+    rows must carry a `[security]` criterion citing each such row as `TM-n`; a `[security]` criterion citing no row, or a row that is not
+    a `mitigate` row of the model, is a finding. Without a model nothing changes: the step fires only when security_scope.py does (#2117).
+
 WHAT IT DOES NOT
     It cannot tell whether a spec citing `AC-3` actually ASSERTS AC-3's observable; only that
     the claim is traceable. It also cannot know whether the criteria were written before the
@@ -107,6 +111,10 @@ RUBY_FAILURE = re.compile(
     r"|\b[A-Z][\w:]*(?:Error|Exception)\b"
     r"|\b(?i:rescue[sd]?)\b|\b(?i:exception)\b"
 )
+
+
+SECURITY_TAG = "[security]"
+TM_RE = re.compile(r"\bTM-(\d+)\b")
 
 
 class Unusable(Exception):
@@ -196,8 +204,37 @@ def _is_error_path(text: str) -> bool:
     return any(h in low for h in ERROR_HINTS) or bool(RUBY_FAILURE.search(text))
 
 
-def check(criteria: list[Criterion], spec_root: Path | None = None) -> list[str]:
+def check_security(criteria: list[Criterion], rows: list[tuple[int, str, str]]) -> list[str]:
+    """Map `[security]` criteria to the `mitigate` rows of the unit's threat model, both ways."""
     findings: list[str] = []
+    mitigate = {n: threat for n, threat, decision in rows if decision == "mitigate"}
+    known = {n for n, _, _ in rows}
+    tagged = [c for c in criteria if SECURITY_TAG in c.text.lower()]
+    cited: set[int] = set()
+    for c in tagged:
+        refs = {int(n) for n in TM_RE.findall(c.text)}
+        if not refs:
+            findings.append(f"{where_of(c)}: a {SECURITY_TAG} criterion cites no threat-model row -- say which `TM-n` it satisfies")
+        for n in sorted(refs):
+            if n not in known:
+                findings.append(f"{where_of(c)}: cites TM-{n}, which is not a row of the threat model ({len(known)} row(s))")
+            elif n not in mitigate:
+                findings.append(f"{where_of(c)}: cites TM-{n}, which is not a `mitigate` row -- only a mitigation is proven by a criterion")
+        cited |= refs
+    for n, threat in sorted(mitigate.items()):
+        if n not in cited:
+            findings.append(
+                f"threat model row TM-{n} (`{threat[:50]}`) is `mitigate` and no {SECURITY_TAG} criterion cites it -- "
+                "a requirement nobody turned into a criterion is not proven by the spec"
+            )
+    return findings
+
+
+def check(criteria: list[Criterion], spec_root: Path | None = None,
+          threat_rows: list[tuple[int, str, str]] | None = None) -> list[str]:
+    findings: list[str] = []
+    if threat_rows:
+        findings.extend(check_security(criteria, threat_rows))
 
     # ---- duplicate ids would silently merge two criteria into one traceable claim --------
     seen: dict[int, Criterion] = {}
@@ -296,6 +333,10 @@ def main(argv: list[str] | None = None) -> int:
         "--specs", metavar="DIR",
         help="also require every AC-n to be cited by a spec under DIR (usually `spec`)",
     )
+    parser.add_argument(
+        "--threat-model", metavar="FILE",
+        help="the unit's threat model; default docs/security/threat-models/<slug>.md beside docs/product/acceptance/<slug>.md when it exists",
+    )
     parser.add_argument("--selftest", action="store_true", help="prove the rules fire AND stay silent")
     args = parser.parse_args(argv)
 
@@ -314,7 +355,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"UNUSABLE: {exc}", file=sys.stderr)
         return 2
 
-    findings = check(criteria, Path(args.specs) if args.specs else None)
+    model = Path(args.threat_model) if args.threat_model else Path(args.criteria_path).resolve().parent.parent.parent / "security" / "threat-models" / Path(args.criteria_path).name
+    rows: list[tuple[int, str, str]] = []
+    if model.is_file():
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import check_threat_model as tm
+
+        rows = tm.threat_rows(model.read_text(encoding="utf-8"))
+    elif args.threat_model:
+        print(f"UNUSABLE: no such threat model: {model}", file=sys.stderr)
+        return 2
+    findings = check(criteria, Path(args.specs) if args.specs else None, rows)
 
     if findings:
         print(
