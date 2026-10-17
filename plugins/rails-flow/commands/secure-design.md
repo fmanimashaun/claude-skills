@@ -1,5 +1,6 @@
 ---
-description: Threat-model a planned change BEFORE its acceptance criteria — only when it adds a security boundary (a public or token route, upload, webhook, MCP tool, outbound fetch, auth/role change, personal column). Writes docs/security/threat-models/<slug>.md and checks it is complete.
+description: Threat-model a planned change before its criteria, only when it adds a security boundary. Writes and checks docs/security/threat-models/<slug>.md.
+disable-model-invocation: true
 argument-hint: "[the unit, spec slug or issue | blank to use the current plan]"
 ---
 
