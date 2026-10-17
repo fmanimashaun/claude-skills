@@ -95,6 +95,24 @@ GUARD = Guard(
             "`gh pr ready --undo` is always allowed",
         ),
         Mutation(
+            "#2132: the cd's directory word may be any non-space text, so a quoted path is taken for a plain literal",
+            "_cd_word='[A-Za-z0-9_./~+-]+'",
+            "_cd_word='[^[:space:]]+'",
+            'still refused: cd "<td>/other" && gh pr ready 3',
+        ),
+        Mutation(
+            "#2132: `;` is accepted after the cd as well as `&&`, so `cd x; gh pr ready` runs gh even when the cd fails",
+            '[[:space:]]*&&[^&;|()]*\\$"',
+            '[[:space:]]*(&&|;)[^&|()]*\\$"',
+            "still refused: cd <td>/other; gh pr ready 3",
+        ),
+        Mutation(
+            "#2132: the raw-shape check is skipped, so any lone `cd <word>` segment is waved through",
+            '_cd_ok=0; [ "${#cmd}" -le 4096 ] && [[ $cmd =~ $_cd_shape ]] && _cd_ok=1',
+            "_cd_ok=1",
+            "still refused: cd <td>/other; gh pr ready 3",
+        ),
+        Mutation(
             "the helper's refusal is swallowed",
             "  2) printf '%s\\n' \"$out\" >&2; exit 2 ;;",
             "  2) exit 0 ;;",
