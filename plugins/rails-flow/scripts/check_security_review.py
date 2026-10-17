@@ -19,12 +19,12 @@ sweep record for HEAD (`guard-pr-ready.sh`, #1565). A model with no current secu
 THE RECORD, `docs/evidence/reviews/prs/<slug>/security-audit.md` (`<slug>` is the model's file name), is `security-auditor`'s answer saved
 verbatim. It counts only with a line `Head: <sha>` that is a prefix of the CURRENT HEAD, one line per threat row, and a last line
 `VERDICT: CLEAN` or `VERDICT: BLOCKED`. A row line is `TM-n: <answer>`:
-  * `mitigate` row  `TM-n: implemented <file:line>` (the file must exist at HEAD and that line must be code: not blank, not a comment, not inside =begin/=end) or `TM-n: not implemented` (BLOCKING)
+  * `mitigate` row  `TM-n: implemented <file:line>` (the file is read as committed at HEAD, with no absolute or `..` path, and that line must be code: not blank, not a comment, not inside =begin/=end or a /* */ span, not a heredoc body) or `TM-n: not implemented` (BLOCKING)
   * `accept` row    `TM-n: holds <why>` or `TM-n: stale <what changed>` (a finding: the model must be updated, the article's fourth question)
   * `transfer` and `eliminate` rows may be answered the same way and are not required.
 A row the model has and the record omits, or a row the record names that the model lacks, is exit 1: the record answers another model.
 
-LIMITS. It proves the record is current, complete and cites a line of code that exists, not that the cited line implements the control; that is the
+LIMITS. It proves the record is current, complete and cites a line of code that exists, not that the cited line implements the control; the code-line reading is line-by-line, so a `<<ID` or a comment marker inside a string is misread, and a file that is not code at all (README.md) still counts as code; that is the
 auditor's work and the reviewer's. Nothing stops a session that writes the record by hand, as with `risky_diff.py`. The model is found only
 when the change adds or edits it, so a unit that has a boundary and no model is `security_scope.py`'s concern, not this check's.
 """
@@ -47,20 +47,55 @@ ROW_RE = re.compile(r"^\s*(?:[-*]\s*)?(?:\*\*)?(TM-\d+)(?:\*\*)?\s*[:—–-]+\s
 EVIDENCE_RE = re.compile(r"([\w./@+-]+\.\w+):(\d+)")
 
 
-def is_code_line(lines: list[str], n: int) -> bool:
-    """Whether 1-based line `n` is code: not blank, not a `#`, `//` or `*` comment, not inside a Ruby `=begin`/`=end` block. A minimal reading, not a parser."""
-    inside = False
-    for i, raw in enumerate(lines[:n], 1):
+HEREDOC_RE = re.compile(r"<<[~-]?([\"']?)([A-Z_][A-Z0-9_]*)\1")
+
+
+def non_code_lines(lines: list[str]) -> set[int]:
+    """1-based numbers of lines that are not code: blank, a `#` or `//` comment, inside `=begin`/`=end`, inside a `/* */` span, or the body (and terminator) of a
+    heredoc. A line-by-line reading, not a parser: a `<<ID` inside a string or a comment still opens a heredoc, and a comment marker inside a string closes nothing."""
+    out: set[int] = set()
+    begin = block = False
+    heredoc = ""
+    for n, raw in enumerate(lines, 1):
+        t = raw.strip()
+        if heredoc:
+            out.add(n)
+            if t == heredoc:
+                heredoc = ""
+            continue
+        if begin:
+            out.add(n)
+            begin = not raw.startswith("=end")
+            continue
+        if block:
+            out.add(n)
+            block = "*/" not in raw
+            continue
         if raw.startswith("=begin"):
-            inside = True
-        elif raw.startswith("=end"):
-            inside = False
-            if i == n:
-                return False
-        if i == n:
-            t = raw.strip()
-            return not inside and bool(t) and not t.startswith(("#", "//", "/*", "*"))
-    return False
+            out.add(n)
+            begin = True
+        elif not t or t.startswith(("#", "//")):
+            out.add(n)
+        elif t.startswith("/*"):
+            out.add(n)
+            block = "*/" not in raw
+        else:
+            m = HEREDOC_RE.search(raw)
+            if m:
+                heredoc = m.group(2)
+    return out
+
+
+def file_at_head(root: Path, path: str) -> list[str] | None:
+    """The lines of `path` as committed at HEAD, or None: absolute, `..`, not in HEAD, or git failed. Never the working tree."""
+    import subprocess
+    from pathlib import PurePosixPath
+
+    p = PurePosixPath(path)
+    if p.is_absolute() or ".." in p.parts:
+        return None
+    proc = subprocess.run(["git", "-C", str(root), "show", f"HEAD:{p.as_posix()}"], capture_output=True)
+    return proc.stdout.decode("utf-8", errors="replace").splitlines() if proc.returncode == 0 else None
 
 
 def record_path(slug: str) -> Path:
@@ -96,15 +131,13 @@ def judge(model_text: str, record_text: str, root: Path) -> tuple[list[str], lis
                 incomplete.append(f"{label}: a mitigate row is answered `implemented <file:line>` or `not implemented`, got `{verdict}`")
             else:
                 ev = EVIDENCE_RE.search(rest)
-                f = (root / ev.group(1)) if ev else None
-                if not ev or f is None or not f.is_file():
-                    incomplete.append(f"{label}: `implemented` needs evidence as an existing `file:line`, got `{rest[:60]}`")
-                else:
-                    src = f.read_text(encoding="utf-8", errors="replace").splitlines()
-                    if int(ev.group(2)) < 1 or int(ev.group(2)) > len(src):
-                        incomplete.append(f"{label}: {ev.group(0)} is past the end of {ev.group(1)}")
-                    elif not is_code_line(src, int(ev.group(2))):
-                        incomplete.append(f"{label}: {ev.group(0)} is blank or a comment, so it cannot be where the control is implemented")
+                src = file_at_head(root, ev.group(1)) if ev else None
+                if not ev or src is None:
+                    incomplete.append(f"{label}: `implemented` needs evidence as a `file:line` of a file committed at HEAD inside the repository (no absolute or `..` path), got `{rest[:60]}`")
+                elif int(ev.group(2)) < 1 or int(ev.group(2)) > len(src):
+                    incomplete.append(f"{label}: {ev.group(0)} is past the end of {ev.group(1)}")
+                elif int(ev.group(2)) in non_code_lines(src):
+                    incomplete.append(f"{label}: {ev.group(0)} is blank, a comment or a heredoc body, so it cannot be where the control is implemented")
         else:
             if verdict == "stale":
                 blocking.append(f"{label}: the accepted risk no longer matches the code (stale): update the model")
@@ -211,10 +244,11 @@ def selftest() -> int:
 
         git("init", "-q", "-b", "dev")
         (root / "app").mkdir()
-        (root / "app/c.rb").write_text("a\nb\nc\n# note\n\n=begin\nhidden\n=end\nlast\n")
+        (root / "app/c.rb").write_text("a\nb\nc\n# note\n\n=begin\nhidden\n=end\nlast\nx = <<~SQL\n  select 1\nSQL\n/* block\nmiddle no star\nend */\ntail\n  *args,\n")
         git("add", "app/c.rb")
         git("commit", "-q", "-m", "base")
         git("checkout", "-q", "-b", "feat")
+        (root / "app/untracked.rb").write_text("x = 1\n")
         (root / MODEL_DIR).mkdir(parents=True)
         (root / MODEL_DIR / "t.md").write_text(MODEL)
         git("add", f"{MODEL_DIR}/t.md")
@@ -229,13 +263,17 @@ def selftest() -> int:
                 rec.unlink(missing_ok=True)
             else:
                 rec.write_text(record.replace("HEAD", head_sha_ or head))
-            argv = ["--root", td, *(base if base is not None else ["--base", "dev"])]
             import contextlib
             import io
 
             buf, err = io.StringIO(), io.StringIO()
             with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
-                got = main(argv)
+                if base is None:
+                    # the record rules only: judged directly, so the diff and rev-parse that `main` adds are not paid 25 times over
+                    got, lines = check_one(Path(f"{MODEL_DIR}/t.md"), record_path("t"), root, head)
+                    print("\n".join(lines))
+                else:
+                    got = main(["--root", td, *base])
             text = buf.getvalue() + err.getvalue()
             if got != want or (needle and needle not in text):
                 bad += 1
@@ -251,17 +289,28 @@ def selftest() -> int:
         case("an accept row with no answer is incomplete", good.replace("TM-2: holds a repeated callback is a no-op\n", ""), 1, "TM-2")
         case("evidence that is not file:line is incomplete", good.replace("app/c.rb:2", "somewhere"), 1, "file:line")
         case("evidence for a file that does not exist is incomplete", good.replace("app/c.rb:2", "app/nope.rb:2"), 1, "file:line")
-        case("evidence on a comment line is incomplete", good.replace("app/c.rb:2", "app/c.rb:4"), 1, "blank or a comment")
-        case("evidence on a blank line is incomplete", good.replace("app/c.rb:2", "app/c.rb:5"), 1, "blank or a comment")
-        case("evidence inside =begin/=end is incomplete", good.replace("app/c.rb:2", "app/c.rb:7"), 1, "blank or a comment")
-        case("evidence on the =end line is incomplete", good.replace("app/c.rb:2", "app/c.rb:8"), 1, "blank or a comment")
+        case("evidence on a comment line is incomplete", good.replace("app/c.rb:2", "app/c.rb:4"), 1, "blank, a comment or a heredoc")
+        case("evidence on a blank line is incomplete", good.replace("app/c.rb:2", "app/c.rb:5"), 1, "blank, a comment or a heredoc")
+        case("evidence inside =begin/=end is incomplete", good.replace("app/c.rb:2", "app/c.rb:7"), 1, "blank, a comment or a heredoc")
+        case("evidence on the =end line is incomplete", good.replace("app/c.rb:2", "app/c.rb:8"), 1, "blank, a comment or a heredoc")
         case("evidence on code after a block comment passes", good.replace("app/c.rb:2", "app/c.rb:9"), 0, "answered")
+        case("evidence inside a heredoc body is incomplete", good.replace("app/c.rb:2", "app/c.rb:11"), 1, "heredoc")
+        case("evidence on a heredoc terminator is incomplete", good.replace("app/c.rb:2", "app/c.rb:12"), 1, "heredoc")
+        case("evidence on the line that opens a heredoc is code", good.replace("app/c.rb:2", "app/c.rb:10"), 0, "answered")
+        case("evidence in the middle of a /* */ span with no leading star is incomplete", good.replace("app/c.rb:2", "app/c.rb:14"), 1, "heredoc")
+        case("evidence on code after a /* */ span passes", good.replace("app/c.rb:2", "app/c.rb:16"), 0, "answered")
+        case("a splat line is code, not a comment", good.replace("app/c.rb:2", "app/c.rb:17"), 0, "answered")
+        case("an absolute evidence path is refused", good.replace("app/c.rb:2", "/etc/hosts:1"), 1, "inside the repository")
+        case("a `..` evidence path is refused", good.replace("app/c.rb:2", "app/../app/c.rb:2"), 1, "inside the repository")
+        case("evidence in a file that exists only in the working tree is refused", good.replace("app/c.rb:2", "app/untracked.rb:1"), 1, "committed at HEAD")
         case("evidence past the end of the file is incomplete", good.replace("app/c.rb:2", "app/c.rb:99"), 1, "past the end")
         case("a mitigate row not implemented is BLOCKING, exit 3", good.replace("implemented app/c.rb:2", "not implemented"), 3, "not implemented")
         case("a stale accept row is a finding, exit 3", good.replace("holds a repeated callback is a no-op", "stale the signature now has a timestamp"), 3, "stale")
         case("a row the model does not have is another model", good + "TM-9: holds x\n", 1, "TM-9")
         case("VERDICT: BLOCKED is exit 3 even with every row answered", good.replace("CLEAN", "BLOCKED"), 3, "BLOCKED")
         case("a CLEAN verdict does not hide a not-implemented row", good.replace("implemented app/c.rb:2", "not implemented"), 3, "BLOCKING")
+        case("through main(): a complete current record passes", good, 0, "answered", base=["--base", "dev"])
+        case("through main(): no record asks for the pass", None, 1, "missing", base=["--base", "dev"])
         case("an unknown base is unusable, not clean", good, 2, "UNUSABLE", base=["--base", "nope"])
         # No model in the change: nothing owed, and that is exit 0 with a sentence.
         git("checkout", "-q", "dev")
