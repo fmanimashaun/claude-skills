@@ -51,6 +51,21 @@ def _cells(line: str) -> list[str]:
     return [c.strip() for c in line.strip().strip("|").split("|")]
 
 
+def threat_rows(text: str) -> list[tuple[int, str, str]]:
+    """(TM number, threat, decision) per row of `## Threats`; TM-1 is the first row (#2118). Empty when the table cannot be read."""
+    m = re.search(r"^##\s+Threats\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    lines = [ln for ln in m.group(1).splitlines() if ln.strip().startswith("|")] if m else []
+    if not lines or [h.lower() for h in _cells(lines[0])[:5]] != ["threat", "stride", "component", "decision", "reason"]:
+        return []
+    out: list[tuple[int, str, str]] = []
+    for ln in lines[1:]:
+        cells = _cells(ln) + [""] * 5
+        if all(set(c) <= set("-: ") for c in cells[:5]):
+            continue
+        out.append((len(out) + 1, cells[0], cells[3].lower()))
+    return out
+
+
 def check(text: str) -> tuple[list[str], int]:
     """(findings, threat rows read). Zero rows read means the model is unusable, not clean."""
     findings: list[str] = []
@@ -159,6 +174,10 @@ A webhook.
             if got != want:
                 bad += 1
                 print(f"FAIL {name}: expected exit {want}, got {got}")
+    got_rows = threat_rows(ok)
+    if got_rows != [(1, "Forged callback", "mitigate"), (2, "Replay", "accept")]:
+        bad += 1
+        print(f"FAIL threat_rows numbers the rows TM-1, TM-2 in order: got {got_rows}")
     if bad == 0:
         print(f"check_threat_model selftest: {len(cases)} cases and the exit codes pass")
     return 1 if bad else 0
