@@ -255,6 +255,15 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <p class="note">Our design, no external claim. The check proves the citation exists, not that the criterion&#x27;s observable would fail without the control.</p>
 </div>
 <div class="row" data-k="guarantee">
+<h2>A change that adds or edits a threat model cannot be marked ready without a current `security-auditor` record that answers every `mitigate` and `accept` row, and a `mitigate` row recorded `not implemented` is a finding for a human.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-flow/commands/feature.md</code> &middot; #2119</span></div>
+<ul class="enf">
+<li><code>script:plugins/rails-flow/scripts/check_security_review.py</code></li>
+<li><code>mutation:check_security_review</code></li>
+</ul>
+<p class="note">Our design, no external claim. It binds `gh pr ready` through the sweep (`project_gates.py` -&gt; `guard-pr-ready.sh`), not by chaining. It proves the record is current, complete and cites code that exists, not that the cited line implements the control.</p>
+</div>
+<div class="row" data-k="guarantee">
 <h2>An acceptance criterion that no spec cites is unproven, and the work order says so.</h2>
 <div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-flow/commands/feature.md</code></span></div>
 <ul class="enf">

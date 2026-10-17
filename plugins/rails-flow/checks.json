@@ -511,6 +511,21 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "security-review",
+      "why": "A threat model (#2117) says what a unit must resist; a model nobody verified is a claim. When the change adds or edits docs/security/threat-models/<slug>.md, `security-auditor` must have answered every mitigate and accept row, citing an existing file:line for each implemented control, in a record tied to this HEAD (docs/evidence/reviews/prs/<slug>/security-audit.md). A missing or stale record, a mitigate row not implemented, or an accept row gone stale fails the sweep, and gh pr ready needs a green sweep (#2119).",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_security_review.py"
+      ],
+      "applies_when": [
+        "docs/security/threat-models"
+      ],
+      "requires": [
+        "python3",
+        "git"
+      ]
     }
   ]
 }
