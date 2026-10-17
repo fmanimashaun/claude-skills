@@ -61,5 +61,23 @@ GUARD = Guard(
             "    return False",
             "a filler threat is found",
         ),
+        Mutation(
+            "a row with no TM-n ID stops being reported",
+            "                if not ID_RE.fullmatch(rid):",
+            "                if False:",
+            "a row without an ID is found",
+        ),
+        Mutation(
+            "a repeated ID stops being reported",
+            "                elif rid.upper() in ids:",
+            "                elif False:",
+            "a repeated ID is found",
+        ),
+        Mutation(
+            "the row number is its position again, so deleting a row shifts every citation",
+            "            out.append((int(cells[0][3:]), cells[1], cells[4].lower()))",
+            "            out.append((len(out) + 1, cells[1], cells[4].lower()))",
+            "threat_rows reads each row's own ID, not its position",
+        ),
     ),
 )

@@ -11,11 +11,11 @@ One short paragraph, and the data flow in a line each: who sends what to which c
 Each place data or authority crosses from something we do not control into something we do. One bullet per boundary: `<outside> -> <inside>: <what crosses>`.
 
 ## Threats
-One row per threat. STRIDE: Spoofing, Tampering, Repudiation, Information disclosure, Denial of service, Elevation of privilege. Decision is one of `mitigate`, `transfer`, `accept`, `eliminate`; an `accept` needs a reason.
+One row per threat; the ID (`TM-1`, `TM-2`...) is the row's name for good: a `[security]` criterion cites it, so never renumber a row, and a deleted row's ID is not reused. STRIDE: Spoofing, Tampering, Repudiation, Information disclosure, Denial of service, Elevation of privilege. Decision is one of `mitigate`, `transfer`, `accept`, `eliminate`; an `accept` needs a reason.
 
-| Threat | STRIDE | Component | Decision | Reason |
-|---|---|---|---|---|
-| <what an attacker or a mistake could do> | S | <where> | mitigate | <control, or why the risk stays> |
+| ID | Threat | STRIDE | Component | Decision | Reason |
+|---|---|---|---|---|---|
+| TM-1 | <what an attacker or a mistake could do> | S | <where> | mitigate | <control, or why the risk stays> |
 
 ## Security requirements
-What must be true, one line each, phrased so a criterion can test it (`[security]` criteria citing the `mitigate` rows as `TM-1`, `TM-2`... in table order, #2118). These become acceptance criteria and the questions `security-auditor` asks.
+What must be true, one line each, phrased so a criterion can test it (`[security]` criteria citing each `mitigate` row by its ID, #2118). These become acceptance criteria and the questions `security-auditor` asks.

@@ -9,6 +9,7 @@ GUARD = Guard(
     name="check_criteria",
     subject="scripts/check_criteria.py",
     selftest="scripts/check_criteria_selftest.py",
+    needs=("scripts/check_threat_model.py",),   # #2118: the threat-model rows are read through it
     mutations=(
         # #707. `ID_RE` matches an `AC-n` anywhere, so an explanatory NOTE was parsed as a
         # malformed criterion and the whole file rejected -- from the Stop gate, every turn.
@@ -96,6 +97,24 @@ GUARD = Guard(
             "            elif n not in mitigate:",
             "            elif False:",
             "a [security] criterion citing an accept row is a finding",
+        ),
+        Mutation(
+            "html comments and code spans stop being hidden, so a tag or citation inside one counts",
+            "    return HIDDEN_RE.sub(\" \", text)",
+            "    return text",
+            "a trailing html comment does not break the citation slot",
+        ),
+        Mutation(
+            "a citation counts anywhere in the sentence, not only at its end",
+            r'\s*[.;]?\s*$", re.I)',
+            '", re.I)',
+            "a citation followed by more words is not in the slot",
+        ),
+        Mutation(
+            "a model with no readable table stops being exit 2",
+            "        if not rows:\n            print(f\"UNUSABLE: {model} exists",
+            "        if False:\n            print(f\"UNUSABLE: {model} exists",
+            "a model with no table is exit 2",
         ),
     ),
 )

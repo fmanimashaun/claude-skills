@@ -106,8 +106,7 @@ Happy-path-only criteria are rejected: most real defects live on the error path,
 security finding this flow has produced downstream was an error or edge path.
 
 **Security criteria (#2118).** When the unit has a threat model (`/rails-flow:secure-design`,
-`docs/security/threat-models/<slug>.md`), every row it marks `mitigate` needs a criterion tagged `[security]` that cites the row as `TM-n`
-(TM-1 is the first row of its Threats table). `check_criteria.py` finds the model beside the acceptance file and refuses a `mitigate` row no
+`docs/security/threat-models/<slug>.md`), every row it marks `mitigate` needs a criterion tagged `[security]` that cites the row's `ID` as `(TM-n)` or `covers: TM-n` at the end of the criterion. `check_criteria.py` finds the model beside the acceptance file and refuses a `mitigate` row no
 `[security]` criterion cites, and a `[security]` criterion that cites no row or an `accept`, `transfer` or `eliminate` row.
 
 Validate before implementing, and again once specs exist:
