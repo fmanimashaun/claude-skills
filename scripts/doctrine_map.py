@@ -147,6 +147,7 @@ DOCTRINE_SOURCES = (
     "skills/parallel-session-lane/SKILL.md",
     "plugins/rails-flow/commands/feature.md",
     "plugins/rails-flow/commands/handoff.md",
+    "plugins/rails-flow/commands/secure-design.md",
     "plugins/rails-flow/commands/fix.md",
     "plugins/design-flow/commands/generate.md",
     "plugins/qa-flow/commands/certify.md",
@@ -712,6 +713,17 @@ CLAIMS: tuple[Claim, ...] = (
              "neither change type. The gap row is what made the connection findable.",
     ),
 
+    Claim(
+        claim="A change whose plan names a security boundary owes a threat model before its criteria, "
+              "and a model with an undecided row or an unreasoned `accept` is refused.",
+        stated_in="plugins/rails-flow/commands/secure-design.md",
+        anchor="## 3. Check it",
+        kind=GUARANTEE,
+        enforced_by=("script:plugins/rails-flow/scripts/security_scope.py", "mutation:security_scope",
+                     "script:plugins/rails-flow/scripts/check_threat_model.py", "mutation:check_threat_model"),
+        refs=(2117,),
+        note="Our design, no external claim. The scope check says a model is owed, never that one is right.",
+    ),
     # ---- what the plugins promise downstream ------------------------------------------------
     Claim(
         claim="An acceptance criterion that no spec cites is unproven, and the work order says so.",
