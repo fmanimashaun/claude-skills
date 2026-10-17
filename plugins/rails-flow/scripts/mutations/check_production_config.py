@@ -43,6 +43,12 @@ GUARD = Guard(
             'scan: a heredoc body is blanked',
         ),
         Mutation(
+            'text after __END__ is read as code',
+            '            if ch == "_" and not cur_c and src.startswith("__END__", i) and src[i + 7:i + 8] in ("", "\\n", "\\r"):',
+            '            if False:',
+            'scan: nothing after a line that is exactly __END__ is code',
+        ),
+        Mutation(
             'an interpolation is not entered, so a nested string ends the outer one early',
             '        if ch == "#" and interp and i + 1 < n and src[i + 1] == "{":',
             '        if False:',

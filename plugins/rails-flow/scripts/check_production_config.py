@@ -30,7 +30,8 @@ Credential literals are NOT checked here: secret detection is #2121, which adopt
 
 LIMITS (not read): a setting made in a file the sequence above does not list, through a method call or a gem; an engine not
 named above; a `/` read as division where Ruby reads a regexp (or the reverse); string forms beyond `'`, `"`, `` ` ``, `%`
-literals and heredocs; an auth constraint that is a lambda defined elsewhere is trusted as a constraint, not evaluated.
+literals and heredocs; a character literal (`?#`, `?"`) is read as a quote or a comment, which fails closed (a false finding,
+never a missed one); an auth constraint that is a lambda defined elsewhere is trusted as a constraint, not evaluated.
 Such a project declares the exemption with a reason.
 
 EXEMPTIONS are declared, never inferred, one file per project:
@@ -140,6 +141,8 @@ def scan(src: str) -> list[tuple[int, str, str]]:
                 while i < n and src[i] != "\n":
                     i += 1
                 continue
+            if ch == "_" and not cur_c and src.startswith("__END__", i) and src[i + 7:i + 8] in ("", "\n", "\r"):
+                break       # DATA follows: nothing after `__END__` is code
             if ch == "=" and not cur_c and src.startswith("=begin", i):
                 while i < n:
                     j = src.find("\n", i)
@@ -570,6 +573,8 @@ def selftest() -> int:
         check_("scan: a regexp holding a # keeps it", "x = /a#b/" in scanned("x = /a#b/ # c\n"))
         check_("scan: %w[] holding a # keeps it", "%w[a#b c]" in scanned("x = %w[a#b c] # c\n"))
         check_("scan: =begin/=end is removed", "force_ssl" not in scanned("=begin\nconfig.force_ssl = true\n=end\nx = 1\n") and "x = 1" in scanned("=begin\nconfig.force_ssl = true\n=end\nx = 1\n"))
+        check_("scan: nothing after a line that is exactly __END__ is code", "force_ssl" not in scanned("x = 1\n__END__\nconfig.force_ssl = true\n") and "x = 1" in scanned("x = 1\n__END__\nconfig.force_ssl = true\n"))
+        check_("scan: __END__ inside a longer word or after code is not the marker", "force_ssl" in scanned("__END__x\nconfig.force_ssl = true\n") and "force_ssl" in scanned("y = 1 # __END__\nconfig.force_ssl = true\n"))
         heredoc = 'x = <<~EOS\n  config.force_ssl = true # not code\nEOS\ny = 2\n'
         masked = "\n".join(m for _n, _c, m in scan(heredoc))
         check_("scan: a heredoc body is blanked in the masked view and the code after it is kept", "force_ssl" not in masked and "y = 2" in masked, masked)
@@ -648,6 +653,8 @@ def selftest() -> int:
         check_("a conditional force_ssl = false after true is unjudgeable, so a finding", code == 1 and ids(out) == {"force-ssl"}, f"{out}")
         code, out = run(production=GOOD_PRODUCTION.replace("  config.force_ssl = true\n", "=begin\n  config.force_ssl = true\n=end\n"))
         check_("force_ssl = true inside =begin/=end is not a setting", code == 1 and ids(out) == {"force-ssl"}, f"{out}")
+        code, out = run(production=GOOD_PRODUCTION.replace("  config.force_ssl = true\n", "") + "__END__\nconfig.force_ssl = true\n")
+        check_("force_ssl = true after __END__ is not a setting", code == 1 and ids(out) == {"force-ssl"}, f"{out}")
         code, out = run(production=GOOD_PRODUCTION.replace("  config.force_ssl = true\n", "  x = <<~EOS\n    config.force_ssl = true\n  EOS\n"))
         check_("force_ssl = true inside a heredoc is not a setting", code == 1 and ids(out) == {"force-ssl"}, f"{out}")
         code, out = run(production=GOOD_PRODUCTION.replace("  config.force_ssl = true\n", ""), application="  config.force_ssl = true\n")
