@@ -28,7 +28,7 @@ RAILS_FLOW_SHIM_TAIL
     _shim_tmp="$(mktemp "${CLAUDE_ENV_FILE}.XXXXXX" 2>/dev/null)"
     if [ -n "$_shim_tmp" ]; then
       if { [ -z "$_shim_keep" ] || printf '%s\n' "$_shim_keep"; printf '%s\n' "$_shim_line"; } > "$_shim_tmp" 2>/dev/null \
-        && chmod "$(stat -f %Lp "$CLAUDE_ENV_FILE" 2>/dev/null || stat -c %a "$CLAUDE_ENV_FILE" 2>/dev/null || echo 600)" "$_shim_tmp" 2>/dev/null \
+        && chmod "$(stat -c %a "$CLAUDE_ENV_FILE" 2>/dev/null || stat -f %Lp "$CLAUDE_ENV_FILE" 2>/dev/null || echo 600)" "$_shim_tmp" 2>/dev/null \
         && mv -f "$_shim_tmp" "$CLAUDE_ENV_FILE" 2>/dev/null; then :; else rm -f "$_shim_tmp" 2>/dev/null; fi
     fi
   fi
