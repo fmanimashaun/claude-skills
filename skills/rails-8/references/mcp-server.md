@@ -197,10 +197,13 @@ answer is *our design*: yours to choose and record.
 2. **How is a change confirmed before it applies?** The spec puts confirmation on the client: clients SHOULD
    "prompt for user confirmation on sensitive operations", and "there SHOULD always be a human in the loop with the
    ability to deny tool invocations" ([tools][spec-tools], Security Considerations and User Interaction Model). It
-   defines no server-side confirmation protocol. A preview token you issue is a state handle: the spec says servers
-   "MUST NOT treat possession of a state handle as authentication" and SHOULD bind it to the user derived from the
-   verified token ([security best practices][spec-security]), and for `requestState` it requires integrity
-   protection and server-side one-time redemption (MUSTs, [MRTR][spec-mrtr]). A client that declares no elicitation
+   defines no server-side confirmation protocol. *Our reading* (the spec does not say it): a preview token you issue
+   is a state handle, so the spec's state-handle rules apply. Servers "MUST NOT treat possession of a state handle as
+   authentication" and SHOULD bind it to the user derived from the verified token ([security best
+   practices][spec-security]). For `requestState` the spec's MUSTs are conditional ([MRTR][spec-mrtr]): "If
+   requestState influences authorization, resource access, or business logic, servers MUST protect its integrity",
+   and servers "for which a given requestState must be consumed at most once (e.g., one-time redemptions) MUST
+   enforce that invariant server-side". A token that confirms a write meets both conditions. A client that declares no elicitation
    support must not be sent `elicitation/create` ([MRTR][spec-mrtr]), and the spec defines no fallback: decide
    whether such a client is refused.
 3. **What stops a retried call writing twice?** The spec defines no idempotency key on `tools/call`, and
