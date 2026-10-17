@@ -64,9 +64,21 @@ GUARD = Guard(
         ),
         Mutation(
             "a heredoc body counts as code",
-            "            if m:\n                heredoc = m.group(2)",
-            "            if False:\n                heredoc = m.group(2)",
+            "            heredocs = [m.group(2) for m in HEREDOC_RE.finditer(raw)]",
+            "            heredocs = []",
             "evidence inside a heredoc body is incomplete",
+        ),
+        Mutation(
+            "only the first of several heredocs on one line is tracked",
+            "            heredocs = [m.group(2) for m in HEREDOC_RE.finditer(raw)]",
+            "            heredocs = [m.group(2) for m in HEREDOC_RE.finditer(raw)][:1]",
+            "evidence in the second of two heredocs opened on one line is incomplete",
+        ),
+        Mutation(
+            "a committed symlink is read through, so its target path reads as code",
+            '    if tree.returncode != 0 or not tree.stdout.strip() or tree.stdout.split()[0] == "120000":',
+            "    if tree.returncode != 0 or not tree.stdout.strip():",
+            "a committed symlink is refused, never read through its target",
         ),
         Mutation(
             "the middle of a /* */ span counts as code",
@@ -76,13 +88,13 @@ GUARD = Guard(
         ),
         Mutation(
             "an evidence path with `..` is normalised into the repository instead of refused",
-            '    if p.is_absolute() or ".." in p.parts:\n        return None\n    proc = subprocess.run(["git", "-C", str(root), "show", f"HEAD:{p.as_posix()}"], capture_output=True)',
-            '    import os\n\n    proc = subprocess.run(["git", "-C", str(root), "show", f"HEAD:{os.path.normpath(p.as_posix())}"], capture_output=True)',
+            '    if p.is_absolute() or ".." in p.parts:\n        return None\n    tree = subprocess.run(',
+            '    import os\n\n    p = PurePosixPath(os.path.normpath(p.as_posix()))\n    tree = subprocess.run(',
             "a `..` evidence path is refused",
         ),
         Mutation(
             "the evidence file is read from the working tree, not HEAD",
-            '    proc = subprocess.run(["git", "-C", str(root), "show", f"HEAD:{p.as_posix()}"], capture_output=True)',
+            '    if tree.returncode != 0 or not tree.stdout.strip() or tree.stdout.split()[0] == "120000":\n        return None  # not in HEAD, or a symlink: `git show` of a link prints its target path, which would read as code\n    proc = subprocess.run(["git", "-C", str(root), "show", f"HEAD:{p.as_posix()}"], capture_output=True)',
             '    proc = type("P", (), {"returncode": 0 if (root / p).is_file() else 1, "stdout": (root / p).read_bytes() if (root / p).is_file() else b""})()',
             "evidence in a file that exists only in the working tree is refused",
         ),
