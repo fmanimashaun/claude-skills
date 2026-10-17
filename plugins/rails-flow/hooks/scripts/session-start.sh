@@ -22,9 +22,15 @@ RAILS_FLOW_SHIM_TAIL
   _shim_old='^export PATH=.*rails-flow(/[^/]+)?/git-shim'
   _shim_stale="$(grep -E -- "$_shim_old" "$CLAUDE_ENV_FILE" 2>/dev/null | grep -vxF -- "$_shim_line")"
   if [ -n "$_shim_stale" ]; then
-    # an earlier version's line is in the file: rewrite WITHOUT any rails-flow shim line (other hooks' lines stay), then add this version's. A file it cannot write is left as it is.
+    # an earlier version's line is in the file: rewrite WITHOUT any rails-flow shim line (other hooks' lines stay), then add this version's. ATOMIC: written to a temp file in the same
+    # directory and moved over, so an interrupted write leaves the old file whole (a truncated env file would drop EVERY hook's lines, the shim included). A file it cannot write is left as it is.
     _shim_keep="$(grep -vE -- "$_shim_old" "$CLAUDE_ENV_FILE" 2>/dev/null)"
-    { [ -z "$_shim_keep" ] || printf '%s\n' "$_shim_keep"; printf '%s\n' "$_shim_line"; } > "$CLAUDE_ENV_FILE" 2>/dev/null || true
+    _shim_tmp="$(mktemp "${CLAUDE_ENV_FILE}.XXXXXX" 2>/dev/null)"
+    if [ -n "$_shim_tmp" ]; then
+      if { [ -z "$_shim_keep" ] || printf '%s\n' "$_shim_keep"; printf '%s\n' "$_shim_line"; } > "$_shim_tmp" 2>/dev/null \
+        && chmod "$(stat -f %Lp "$CLAUDE_ENV_FILE" 2>/dev/null || stat -c %a "$CLAUDE_ENV_FILE" 2>/dev/null || echo 600)" "$_shim_tmp" 2>/dev/null \
+        && mv -f "$_shim_tmp" "$CLAUDE_ENV_FILE" 2>/dev/null; then :; else rm -f "$_shim_tmp" 2>/dev/null; fi
+    fi
   fi
   grep -qxF -- "$_shim_line" "$CLAUDE_ENV_FILE" 2>/dev/null || printf '%s\n' "$_shim_line" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true
   # #1982: THE SESSION'S PROJECT, recorded for the shim's fixture exemption (a hermetic fixture may stage its own temp repository whole, never this one). `git rev-parse

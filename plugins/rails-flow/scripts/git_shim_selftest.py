@@ -1296,6 +1296,27 @@ def _(base):
     again = env_file.read_text()
     run_hook(env_file, root, out)
     check(label, env_file.read_text() == again, "a second start must not change a file that is already right")
+    check(label, sorted(q.name for q in base.glob("claude-env-old.*")) == [], f"a temp file is left behind: {sorted(q.name for q in base.glob('claude-env-old.*'))}")
+
+
+@case("hook: the env-file rewrite is atomic, so an interrupted write leaves the old file whole and no temp file behind (#2110)")
+def _(base):
+    label = "hook: the env-file rewrite is atomic, so an interrupted write leaves the old file whole and no temp file behind (#2110)"
+    root = copy_plugin(base / "cache4" / "rails-flow" / "1.62.1")
+    env_file = base / "claude-env-int"
+    out = base / "not-a-repo-int"; out.mkdir()
+    old = _ver_dir(base, "cache4", "1.61.0")
+    before = f'export PATH={old}:"$PATH"\nexport FOO=bar\n'
+    env_file.write_text(before)
+    # the move over the file is the last step of the rewrite: a `mv` that dies stands for a write interrupted at any earlier point
+    stub = base / "stub-bin"; stub.mkdir()
+    (stub / "mv").write_text("#!/bin/sh\nexit 1\n"); (stub / "mv").chmod(0o755)
+    p = run_hook(env_file, root, out, {"PATH": f"{stub}{os.pathsep}{os.environ['PATH']}"})
+    check(label, p.returncode == 0, f"the hook must still exit 0: exit {p.returncode}: {p.stderr.strip()[:160]}")
+    kept = env_file.read_text()
+    check(label, kept.startswith(before), f"the old file must be whole after an interrupted rewrite, not truncated: {kept!r}")
+    check(label, "export FOO=bar" in kept, f"another hook's line was lost: {kept!r}")
+    check(label, sorted(q.name for q in base.glob("claude-env-int.*")) == [], f"a temp file is left behind: {sorted(q.name for q in base.glob('claude-env-int.*'))}")
 
 
 def _path_after(env_file: Path, start: str, shell: str = "/bin/bash") -> list[str]:
