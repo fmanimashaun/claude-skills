@@ -35,7 +35,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <main>
 <h1>Doctrine &rarr; enforcement</h1>
 <p class="lede">One row per doctrinal claim in this repo: where it is stated, and what makes it true. <strong>The unenforced rows are the deliverable.</strong> A claim with no enforcement is not automatically a defect &mdash; plenty are judgement, and gating judgement is worse than not gating it. The value is making the distinction visible instead of discovering it by accident.</p>
-<div class="tally"><b>54 claims</b><b>39 enforced guarantees</b><b>15 advisory</b><b>0 tracked gaps</b></div>
+<div class="tally"><b>55 claims</b><b>39 enforced guarantees</b><b>16 advisory</b><b>0 tracked gaps</b></div>
 <div class="controls"><button data-k="all">all</button><button data-k="guarantee">guarantees</button><button data-k="advice">advisory</button><button data-k="gap">gaps</button></div>
 <div class="row" data-k="guarantee">
 <h2>A SessionStart hook&#x27;s output is charged again after every compaction, so its bytes are budgeted and ratcheted; a shipped agent states a bounded output or returns a path.</h2>
@@ -494,6 +494,12 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <div class="meta"><span class="k k-advice">advice</span><span>stated in <code>skills/quality-pass/SKILL.md</code> &middot; #476</span></div>
 <p class="none">Nothing enforces this.</p>
 <p class="note">#476: a monotony gate flagged our own worked example on first real input. Cited to keep later gates advisory; unenforceable by construction, since it is the rule for deciding whether to build a gate at all.</p>
+</div>
+<div class="row" data-k="advice">
+<h2>Before a project ships an MCP write tool it answers, in its own CLAUDE.md, five decisions: who may write, how a change is confirmed, what stops a retried call writing twice, how the audit tells agent writes from human ones, and how a wrong write is undone (mcp-server.md §6).</h2>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>skills/rails-8/references/mcp-server.md</code> &middot; #2052 &middot; #2051 &middot; #2056</span></div>
+<p class="none">Nothing enforces this.</p>
+<p class="note">Owner ruling on #2056 (option 2: a checklist, not rules). Each spec-cited mechanism is doctrine-verifier CONFIRMED against MCP 2026-07-28 (#2051); items 3-5 are labelled our design because the spec defines none. Nothing can check a project&#x27;s CLAUDE.md answers, and a project with no write tools answers in one line, so this is advice by the harness-doctrine test.</p>
 </div>
 <div class="row" data-k="advice">
 <h2>Prefer expanded conditionals over guard clauses when writing new code (style.md §1).</h2>

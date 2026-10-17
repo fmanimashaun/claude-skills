@@ -803,6 +803,19 @@ CLAIMS: tuple[Claim, ...] = (
              "later gates advisory; unenforceable by construction, since it is the rule for deciding "
              "whether to build a gate at all.",
     ),
+    Claim(
+        claim="Before a project ships an MCP write tool it answers, in its own CLAUDE.md, five decisions: who may "
+              "write, how a change is confirmed, what stops a retried call writing twice, how the audit tells agent "
+              "writes from human ones, and how a wrong write is undone (mcp-server.md §6).",
+        stated_in="skills/rails-8/references/mcp-server.md",
+        anchor="**If you cannot answer these, do not ship a write tool.**",
+        kind=ADVICE,
+        note="Owner ruling on #2056 (option 2: a checklist, not rules). Each spec-cited mechanism is doctrine-verifier "
+             "CONFIRMED against MCP 2026-07-28 (#2051); items 3-5 are labelled our design because the spec defines "
+             "none. Nothing can check a project's CLAUDE.md answers, and a project with no write tools answers in one "
+             "line, so this is advice by the harness-doctrine test.",
+        refs=(2052, 2051, 2056),
+    ),
 )
 
 
