@@ -122,7 +122,7 @@ GUARD = Guard(
         Mutation('a repository without the fixture identity file is exempt',
                  'fixture_marked "$gd" || return 1', ':', 'stage its OWN temp repository whole'),
         Mutation('core.hooksPath=/dev/null does not mark the command as hooks-off',
-                 '{ HOOKS_OFF=1; return 0; }', 'return 0', 'ALLOWLIST of exact keys'),
+                 '[ "$2" = /dev/null ] && { HOOKS_OFF=1; return 0; }', '[ "$2" = /dev/null ] && return 0', 'ALLOWLIST of exact keys'),   # #2129: the anchor names the hooksPath line, since the hook.<name> loop carries the same braces
         Mutation('a hooks-off command is allowed any subcommand',
                  '  if [ "$HOOKS_OFF" = 1 ]; then\n    case "$HOOK_FREE"', '  if false; then\n    case "$HOOK_FREE"', 'ALLOWLIST of exact keys'),
         Mutation('commit counts as a hook-free command',
