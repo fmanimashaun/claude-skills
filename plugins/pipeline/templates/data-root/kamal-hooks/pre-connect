@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# THE DATA ROOT, BEFORE ANYTHING BOOTS (claude-skills `pipeline`, #2141). Kamal 2.12.0 runs `pre-connect` before the first remote command
+# of every command, `accessory boot|reboot|start` included (`cli/base.rb:256-266`; `Cli::Accessory#boot` -> `prepare` -> `on(hosts)`). This
+# acts only for the commands that create or replace a container mounting the data root; everything else (`app logs`, `app details`,
+# `accessory exec`, `prune`...) passes straight through:
+#   1. `bin/check-deploy-volumes`: config/deploy.yml mounts nothing persistent outside the data root (a named volume is refused).
+#   2. `bin/data-root` on each host Kamal is about to touch (KAMAL_HOSTS).
+# A non-zero exit stops the Kamal command before it connects: nothing has been stopped or started.
+set -euo pipefail
+
+case "${KAMAL_COMMAND:-}:${KAMAL_SUBCOMMAND:-}" in
+  deploy:*|redeploy:*|setup:*|app:boot|accessory:boot|accessory:reboot|accessory:start) ;;
+  *) exit 0 ;;
+esac
+
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+(cd "$ROOT" && python3 bin/check-deploy-volumes)
+"$ROOT/bin/data-root"

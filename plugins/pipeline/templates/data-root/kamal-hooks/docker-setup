@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# THE DATA ROOT ON A NEW SERVER (claude-skills `pipeline`, #2141). Kamal 2.12.0 runs `docker-setup` at the end of every
+# `kamal server bootstrap` (and so of `kamal setup`), once every host has Docker (`cli/server.rb:62-67`): the same idempotent step as
+# `pre-connect`, the mount check, then `bin/data-root` over KAMAL_HOSTS.
+set -euo pipefail
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+(cd "$ROOT" && python3 bin/check-deploy-volumes)
+"$ROOT/bin/data-root"

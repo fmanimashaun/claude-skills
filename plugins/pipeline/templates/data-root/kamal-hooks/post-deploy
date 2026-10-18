@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# PRUNE ONCE THE VERSION IS LIVE (claude-skills `pipeline`, #2141). With `retain_containers: 1` in config/deploy.yml, Kamal keeps one stopped
+# container, the previous version, and its image. Of the deploy commands only `deploy` prunes, after its boot (Kamal 2.12.0,
+# `cli/main.rb:46-48`); `redeploy` and `rollback` never do. Kamal runs `post-deploy` after a successful deploy, redeploy or rollback,
+# OUTSIDE the deploy lock (`cli/main.rb:52`, `:82`, `:108`), so this can run `kamal prune all` itself. A failed prune does not fail the
+# release that is already live: it says so, and the next deploy prunes again.
+set -uo pipefail
+
+case "${KAMAL_COMMAND:-}" in
+  redeploy|rollback) ;;
+  *) exit 0 ;;   # deploy pruned already; anything else is not a release
+esac
+
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+args=(prune all)
+[ -z "${KAMAL_DESTINATION:-}" ] || args+=(-d "$KAMAL_DESTINATION")   # set only when there is a destination (Kamal 2.12.0, tags.rb:27)
+echo "post-deploy: pruning old containers and images after ${KAMAL_COMMAND}, keeping one previous version"
+if ! "$ROOT/bin/kamal" "${args[@]}"; then
+  echo "post-deploy: WARNING: the prune after ${KAMAL_COMMAND} failed; the release is live, but old containers and images remain. Run: bin/kamal prune all" >&2
+fi
+exit 0

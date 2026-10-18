@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# THE DATA ROOT ON EACH HOST (claude-skills `pipeline`, #2141): runs `bin/data-root.sh` on every host over ssh, as root, so the data root
+# exists on the right disk (an attached data volume mounted there by UUID, else the root disk with a warning) BEFORE a container that
+# mounts it starts. Idempotent.
+#
+#   bin/data-root [host ...]        hosts from the arguments, else KAMAL_HOSTS (comma-separated, as Kamal's hooks get them), else WEB_HOST
+#
+# Called by `.kamal/hooks/docker-setup` (the end of every `kamal server bootstrap`, so of `kamal setup`) and `.kamal/hooks/pre-connect`
+# (before any Kamal command that boots a container, `accessory boot|reboot|start` included), and by hand. A non-zero exit stops the Kamal
+# command that called it (Kamal 2.12.0: a hook's failure raises HookError).
+#
+# Read from the environment, else `.kamal/deploy.env`:
+#   DATA_ROOT          default /srv/<service>, the `service:` of config/deploy.yml
+#   DATA_DEVICE        the disk, when more than one unmounted disk is attached (/dev/disk/by-uuid/... or /dev/...)
+#   DATA_DEVICE_ADOPT  1: mount a NAMED disk that carries a filesystem other than ours, as it is (never formatted)
+#   LEGACY_DATA        where the data lived before: "volume:<name> dir:<absolute path> ..." (empty on a new host)
+#   DATA_LABEL         the ext4 label of a volume it formats (default data-root)
+#   APP_SUBDIRS        the app's bind mounts under the root (default storage)
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+env_value() { [ -f "$ROOT/.kamal/deploy.env" ] && grep -E "^$1=" "$ROOT/.kamal/deploy.env" | tail -1 | cut -d= -f2- | sed -e 's/[[:space:]]*#.*$//' -e 's/^["'\'']//' -e 's/["'\'']$//' || true; }
+value() { local v="${!1:-}"; [ -n "$v" ] || v=$(env_value "$1"); printf '%s' "$v"; }
+need() { [[ -z "$2" || "$2" =~ $3 ]] || { echo "data-root: $1 '$2' is not allowed here" >&2; exit 1; }; }
+
+DATA_ROOT=$(value DATA_ROOT)
+if [ -z "$DATA_ROOT" ]; then
+  service=$(sed -n 's/^service:[[:space:]]*\([A-Za-z0-9_-]*\)[[:space:]]*$/\1/p' "$ROOT/config/deploy.yml" 2>/dev/null | head -1)
+  [ -n "$service" ] || { echo "data-root: no DATA_ROOT and no plain \`service:\` in config/deploy.yml to name /srv/<service>" >&2; exit 1; }
+  DATA_ROOT=/srv/$service
+fi
+DATA_DEVICE=$(value DATA_DEVICE); DATA_DEVICE_ADOPT=$(value DATA_DEVICE_ADOPT); LEGACY_DATA=$(value LEGACY_DATA)
+DATA_LABEL=$(value DATA_LABEL); APP_SUBDIRS=$(value APP_SUBDIRS)
+need DATA_ROOT "$DATA_ROOT" '^/[A-Za-z0-9._/-]+$'
+need DATA_DEVICE "$DATA_DEVICE" '^/dev/[A-Za-z0-9/._:-]+$'
+need DATA_DEVICE_ADOPT "$DATA_DEVICE_ADOPT" '^1$'
+need LEGACY_DATA "$LEGACY_DATA" '^[A-Za-z0-9 ._:/-]+$'
+need DATA_LABEL "$DATA_LABEL" '^[A-Za-z0-9_-]{1,16}$'
+need APP_SUBDIRS "$APP_SUBDIRS" '^[A-Za-z0-9 ._-]+$'
+
+hosts=("$@")
+if [ "${#hosts[@]}" -eq 0 ] && [ -n "${KAMAL_HOSTS:-}" ]; then IFS=, read -r -a hosts <<< "$KAMAL_HOSTS"; fi
+if [ "${#hosts[@]}" -eq 0 ]; then h=$(value WEB_HOST); [ -z "$h" ] || hosts=("$h"); fi
+[ "${#hosts[@]}" -gt 0 ] || { echo "data-root: no host (give one, or set KAMAL_HOSTS or WEB_HOST)" >&2; exit 1; }
+
+remote_env="DATA_ROOT='$DATA_ROOT' DATA_DEVICE='$DATA_DEVICE' DATA_DEVICE_ADOPT='$DATA_DEVICE_ADOPT' LEGACY_DATA='$LEGACY_DATA'"
+[ -z "$DATA_LABEL" ] || remote_env+=" DATA_LABEL='$DATA_LABEL'"
+[ -z "$APP_SUBDIRS" ] || remote_env+=" APP_SUBDIRS='$APP_SUBDIRS'"
+for host in "${hosts[@]}"; do
+  [[ "$host" =~ ^[A-Za-z0-9][A-Za-z0-9.:-]*$ ]] || { echo "data-root: unexpected host '$host'" >&2; exit 1; }
+  echo "data-root: $host ($DATA_ROOT)"
+  ssh -o BatchMode=yes -o ConnectTimeout=15 "root@$host" "$remote_env bash -s" < "$ROOT/bin/data-root.sh"
+done

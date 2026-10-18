@@ -17,7 +17,8 @@ base), unless files are named. The app's `volumes:`, and each accessory's `volum
 deploy uploads, not data, and are not judged. ERB is not run: each `<%= ... %>` reads as a placeholder, so a value built in ERB is judged
 by the text around it, and a mount written wholly in ERB is a finding (it cannot be shown to be under the root).
 
-The root is `--root`, else `/srv/<service>` (the config's `service:`).
+The root is `--root`, else `DATA_ROOT` (the environment, then `.kamal/deploy.env`), else `/srv/<service>` (the config's `service:`): the
+same order `bin/data-root` uses, so the check and the host agree on one root.
 """
 from __future__ import annotations
 
@@ -89,6 +90,8 @@ def run(paths: list[Path], root: str | None) -> tuple[int, list[str]]:
     except (OSError, ValueError, yaml.YAMLError) as exc:
         return 2, [f"unreadable: {exc}"]
     if root is None:
+        root = deploy_env_root(paths[0])
+    if root is None:
         service = next((c.get("service") for _, c in configs if c.get("service")), None)
         if not service or PLACEHOLDER in str(service):
             return 2, ["no `service:` to name the default root: give --root"]
@@ -100,6 +103,21 @@ def run(paths: list[Path], root: str | None) -> tuple[int, list[str]]:
     if findings:
         return 1, [f"{len(findings)} persistent mount(s) outside {root} (#2141):", *[f"  - {f}" for f in findings]]
     return 0, [f"every persistent mount is under {root}"]
+
+
+def deploy_env_root(config_path: Path) -> str | None:
+    """DATA_ROOT from the environment, else from .kamal/deploy.env beside the config's project (read, never sourced)."""
+    if os.environ.get("DATA_ROOT"):
+        return os.environ["DATA_ROOT"]
+    env_file = config_path.resolve().parent.parent / ".kamal" / "deploy.env"
+    if not env_file.is_file():
+        return None
+    value = None
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"\s*DATA_ROOT=(.*)$", line)
+        if m:
+            value = re.sub(r"\s+#.*$", "", m.group(1)).strip().strip("'\"") or None
+    return value
 
 
 def default_paths(cwd: Path) -> list[Path]:
@@ -160,11 +178,22 @@ accessories:
         if code != 1 or "config/deploy.staging.yml: volumes" not in "\n".join(lines):
             bad += 1
             print(f"FAIL an overlay's named volume is a finding: exit {code}, {lines}")
+        # DATA_ROOT in .kamal/deploy.env names the root, as bin/data-root reads it.
+        (cfg.parent / ".kamal").mkdir()
+        (cfg.parent / ".kamal" / "deploy.env").write_text("DATA_ROOT=/mnt/data   # the volume\n", encoding="utf-8")
+        (cfg / "deploy.staging.yml").unlink()
+        saved = os.environ.pop("DATA_ROOT", None)
+        code, lines = run(default_paths(cfg.parent), None)
+        if saved is not None:
+            os.environ["DATA_ROOT"] = saved
+        if code != 1 or "outside /mnt/data" not in "\n".join(lines):
+            bad += 1
+            print(f"FAIL DATA_ROOT from .kamal/deploy.env names the root: exit {code}, {lines}")
         if run(default_paths(Path(tmp) / "nowhere"), None)[0] != 2:
             bad += 1
             print("FAIL no config/deploy.yml is unusable (exit 2), never clean")
     if bad == 0:
-        print(f"check_deploy_volumes selftest: {len(cases) + 2} cases pass")
+        print(f"check_deploy_volumes selftest: {len(cases) + 3} cases pass")
     return 1 if bad else 0
 
 
