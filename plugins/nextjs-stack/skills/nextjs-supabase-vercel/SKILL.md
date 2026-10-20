@@ -28,9 +28,9 @@ The failure this stack invites is a server-only Supabase key reaching the browse
 
 So the rule for this stack: **the publishable key may carry `NEXT_PUBLIC_`; the secret key never does**, and it is read only in server code. A secret key under a `NEXT_PUBLIC_` name is a leak, whatever the code around it does.
 
-## 3. The CLIs are driven, not reimplemented
+## 3. The vendor commands for each step
 
-The flows drive both vendors' CLIs rather than rebuilding them:
+The commands to use for these steps, rather than rebuilding them; the flows do not drive them yet:
 
 | Step | Command | Source |
 |---|---|---|
