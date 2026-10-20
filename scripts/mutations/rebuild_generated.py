@@ -28,13 +28,16 @@ GUARD = Guard(
         "scripts/derive_tenancy_cop.py",          # registered in BUILDERS by #1403
         "scripts/extract_release_notes.py",
         "scripts/rails_assumptions.py",           # registered in BUILDERS by #2164
+        "scripts/component_classes.py",           # registered in BUILDERS by #2192
         "scripts/changelog_fragments.py",         # registered as not-a-generator by #1825; the selftest asserts it exists (#1893)
         "docs/evidence/coverage.html",
         "docs/wiki/",
         "docs/architecture/doctrine-map.html",
         "docs/architecture/rails-assumptions.md",
         "docs/architecture/rails-assumptions.json",
-        "docs/architecture/rails-assumptions.policy.json",   # read by the generator
+        "docs/architecture/rails-assumptions.policy.json",   # read by both generators
+        "docs/architecture/component-classes.html",
+        "docs/architecture/component-classes.json",
         "dist/",
         ".claude/skills/",
         "plugins/rails-flow/mandated_gems.json",
