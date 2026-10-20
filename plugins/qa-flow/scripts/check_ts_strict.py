@@ -101,6 +101,20 @@ TRAILING = re.compile(r'"(?:\\.|[^"\\\n])*"|,(?=\s*[}\]])')
 STRICT_FAMILY = ("alwaysStrict", "noImplicitAny", "noImplicitThis", "strictBindCallApply",
                  "strictBuiltinIteratorReturn", "strictFunctionTypes", "strictNullChecks",
                  "strictPropertyInitialization", "useUnknownInCatchVariables")
+# THE APP'S STRICTER PROFILE (#2162 decision 6, #2170). `strict` includes none of these (typescriptlang.org/tsconfig, doctrine-verifier
+# CONFIRMED 2026-10-20: all eight keys exist and report errors when true, `false` on the two `allow*` raises compiler errors where
+# undefined gives editor suggestions only, and `strict` includes none of them), so an app that says `"strict": true` and nothing else is not "very strict". Each must be `true`; the two
+# `allow*` options must be `false`, because left unset an unreachable statement or an unused label is only an editor hint.
+APP_REQUIRED_TRUE = ("noUncheckedIndexedAccess", "exactOptionalPropertyTypes", "noImplicitOverride",
+                     "noPropertyAccessFromIndexSignature", "noImplicitReturns", "noFallthroughCasesInSwitch",
+                     "noUnusedLocals", "noUnusedParameters")
+APP_REQUIRED_FALSE = ("allowUnreachableCode", "allowUnusedLabels")
+# A directive that suppresses the compiler for a line (`@ts-ignore`, `@ts-expect-error`) or a file (`@ts-nocheck`, which TypeScript 3.7 made
+# work in `.ts` files). Banned by the maintainer's decision 6 on #2162 and #2170, with or without a description: a policy, not a compiler
+# fact. `@ts-check` is not one (it asks for MORE checking in JavaScript).
+TS_DIRECTIVE = re.compile(r"@ts-(?:ignore|expect-error|nocheck)\b")
+# Directories that are not the app's own source: dependencies, build output, the e2e suite (its own scope), tooling caches.
+APP_SKIP = frozenset({"node_modules", ".next", "out", "dist", "build", "coverage", ".vercel", ".turbo", ".git", "qa"})
 
 
 def _scan(text: str) -> tuple[str, str]:
@@ -284,6 +298,38 @@ def _under_qa(cwd: str, path: str) -> bool:
     return rel == "qa" or rel.startswith("qa/")
 
 
+def _under_app(cwd: str, path: str) -> bool:
+    """`path`, from `cwd`, is inside the project and is not the e2e suite or a dependency: the app's own."""
+    rel = posixpath.normpath(posixpath.join(cwd, path))
+    return not (rel == ".." or rel.startswith("../") or rel.split("/")[0] in APP_SKIP)
+
+
+class Scope:
+    """WHAT THE CHECK IS ABOUT: the e2e suite under `qa/` (the Rails and qa-flow use, unchanged) or the Next.js APP (#2170).
+    The three rules are the same; the scope decides which files they read, which tsconfigs must be strict, which
+    `tsc` call counts as the type-check step, and whether the app's stricter profile and the `@ts-` ban apply."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.app = name == "app"
+        self.label = "the app" if self.app else "qa/"
+        self.prefix = "app" if self.app else "qa"
+        # A `tsc` with no `-p` reads the tsconfig in its own directory: that is the app's usual call, never the suite's.
+        self.default_project = "." if self.app else None
+        self.under = _under_app if self.app else _under_qa
+
+    def files(self, root: Path, patterns: tuple[str, ...]) -> list[Path]:
+        if not self.app:
+            qa = root / "qa"
+            return sorted({p for ext in patterns for p in qa.glob(f"**/{ext}") if "node_modules" not in p.parts}) if qa.is_dir() else []
+        return sorted({p for ext in patterns for p in root.glob(f"**/{ext}")
+                       if not APP_SKIP.intersection(p.relative_to(root).parts[:-1])})
+
+
+QA = Scope("qa")
+APP = Scope("app")
+
+
 def _strip_comment(line: str) -> str:
     """A shell/YAML/Ruby line up to its comment: a `#` outside quotes, at the start or after whitespace."""
     quote = ""
@@ -307,12 +353,14 @@ def _enforces(cmd: str, start: int, end: int, later: str) -> bool:
     return not SWALLOWED.search(cmd[end:]) and not re.search(r"(?<![\w-])exit\s+0\b", later)
 
 
-def _checks_suite(cmd: str, cwd: str, later: str = "") -> bool:
-    """`cmd`, run from `cwd` (relative to the root), invokes tsc on a project under qa/ and can fail."""
+def _checks_suite(cmd: str, cwd: str, later: str = "", scope: Scope = QA) -> bool:
+    """`cmd`, run from `cwd` (relative to the root), invokes tsc on a project in `scope` (under qa/, or the app's
+    own: with `-p`, or with none, which reads the tsconfig in `cwd`) and can fail."""
     for m in TSC.finditer(cmd):
         here = posixpath.join(cwd, *[c.group("dir") for c in CD.finditer(cmd[:m.start()])])
         p = PROJECT.search(m.group("args"))
-        if p and _under_qa(here, p.group("path")) and _enforces(cmd, m.start(), m.end(), later):
+        path = p.group("path") if p else scope.default_project
+        if path is not None and scope.under(here, path) and _enforces(cmd, m.start(), m.end(), later):
             return True
     return False
 
@@ -325,7 +373,7 @@ def _scripts(root: Path, pkg_dir: str) -> dict:
     return scripts if isinstance(scripts, dict) else {}
 
 
-def _runs_suite_script(root: Path, cmd: str, cwd: str, later: str = "") -> str | None:
+def _runs_suite_script(root: Path, cmd: str, cwd: str, later: str = "", scope: Scope = QA) -> str | None:
     """`npm|pnpm|yarn [--prefix DIR] run NAME` in `cmd` whose package script type-checks the suite."""
     for m in RUNNER.finditer(cmd):
         here = posixpath.join(cwd, *[c.group("dir") for c in CD.finditer(cmd[:m.start()])])
@@ -338,7 +386,7 @@ def _runs_suite_script(root: Path, cmd: str, cwd: str, later: str = "") -> str |
         elif m.group("tool") == "npm":
             continue                  # npm runs a script only through `run`
         script = _scripts(root, pkg).get(words[0]) if words else None
-        if isinstance(script, str) and _checks_suite(script, pkg) and _enforces(cmd, m.start(), m.end(), later):
+        if isinstance(script, str) and _checks_suite(script, pkg, "", scope) and _enforces(cmd, m.start(), m.end(), later):
             return f"{pkg}/package.json scripts.{words[0]}"
     return None
 
@@ -403,15 +451,15 @@ def workflow_steps(text: str) -> list[dict]:
     return steps
 
 
-def _script_finds(root: Path, rel: str, lines: list[tuple[int, str]], cwd: str) -> str | None:
+def _script_finds(root: Path, rel: str, lines: list[tuple[int, str]], cwd: str, scope: Scope = QA) -> str | None:
     """The first line of one script (a step's `run`, a `bin/*` file) that type-checks the suite and can fail.
     A `cd <dir>` carries forward to the lines after it, as it does in a shell."""
     text = [(n, _strip_comment(t)) for n, t in lines]
     for k, (n, cmd) in enumerate(text):
         later = "\n".join(t for _, t in text[k + 1:])
-        if _checks_suite(cmd, cwd, later):
+        if _checks_suite(cmd, cwd, later, scope):
             return f"{rel}:{n}"
-        via = _runs_suite_script(root, cmd, cwd, later)
+        via = _runs_suite_script(root, cmd, cwd, later, scope)
         if via:
             return f"{rel}:{n} (via {via})"
         for c in CD.finditer(cmd):
@@ -419,28 +467,30 @@ def _script_finds(root: Path, rel: str, lines: list[tuple[int, str]], cwd: str) 
     return None
 
 
-def typecheck_step(root: Path) -> str | None:
+def typecheck_step(root: Path, scope: Scope = QA) -> str | None:
     """The first CI step that type-checks the SUITE -- `tsc -p <path under qa/>` directly, or a package script
     doing so that the step runs -- and can fail, as `file:line`, or None. A tsc on the app, a script nothing
-    runs, a step that is switched off or swallows its verdict, and a tsc that is only printed are not one."""
+    runs, a step that is switched off or swallows its verdict, and a tsc that is only printed are not one.
+    With the app scope it is the reverse: `tsc` on the app's own project (`-p` a path outside qa/ and node_modules,
+    or no `-p`, from a directory outside them) counts, and a tsc on the suite does not."""
     for p in sorted((root / ".github/workflows").glob("*.y*ml")):
         for step in workflow_steps(p.read_text(encoding="utf-8", errors="replace")):
             keys = step["keys"]
             if step["off"] or keys.get("continue-on-error") == "true" or OFF.match(keys.get("if", "")):
                 continue
             wd = posixpath.normpath(keys.get("working-directory") or step["wd"] or ".")
-            hit = _script_finds(root, str(p.relative_to(root)), step["run"], wd)
+            hit = _script_finds(root, str(p.relative_to(root)), step["run"], wd, scope)
             if hit:
                 return hit
     ci = root / "config/ci.rb"
     if ci.is_file():                  # one `step "name", "command"` per line, each its own process
         for n, line in enumerate(ci.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-            hit = _script_finds(root, "config/ci.rb", [(n, line)], ".")
+            hit = _script_finds(root, "config/ci.rb", [(n, line)], ".", scope)
             if hit:
                 return hit
     for p in sorted(q for q in (root / "bin").glob("*") if q.is_file()):
         lines = list(enumerate(p.read_text(encoding="utf-8", errors="replace").splitlines(), 1))
-        hit = _script_finds(root, str(p.relative_to(root)), lines, ".")
+        hit = _script_finds(root, str(p.relative_to(root)), lines, ".", scope)
         if hit:
             return hit
     return None
@@ -468,15 +518,41 @@ def explicit_anys(rel: str, source: str) -> list[str]:
     return out
 
 
-def run(root: Path) -> tuple[list[str], int] | None:
-    qa = root / "qa"
-    ts = sorted({p for ext in EXTS for p in qa.glob(f"**/{ext}") if "node_modules" not in p.parts}) if qa.is_dir() else []
+def ts_directives(rel: str, source: str) -> list[str]:
+    """Every `@ts-ignore`, `@ts-expect-error` and `@ts-nocheck` in a COMMENT (the app's rule; a string that says it is not one)."""
+    out = []
+    raw = source.split("\n")
+    for n, note in enumerate(_scan(source)[1].split("\n")):
+        m = TS_DIRECTIVE.search(note)
+        if m:
+            out.append(f"{rel}:{n + 1}: ts-directive — `{m.group(0)}` suppresses the compiler, with a description or without: `{raw[n].strip()[:80]}`. "
+                       f"Fix the type, or narrow it with `unknown` and a guard.")
+    return out
+
+
+def missing_app_options(tsconfig: Path) -> str | None:
+    """The app's stricter profile (APP_REQUIRED_TRUE / APP_REQUIRED_FALSE) as the compiler merges it, or None when it is all there.
+    An `extends` that cannot be followed is `not_strict_reason`'s finding, not this one's."""
+    try:
+        opts = effective_options(tsconfig)
+    except Unfollowed:
+        return None
+    lacking = [f"`{k}`" for k in APP_REQUIRED_TRUE if opts.get(k) is not True]
+    lacking += [f"`{k}: false`" for k in APP_REQUIRED_FALSE if opts.get(k) is not False]
+    if not lacking:
+        return None
+    return f"the app's strict profile is not all set: {', '.join(lacking)} (`strict` includes none of them)"
+
+
+def run(root: Path, scope: Scope = QA) -> tuple[list[str], int] | None:
+    ts = scope.files(root, EXTS)
     if not ts:
         return None
     findings: list[str] = []
-    configs = sorted(p for p in qa.glob("**/tsconfig*.json") if "node_modules" not in p.parts)
+    configs = scope.files(root, ("tsconfig*.json",))
     if not configs:
-        findings.append("qa: ts-not-strict — the suite has TypeScript but no tsconfig under qa/, so nothing makes it strict.")
+        where = "under qa/" if not scope.app else "in the app"
+        findings.append(f"{scope.prefix}: ts-not-strict — the {'suite' if not scope.app else 'app'} has TypeScript but no tsconfig {where}, so nothing makes it strict.")
     for cfg in configs:
         try:
             why = not_strict_reason(cfg)
@@ -484,12 +560,23 @@ def run(root: Path) -> tuple[list[str], int] | None:
             why = f"unreadable tsconfig ({e})"
         if why:
             findings.append(f"{cfg.relative_to(root)}: ts-not-strict — {why}.")
-    if typecheck_step(root) is None:
-        findings.append("qa: ts-no-typecheck — no CI step type-checks the suite (`tsc -p <tsconfig under qa/>`, or "
-                        "`npm --prefix qa run typecheck` whose script does); Playwright does not type-check, so "
-                        "`strict` is enforced by nothing.")
+        elif scope.app:
+            lacking = missing_app_options(cfg)
+            if lacking:
+                findings.append(f"{cfg.relative_to(root)}: ts-missing-option — {lacking}.")
+    if typecheck_step(root, scope) is None:
+        if scope.app:
+            findings.append("app: ts-no-typecheck — no CI step type-checks the app (`tsc --noEmit`, with or without `-p <tsconfig>`, or "
+                            "`npm run <script>` whose script does); `next build` is not it, and a step that swallows the verdict is not one.")
+        else:
+            findings.append("qa: ts-no-typecheck — no CI step type-checks the suite (`tsc -p <tsconfig under qa/>`, or "
+                            "`npm --prefix qa run typecheck` whose script does); Playwright does not type-check, so "
+                            "`strict` is enforced by nothing.")
     for p in ts:
-        findings += explicit_anys(str(p.relative_to(root)), p.read_text(encoding="utf-8", errors="replace"))
+        source = p.read_text(encoding="utf-8", errors="replace")
+        findings += explicit_anys(str(p.relative_to(root)), source)
+        if scope.app:
+            findings += ts_directives(str(p.relative_to(root)), source)
     return findings, len(ts)
 
 
