@@ -6846,6 +6846,18 @@
    "via": "declared"
   },
   {
+   "class": "rails",
+   "issue": 2182,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/stacks.json",
+   "plugin": "rails-stack",
+   "rails_lines": 3,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
    "class": "mixed",
    "issue": 2186,
    "nextjs_lines": 0,
@@ -6936,7 +6948,7 @@
    "mixed": 199,
    "neutral": 268,
    "nextjs": 0,
-   "rails": 107
+   "rails": 108
   },
   "by_plugin": {
    "design-flow": {
@@ -6978,8 +6990,8 @@
     "mixed": 0,
     "neutral": 0,
     "nextjs": 0,
-    "rails": 1,
-    "total": 1
+    "rails": 2,
+    "total": 2
    },
    "rails-stack (skills)": {
     "mixed": 3,
@@ -7036,8 +7048,8 @@
     "mixed": 15,
     "neutral": 34,
     "nextjs": 0,
-    "rails": 3,
-    "total": 52
+    "rails": 4,
+    "total": 53
    },
    "test": {
     "mixed": 59,
@@ -7047,6 +7059,6 @@
     "total": 185
    }
   },
-  "components": 574
+  "components": 575
  }
 }

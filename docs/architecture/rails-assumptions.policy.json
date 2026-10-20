@@ -753,11 +753,12 @@
    },
    {
     "match": [
-     "plugins/rails-stack/.claude-plugin/*"
+     "plugins/rails-stack/.claude-plugin/*",
+     "plugins/rails-stack/stacks.json"
     ],
     "class": "rails",
     "issue": 2182,
-    "why": "the rails-stack manifest, new in step 1: its description names the Rails doctrine the plugin bundles"
+    "why": "the rails-stack manifest and its stacks.json (moved from the repo root): they name the Rails doctrine the plugin bundles and the Rails markers the detector reads"
    },
    {
     "match": [
