@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import fnmatch
 import io
 import json
 import re
@@ -363,6 +364,22 @@ def descriptor_problems(manifest: dict, roots: list[Path] | None = None) -> list
     return found
 
 
+# A TREE THAT IS STILL A NEW PROJECT (#2199 review). `gh repo create` or a fresh clone holds these and nothing else, and the owner's
+# ruling is that a new project is ASKED which stack. Anything beyond them is an existing project of a stack no plugin declares,
+# which setup-flow must not scaffold over. The agent files are the ones setup-flow itself writes.
+FRESH_ENTRIES = (".git", "README*", "LICENSE*", ".gitignore", ".github", "CLAUDE.md", "AGENTS.md", "GUARDRAILS.md", "loop.md",
+                 ".claude", ".rails-flow", "docs")
+
+
+def fresh(project: Path) -> bool:
+    """Whether the project holds only what a brand-new repository and setup-flow's own files hold."""
+    try:
+        entries = [entry.name for entry in project.iterdir()]
+    except OSError:
+        return False
+    return all(any(fnmatch.fnmatchcase(name, pattern) for pattern in FRESH_ENTRIES) for name in entries)
+
+
 def available(manifests: list[dict]) -> list[dict]:
     """Every stack an installed plugin declares: what setup-flow offers a new project, never a hard-coded list (#2180)."""
     return [{"id": s["id"], "name": s.get("name", s["id"]), "plugin": m["plugin"]}
@@ -451,7 +468,7 @@ def run(project: Path, dirs: list[Path], stacks: list[str] | None = None, roots:
     problems += conflicts
     report = {"project": str(project), "stacks": matched, "manifests": [m["_path"] for m in manifests], "problems": problems,
               "descriptor": descriptor, "descriptor_sources": sources, "setup_sections": setup_sections(manifests, matched),
-              "available": available(manifests)}
+              "available": available(manifests), "fresh": fresh(project)}
     if problems:
         return 2, report
     return (0 if matched else 1), report
@@ -702,6 +719,19 @@ def selftest() -> int:
             case(code == 2 and any(needle in p for p in report["problems"]), f"{label}: {code} {report['problems']}")
         empty_new = proj("brand-new", {})
         case(run(empty_new, [sec_a, sec_b])[0] == 1, "a new project's empty directory detects nothing (exit 1)")
+        new_repo = proj("gh-repo-create", {"README.md": "", "LICENSE": "", ".gitignore": "", ".github/workflows/ci.yml": "", ".git/HEAD": ""})
+        case(run(new_repo, [sec_a])[1]["fresh"] is True, "a repo holding only README, LICENSE, .gitignore, .github and .git is still a new project (fresh)")
+        cargo = proj("cargo-only", {"Cargo.toml": "", "README.md": ""})
+        case(run(cargo, [sec_a])[1]["fresh"] is False, "a repo of a stack no plugin declares (Cargo.toml) is not fresh")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            main([str(both), "--descriptor"], dirs=[sec_a, sec_b])
+        try:
+            listed = json.loads(out.getvalue())["stacks"]
+        except (ValueError, KeyError):
+            listed = []
+        case(listed == [{"id": "ruby", "plugin": "sec-a"}, {"id": "node", "plugin": "sec-b"}],
+             f"--descriptor names each stack's plugin, so setup-flow can say which it activated: {listed}")
         code, report = run(empty_new, [sec_a, sec_b], ["node"])
         case(code == 0 and [s["id"] for s in report["stacks"]] == ["node"] and [x["stack"] for x in report["setup_sections"]] == ["node"],
              f"--stack takes the chosen stack for a project with nothing to detect: {code} {report['stacks']}")
@@ -821,7 +851,8 @@ def main(argv: list[str], dirs: list[Path] | None = None, roots: list[Path] | No
         return 2 if problems else (0 if offered else 1)
     code, report = run(args.project.resolve(), dirs, args.stack, roots)
     if args.descriptor:
-        print(json.dumps({"stacks": [s["id"] for s in report["stacks"]], "descriptor": report["descriptor"],
+        print(json.dumps({"stacks": [{"id": s["id"], "plugin": s["plugin"]} for s in report["stacks"]], "fresh": report["fresh"],
+                          "descriptor": report["descriptor"],
                           "sources": report["descriptor_sources"], "setup_sections": report["setup_sections"],
                           "problems": report["problems"]}, indent=2))
     else:

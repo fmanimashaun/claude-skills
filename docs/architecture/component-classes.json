@@ -4763,7 +4763,7 @@
    "nextjs_lines": 12,
    "path": "plugins/rails-flow/scripts/detect_stack.py",
    "plugin": "rails-flow",
-   "rails_lines": 22,
+   "rails_lines": 23,
    "registered": [],
    "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
    "type": "script",
