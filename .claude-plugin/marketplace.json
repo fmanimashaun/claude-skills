@@ -142,6 +142,25 @@
         "pipeline"
       ],
       "category": "development"
+    },
+    {
+      "name": "nextjs-stack",
+      "description": "The Next.js + Supabase + Vercel stack: how the three fit together, pointing to Vercel's official plugin and supabase/agent-skills for platform knowledge rather than copying it.",
+      "source": "./plugins/nextjs-stack",
+      "author": {
+        "name": "Fisayo Animashaun",
+        "url": "https://github.com/fmanimashaun/claude-skills"
+      },
+      "homepage": "https://github.com/fmanimashaun/claude-skills#readme",
+      "repository": "https://github.com/fmanimashaun/claude-skills",
+      "license": "MIT",
+      "keywords": [
+        "nextjs",
+        "supabase",
+        "vercel",
+        "typescript"
+      ],
+      "category": "development"
     }
   ]
 }
