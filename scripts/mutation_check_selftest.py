@@ -1306,6 +1306,29 @@ def run() -> int:
         if _n != "1":
             FAILURES.append(f"#1588: a fixture commit under an inherited GIT_DIR reached the repo it names "
                             f"({_n} commits, want 1) -- the t@t/m commits on dev")
+    # #2190: OUR OWN GIT-SHIM IS OFF A FIXTURE'S PATH. Every agent shell carries rails-flow's shim first on PATH, and it refuses a
+    # fixture's `git add .`; four gates were red there and green only with PATH stripped by hand.
+    _tick()
+    _shimmed = os.pathsep.join(["/c/claude-skills/rails-flow/1.64.0/git-shim", "/usr/bin", "/repo/plugins/rails-flow/git-shim/",
+                                "/opt/other/git-shim", "/bin"])
+    _kept = mc.hermetic_git.env({"PATH": _shimmed}).get("PATH")
+    if _kept != os.pathsep.join(["/usr/bin", "/opt/other/git-shim", "/bin"]):
+        FAILURES.append(f"#2190: hermetic_git.env must drop every rails-flow git-shim entry from PATH and keep the rest in order, got {_kept!r}")
+    # ...end to end: a stub shim that refuses EVERY git command, first on PATH, and a fixture's `git init` + `git add .` still run.
+    with _tf.TemporaryDirectory() as _w:
+        _stub = Path(_w) / "rails-flow" / "9.9.9" / "git-shim"
+        _stub.mkdir(parents=True)
+        (_stub / "git").write_text("#!/bin/sh\necho 'git-shim (rails-flow): refused (stub)' >&2\nexit 1\n", encoding="utf-8")
+        (_stub / "git").chmod(0o755)
+        _env = mc.hermetic_git.env({**os.environ, "PATH": str(_stub) + os.pathsep + os.environ.get("PATH", "")})
+        _repo = Path(_w) / "fixture"
+        _init = _sp.run(["git", "init", "-q", str(_repo)], env=_env, capture_output=True, text=True)
+        (_repo / "f.txt").write_text("x", encoding="utf-8") if _repo.is_dir() else None
+        _add = _sp.run(["git", "-C", str(_repo), "add", "."], env=_env, capture_output=True, text=True) if _repo.is_dir() else _init  # fixture-git: exempt (the argv is the subject: the shim refuses exactly this)
+        _tick()
+        if _init.returncode or _add.returncode:
+            FAILURES.append(f"#2190: a fixture's git ran through a rails-flow git-shim first on PATH: "
+                            f"{(_init.stderr or _add.stderr).strip()!r}")
     # A selftest that commits in a temp repo under GIT_TRACE and refuses to go on if git started
     # `maintenance run --auto` or `gc --auto` -- the #1493 race. Through run_guard, so it proves
     # the CALLER passes the env to both the baseline and the mutant, not only that the helper builds it.
