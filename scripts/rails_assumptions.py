@@ -176,6 +176,29 @@ def resolve(path: str, rules: list[dict]) -> tuple[int, dict] | None:
     return None
 
 
+def setup_flow_findings(decided: dict[str, dict], sf: dict | None) -> list[str]:
+    """setup-flow is one 1,100-line file holding both the neutral rules scaffold and Rails-only proposals, so its sections are decided
+    separately: every hit line must fall in exactly one declared section, and the section's issue must be filed (#2164 requirement)."""
+    if not sf:
+        return []
+    out: list[str] = []
+    row = decided.get(sf["file"])
+    if row is None:
+        return [f"setup_flow: {sf['file']} has no hits or no file rule; the section table is for a file the scan finds"]
+    if not isinstance(sf.get("issue"), int):
+        out.append("setup_flow: no issue number filed under #2162 yet")
+    for sec in sf["sections"]:
+        if sec["disposition"] not in DECISIONS:
+            out.append(f"setup_flow section {sec['lines']}: disposition {sec['disposition']!r} is not one of {', '.join(DECISIONS)}")
+        if not any(sec["lines"][0] <= n <= sec["lines"][1] for n in row["lines"]):
+            out.append(f"setup_flow section {sec['lines']}: no hit line falls inside it (the file changed): fix the range")
+    for n in row["lines"]:
+        owners = [s for s in sf["sections"] if s["lines"][0] <= n <= s["lines"][1]]
+        if len(owners) != 1:
+            out.append(f"setup_flow: hit line {n} is in {len(owners)} sections, expected exactly one")
+    return out
+
+
 def decide(hits: dict[str, dict], policy: dict) -> tuple[dict[str, dict], list[str]]:
     """`({path: {..., "decision", "move", "assumes", "how", "followed"}}, findings)`: the scan joined to the policy, both directions."""
     findings: list[str] = []
@@ -214,6 +237,7 @@ def decide(hits: dict[str, dict], policy: dict) -> tuple[dict[str, dict], list[s
             findings.append(f"rule {title}: only a rails-stack decision carries a move group (this one is {rule.get('decision')})")
         if not used[index]:
             findings.append(f"rule {title}: matches no file with a hit (the file moved, was cleaned, or the glob is wrong): delete or fix the rule")
+    findings += setup_flow_findings(out, policy.get("setup_flow"))
     move_used = {r.get("move") for r in rules if r.get("decision") == "rails-stack"}
     for name, move in moves.items():
         if name not in move_used:
@@ -300,6 +324,20 @@ def build_md(decided: dict[str, dict], policy: dict) -> str:
         w(f"### {name}: {move['title']} ({issue})\n")
         w(f"{move['summary']}\n")
         w("Files: " + ", ".join(f"`{p.split('/', 2)[2]}` ({p.split('/')[1]})" for p in files) + "\n")
+    sf = policy.get("setup_flow")
+    if sf and sf["file"] in decided:
+        row = decided[sf["file"]]
+        w(f"## setup-flow, section by section (issue #{sf['issue']})\n" if isinstance(sf.get("issue"), int) else "## setup-flow, section by section\n")
+        w(sf["summary"] + "\n")
+        w("| lines | Rails hit lines | what it assumes | decision | how |\n|---|---:|---|---|---|")
+        for sec in sf["sections"]:
+            a, b = sec["lines"]
+            n = sum(1 for x in row["lines"] if a <= x <= b)
+            w(f"| {a}-{b} | {n} | {sec['assumes']} | `{sec['disposition']}` | {sec['how']} |")
+        w("\n**Proposal for a `nextjs-stack` repo.**\n")
+        for step in sf["proposal"]:
+            w(f"- {step}")
+        w("")
     w("## The inventory, file by file\n")
     w("`file:first line` and up to five line numbers are shown; every line number is in `rails-assumptions.json`. Mutation guards and selftests "
       "follow the script they test (marked ↳).\n")
@@ -390,8 +428,8 @@ def _selftest() -> int:
         decided, findings = decide(hits, policy)
         check("a complete policy is clean", findings == [])
         check("the guard and the selftest take the script's decision",
-              decided["plugins/rails-flow/scripts/gate_selftest.py"]["decision"] == "rails-stack"
-              and decided["plugins/rails-flow/scripts/mutations/gate.py"]["followed"] == "plugins/rails-flow/scripts/gate.py")
+              decided.get("plugins/rails-flow/scripts/gate_selftest.py", {}).get("decision") == "rails-stack"
+              and decided.get("plugins/rails-flow/scripts/mutations/gate.py", {}).get("followed") == "plugins/rails-flow/scripts/gate.py")
         check("an unresolved file is a finding", any("no rule" in f for f in decide(hits, {"moves": {}, "rules": []})[1]))
         stale = {**policy, "rules": policy["rules"] + [{"match": ["plugins/gone/*"], "decision": "neutral", "how": "h"}]}
         check("a rule matching nothing is a finding", any("matches no file" in f for f in decide(hits, stale)[1]))
@@ -407,8 +445,17 @@ def _selftest() -> int:
         check("a rule with no `how` is a finding", any("no `how`" in f for f in decide(hits, nohow)[1]))
         movedwrong = {**policy, "rules": [{**policy["rules"][0], "decision": "detector"}]}
         check("a move on a non-rails-stack rule is a finding", any("only a rails-stack decision" in f for f in decide(hits, movedwrong)[1]))
+        sf = {"file": "plugins/rails-flow/scripts/gate.py", "issue": 5, "summary": "s", "proposal": ["p"],
+              "sections": [{"lines": [1, 2], "assumes": "a", "disposition": "detector", "how": "h"}, {"lines": [3, 9], "assumes": "a", "disposition": "rails-stack", "how": "h"}]}
+        check("setup_flow sections covering every hit line are clean", setup_flow_findings(decided, sf) == [])
+        gap = {**sf, "sections": sf["sections"][:1]}
+        check("a hit line in no section is a finding", any("expected exactly one" in f for f in setup_flow_findings(decided, gap)))
+        overlap = {**sf, "sections": [*sf["sections"], {"lines": [1, 1], "assumes": "a", "disposition": "neutral", "how": "h"}]}
+        check("a hit line in two sections is a finding", any("in 2 sections" in f for f in setup_flow_findings(decided, overlap)))
+        check("a section with no issue is a finding", any("no issue number" in f for f in setup_flow_findings(decided, {**sf, "issue": None})))
+        check("a section no hit falls in is a finding", any("no hit line falls" in f for f in setup_flow_findings(decided, {**sf, "sections": [*sf["sections"], {"lines": [50, 60], "assumes": "a", "disposition": "neutral", "how": "h"}]})))
         s = summarise(decided)
-        check("the summary counts files and lines from the joined rows", s["files"] == 3 and s["lines"] == 4)
+        check("the summary counts files and lines from the joined rows", s["files"] == len(decided) and s["lines"] == 4)
         check("the summary splits by decision", s["by_decision"]["rails-stack"]["files"] == 3 and s["by_decision"]["neutral"]["files"] == 0)
         check("the page renders the same text twice", build_md(decided, policy) == build_md(decided, policy))
         check("the page names the file and its decision", "gate.py:1" in build_md(decided, policy) and "`rails-stack` (M1)" in build_md(decided, policy))
@@ -425,11 +472,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--status", action="store_true", help="print the counts from a fresh scan")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
+    if a.selftest:  # fixtures only: runs from a staged copy that has no marketplace.json
+        return _selftest()
     if not (REPO / ".claude-plugin" / "marketplace.json").is_file():
         print("not the claude-skills repo", file=sys.stderr)
         return 2
-    if a.selftest:
-        return _selftest()
     policy = load_policy(REPO)
     decided, findings = decide(scan(REPO), policy)
     summary = summarise(decided)

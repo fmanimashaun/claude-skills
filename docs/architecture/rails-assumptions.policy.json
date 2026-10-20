@@ -3,31 +3,38 @@
  "moves": {
   "rails-agents": {
    "title": "The Rails specialist agents",
-   "summary": "Agents whose whole job is a Rails task (implement in Rails, write migrations, run RSpec, audit with Brakeman, review against Rails practice). They are loaded by every rails-flow install; a Next.js project would see agents it can never use."
+   "summary": "Agents whose whole job is a Rails task (implement in Rails, write migrations, run RSpec, audit with Brakeman, review against Rails practice). They are loaded by every rails-flow install; a Next.js project would see agents it can never use.",
+   "issue": 2173
   },
   "rails-hooks": {
    "title": "The Rails-only hooks",
-   "summary": "Hooks that fire on a Rails artifact: guard-migrate.sh on a new db/migrate file, lint-ruby.sh on a .rb edit. They register through the plugin's hooks.json, so the stack plugin must register them instead."
+   "summary": "Hooks that fire on a Rails artifact: guard-migrate.sh on a new db/migrate file, lint-ruby.sh on a .rb edit. They register through the plugin's hooks.json, so the stack plugin must register them instead.",
+   "issue": 2174
   },
   "rails-gates": {
    "title": "The Rails project gates",
-   "summary": "Gate scripts that read a Rails project (simple_form, migrations order, tenancy cop, privacy inventory, production config, MCP checks, i18n, CI-runs-tests, coverage ratchet, spec support, layer structure, herb) and their checks.json registrations. project_gates.py already discovers checks.json from sibling plugins, so this is a move, not new machinery."
+   "summary": "Gate scripts that read a Rails project (simple_form, migrations order, tenancy cop, privacy inventory, production config, MCP checks, i18n, CI-runs-tests, coverage ratchet, spec support, layer structure, herb) and their checks.json registrations. project_gates.py already discovers checks.json from sibling plugins, so this is a move, not new machinery.",
+   "issue": 2175
   },
   "rails-mandated-gems": {
    "title": "The mandated-gems policy",
-   "summary": "mandated_gems.json and the scripts that read or derive it. The list is Rails doctrine by definition; a Node stack needs a different list under its own name."
+   "summary": "mandated_gems.json and the scripts that read or derive it. The list is Rails doctrine by definition; a Node stack needs a different list under its own name.",
+   "issue": 2176
   },
   "rails-docs-generators": {
    "title": "The Rails documentation generators",
-   "summary": "architecture_graph.py (routes/app/db graph, /rails-flow:graph) and build_project_wiki.py read Rails sources to draw the architecture and the wiki."
+   "summary": "architecture_graph.py (routes/app/db graph, /rails-flow:graph) and build_project_wiki.py read Rails sources to draw the architecture and the wiki.",
+   "issue": 2177
   },
   "design-flow-erb": {
    "title": "The design-flow ERB / ViewComponent gates and porter",
-   "summary": "The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (design-porter, ui-composer). Next.js gets its own design gates under #2171."
+   "summary": "The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (design-porter, ui-composer). Next.js gets its own design gates under #2171.",
+   "issue": 2178
   },
   "rails-deploy": {
    "title": "The Kamal-on-Rails deploy path",
-   "summary": "kamal-configurator and kamal_destination.py route values into Rails credentials and deploy.yml; Vercel deploy (#2167) is its own path."
+   "summary": "kamal-configurator and kamal_destination.py route values into Rails credentials and deploy.yml; Vercel deploy (#2167) is its own path.",
+   "issue": 2179
   }
  },
  "rules": [
@@ -299,5 +306,63 @@
    "assumes": "a Gemfile is one of two markers that locate the repository root; a .git alone also works",
    "how": "nothing to change: it already works for a repo with only .git"
   }
- ]
+ ],
+ "setup_flow": {
+  "file": "plugins/rails-flow/commands/setup-flow.md",
+  "issue": 2180,
+  "summary": "/rails-flow:setup-flow is the shipped home of a project's working rules (git flow, guardrails, parallel sessions, labels, who merges). Today it reads the Gemfile, the Rails version and the rails-8 skill to fill them, and the second half of the file is a list of Rails-only repairs. The rule scaffold itself names no stack; the stack facts and the Rails repairs are what assume Rails.",
+  "sections": [
+   {
+    "lines": [
+     41,
+     74
+    ],
+    "assumes": "diagnoses a CLAUDE.md against the Gemfile, the Rails generator and the Ruby/Rails version; inspects Gemfile, config/application.rb, db/schema.rb and app/ shape",
+    "disposition": "detector",
+    "how": "reads the facts from the detector's descriptor (stack names, versions, directory shape) instead of opening a Gemfile"
+   },
+   {
+    "lines": [
+     144,
+     212
+    ],
+    "assumes": "the CLAUDE.md template: a Rails/Hotwire/Solid Queue/Kamal stack line, the Rails command list (rspec, rubocop, brakeman, bundler-audit), the simple_form forms rule, the bundler.lock preflight line",
+    "disposition": "detector",
+    "how": "the stack line, command list and forms rule are filled from the stack descriptor; the Rails text becomes the rails-stack template"
+   },
+   {
+    "lines": [
+     259,
+     362
+    ],
+    "assumes": "path-scoped rules over app/models/**/*.rb and **/*.rb, config/database.yml as the database marker, config/ci.rb and bin/ci, and the one RAILS_ENV=test bin/rails command guard-bash allows",
+    "disposition": "detector",
+    "how": "globs, database marker and the allowed test-prep command come from the descriptor"
+   },
+   {
+    "lines": [
+     524,
+     694
+    ],
+    "assumes": "companion workflows: bundle exec rspec, rubocop, bundler-audit, brakeman, the architecture graph over routes/app/db, derived docs over db/schema.rb and Gemfile.lock, the help registry rake task",
+    "disposition": "detector",
+    "how": "suite, lint and security commands come from the descriptor; the graph and help registry are the rails-docs-generators move"
+   },
+   {
+    "lines": [
+     731,
+     1144
+    ],
+    "assumes": "Rails-only repairs proposed as approved diffs: the config/ci.rb Tests steps, RSpec generators and factory_bot_rails, i18n and launch initializers, the privacy inventory over db/schema.rb, the tenancy cop, simplecov, spec/support wiring, simple_form, Archspec.rb and herb",
+    "disposition": "rails-stack",
+    "how": "moves to rails-stack's own scaffold; setup-flow runs the section for each stack the detector reports"
+   }
+  ],
+  "proposal": [
+   "Split the file by who owns the content: the stack-neutral rule scaffold (git flow, guardrails, parallel sessions, labels, who merges) stays in rails-flow's setup-flow and names no stack; each stack plugin ships its own scaffold section.",
+   "setup-flow asks the detector (#2163) which stacks the repository holds (more than one is allowed), fills the stack line, commands, source globs and database marker from the descriptor, and then runs each stack's section in turn.",
+   "For a nextjs-stack repository that means: the same rule scaffold; stack facts from package.json, next.config and supabase/ as the detector reports them; and nextjs-stack's section proposing its own repairs (strict TypeScript, Storybook, local-first CI) as approved diffs, the way the Rails repairs are proposed today.",
+   "A project's rules arrive by running setup-flow, not by a hand-written copy: a repository adopting the rules (flo-it-ui, for one) gets the neutral scaffold plus its stack section, and a later release updates it the same idempotent way."
+  ]
+ }
 }
