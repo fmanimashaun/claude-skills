@@ -93,7 +93,7 @@ A new guard without these is a **gate that cannot fail**.
       direction is untested in the direction that matters.
 - [ ] The check cannot report clean over input it never read (zero inputs is not a pass).
 
-## If this touches `skills/**`
+## If this touches `plugins/rails-stack/skills/**`
 
 - [ ] `python3 scripts/package_core.py` was re-run, and `git status` shows only the intended
       `dist/` change.

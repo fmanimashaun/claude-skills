@@ -21,7 +21,7 @@ TWO AGENT RULES, for the same reason: a frontmatter that says less than the body
     and could spawn nested agents. Declaring one of the two is the decision; which is the agent's.
   * agent-unloadable-skill (#1345): Claude Code: "To prevent a subagent from invoking skills
     entirely, omit `Skill` from the `tools` list". Eleven agents told the model to consult one of
-    our skills, or to read `skills/<name>/...` (a path that does not exist in a user's project,
+    our skills, or to read `plugins/rails-stack/skills/<name>/...` (a path that does not exist in a user's project,
     since the skill lives in the plugin cache), with an allowlist that omitted Skill and no
     `skills:` preload, so the instruction did nothing.
 

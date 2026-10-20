@@ -55,7 +55,7 @@ Read, in this order:
    source.
 2. **`plugins/rails-stack/skills/code-review/SKILL.md`** — the review doctrine, applied to your own diff *before*
    anyone else's. It is shipped doctrine, so it is the same rules a user's `pr-reviewer` runs.
-3. The component you are about to touch — `skills/*/references/`, or the plugin's agents and
+3. The component you are about to touch — `plugins/rails-stack/skills/*/references/`, or the plugin's agents and
    commands.
 
 ## Phase 3 — Report where things stand

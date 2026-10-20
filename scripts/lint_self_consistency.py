@@ -3447,7 +3447,7 @@ def check_unguarded_key_filter() -> tuple[list[Finding], int]:
     doctrine that must NAME this anti-pattern names its two halves separately (a `keydown.esc` filter
     wired to a `modal#close` handler). A reader copies a descriptor, not a sentence.
 
-    SCOPED TO WHAT WE SHIP. `skills/**` and `plugins/**` only: CHANGELOG.md and this repo's own
+    SCOPED TO WHAT WE SHIP. `plugins/**` only (the shipped skills are `plugins/rails-stack/skills/**` since #2182): CHANGELOG.md and this repo's own
     maintainer notes quote the defect to explain it, and are not doctrine anyone pastes.
     """
     findings: list[Finding] = []
@@ -3612,7 +3612,7 @@ def check_undeclared_component_label() -> tuple[list[Finding], int]:
     rule found two MORE that were missing from both the file and GitHub (`code-review`,
     `quality-pass`), which is the difference between a grep and a join.
 
-    Deliberately a pure FILE join -- `skills/*/` and `plugins/*/` against the yaml -- with no `gh`
+    Deliberately a pure FILE join -- `plugins/*/` (and `plugins/rails-stack/skills/*/`) against the yaml -- with no `gh`
     call. A gate that needs network and auth fails on a runner for reasons unrelated to the repo,
     and teaches people to ignore a red build.
 

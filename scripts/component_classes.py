@@ -57,7 +57,7 @@ JSON_OUT = "docs/architecture/component-classes.json"
 CLASSES = ("neutral", "rails", "nextjs", "mixed")
 TYPES = ("command", "agent", "hook", "skill", "script", "gate", "test", "support")
 FROM_DECISION = {"rails-stack": "rails", "detector": "mixed", "reword": "mixed", "neutral": "neutral"}
-SKILLS_PLUGIN = "rails-stack (skills)"
+SKILLS_PLUGIN = "rails-stack"  # one plugin on the page, its skills and its manifest together (#2182)
 
 # A Next.js reference is a hit the way a Rails one is. These name Next.js itself or its two vendors; plain Node, TypeScript, React or npm do not
 # (the neutral qa-flow scaffold is TypeScript), so none of those is a hit.

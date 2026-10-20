@@ -12,7 +12,7 @@ claimed by three branches at once, and a ledger four numbers stale.
 
 WHY A GENERATED COPY AND NOT A SECOND FILE. `plugin-boundaries` allows exactly one home per concern,
 and this repo's own review doctrine treats two copies of one rule as a defect waiting to happen —
-the copy that drifts is always the one nobody is reading. So `skills/**` stays the single source and
+the copy that drifts is always the one nobody is reading. So `plugins/rails-stack/skills/**` stays the single source and
 `.claude/skills/**` is DERIVED from it, committed, and drift-gated, the same shape as
 `docs/evidence/coverage.html` and the wiki pages.
 
@@ -340,7 +340,7 @@ def selftest() -> int:
                 encoding="utf-8",
             )
             if check_against(rendered) == 0:
-                failures.append(f"--check passed against an unregistered copy of skills/{shipped[0]}")
+                failures.append(f"--check passed against an unregistered copy of plugins/rails-stack/skills/{shipped[0]}")
         finally:
             stray.unlink(missing_ok=True)
             stray.parent.rmdir()

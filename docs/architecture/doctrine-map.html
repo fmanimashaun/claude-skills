@@ -76,7 +76,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <p class="note">#699 rewrote both the claim and its enforcement. `duplicate-unreleased` catches two `### Unreleased` headings in one section; `release notes complete` runs the real extractor and refuses any block written for the tag that would not publish, which is the half that was missing while four releases dropped a component&#x27;s notes.</p>
 </div>
 <div class="row" data-k="guarantee">
-<h2>`dist/` must be a clean build of `skills/**` before a release publishes.</h2>
+<h2>`dist/` must be a clean build of `plugins/rails-stack/skills/**` before a release publishes.</h2>
 <div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
 <ul class="enf">
 <li><code>script:scripts/package_core.py</code></li>
@@ -176,7 +176,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <li><code>hook:plugins/rails-flow/hooks/scripts/guard-claims.sh</code></li>
 <li><code>script:plugins/rails-flow/scripts/check_hook_gates.py</code></li>
 </ul>
-<p class="note">Carried as a GAP for a long time, and the recorded reason was exact: &#x27;mechanisable in principle -- a PR touching `skills/**` whose body names neither type -- but it would live in CI against the PR body, WHICH NO GATE IN THIS REPO READS.&#x27; #1106 built a PreToolUse hook that reads the PR body, for an unrelated reason (two wrong numbers reached merged bodies in one day), and the blocker simply stopped being true. The hook now refuses `gh pr create` on a PR touching `skills/**` whose body names neither change type. The gap row is what made the connection findable.</p>
+<p class="note">Carried as a GAP for a long time, and the recorded reason was exact: &#x27;mechanisable in principle -- a PR touching `plugins/rails-stack/skills/**` whose body names neither type -- but it would live in CI against the PR body, WHICH NO GATE IN THIS REPO READS.&#x27; #1106 built a PreToolUse hook that reads the PR body, for an unrelated reason (two wrong numbers reached merged bodies in one day), and the blocker simply stopped being true. The hook now refuses `gh pr create` on a PR touching `plugins/rails-stack/skills/**` whose body names neither change type. The gap row is what made the connection findable.</p>
 </div>
 <div class="row" data-k="guarantee">
 <h2>An advisory hook fails OPEN; a hook carrying a guarantee fails CLOSED, scoped to the command it guards.</h2>
@@ -315,7 +315,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <ul class="enf">
 <li><code>gate:maintainer skill drift</code></li>
 </ul>
-<p class="note">`.claude/skills/**` is generated from `skills/**` because this repo&#x27;s own sessions load `remember` and nothing else, so the parallel-session doctrine reached every consumer except its maintainers. A mirror without a drift check is two homes for one rule, which is what `plugin-boundaries` refuses; the gate is what makes it one.</p>
+<p class="note">`.claude/skills/**` is generated from `plugins/rails-stack/skills/**` because this repo&#x27;s own sessions load `remember` and nothing else, so the parallel-session doctrine reached every consumer except its maintainers. A mirror without a drift check is two homes for one rule, which is what `plugin-boundaries` refuses; the gate is what makes it one.</p>
 </div>
 <div class="row" data-k="guarantee">
 <h2>Working in the wrong worktree during a parallel session is refused, not merely advised against.</h2>

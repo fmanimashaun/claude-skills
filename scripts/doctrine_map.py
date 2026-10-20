@@ -361,7 +361,7 @@ CLAIMS: tuple[Claim, ...] = (
              "the half that was missing while four releases dropped a component's notes.",
     ),
     Claim(
-        claim="`dist/` must be a clean build of `skills/**` before a release publishes.",
+        claim="`dist/` must be a clean build of `plugins/rails-stack/skills/**` before a release publishes.",
         stated_in="CLAUDE.md",
         anchor="The CI drift guard fails",
         kind=GUARANTEE,
@@ -571,7 +571,7 @@ CLAIMS: tuple[Claim, ...] = (
         kind=GUARANTEE,
         enforced_by=("gate:maintainer skill drift",),
         refs=(1004,),
-        note="`.claude/skills/**` is generated from `skills/**` because this repo's own sessions load "
+        note="`.claude/skills/**` is generated from `plugins/rails-stack/skills/**` because this repo's own sessions load "
              "`remember` and nothing else, so the parallel-session doctrine reached every consumer "
              "except its maintainers. A mirror without a drift check is two homes for one rule, which "
              "is what `plugin-boundaries` refuses; the gate is what makes it one.",
@@ -704,11 +704,11 @@ CLAIMS: tuple[Claim, ...] = (
                      "script:plugins/rails-flow/scripts/check_hook_gates.py"),
         refs=(655, 1106),
         note="Carried as a GAP for a long time, and the recorded reason was exact: 'mechanisable in "
-             "principle -- a PR touching `skills/**` whose body names neither type -- but it would "
+             "principle -- a PR touching `plugins/rails-stack/skills/**` whose body names neither type -- but it would "
              "live in CI against the PR body, WHICH NO GATE IN THIS REPO READS.' #1106 built a "
              "PreToolUse hook that reads the PR body, for an unrelated reason (two wrong numbers "
              "reached merged bodies in one day), and the blocker simply stopped being true. The "
-             "hook now refuses `gh pr create` on a PR touching `skills/**` whose body names "
+             "hook now refuses `gh pr create` on a PR touching `plugins/rails-stack/skills/**` whose body names "
              "neither change type. The gap row is what made the connection findable.",
     ),
 

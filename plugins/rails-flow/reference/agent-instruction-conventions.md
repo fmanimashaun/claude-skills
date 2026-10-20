@@ -225,7 +225,7 @@ These are **not scaffold material**, and mostly not even ours to hold:
 - `assert_in_body` and fixtures are **Minitest/Capybara** idioms. We mandate pure **RSpec** — the
   Phase E divergence (EPIC #96) — so they don't translate.
 - `_path` over `_url` in tests is framework-neutral and sound, but it is **rails-8 skill doctrine**,
-  not scaffold content, and `skills/**` is out of this phase's lane. Recorded here for whoever owns
+  not scaffold content, and `plugins/rails-stack/skills/**` is out of this phase's lane. Recorded here for whoever owns
   Phase A/E; not acted on in rails-flow.
 
 The useful meta-observation: writebook folds a little style into `AGENTS.md` and ships **no**

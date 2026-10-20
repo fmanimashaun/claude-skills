@@ -55,7 +55,7 @@ the Claude Code page says "SKILL.md under 500 lines", so the whole file is measu
 included. Likewise ambiguity in the input is an ERROR, never a skip -- a skill directory with no
 `SKILL.md`, or a run that examined nothing, exits non-zero rather than reporting clean.
 
-SCOPE. The SHIPPED skills under `skills/`, pinned by NAME in `SHIPPED_SKILLS` -- not by count.
+SCOPE. The SHIPPED skills under `plugins/rails-stack/skills/`, pinned by NAME in `SHIPPED_SKILLS` -- not by count.
 This line said "the four" while the set held five, which is the transcription class the
 `derived-artifacts` skill itself warns about, sitting in the docstring of a gate. `evals/weak-skill/` is
 excluded on purpose: it is a deliberately low-quality A/B control for the eval harness, not
@@ -181,7 +181,7 @@ def run() -> int:
             unpinned = sorted(found - SHIPPED_SKILLS)
             vanished = sorted(SHIPPED_SKILLS - found)
             raise Unreadable(
-                "skills/ no longer matches SHIPPED_SKILLS — "
+                "plugins/rails-stack/skills/ no longer matches SHIPPED_SKILLS — "
                 + (f"unpinned: {unpinned} " if unpinned else "")
                 + (f"missing: {vanished} " if vanished else "")
                 + "(add or remove it deliberately, with a reason)"

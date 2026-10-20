@@ -125,7 +125,7 @@ Two hard rules, both the opposite of what feels natural:
   (A stray bump on `dev` is a loaded gun: the next promotion publishes a release the moment
   it merges, decided by nobody. This is exactly what #143 did and #144 undid.)
 
-Repackage `dist/` in this PR if `skills/**` changed — that is content, not a version.
+Repackage `dist/` in this PR if `plugins/rails-stack/skills/**` changed — that is content, not a version.
 
 **Check what the body claims, not just what the diff does.** The gate above verifies the *doctrine*;
 this verifies the *description*, and they fail differently. Three defects shipped from this repo in
