@@ -108,7 +108,7 @@ DEFAULT_SETUP = os.path.join(_HERE, "..", "commands", "setup.md")
 sys.path.insert(0, _HERE)
 import doctrine_path                                    # noqa: E402 — same plugin, one resolver
 _FOUND = doctrine_path.find(os.path.join(_HERE, "x.py"))
-DEFAULT_DOCTRINE = str(_FOUND) if _FOUND else os.path.join(_REPO, "skills", "design-system")
+DEFAULT_DOCTRINE = str(_FOUND) if _FOUND else os.path.join(_REPO, "plugins", "rails-stack", "skills", "design-system")
 
 # `Rails.configuration.x.<key>` or the equivalent `Rails.application.config.x.<key>`.
 # Captures the FIRST segment after `.x.` — that is the config key. A chained

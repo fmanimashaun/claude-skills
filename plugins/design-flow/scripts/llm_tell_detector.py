@@ -64,7 +64,7 @@ _DOCTRINE = doctrine_path.find(os.path.join(HERE, "x.py"))
 # that cannot resolve it is unaffected. The fallback keeps the "UNUSABLE" message pointing at the
 # clone path a maintainer would recognise.
 DOCTRINE_DIR = (os.path.join(str(_DOCTRINE), "references") if _DOCTRINE
-                else os.path.join(REPO, "skills", "design-system", "references"))
+                else os.path.join(REPO, "plugins", "rails-stack", "skills", "design-system", "references"))
 
 # Criterion 7: the palette-step vocabulary is defined ONCE, in the rendered checker, whose doctrine
 # constants were made module-level for exactly this import. If that import fails we do not quietly

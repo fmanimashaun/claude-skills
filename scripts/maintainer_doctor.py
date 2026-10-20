@@ -647,6 +647,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("sweep proof wiring", ("python3", "scripts/sweep_proof.py", "check-wiring")),
     ("vendored alone", ("python3", "scripts/check_vendored_alone.py")),
     ("vendored alone selftest", ("python3", "scripts/check_vendored_alone.py", "--selftest")),
+    ("plugin install shape", ("python3", "scripts/check_plugin_install_shape.py")),
+    ("plugin install shape selftest", ("python3", "scripts/check_plugin_install_shape.py", "--selftest")),
     # #1556. How a process-group fixture learns its gate's pids: atomically, and waited for.
     ("pid record selftest", ("python3", "scripts/pid_record_selftest.py")),
 )
