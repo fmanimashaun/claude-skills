@@ -1,0 +1,303 @@
+{
+ "comment": "Decisions for scripts/rails_assumptions.py. First matching rule wins. Mutation guards and *_selftest.py follow the script they test unless a rule names them.",
+ "moves": {
+  "rails-agents": {
+   "title": "The Rails specialist agents",
+   "summary": "Agents whose whole job is a Rails task (implement in Rails, write migrations, run RSpec, audit with Brakeman, review against Rails practice). They are loaded by every rails-flow install; a Next.js project would see agents it can never use."
+  },
+  "rails-hooks": {
+   "title": "The Rails-only hooks",
+   "summary": "Hooks that fire on a Rails artifact: guard-migrate.sh on a new db/migrate file, lint-ruby.sh on a .rb edit. They register through the plugin's hooks.json, so the stack plugin must register them instead."
+  },
+  "rails-gates": {
+   "title": "The Rails project gates",
+   "summary": "Gate scripts that read a Rails project (simple_form, migrations order, tenancy cop, privacy inventory, production config, MCP checks, i18n, CI-runs-tests, coverage ratchet, spec support, layer structure, herb) and their checks.json registrations. project_gates.py already discovers checks.json from sibling plugins, so this is a move, not new machinery."
+  },
+  "rails-mandated-gems": {
+   "title": "The mandated-gems policy",
+   "summary": "mandated_gems.json and the scripts that read or derive it. The list is Rails doctrine by definition; a Node stack needs a different list under its own name."
+  },
+  "rails-docs-generators": {
+   "title": "The Rails documentation generators",
+   "summary": "architecture_graph.py (routes/app/db graph, /rails-flow:graph) and build_project_wiki.py read Rails sources to draw the architecture and the wiki."
+  },
+  "design-flow-erb": {
+   "title": "The design-flow ERB / ViewComponent gates and porter",
+   "summary": "The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (design-porter, ui-composer). Next.js gets its own design gates under #2171."
+  },
+  "rails-deploy": {
+   "title": "The Kamal-on-Rails deploy path",
+   "summary": "kamal-configurator and kamal_destination.py route values into Rails credentials and deploy.yml; Vercel deploy (#2167) is its own path."
+  }
+ },
+ "rules": [
+  {
+   "match": [
+    "plugins/rails-flow/agents/rails-developer.md",
+    "plugins/rails-flow/agents/migration-writer.md",
+    "plugins/rails-flow/agents/test-runner.md",
+    "plugins/rails-flow/agents/security-auditor.md",
+    "plugins/rails-flow/agents/code-reviewer.md",
+    "plugins/rails-flow/agents/design-auditor.md"
+   ],
+   "decision": "rails-stack",
+   "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
+   "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
+   "move": "rails-agents"
+  },
+  {
+   "match": [
+    "plugins/rails-flow/hooks/scripts/guard-migrate.sh",
+    "plugins/rails-flow/hooks/scripts/lint-ruby.sh"
+   ],
+   "decision": "rails-stack",
+   "assumes": "fires on db/migrate files and .rb edits; runs bin/rails and rubocop",
+   "how": "its hooks.json entry moves to the stack plugin",
+   "move": "rails-hooks"
+  },
+  {
+   "match": [
+    "plugins/rails-flow/mandated_gems.json",
+    "plugins/rails-flow/scripts/check_mandated_gems.py",
+    "plugins/rails-flow/scripts/derive_mandated_gems.py"
+   ],
+   "decision": "rails-stack",
+   "assumes": "a list of Ruby gems and the Gemfile reader for it",
+   "how": "moves with its checks.json row",
+   "move": "rails-mandated-gems"
+  },
+  {
+   "match": [
+    "plugins/rails-flow/scripts/check_simple_form_only.py",
+    "plugins/rails-flow/scripts/check_migration_order.py",
+    "plugins/rails-flow/scripts/check_tenancy_cop.py",
+    "plugins/rails-flow/scaffold/tenancy/*",
+    "plugins/rails-flow/scripts/check_privacy_inventory.py",
+    "plugins/rails-flow/scripts/check_production_config.py",
+    "plugins/rails-flow/scripts/check_unauthenticated_writes.py",
+    "plugins/rails-flow/scripts/check_mcp_annotations.py",
+    "plugins/rails-flow/scripts/check_mcp_end_to_end.py",
+    "plugins/rails-flow/scripts/check_mcp_personal_fields.py",
+    "plugins/rails-flow/scripts/check_i18n_setup.py",
+    "plugins/rails-flow/scripts/check_ci_runs_tests.py",
+    "plugins/rails-flow/scripts/check_coverage_ratchet.py",
+    "plugins/rails-flow/scripts/check_spec_support.py",
+    "plugins/rails-flow/scripts/check_layer_structure.py",
+    "plugins/rails-flow/scripts/structure_ratchet.py",
+    "plugins/rails-flow/scripts/herb_lint.py"
+   ],
+   "decision": "rails-stack",
+   "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
+   "how": "moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin",
+   "move": "rails-gates"
+  },
+  {
+   "match": [
+    "plugins/rails-flow/scripts/architecture_graph.py",
+    "plugins/rails-flow/scripts/build_project_wiki.py",
+    "plugins/rails-flow/scripts/build_help.py"
+   ],
+   "decision": "rails-stack",
+   "assumes": "reads routes, app/**, db/schema.rb to draw the architecture, wiki and help",
+   "how": "moves with /rails-flow:graph (commands/graph.md names it)",
+   "move": "rails-docs-generators"
+  },
+  {
+   "match": [
+    "plugins/design-flow/scripts/check_component_contract.py",
+    "plugins/design-flow/scripts/check_layout_composition.py",
+    "plugins/design-flow/scripts/check_modal_fit.py",
+    "plugins/design-flow/scripts/check_surface_layout.py",
+    "plugins/design-flow/scripts/check_table_layout.py",
+    "plugins/design-flow/scripts/variant_conformance.py",
+    "plugins/design-flow/scripts/source_text.py",
+    "plugins/design-flow/scripts/canvas_manifest.py",
+    "plugins/design-flow/scripts/setup_doctrine_crosscheck.py",
+    "plugins/design-flow/scripts/check_token_drift.py",
+    "plugins/design-flow/agents/design-porter.md",
+    "plugins/design-flow/agents/ui-composer.md"
+   ],
+   "decision": "rails-stack",
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "how": "moves with its checks.json row",
+   "move": "design-flow-erb"
+  },
+  {
+   "match": [
+    "plugins/pipeline/agents/kamal-configurator.md",
+    "plugins/pipeline/scripts/kamal_destination.py"
+   ],
+   "decision": "rails-stack",
+   "assumes": "routes deploy values into Rails credentials and config/deploy.yml",
+   "how": "the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector",
+   "move": "rails-deploy"
+  },
+  {
+   "match": [
+    "plugins/rails-flow/scripts/test_preflight.py",
+    "plugins/rails-flow/hooks/scripts/test-preflight.sh",
+    "plugins/rails-flow/hooks/scripts/stop-gate.sh",
+    "plugins/rails-flow/scripts/dev_baseline.py",
+    "plugins/rails-flow/scripts/triage_failures.py",
+    "plugins/rails-flow/scripts/ci_verdict_hint.py"
+   ],
+   "decision": "detector",
+   "assumes": "hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command",
+   "how": "asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer"
+  },
+  {
+   "match": [
+    "plugins/rails-flow/scripts/project_gates.py",
+    "plugins/rails-flow/scripts/check_case_in_diff.py",
+    "plugins/rails-flow/scripts/risky_diff.py",
+    "plugins/rails-flow/scripts/classify_door.py",
+    "plugins/rails-flow/scripts/wip_commit.py",
+    "plugins/rails-flow/scripts/worktree_teardown.py",
+    "plugins/rails-flow/scripts/assign_lanes.py",
+    "plugins/rails-flow/scripts/session_coordinator.py",
+    "plugins/rails-flow/scripts/retro.py",
+    "plugins/rails-flow/scripts/docs_layout.py",
+    "plugins/rails-flow/scripts/claude_md_structure.py",
+    "plugins/rails-flow/scripts/check_spec.py",
+    "plugins/rails-flow/scripts/check_spec_review.py",
+    "plugins/rails-flow/scripts/check_mockup_gate.py",
+    "plugins/rails-flow/scripts/check_issue_mockup.py",
+    "plugins/rails-flow/hooks/scripts/guard-bash.sh",
+    "plugins/rails-flow/hooks/scripts/guard-lane.sh",
+    "plugins/rails-flow/hooks/scripts/lib/issue_labels.py",
+    "plugins/rails-flow/hooks/scripts/self-consistency.sh",
+    "plugins/rails-flow/scripts/self_consistency.py"
+   ],
+   "decision": "detector",
+   "assumes": "hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test",
+   "how": "reads source globs, risky paths and commands from the detector's stack descriptor"
+  },
+  {
+   "match": [
+    "plugins/rails-flow/checks.json"
+   ],
+   "decision": "detector",
+   "assumes": "registers the Rails gates and names Rails paths in applies_when",
+   "how": "the Rails rows leave with their gates (rails-gates, rails-mandated-gems); what remains is stack-neutral"
+  },
+  {
+   "match": [
+    "plugins/rails-flow/commands/setup-flow.md"
+   ],
+   "decision": "detector",
+   "assumes": "the scaffold, Gemfile, Rails config and gem doctrine it writes into CLAUDE.md",
+   "how": "asks the detector which stack descriptor to scaffold; the Rails sections move with the rails-stack scaffold"
+  },
+  {
+   "match": [
+    "plugins/qa-flow/scripts/blast_radius.py",
+    "plugins/qa-flow/scripts/evidence_app_tie.py",
+    "plugins/qa-flow/scripts/release_evidence.py",
+    "plugins/qa-flow/scripts/route_coverage.py",
+    "plugins/qa-flow/scripts/qa_config.py",
+    "plugins/qa-flow/scripts/classify_boot_failure.py",
+    "plugins/qa-flow/scripts/launch_readiness.py",
+    "plugins/qa-flow/scripts/robot_descriptor.py",
+    "plugins/qa-flow/scripts/walkthrough_plan.py",
+    "plugins/qa-flow/scripts/validate_evidence.py",
+    "plugins/qa-flow/scripts/push_targets.py",
+    "plugins/qa-flow/scripts/findings.py"
+   ],
+   "decision": "detector",
+   "assumes": "maps .rb files, spec/ and app/ paths to routes and blast radius, reads bin/rails routes, or names Rails boot failures",
+   "how": "reads source and route extraction from the detector; the Rails route command becomes the rails-stack answer"
+  },
+  {
+   "match": [
+    "plugins/qa-flow/scripts/check_ts_strict.py",
+    "plugins/qa-flow/scripts/check_requirements.py",
+    "plugins/qa-flow/scripts/crawl_report.py",
+    "plugins/qa-flow/scripts/interaction_report.py"
+   ],
+   "decision": "detector",
+   "assumes": "names Rails paths or the Rails app as the host project in its messages and path filters",
+   "how": "reuse for a Next.js project (#2170) once its path filters come from the detector"
+  },
+  {
+   "match": [
+    "plugins/pipeline/scripts/apm_advisory.py",
+    "plugins/pipeline/scripts/breaker.py",
+    "plugins/pipeline/scripts/release_build.py",
+    "plugins/pipeline/scripts/scan_committed_secrets.py",
+    "plugins/pipeline/git-hooks/pre-commit"
+   ],
+   "decision": "detector",
+   "assumes": "reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan",
+   "how": "reads the project's dependency manifest from the detector"
+  },
+  {
+   "match": [
+    "plugins/rails-flow/.claude-plugin/plugin.json",
+    "plugins/design-flow/.claude-plugin/plugin.json",
+    "plugins/design-flow/README.md",
+    "plugins/design-flow/commands/*",
+    "plugins/design-flow/agents/brand-guardian.md",
+    "plugins/design-flow/agents/design-auditor.md",
+    "plugins/design-flow/checks.json",
+    "plugins/design-flow/hooks/scripts/design-tells.sh",
+    "plugins/design-flow/scripts/*"
+   ],
+   "decision": "reword",
+   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
+   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral"
+  },
+  {
+   "match": [
+    "plugins/rails-flow/commands/*",
+    "plugins/rails-flow/agents/*",
+    "plugins/rails-flow/reference/*",
+    "plugins/rails-flow/hooks/hooks.json",
+    "plugins/rails-flow/scripts/*"
+   ],
+   "decision": "reword",
+   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "how": "reworded in the slice that touches the file; no code changes"
+  },
+  {
+   "match": [
+    "plugins/qa-flow/agents/*",
+    "plugins/qa-flow/commands/*",
+    "plugins/qa-flow/reference/*",
+    "plugins/qa-flow/scaffold/*"
+   ],
+   "decision": "reword",
+   "assumes": "prose or examples that name bin/rails, RSpec or Rails paths",
+   "how": "reworded to reference the detector's commands"
+  },
+  {
+   "match": [
+    "plugins/pipeline/commands/*",
+    "plugins/pipeline/reference/*",
+    "plugins/pipeline/templates/*"
+   ],
+   "decision": "reword",
+   "assumes": "prose or examples that name Rails, the Gemfile or Rails binstubs",
+   "how": "reworded to reference the detector's commands"
+  },
+  {
+   "match": [
+    "plugins/pipeline/scripts/git_guard_selftest.py",
+    "plugins/pipeline/scripts/mutations/git_guard_pre_commit.py",
+    "plugins/pipeline/scripts/status_board_selftest.py",
+    "plugins/qa-flow/scripts/qa_status_selftest.py",
+    "plugins/rails-flow/tests/*"
+   ],
+   "decision": "neutral",
+   "assumes": "fixture repositories use Rails-shaped sample paths (app/models/user.rb) to exercise a stack-neutral guard, board or hook",
+   "how": "nothing to change: the guard under test is neutral and the sample path is arbitrary"
+  },
+  {
+   "match": [
+    "plugins/*/hooks/scripts/lib/trusted-env.sh"
+   ],
+   "decision": "neutral",
+   "assumes": "a Gemfile is one of two markers that locate the repository root; a .git alone also works",
+   "how": "nothing to change: it already works for a repo with only .git"
+  }
+ ]
+}
