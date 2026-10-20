@@ -231,14 +231,14 @@
    "via": "decision"
   },
   {
-   "class": "neutral",
-   "issue": null,
+   "class": "mixed",
+   "issue": 2183,
    "nextjs_lines": 0,
    "path": "plugins/design-flow/hooks/scripts/lib/trusted-env.sh",
    "plugin": "design-flow",
    "rails_lines": 7,
    "registered": [],
-   "seam": "",
+   "seam": "the per-stack scrub list and repo-root markers come from the stack descriptor (#2181, #2183)",
    "type": "hook",
    "via": "decision"
   },
@@ -1337,14 +1337,14 @@
    "via": "declared"
   },
   {
-   "class": "neutral",
-   "issue": null,
+   "class": "mixed",
+   "issue": 2183,
    "nextjs_lines": 0,
    "path": "plugins/pipeline/hooks/scripts/lib/trusted-env.sh",
    "plugin": "pipeline",
    "rails_lines": 7,
    "registered": [],
-   "seam": "",
+   "seam": "the per-stack scrub list and repo-root markers come from the stack descriptor (#2181, #2183)",
    "type": "hook",
    "via": "decision"
   },
@@ -2023,14 +2023,14 @@
    "via": "declared"
   },
   {
-   "class": "neutral",
-   "issue": null,
+   "class": "mixed",
+   "issue": 2183,
    "nextjs_lines": 0,
    "path": "plugins/qa-flow/hooks/scripts/lib/trusted-env.sh",
    "plugin": "qa-flow",
    "rails_lines": 7,
    "registered": [],
-   "seam": "",
+   "seam": "the per-stack scrub list and repo-root markers come from the stack descriptor (#2181, #2183)",
    "type": "hook",
    "via": "decision"
   },
@@ -4034,14 +4034,14 @@
    "via": "declared"
   },
   {
-   "class": "neutral",
-   "issue": null,
+   "class": "mixed",
+   "issue": 2183,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/hooks/scripts/lib/trusted-env.sh",
    "plugin": "rails-flow",
    "rails_lines": 7,
    "registered": [],
-   "seam": "",
+   "seam": "the per-stack scrub list and repo-root markers come from the stack descriptor (#2181, #2183)",
    "type": "hook",
    "via": "decision"
   },
@@ -6897,15 +6897,15 @@
  "generated_by": "scripts/component_classes.py",
  "summary": {
   "by_class": {
-   "mixed": 193,
-   "neutral": 272,
+   "mixed": 197,
+   "neutral": 268,
    "nextjs": 0,
    "rails": 106
   },
   "by_plugin": {
    "design-flow": {
-    "mixed": 22,
-    "neutral": 44,
+    "mixed": 23,
+    "neutral": 43,
     "nextjs": 0,
     "rails": 28,
     "total": 94
@@ -6918,22 +6918,22 @@
     "total": 1
    },
    "pipeline": {
-    "mixed": 16,
-    "neutral": 32,
+    "mixed": 17,
+    "neutral": 31,
     "nextjs": 0,
     "rails": 3,
     "total": 51
    },
    "qa-flow": {
-    "mixed": 51,
-    "neutral": 78,
+    "mixed": 52,
+    "neutral": 77,
     "nextjs": 0,
     "rails": 0,
     "total": 129
    },
    "rails-flow": {
-    "mixed": 101,
-    "neutral": 115,
+    "mixed": 102,
+    "neutral": 114,
     "nextjs": 0,
     "rails": 73,
     "total": 289
@@ -6969,8 +6969,8 @@
     "total": 55
    },
    "hook": {
-    "mixed": 9,
-    "neutral": 38,
+    "mixed": 13,
+    "neutral": 34,
     "nextjs": 0,
     "rails": 2,
     "total": 49

@@ -459,8 +459,8 @@
     "path": 5,
     "tool": 2
    },
-   "decision": "neutral",
-   "how": "nothing to change: it already works for a repo with only .git",
+   "decision": "detector",
+   "how": "the env scrub keeps working exactly as today; only its stack facts (the repo-root markers and the RUBY*/GEM_*/BUNDLE_* names) move to a per-stack list the stack descriptor provides",
    "ids": {
     "gemfile": 5,
     "ruby": 2
@@ -1460,8 +1460,8 @@
     "path": 5,
     "tool": 2
    },
-   "decision": "neutral",
-   "how": "nothing to change: it already works for a repo with only .git",
+   "decision": "detector",
+   "how": "the env scrub keeps working exactly as today; only its stack facts (the repo-root markers and the RUBY*/GEM_*/BUNDLE_* names) move to a per-stack list the stack descriptor provides",
    "ids": {
     "gemfile": 5,
     "ruby": 2
@@ -1970,8 +1970,8 @@
     "path": 5,
     "tool": 2
    },
-   "decision": "neutral",
-   "how": "nothing to change: it already works for a repo with only .git",
+   "decision": "detector",
+   "how": "the env scrub keeps working exactly as today; only its stack facts (the repo-root markers and the RUBY*/GEM_*/BUNDLE_* names) move to a per-stack list the stack descriptor provides",
    "ids": {
     "gemfile": 5,
     "ruby": 2
@@ -3726,8 +3726,8 @@
     "path": 5,
     "tool": 2
    },
-   "decision": "neutral",
-   "how": "nothing to change: it already works for a repo with only .git",
+   "decision": "detector",
+   "how": "the env scrub keeps working exactly as today; only its stack facts (the repo-root markers and the RUBY*/GEM_*/BUNDLE_* names) move to a per-stack list the stack descriptor provides",
    "ids": {
     "gemfile": 5,
     "ruby": 2
@@ -8130,12 +8130,12 @@
   },
   "by_decision": {
    "detector": {
-    "files": 86,
-    "lines": 1287
+    "files": 90,
+    "lines": 1315
    },
    "neutral": {
-    "files": 11,
-    "lines": 52
+    "files": 7,
+    "lines": 24
    },
    "rails-stack": {
     "files": 68,
@@ -8148,34 +8148,34 @@
   },
   "by_flow": {
    "design-flow": {
-    "detector": 1,
+    "detector": 2,
     "files": 38,
     "lines": 547,
-    "neutral": 1,
+    "neutral": 0,
     "rails-stack": 18,
     "reword": 18
    },
    "pipeline": {
-    "detector": 8,
+    "detector": 9,
     "files": 19,
     "lines": 89,
-    "neutral": 4,
+    "neutral": 3,
     "rails-stack": 3,
     "reword": 4
    },
    "qa-flow": {
-    "detector": 28,
+    "detector": 29,
     "files": 36,
     "lines": 272,
-    "neutral": 2,
+    "neutral": 1,
     "rails-stack": 0,
     "reword": 6
    },
    "rails-flow": {
-    "detector": 49,
+    "detector": 50,
     "files": 133,
     "lines": 2313,
-    "neutral": 4,
+    "neutral": 3,
     "rails-stack": 47,
     "reword": 33
    }

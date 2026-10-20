@@ -339,6 +339,21 @@
   },
   {
    "match": [
+    "plugins/*/hooks/scripts/lib/trusted-env.sh"
+   ],
+   "decision": "detector",
+   "assumes": "a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others",
+   "how": "the env scrub keeps working exactly as today; only its stack facts (the repo-root markers and the RUBY*/GEM_*/BUNDLE_* names) move to a per-stack list the stack descriptor provides",
+   "seam": "the per-stack scrub list and repo-root markers come from the stack descriptor (#2181, #2183)",
+   "issues": {
+    "rails-flow": 2183,
+    "qa-flow": 2183,
+    "pipeline": 2183,
+    "design-flow": 2183
+   }
+  },
+  {
+   "match": [
     "plugins/rails-flow/.claude-plugin/plugin.json",
     "plugins/design-flow/.claude-plugin/plugin.json",
     "plugins/design-flow/README.md",
@@ -433,20 +448,6 @@
     "plugins/rails-flow/tests/lane-band.test.ts": 3,
     "plugins/rails-flow/tests/lane-band.unit.mjs": 4,
     "plugins/rails-flow/tests/session-reset.unit.mjs": 3
-   }
-  },
-  {
-   "match": [
-    "plugins/*/hooks/scripts/lib/trusted-env.sh"
-   ],
-   "decision": "neutral",
-   "assumes": "a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others",
-   "how": "nothing to change: it already works for a repo with only .git",
-   "lines": {
-    "plugins/design-flow/hooks/scripts/lib/trusted-env.sh": 7,
-    "plugins/pipeline/hooks/scripts/lib/trusted-env.sh": 7,
-    "plugins/qa-flow/hooks/scripts/lib/trusted-env.sh": 7,
-    "plugins/rails-flow/hooks/scripts/lib/trusted-env.sh": 7
    }
   }
  ],
