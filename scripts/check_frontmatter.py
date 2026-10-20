@@ -51,7 +51,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-GLOBS = ("plugins/*/commands/*.md", "plugins/*/agents/*.md", "skills/*/SKILL.md",
+# A shipped skill is plugins/<stack>/skills/<name>/SKILL.md since #2182 (rails-stack moved out of the repo root).
+GLOBS = ("plugins/*/commands/*.md", "plugins/*/agents/*.md", "plugins/*/skills/*/SKILL.md",
          ".claude/commands/*.md", ".claude/agents/*.md", ".claude/skills/*/SKILL.md")
 TOP_LEVEL = re.compile(r"^(?P<key>[A-Za-z_][\w-]*):[ \t]+(?P<value>\S.*)$")
 OPENERS = ('"', "'", "|", ">", "[", "{")
@@ -308,6 +309,13 @@ def selftest() -> int:
                       encoding="utf-8")
         expect("CONTROL: the declared command carrying the flag is clean", check(root)[0] == 0, str(check(root)))
         dc.unlink()
+        # #2182: a shipped skill lives in plugins/<stack>/skills/<name>/; its frontmatter must be read there.
+        skill = root / "plugins/rails-stack/skills/s/SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text(block("description: Add MODE: FILE"), encoding="utf-8")
+        expect("a shipped skill under plugins/<stack>/skills/ with broken frontmatter is named",
+               any("plugins/rails-stack/skills/s/SKILL.md:2" in l for l in check(root)[1]), str(check(root)))
+        skill.unlink()
         cmd.unlink()
         expect("no files at all is UNUSABLE, never clean", check(root)[0] == 2)
 
