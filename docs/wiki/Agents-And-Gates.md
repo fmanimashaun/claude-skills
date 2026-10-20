@@ -209,6 +209,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | checks.json paths selftest | `repo` | `python3 scripts/check_manifest_paths.py --selftest` | selftest |
 | claude plugin validate --strict | `repo` | `python3 scripts/check_plugin_validate.py` | live check |
 | close-on-dev-merge selftest | `repo` | `python3 scripts/close_on_dev_merge.py --selftest` | selftest |
+| component classes drift | `repo` | `python3 scripts/component_classes.py --check` | live check |
+| component classes selftest | `repo` | `python3 scripts/component_classes.py --selftest` | selftest |
 | component passthrough | `repo` | `python3 scripts/check_component_passthrough.py` | live check |
 | component passthrough selftest | `repo` | `python3 scripts/check_component_passthrough.py --selftest` | selftest |
 | component shapes reconciled | `repo` | `python3 scripts/check_component_shapes.py` | live check |
@@ -266,6 +268,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | published blocks | `repo` | `python3 scripts/check_published_blocks.py` | live check |
 | published blocks selftest | `repo` | `python3 scripts/check_published_blocks.py --selftest` | selftest |
 | python floor selftest | `repo` | `python3 scripts/check_python_floor.py --selftest` | selftest |
+| rails assumptions drift | `repo` | `python3 scripts/rails_assumptions.py --check` | live check |
+| rails assumptions selftest | `repo` | `python3 scripts/rails_assumptions.py --selftest` | selftest |
 | registry reader parity | `repo` | `python3 scripts/check_registry_reader_parity.py` | live check |
 | registry reader parity selftest | `repo` | `python3 scripts/check_registry_reader_parity.py --selftest` | selftest |
 | release notes complete | `repo` | `python3 scripts/extract_release_notes.py --check --all-tags` | live check |
