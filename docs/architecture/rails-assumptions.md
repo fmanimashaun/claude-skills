@@ -9,19 +9,19 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 | decision | what it means | files | lines |
 |---|---|---:|---:|
 | `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 68 | 1632 |
-| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 78 | 1050 |
+| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 82 | 1078 |
 | `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 69 | 487 |
-| `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change | 11 | 52 |
+| `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change | 7 | 24 |
 | **all** | | **226** | **3221** |
 
 ## By flow
 
 | flow | files | lines | `rails-stack` | `detector` | `reword` | `neutral` |
 |---|---:|---:|---:|---:|---:|---:|
-| `rails-flow` | 133 | 2313 | 47 | 45 | 37 | 4 |
-| `qa-flow` | 36 | 272 | 0 | 26 | 8 | 2 |
-| `pipeline` | 19 | 89 | 3 | 6 | 6 | 4 |
-| `design-flow` | 38 | 547 | 18 | 1 | 18 | 1 |
+| `rails-flow` | 133 | 2313 | 47 | 46 | 37 | 3 |
+| `qa-flow` | 36 | 272 | 0 | 27 | 8 | 1 |
+| `pipeline` | 19 | 89 | 3 | 7 | 6 | 3 |
+| `design-flow` | 38 | 547 | 18 | 2 | 18 | 0 |
 
 ## By what is named
 
@@ -135,7 +135,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `hooks/scripts/guard-lane.sh:33`<br>L33, 54 | hook | 2 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `hooks/scripts/guard-migrate.sh:2`<br>L2, 7, 8, 14, 15 +17 more | hook | 22 | fires on db/migrate files and .rb edits; runs bin/rails and rubocop | `rails-stack` (rails-hooks) | its hooks.json entry moves to the stack plugin |
 | `hooks/scripts/lib/issue_labels.py:1300`<br>L1300, 1303 | hook | 2 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
-| `hooks/scripts/lib/trusted-env.sh:13`<br>L13, 18, 29, 37, 45 +2 more | hook | 7 | a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others | `neutral` | nothing to change: it already works for a repo with only .git |
+| `hooks/scripts/lib/trusted-env.sh:13`<br>L13, 18, 29, 37, 45 +2 more | hook | 7 | a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others | `detector` | the env scrub keeps working exactly as today; only its stack facts (the repo-root markers and the RUBY*/GEM_*/BUNDLE_* names) move to a per-stack list the stack descriptor provides |
 | `hooks/scripts/lint-ruby.sh:2`<br>L2, 9, 14, 16, 17 +5 more | hook | 10 | fires on db/migrate files and .rb edits; runs bin/rails and rubocop | `rails-stack` (rails-hooks) | its hooks.json entry moves to the stack plugin |
 | `hooks/scripts/self-consistency.sh:21`<br>L21 | hook | 1 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `hooks/scripts/stop-gate.sh:26`<br>L26, 31, 32, 44, 178 +12 more | hook | 17 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
@@ -253,7 +253,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `commands/setup-qa.md:7`<br>L7, 18, 60, 61, 63 +3 more | command | 8 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
 | `commands/smoke.md:19`<br>L19, 22, 24, 29, 77 +1 more | command | 6 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
 | `commands/verify.md:46`<br>L46, 61, 132, 133 | command | 4 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
-| `hooks/scripts/lib/trusted-env.sh:13`<br>L13, 18, 29, 37, 45 +2 more | hook | 7 | a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others | `neutral` | nothing to change: it already works for a repo with only .git |
+| `hooks/scripts/lib/trusted-env.sh:13`<br>L13, 18, 29, 37, 45 +2 more | hook | 7 | a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others | `detector` | the env scrub keeps working exactly as today; only its stack facts (the repo-root markers and the RUBY*/GEM_*/BUNDLE_* names) move to a per-stack list the stack descriptor provides |
 | `reference/stand-ins.md:24`<br>L24, 25, 27, 35, 36 +3 more | reference | 8 | prose or examples that name bin/rails, RSpec or Rails paths | `reword` | reworded to reference the detector's commands |
 | `scaffold/qa/e2e/support/totp.ts:2`<br>L2 | scaffold | 1 | prose or examples that name bin/rails, RSpec or Rails paths | `reword` | reworded to reference the detector's commands |
 | `scripts/blast_radius.py:69`<br>L69, 70, 72, 73, 77 +41 more | script | 46 | maps .rb files, spec/ and app/ paths to routes and blast radius, reads bin/rails routes, or names Rails boot failures | `detector` | reads source and route extraction from the detector; the Rails route command becomes the rails-stack answer |
@@ -291,7 +291,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `commands/setup-cloud.md:25`<br>L25, 37 | command | 2 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
 | `commands/setup-pipeline.md:45`<br>L45 | command | 1 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
 | `git-hooks/pre-commit:76`<br>L76 | hook | 1 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
-| `hooks/scripts/lib/trusted-env.sh:13`<br>L13, 18, 29, 37, 45 +2 more | hook | 7 | a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others | `neutral` | nothing to change: it already works for a repo with only .git |
+| `hooks/scripts/lib/trusted-env.sh:13`<br>L13, 18, 29, 37, 45 +2 more | hook | 7 | a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others | `detector` | the env scrub keeps working exactly as today; only its stack facts (the repo-root markers and the RUBY*/GEM_*/BUNDLE_* names) move to a per-stack list the stack descriptor provides |
 | `reference/stop-conditions.md:109`<br>L109 | reference | 1 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
 | `scripts/apm_advisory.py:4`<br>L4, 17, 45, 63, 77 +3 more | script | 8 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
 | `scripts/breaker.py:6`<br>L6 | script | 1 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
@@ -325,7 +325,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `commands/tokens.md:2`<br>L2, 11, 23, 28 | command | 4 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
 | `commands/variants.md:21`<br>L21, 23, 100, 102, 103 +22 more | command | 27 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
 | `hooks/scripts/design-tells.sh:11`<br>L11, 20, 23, 24 | hook | 4 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
-| `hooks/scripts/lib/trusted-env.sh:13`<br>L13, 18, 29, 37, 45 +2 more | hook | 7 | a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others | `neutral` | nothing to change: it already works for a repo with only .git |
+| `hooks/scripts/lib/trusted-env.sh:13`<br>L13, 18, 29, 37, 45 +2 more | hook | 7 | a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others | `detector` | the env scrub keeps working exactly as today; only its stack facts (the repo-root markers and the RUBY*/GEM_*/BUNDLE_* names) move to a per-stack list the stack descriptor provides |
 | `scripts/canvas_manifest.py:240`<br>L240, 250, 477, 485, 490 +2 more | script | 7 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
 | `scripts/check_component_contract.py:4`<br>L4, 28, 30, 35, 78 +55 more | script | 60 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
 | `scripts/check_layout_composition.py:4`<br>L4, 44, 62, 64, 82 +40 more | script | 45 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
