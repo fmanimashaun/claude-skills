@@ -6256,6 +6256,37 @@
    ],
    "move": ""
   },
+  "plugins/rails-flow/scripts/detect_stack.py": {
+   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "categories": {
+    "concept": 8,
+    "path": 10
+   },
+   "decision": "reword",
+   "how": "reworded in the slice that touches the file; no code changes",
+   "ids": {
+    "gemfile": 7,
+    "rails-config": 3,
+    "rails-word": 5,
+    "ruby-file": 3
+   },
+   "invokes": [],
+   "kind": "script",
+   "lines": [
+    14,
+    15,
+    267,
+    268,
+    282,
+    283,
+    285,
+    287,
+    331,
+    332,
+    339
+   ],
+   "move": ""
+  },
   "plugins/rails-flow/scripts/dev_baseline.py": {
    "assumes": "hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command",
    "categories": {
@@ -7144,6 +7175,26 @@
    "kind": "mutation",
    "lines": [
     50
+   ],
+   "move": ""
+  },
+  "plugins/rails-flow/scripts/mutations/detect_stack.py": {
+   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "categories": {
+    "concept": 1,
+    "path": 1
+   },
+   "decision": "reword",
+   "followed": "plugins/rails-flow/scripts/detect_stack.py",
+   "how": "reworded in the slice that touches the file; no code changes",
+   "ids": {
+    "gemfile": 1,
+    "rails-word": 1
+   },
+   "invokes": [],
+   "kind": "mutation",
+   "lines": [
+    12
    ],
    "move": ""
   },
@@ -8126,10 +8177,10 @@
  "policy": "docs/architecture/rails-assumptions.policy.json",
  "summary": {
   "by_category": {
-   "concept": 1939,
+   "concept": 1948,
    "gem": 156,
    "hotwire": 107,
-   "path": 1269,
+   "path": 1280,
    "tool": 935
   },
   "by_decision": {
@@ -8146,8 +8197,8 @@
     "lines": 1632
    },
    "reword": {
-    "files": 61,
-    "lines": 250
+    "files": 63,
+    "lines": 262
    }
   },
   "by_flow": {
@@ -8177,11 +8228,11 @@
    },
    "rails-flow": {
     "detector": 50,
-    "files": 133,
-    "lines": 2313,
+    "files": 135,
+    "lines": 2325,
     "neutral": 3,
     "rails-stack": 47,
-    "reword": 33
+    "reword": 35
    }
   },
   "by_kind": {
@@ -8210,8 +8261,8 @@
     "lines": 2
    },
    "mutation": {
-    "files": 43,
-    "lines": 250
+    "files": 44,
+    "lines": 251
    },
    "reference": {
     "files": 8,
@@ -8222,8 +8273,8 @@
     "lines": 9
    },
    "script": {
-    "files": 87,
-    "lines": 2200
+    "files": 88,
+    "lines": 2211
    },
    "selftest": {
     "files": 16,
@@ -8246,20 +8297,20 @@
    "erb": 360,
    "erb-lint": 74,
    "gem": 156,
-   "gemfile": 173,
+   "gemfile": 181,
    "hotwire": 107,
-   "rails-config": 115,
-   "rails-word": 314,
+   "rails-config": 118,
+   "rails-word": 320,
    "rake": 56,
    "routes": 37,
    "rspec": 194,
    "rubocop": 96,
    "rubocop-yml": 3,
    "ruby": 221,
-   "ruby-file": 1245,
+   "ruby-file": 1248,
    "spec-dir": 190
   },
-  "files": 226,
-  "lines": 3224
+  "files": 228,
+  "lines": 3236
  }
 }

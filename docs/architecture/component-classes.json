@@ -4760,6 +4760,18 @@
   {
    "class": "mixed",
    "issue": 2183,
+   "nextjs_lines": 7,
+   "path": "plugins/rails-flow/scripts/detect_stack.py",
+   "plugin": "rails-flow",
+   "rails_lines": 11,
+   "registered": [],
+   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "type": "script",
+   "via": "decision"
+  },
+  {
+   "class": "mixed",
+   "issue": 2183,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/dev_baseline.py",
    "plugin": "rails-flow",
@@ -6128,6 +6140,18 @@
   {
    "class": "mixed",
    "issue": 2183,
+   "nextjs_lines": 2,
+   "path": "plugins/rails-flow/scripts/mutations/detect_stack.py",
+   "plugin": "rails-flow",
+   "rails_lines": 1,
+   "registered": [],
+   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "type": "test",
+   "via": "tests detect_stack.py"
+  },
+  {
+   "class": "mixed",
+   "issue": 2183,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/mutations/dev_baseline.py",
    "plugin": "rails-flow",
@@ -6897,7 +6921,7 @@
  "generated_by": "scripts/component_classes.py",
  "summary": {
   "by_class": {
-   "mixed": 197,
+   "mixed": 199,
    "neutral": 268,
    "nextjs": 0,
    "rails": 106
@@ -6932,11 +6956,11 @@
     "total": 129
    },
    "rails-flow": {
-    "mixed": 102,
+    "mixed": 104,
     "neutral": 114,
     "nextjs": 0,
     "rails": 73,
-    "total": 289
+    "total": 291
    },
    "rails-stack (skills)": {
     "mixed": 3,
@@ -6976,11 +7000,11 @@
     "total": 49
    },
    "script": {
-    "mixed": 56,
+    "mixed": 57,
     "neutral": 53,
     "nextjs": 0,
     "rails": 31,
-    "total": 140
+    "total": 141
    },
    "skill": {
     "mixed": 3,
@@ -6997,13 +7021,13 @@
     "total": 51
    },
    "test": {
-    "mixed": 58,
+    "mixed": 59,
     "neutral": 96,
     "nextjs": 0,
     "rails": 30,
-    "total": 184
+    "total": 185
    }
   },
-  "components": 571
+  "components": 573
  }
 }
