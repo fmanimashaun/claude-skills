@@ -46,8 +46,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a marker path is not contained, so `/etc/hosts` is judged on the host",
-            '    if parts.is_absolute() or ".." in parts.parts or value.startswith("\\\\") or (parts.parts and ":" in parts.parts[0]):',
-            "    if False:",
+            '    return parts.is_absolute() or ".." in parts.parts or value.startswith("\\\\") or bool(parts.parts and ":" in parts.parts[0])',
+            "    return False",
             "an absolute marker path is a problem",
         ),
         Mutation(
@@ -154,8 +154,8 @@ GUARD = Guard(
         ),
         Mutation(
             "descriptors are never validated on a detection run",
-            "        problems += descriptor_problems(manifest, roots)\n    if not project.is_dir():",
-            "        pass\n    if not project.is_dir():",
+            "        problems += descriptor_problems(manifest, roots)\n    if stacks:",
+            "        pass\n    if stacks:",
             "an undeclared key inside a block is a problem",
         ),
         Mutation(
@@ -178,8 +178,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a project path that is not a directory reads as 'no stack', so a typo exits 1",
-            "    if not project.is_dir():",
-            "    if False:",
+            "    elif not project.is_dir():",
+            "    elif False:",
             "a missing project path is a problem",
         ),
         Mutation(
@@ -187,6 +187,42 @@ GUARD = Guard(
             "        if not isinstance(section, dict):\n            return CORRUPT",
             "        if not isinstance(section, dict):\n            continue",
             "a `dependencies` that is not a map is a problem",
+        ),
+        Mutation(
+            "a setup section is merged like any key, so a Rails + Next.js project reports a conflict instead of running both",
+            "            if key in PER_STACK_KEYS:\n                continue",
+            "            if False:\n                continue",
+            "two plugins' setup sections are both listed",
+        ),
+        Mutation(
+            "a setup section may name a path outside its plugin",
+            "        return [f\"{where}.setup_section {value!r} must stay inside its plugin (no absolute path, no `..`)\"]",
+            "        pass",
+            "a setup section leaving its plugin is a problem",
+        ),
+        Mutation(
+            "a setup section naming no file passes, so setup-flow reads nothing and says nothing",
+            "    if not (plugin_root(manifest) / value).is_file():",
+            "    if False:",
+            "a setup section naming no file is a problem",
+        ),
+        Mutation(
+            "--stack is ignored, so a new project (nothing to detect) gets no stack",
+            "    if stacks:\n        matched, unknown = chosen_stacks(manifests, stacks)",
+            "    if False:\n        matched, unknown = chosen_stacks(manifests, stacks)",
+            "--stack takes the chosen stack",
+        ),
+        Mutation(
+            "an unknown --stack is dropped in silence",
+            "        problems += unknown",
+            "        pass",
+            "an unknown --stack is a problem",
+        ),
+        Mutation(
+            "--available lists nothing, so a new project is offered no stack",
+            "            for m in manifests for s in m[\"stacks\"] if isinstance(s, dict) and isinstance(s.get(\"id\"), str) and s[\"id\"]]",
+            "            for m in manifests[:0] for s in m[\"stacks\"] if isinstance(s, dict) and isinstance(s.get(\"id\"), str) and s[\"id\"]]",
+            "--available lists every installed stack",
         ),
         Mutation(
             "--check exits 0 whatever it found, so the 'stack manifests valid' gate goes green on a broken manifest",
@@ -237,6 +273,12 @@ GUARD = Guard(
             "the merged descriptor is a copy",
         ),
         Mutation(
+            "a plugin declaring only a setup section is held to the required keys, so a section-only plugin can never pass",
+            "            declared |= set(values) - set(PER_STACK_KEYS)",
+            "            declared |= set(values)",
+            "two plugins' setup sections are both listed",
+        ),
+        Mutation(
             "deploy.agent is never resolved, so a deploy hands off to an agent that does not exist",
             'AGENT_VALUES = ("agents.*", "deploy.agent", "ui.porter", "ui.composer")',
             'AGENT_VALUES = ("agents.*", "ui.porter", "ui.composer")',
@@ -259,6 +301,24 @@ GUARD = Guard(
             "    if declared:\n        missing",
             "    if True:\n        missing",
             "a manifest with markers and no descriptor passes",
+        ),
+        Mutation(
+            "a new repo's README and .github make it 'not fresh', so a new project is refused instead of asked",
+            '    return all(any(fnmatch.fnmatchcase(name, pattern) for pattern in FRESH_ENTRIES) for name in entries)',
+            '    return not entries',
+            "is still a new project (fresh)",
+        ),
+        Mutation(
+            "any tree is fresh, so setup-flow scaffolds an app over an unrecognised repository",
+            '    return all(any(fnmatch.fnmatchcase(name, pattern) for pattern in FRESH_ENTRIES) for name in entries)',
+            '    return True',
+            "is not fresh",
+        ),
+        Mutation(
+            "--descriptor drops the plugin, so setup-flow cannot say which plugin each stack came from",
+            '        print(json.dumps({"stacks": [{"id": s["id"], "plugin": s["plugin"]} for s in report["stacks"]], "fresh": report["fresh"],',
+            '        print(json.dumps({"stacks": [{"id": s["id"]} for s in report["stacks"]], "fresh": report["fresh"],',
+            "--descriptor names each stack's plugin",
         ),
     ),
 )

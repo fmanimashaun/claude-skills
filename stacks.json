@@ -10,6 +10,7 @@
       ],
       "descriptor": {
         "runner_prefix": ["bundle", "exec"],
+        "setup_section": "setup/rails.md",
         "tests": {
           "command": ["rspec", "--fail-fast", "--no-color"],
           "glob": "spec/**/*_spec.rb",
