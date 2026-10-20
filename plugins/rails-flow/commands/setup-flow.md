@@ -99,11 +99,11 @@ setup section is worked in turn.
 
 ## 1. Inspect the project first
 
-Fill the templates from reality, not assumptions: read the Gemfile (Rails version, DB
-adapter, auth/authz gems, form builder, test stack, deployment), `config/application.rb`,
-`db/schema.rb` header, directory shape (`app/services`? `spec/`? `mobile/`?), and existing
-docs. Note every place the project deviates from the rails-8 skill's vanilla doctrine —
-those become **Project Overrides**.
+Fill the templates from reality, not assumptions. Each active stack's setup section (§0's `setup_sections`) has a
+**CLAUDE.md facts** part. It names what to read: the files that hold the framework version, database, auth, test
+stack and deployment, and where the stack's skills set the vanilla doctrine. Read those, the directory shape and the
+existing docs. Every place the project deviates from its stack's vanilla doctrine becomes a **Project Override**. A
+stack whose section has no facts part gives nothing here; say so rather than filling it from memory.
 
 Also detect **existing agent-instruction files** — `AGENTS.md`, `.claude/CLAUDE.md`,
 `.claude/rules/` — before writing anything. An `AGENTS.md` is increasingly present in Rails 8
@@ -176,12 +176,12 @@ idempotency contract and audit/repair pass above. The structure rails-flow contr
 ```markdown
 # CLAUDE.md — <project>
 
-**Product**: <one line> · **Stack**: Rails <x>, <DB>, Hotwire, <CSS>, Solid Queue, Kamal 2
+**Product**: <one line> · **Stack**: <each active stack's stack line, from its CLAUDE.md facts>
 This file is the AI agent entry point. Read it before starting any task.
 
 ## App Identity
-<table of framework, database, jobs, cache, websockets, storage, auth, authorization,
-asset pipeline, CSS, deployment, test suite — filled from the Gemfile/config inspection>
+<table of the rows each stack's CLAUDE.md facts lists (framework, database, auth, deployment, test suite, …),
+filled from the §1 inspection>
 
 ## Architecture Overview
 <the NON-OBVIOUS, cross-cutting mechanisms and domain vocabulary an agent must know before
@@ -204,32 +204,27 @@ matching FILE is read or edited; this line fires on the TASK, before any file is
 use both where an area has both.>
 
 ## Common Commands
-<dev server, console, migrate, targeted + full rspec, rubocop on changed files, brakeman,
-bundler-audit, deploy — the project's real commands>
+<the commands each stack's CLAUDE.md facts lists, plus the descriptor's `tests.command` and `lint.command` (run with its
+`runner_prefix`): the project's real commands, checked by running them>
 
 ## Project Overrides (beats general doctrine)
-<explicit list of deliberate deviations from the rails-8/hotwire skills, e.g.:
-- Forms: simple_form mandatory — never raw form_with (styling lives in the initializer)
-- Authorization: CanCanCan, hash conditions only
-- Tenancy: all queries scoped through Current.<scope>; public ids in URLs, never DB ids
-- N+1 detection: prosopite raises in test
-Keep this section honest — an empty list is a valid answer.>
+<explicit list of deliberate deviations from the stack's skills (each stack's CLAUDE.md facts gives examples), one per
+line: what the project does instead, and why. Keep this section honest — an empty list is a valid answer.>
 
 ## Patterns
 <the 3-6 patterns agents must copy: controller shape, service invocation + result object,
 job shape (idempotent `perform`; the argument convention THIS codebase actually uses — record or id, do not impose one), key concerns — short code snippets from THIS codebase>
 
 ## Verification Commands
-<grep one-liners that mechanically check the overrides, e.g. no raw form_with in views,
-no unguarded .unscoped, no raw palette colors>
+<grep one-liners that mechanically check the overrides (the stack's facts give examples), e.g. no raw palette colors>
 
 <!-- emit-if: database -->
 ## Test-run preflight
 Before a full suite or e2e run, check the environment, because it fails as a red suite that is not the code's fault:
-the database is up (`pg_isready` for Postgres; start it and re-check if it is not), `ls` every spec path you name,
-no held `bundler.lock` (a Ruby LSP `bundle update` holds it), and read `uptime` — under high load run in the
+the stack's preflight checks pass (<each line of the stack's CLAUDE.md facts' Test-run preflight>), `ls` every test path you name,
+and read `uptime` — under high load run in the
 foreground or in smaller shards, never many background runs. Never swap hooks or config from another branch while
-a sweep runs. *Advice, not enforced: the rails-flow `test-preflight` hook reports the first four as an advisory;
+a sweep runs. *Advice, not enforced: the rails-flow `test-preflight` hook reports these checks as an advisory;
 run the project's own checks yourself before the suite: the hook never runs a script from the repository.*
 <!-- /emit-if -->
 
@@ -244,7 +239,7 @@ Act as an advisor, not an assistant. Default to scrutiny.
 - **Label a claim where the label changes what I'd do**: `[Verified]` (checked against docs, a
   search or a file this session) · `[Recall]` (training; may be stale) · `[Inferred]` · `[Guess]`.
   If most of an answer is `[Recall]`/`[Guess]`, say so in line one. Name the version you assume for
-  any framework API — Rails, Hotwire, a gem — and treat it as `[Recall]` until verified. If a
+  any framework API — the stack's framework, a library — and treat it as `[Recall]` until verified. If a
   method may not exist as written, say so rather than producing plausible syntax.
 - **Disagreement has a shape**: "I disagree because X. Instead: Y. The risk in yours: Z. What would
   change my mind: E." Update on evidence, never on repetition or seniority; if you change position,
@@ -301,7 +296,7 @@ AGENTS routing → the rails-flow plugin agents · GUARDRAILS.md · docs/brain/M
 ```
 
 **The test-run preflight block is conditional (#1561).** The block between `<!-- emit-if: database -->` and `<!-- /emit-if -->` is written only when
-the project has a database (Step 1's inspection finds `config/database.yml` or a database gem); with none, write nothing for it. Either way the two
+the project has a database (Step 1 finds the marker its stack's CLAUDE.md facts names for one); with none, write nothing for it. Either way the two
 marker lines are dropped, never copied into the project's CLAUDE.md. It is advice (tier 1); the `test-preflight` hook (#1566) is its advisory,
 deterministic half, and a project's own preflight is the project's to run before the suite: a PreToolUse hook runs before the user is asked about the command, so the hook
 executes nothing a repository supplies (#1821 keeps the removed project hook point). Every line of it is
@@ -665,12 +660,11 @@ deploy; never touch main.
 
 1. Sync check: `git fetch`; report divergence from <base>. If behind and the
    working tree is clean, `git pull --ff-only`.
-2. Suite health: `bundle exec rspec --fail-fast --no-color`. On red, delegate
+2. Suite health: <the stack's loop.md suite check>. On red, delegate
    analysis to the test-runner agent; fix per /rails-flow:fix principles
    (failing spec first for behavioral bugs).
-3. Lint drift: rubocop on Ruby files changed vs origin/<base>.
-4. Security deltas: `bundle exec bundler-audit check --update` and
-   `bundle exec brakeman -q` if installed — report NEW findings only.
+3. Lint drift: <the stack's loop.md lint check, over files changed vs origin/<base>>.
+4. Security deltas: <the stack's loop.md security checks> — report NEW findings only.
 5. Graph freshness (if code-review-graph is present): `code-review-graph status`;
    if Last updated lags the last commit, run `code-review-graph update --skip-flows`.
 6. Curated-skills drift (if `.claude/skills/.manifest.tsv` exists): compare each

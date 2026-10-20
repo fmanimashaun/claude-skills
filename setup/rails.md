@@ -8,6 +8,37 @@ approval**, and stay idempotent.
 `${CLAUDE_PLUGIN_ROOT}` below is **rails-flow's** plugin root: the command running this file is rails-flow's setup-flow,
 and the scripts named here ship there.
 
+## CLAUDE.md facts
+
+What setup-flow's §1 inspection and §2 template read for a Rails project (#2196). The template names no stack; these
+lines fill it.
+
+- **Inspect** (§1): the Gemfile (Rails version, DB adapter, auth/authz gems, form builder, test stack, deployment),
+  `config/application.rb`, the `db/schema.rb` header, and the directory shape (`app/services`? `spec/`? `mobile/`?).
+  Every place the project deviates from the rails-8 skill's vanilla doctrine becomes a **Project Override**.
+- **A database** (the template's conditional preflight): `config/database.yml`, or a database gem in the Gemfile.
+- **Stack line**: `Rails <x>, <DB>, Hotwire, <CSS>, Solid Queue, Kamal 2`.
+- **App Identity rows**: framework, database, jobs, cache, websockets, storage, auth, authorization, asset pipeline, CSS,
+  deployment, test suite, each filled from the Gemfile and config.
+- **Common Commands**: dev server, console, migrate, targeted and full rspec, rubocop on changed files, brakeman,
+  bundler-audit, deploy; the project's real commands.
+- **Project Override examples**: forms through simple_form, never raw `form_with` (styling lives in the initializer);
+  CanCanCan with hash conditions only; every query scoped through `Current.<scope>`, public ids in URLs; prosopite
+  raising in test. **Verification** greps: no raw `form_with` in views, no unguarded `.unscoped`.
+- **Framework APIs to label `[Recall]`** until verified: Rails, Hotwire, a gem.
+
+### Test-run preflight
+
+The database is up (`pg_isready` for Postgres; start it and re-check if it is not), and no `bundler.lock` is held (a
+Ruby LSP `bundle update` holds it).
+
+### loop.md checks
+
+2. Suite health: `bundle exec rspec --fail-fast --no-color`.
+3. Lint drift: rubocop on Ruby files changed vs `origin/<base>`.
+4. Security deltas: `bundle exec bundler-audit check --update` and `bundle exec brakeman -q` if installed; report NEW
+   findings only.
+
 ## The `--skip-test` consequence — propose the `Tests:` steps as an approved diff (#779)
 
 `project-setup.md` mandates `--skip-test` so the project gets RSpec instead of Minitest. Rails gates
