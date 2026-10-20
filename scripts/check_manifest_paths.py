@@ -215,7 +215,11 @@ def setup_sections(plugin: Path) -> list[Path]:
         for stack in stacks:
             value = ((stack.get("descriptor") or {}).get("setup_section") if isinstance(stack, dict) else None)
             path = manifest.parent / value if isinstance(value, str) and value else None
-            if path is not None and path.is_file() and path not in found:
+            # A section that escapes its plugin (`../../docs/n.md`) vouches for nothing (#2199 review): the detector's `--check`
+            # refuses it too, but this gate must not be foolable on its own.
+            if path is None or not path.resolve().is_relative_to(manifest.parent.resolve()):
+                continue
+            if path.is_file() and path not in found:
                 found.append(path)
     return found
 
@@ -457,6 +461,11 @@ def selftest() -> int:
         out = reconcile(runner, wants)
         check("a path a stack setup section writes counts for the plugin that runs the sections",
               out.findings == [], f"{out.findings}")
+        (repo.parent / "outside.md").write_text("```ruby\n# Boundaries.rb at the project root\n```\n", encoding="utf-8")
+        (repo / "stacks.json").write_text(json.dumps({"plugin": "x-stack", "stacks": [
+            {"id": "x", "all": [{"file": "x"}], "descriptor": {"setup_section": "../outside.md"}}]}), encoding="utf-8")
+        check("a setup section that escapes its plugin vouches for nothing",
+              any("Boundaries.rb" in f for f in reconcile(runner, wants).findings), "no finding")
 
         # ---- FIRES.
         out = reconcile(plugin, _manifest(("c", ["out/nowhere"], [])))

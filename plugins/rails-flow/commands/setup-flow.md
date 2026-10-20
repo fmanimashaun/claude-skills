@@ -73,10 +73,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/detect_stack.py" . --descriptor
 ```
 
 - **An existing project** (exit 0): the detector has read the stack from the repository's markers. **Do not ask.**
-  Activate what it reports: its descriptor (commands, layout, gates, agents) fills the scaffold, and every file under
-  `setup_sections` is the stack's own repairs, worked in §8.
-- **A new project** (exit 1, nothing to detect): **ask which stack to set up**, offering exactly what the installed
-  stack plugins declare, never a list from memory:
+  Activate every stack it reports, one or several: markers of two stacks (a Rails API beside a Next.js front end)
+  activate both. **Show which stacks you activated**, by id and plugin, before writing anything. Their descriptor
+  (commands, layout, gates, agents) fills the scaffold, and every file under `setup_sections` is a stack's own
+  repairs, worked in §8.
+- **No stack markers** (exit 1): **ask which stack to set up**, offering exactly what the installed stack plugins
+  declare, never a list from memory. Exit 1 also covers an existing repository of a stack no installed plugin
+  declares (a `Cargo.toml` alone). So if the tree holds anything beyond the agent files this command writes, **do
+  not scaffold an app over it**: say no installed stack plugin recognises it, and stop. For an empty tree:
 
   ```bash
   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/detect_stack.py" --available
@@ -90,12 +94,15 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/detect_stack.py" . --descriptor
   ```
 
   `--available` exiting 1 means no stack plugin is installed. Say so and name the plugins to install; do not guess a stack.
+  **`--available` or `--stack` exiting 2 means a manifest could not be read: stop, quote the printed problems, and do
+  not offer a partial list.** `--available` still prints the stacks it could read beside the problems, and offering
+  those alone is a silent fallback.
 - **It cannot tell** (exit 2): a manifest, the project or a descriptor could not be judged. **Ask**, quoting the
-  printed `problems`, and never fall back to Rails. So does a detection you have reason to doubt, such as markers of
-  two stacks where the user expected one.
+  printed `problems`, and never fall back to Rails. **Ignore `stacks` in the output whenever `problems` is
+  non-empty**: they are what the detector could read, not a verdict.
 
-A project can be several stacks at once (Next.js + Supabase + Vercel). Then every reported stack is active, and each
-setup section is worked in turn.
+A project can be several stacks at once (Next.js + Supabase + Vercel). Then every reported stack is active, with no
+question asked, and each setup section is worked in turn. Asking is only for exit 1 or exit 2.
 
 ## 1. Inspect the project first
 
