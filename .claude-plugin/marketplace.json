@@ -142,6 +142,24 @@
         "pipeline"
       ],
       "category": "development"
+    },
+    {
+      "name": "nextjs-stack",
+      "description": "Next.js + Supabase + Vercel stack, 0.1.0, an early release: conventions for how the three fit together, and the stack's markers for the stack detector. feature/fix/review still lean on the Rails-flavoured agents. Platform knowledge stays in Vercel's official plugin (vercel-plugin) and Supabase's supabase/agent-skills, which it points to rather than copies.",
+      "source": "./plugins/nextjs-stack",
+      "author": {
+        "name": "Fisayo Animashaun",
+        "url": "https://github.com/fmanimashaun/claude-skills"
+      },
+      "homepage": "https://github.com/fmanimashaun/claude-skills#readme",
+      "repository": "https://github.com/fmanimashaun/claude-skills",
+      "license": "MIT",
+      "keywords": [
+        "nextjs",
+        "supabase",
+        "vercel"
+      ],
+      "category": "development"
     }
   ]
 }
