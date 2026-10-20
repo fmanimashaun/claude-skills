@@ -138,6 +138,8 @@ def package_dependencies(project: Path) -> set[str] | object | None:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return CORRUPT
+    if not isinstance(data, dict):
+        return CORRUPT                     # valid JSON that is not an object is no package.json a dependency can be read from
     names: set[str] = set()
     for key in ("dependencies", "devDependencies"):
         section = data.get(key) if isinstance(data, dict) else None
@@ -157,8 +159,11 @@ def holds(marker: object, project: Path, deps: set[str] | object | None) -> bool
         if deps is CORRUPT:
             raise ValueError("package.json exists but does not parse, so its dependencies cannot be read")
         return deps is not None and value in deps
+    if value.strip().rstrip("/") in ("", "."):
+        # THE PROJECT ROOT IS NOT A MARKER (#2188 review): every project has one, so a stack keyed on it would match them all.
+        raise ValueError(f"marker {marker!r}: names the project root, which every project has")
     parts = PurePosixPath(value)
-    if parts.is_absolute() or ".." in parts.parts or value.startswith("\\") or ":" in parts.parts[0]:
+    if parts.is_absolute() or ".." in parts.parts or value.startswith("\\") or (parts.parts and ":" in parts.parts[0]):
         raise ValueError(f"marker {marker!r}: a path must stay inside the project (no absolute path, no `..`)")
     return (project / value).is_file() if kind == "file" else (project / value).is_dir()
 
@@ -174,6 +179,9 @@ def detect(project: Path, manifests: list[dict]) -> tuple[list[dict], list[str]]
                 problems.append(f"{manifest['_path']}: stacks[{index}] must be a stack object, got {stack!r}")
                 continue
             label = f"{manifest['_path']}: stack {stack.get('id')!r}"
+            if not isinstance(stack.get("id"), str) or not stack.get("id"):
+                problems.append(f"{label}: needs an `id`, a non-empty string, to be reported by")
+                continue
             all_of, any_of = stack.get("all", []), stack.get("any", [])
             if not isinstance(all_of, list) or not isinstance(any_of, list):
                 problems.append(f"{label}: `all` and `any` must be lists of markers")
@@ -187,7 +195,7 @@ def detect(project: Path, manifests: list[dict]) -> tuple[list[dict], list[str]]
             except ValueError as exc:
                 problems.append(f"{label}: {exc}")
                 continue
-            except (TypeError, AttributeError) as exc:   # a shape no check above foresaw: still "cannot judge", never a crash
+            except Exception as exc:   # noqa: BLE001 -- a shape no check above foresaw: still "cannot judge", never a crash with the "none" code
                 problems.append(f"{label}: cannot judge this stack ({type(exc).__name__}: {exc})")
                 continue
             if all(every) and (not any_of or any(some)):
@@ -285,6 +293,8 @@ def selftest() -> int:
         bad_pkg = project("bad-package", {"package.json": "{not json"})
         case(ids(bad_pkg)[0] == 2, f"a package.json that does not parse is a problem when a stack reads it: {ids(bad_pkg)}")
         case(ids(bad_pkg, [rails]) == (1, []), "a corrupt package.json is no problem when no stack reads dependencies")
+        list_pkg = project("list-package", {"package.json": "[1, 2]"})
+        case(ids(list_pkg)[0] == 2, f"a package.json that is valid JSON but not an object is a problem when a stack reads it: {ids(list_pkg)}")
 
         # ADDING A STACK IS A MANIFEST: a stack no plugin ships is detected the moment its manifest exists.
         go = manifest("go-stack", {"plugin": "go-stack", "stacks": [{"id": "go", "name": "Go", "all": [{"file": "go.mod"}]}]})
@@ -302,6 +312,10 @@ def selftest() -> int:
             ("`all` that is not a list is a problem", {"plugin": "p8", "stacks": [{"id": "x", "all": {"file": "x"}}]}),
             ("a manifest that names no plugin is a problem", {"stacks": []}),
             ("an unreadable manifest is a problem, not a skipped plugin", "{nope"),
+            ("a `dir` marker naming the project root (.) is a problem", {"plugin": "p9", "stacks": [{"id": "x", "all": [{"dir": "."}]}]}),
+            ("a `file` marker naming the project root (./) is a problem", {"plugin": "p10", "stacks": [{"id": "x", "all": [{"file": "./"}]}]}),
+            ("a stack with no id is a problem", {"plugin": "p11", "stacks": [{"all": [{"file": "Gemfile"}]}]}),
+            ("a stack whose id is a list is a problem", {"plugin": "p12", "stacks": [{"id": ["x"], "all": [{"file": "Gemfile"}]}]}),
         ):
             bad = manifest("bad-" + str(len(failures)) + "-" + str(count), data)
             case(code_of(rails_app, bad) == 2, f"{label} (exit 2): got {code_of(rails_app, bad)}")
