@@ -218,8 +218,8 @@ def read_manifest_pair(root: Path) -> tuple[Toolchain, list[str]]:
 
     Finding 4, the load-bearing one. The two version sources are DISJOINT:
 
-        rails-stack   -> marketplace.json plugins[].version   (skills bundle, no plugin dir)
-        every other   -> plugins/<name>/.claude-plugin/plugin.json
+        rails-stack   -> marketplace.json plugins[].version   (manifests published before #2182 only)
+        every plugin  -> plugins/<name>/.claude-plugin/plugin.json (rails-stack too, since #2182)
 
     So both are read and unioned. A plugin listed in the manifest that resolves from
     neither source is a finding, not a silent omission — otherwise a plugin whose version
@@ -240,8 +240,8 @@ def read_manifest_pair(root: Path) -> tuple[Toolchain, list[str]]:
         name = entry.get("name")
         if not name:
             continue
-        version = entry.get("version")          # source A — rails-stack only
-        if not version:                         # source B — the four code plugins
+        version = entry.get("version")          # source A — rails-stack in a pre-#2182 manifest
+        if not version:                         # source B — every plugin directory
             pj = read_json(root / "plugins" / name / ".claude-plugin" / "plugin.json")
             version = (pj or {}).get("version")
         if version:

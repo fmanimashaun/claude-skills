@@ -33,6 +33,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+SHIPPED = ROOT / "plugins" / "rails-stack" / "skills"  # #2182: rails-stack is its own plugin dir
 
 # source -> derived. One entry today; the list is the mechanism, not the special case.
 MIRRORED = {
@@ -142,7 +143,7 @@ def unregistered_mirrors() -> list[str]:
     registered = {derived.as_posix() for derived in MIRRORED.values()}
     strays = []
     for skill_dir in sorted(p for p in (ROOT / ".claude" / "skills").glob("*") if p.is_dir()):
-        if not (ROOT / "skills" / skill_dir.name / "SKILL.md").exists():
+        if not (SHIPPED / skill_dir.name / "SKILL.md").exists():
             continue
         for derived in sorted(f for f in skill_dir.rglob("*") if f.is_file()):
             relative = derived.relative_to(ROOT).as_posix()
@@ -327,7 +328,7 @@ def selftest() -> int:
     # The stray arm: a copy of a shipped skill that no MIRRORED entry governs, HEAD clean.
     shipped = sorted(
         s.parent.name
-        for s in (ROOT / "skills").glob("*/SKILL.md")
+        for s in (SHIPPED).glob("*/SKILL.md")
         if not (ROOT / ".claude" / "skills" / s.parent.name).exists()
     )
     if shipped:
@@ -335,7 +336,7 @@ def selftest() -> int:
         try:
             stray.parent.mkdir(parents=True)
             stray.write_text(
-                (ROOT / "skills" / shipped[0] / "SKILL.md").read_text(encoding="utf-8"),
+                (SHIPPED / shipped[0] / "SKILL.md").read_text(encoding="utf-8"),
                 encoding="utf-8",
             )
             if check_against(rendered) == 0:

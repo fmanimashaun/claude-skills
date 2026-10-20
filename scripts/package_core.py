@@ -38,7 +38,7 @@ Verify with `python3 scripts/package_core.py --selftest`.
 import os, sys, tempfile, zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKILLS_DIR = os.path.join(ROOT, "skills")
+SKILLS_DIR = os.path.join(ROOT, "plugins", "rails-stack", "skills")  # #2182: rails-stack is its own plugin dir
 DIST = os.path.join(ROOT, "dist")
 
 # git's own binary test: NUL in the first 8000 bytes.
