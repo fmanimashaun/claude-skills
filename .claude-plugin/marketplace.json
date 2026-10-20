@@ -145,7 +145,7 @@
     },
     {
       "name": "nextjs-stack",
-      "description": "The Next.js + Supabase + Vercel stack: how the three fit together, pointing to Vercel's official plugin and supabase/agent-skills for platform knowledge rather than copying it.",
+      "description": "Next.js + Supabase + Vercel stack, 0.1.0: conventions, stack markers and strict TypeScript. feature/fix/review still delegate to Rails-flavoured agents until the neutral reviewer and stack descriptor land; the review checklist for Next.js is new. Platform knowledge stays in Vercel's official plugin and supabase/agent-skills (pointed to, not copied).",
       "source": "./plugins/nextjs-stack",
       "author": {
         "name": "Fisayo Animashaun",
