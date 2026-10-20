@@ -74,13 +74,15 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/detect_stack.py" . --descriptor
 
 - **An existing project** (exit 0): the detector has read the stack from the repository's markers. **Do not ask.**
   Activate every stack it reports, one or several: markers of two stacks (a Rails API beside a Next.js front end)
-  activate both. **Show which stacks you activated**, by id and plugin, before writing anything. Their descriptor
+  activate both. **Show which stacks you activated**, by id and plugin (each `stacks` entry carries both), before writing anything. Their descriptor
   (commands, layout, gates, agents) fills the scaffold, and every file under `setup_sections` is a stack's own
   repairs, worked in §8.
 - **No stack markers** (exit 1): **ask which stack to set up**, offering exactly what the installed stack plugins
   declare, never a list from memory. Exit 1 also covers an existing repository of a stack no installed plugin
-  declares (a `Cargo.toml` alone). So if the tree holds anything beyond the agent files this command writes, **do
-  not scaffold an app over it**: say no installed stack plugin recognises it, and stop. For an empty tree:
+  declares (a `Cargo.toml` alone). So read `fresh` in the output. `true` means the tree holds only what a new repository
+  holds (`.git`, `README*`, `LICENSE*`, `.gitignore`, `.github/`, `docs/`) plus the agent files this command writes, so it is a
+  new project. `false` means it holds something else: **do not scaffold an app over it**; say no installed stack plugin
+  recognises it, and stop. For a fresh tree:
 
   ```bash
   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/detect_stack.py" --available

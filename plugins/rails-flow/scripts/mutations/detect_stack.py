@@ -302,5 +302,23 @@ GUARD = Guard(
             "    if True:\n        missing",
             "a manifest with markers and no descriptor passes",
         ),
+        Mutation(
+            "a new repo's README and .github make it 'not fresh', so a new project is refused instead of asked",
+            '    return all(any(fnmatch.fnmatchcase(name, pattern) for pattern in FRESH_ENTRIES) for name in entries)',
+            '    return not entries',
+            "is still a new project (fresh)",
+        ),
+        Mutation(
+            "any tree is fresh, so setup-flow scaffolds an app over an unrecognised repository",
+            '    return all(any(fnmatch.fnmatchcase(name, pattern) for pattern in FRESH_ENTRIES) for name in entries)',
+            '    return True',
+            "is not fresh",
+        ),
+        Mutation(
+            "--descriptor drops the plugin, so setup-flow cannot say which plugin each stack came from",
+            '        print(json.dumps({"stacks": [{"id": s["id"], "plugin": s["plugin"]} for s in report["stacks"]], "fresh": report["fresh"],',
+            '        print(json.dumps({"stacks": [{"id": s["id"]} for s in report["stacks"]], "fresh": report["fresh"],',
+            "--descriptor names each stack's plugin",
+        ),
     ),
 )
