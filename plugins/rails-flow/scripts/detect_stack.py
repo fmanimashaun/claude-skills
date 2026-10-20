@@ -45,6 +45,12 @@ Exit 0 one or more stacks detected · 1 none detected · 2 a manifest or the pro
 Run:  python3 detect_stack.py [project-dir] [--json]
       python3 detect_stack.py [project-dir] --descriptor
       python3 detect_stack.py --check          (every discovered manifest is valid, whatever the project)
+      python3 detect_stack.py --available [--json]   (every stack the installed plugins declare: a new project's choices)
+      python3 detect_stack.py [project-dir] --stack ID [--stack ID] --descriptor   (take the chosen stacks, detect nothing)
+
+SETUP SECTIONS (#2180). A stack's `setup_section` names a file inside its own plugin that `/rails-flow:setup-flow` runs
+after its neutral scaffold. It is per stack, never merged: every matched stack's section is listed (`setup_sections`), and
+one that leaves its plugin or names no file is a problem.
       python3 detect_stack.py --selftest
 
 Stdlib only, no network.
@@ -161,6 +167,12 @@ def package_dependencies(project: Path) -> set[str] | object | None:
     return names
 
 
+def escapes(value: str) -> bool:
+    """Whether a relative path leaves the directory it is read from: absolute, `..`, or a Windows drive or UNC root."""
+    parts = PurePosixPath(value)
+    return parts.is_absolute() or ".." in parts.parts or value.startswith("\\") or bool(parts.parts and ":" in parts.parts[0])
+
+
 def holds(marker: object, project: Path, deps: set[str] | object | None) -> bool:
     """Whether one marker holds. Raises ValueError for a marker this script cannot judge."""
     if not isinstance(marker, dict) or len(marker) != 1 or next(iter(marker)) not in KINDS:
@@ -175,8 +187,7 @@ def holds(marker: object, project: Path, deps: set[str] | object | None) -> bool
     if value.strip().rstrip("/") in ("", "."):
         # THE PROJECT ROOT IS NOT A MARKER (#2188 review): every project has one, so a stack keyed on it would match them all.
         raise ValueError(f"marker {marker!r}: names the project root, which every project has")
-    parts = PurePosixPath(value)
-    if parts.is_absolute() or ".." in parts.parts or value.startswith("\\") or (parts.parts and ":" in parts.parts[0]):
+    if escapes(value):
         raise ValueError(f"marker {marker!r}: a path must stay inside the project (no absolute path, no `..`)")
     return (project / value).is_file() if kind == "file" else (project / value).is_dir()
 
@@ -261,13 +272,64 @@ def shape_problems(value: object, shape: object, where: str) -> list[str]:
     return found
 
 
+# KEYS THAT BELONG TO ONE STACK, NOT TO THE PROJECT (#2180). A Rails app with a Next.js front end runs BOTH stacks' setup
+# sections, so a setup section is never merged (two plugins declaring it is no conflict); each detected stack's is listed.
+PER_STACK_KEYS = ("setup_section",)
+
+
+def plugin_root(manifest: dict) -> Path:
+    return Path(manifest["_path"]).parent
+
+
+def setup_section_problems(manifest: dict, stack: dict, where: str) -> list[str]:
+    """A `setup_section` is a file inside its own plugin, so setup-flow never reads a path a manifest points elsewhere."""
+    value = (stack.get("descriptor") or {}).get("setup_section") if isinstance(stack.get("descriptor"), dict) else None
+    if not isinstance(value, str) or not value:
+        return []                               # absent, or a shape problem shape_problems already reports
+    if escapes(value):
+        return [f"{where}.setup_section {value!r} must stay inside its plugin (no absolute path, no `..`)"]
+    if not (plugin_root(manifest) / value).is_file():
+        return [f"{where}.setup_section {value!r} names no file in {plugin_root(manifest)}"]
+    return []
+
+
 def descriptor_problems(manifest: dict) -> list[str]:
-    """Every descriptor in a manifest checked against `DESCRIPTOR_SCHEMA`."""
+    """Every descriptor in a manifest checked against `DESCRIPTOR_SCHEMA`, and its setup section found."""
     found = []
     for stack in manifest.get("stacks") or []:
         if isinstance(stack, dict) and "descriptor" in stack:
-            found.extend(shape_problems(stack["descriptor"], DESCRIPTOR_SCHEMA, f"{manifest['_path']}: stack {stack.get('id')!r} descriptor"))
+            where = f"{manifest['_path']}: stack {stack.get('id')!r} descriptor"
+            found.extend(shape_problems(stack["descriptor"], DESCRIPTOR_SCHEMA, where))
+            found.extend(setup_section_problems(manifest, stack, where))
     return found
+
+
+def available(manifests: list[dict]) -> list[dict]:
+    """Every stack an installed plugin declares: what setup-flow offers a new project, never a hard-coded list (#2180)."""
+    return [{"id": s["id"], "name": s.get("name", s["id"]), "plugin": m["plugin"]}
+            for m in manifests for s in m["stacks"] if isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"]]
+
+
+def chosen_stacks(manifests: list[dict], ids: list[str]) -> tuple[list[dict], list[str]]:
+    """The stacks named on the command line (a new project has no markers to detect), and every id no plugin declares."""
+    offered = available(manifests)
+    matched = [s for s in offered if s["id"] in ids]
+    unknown = [f"--stack {i!r}: no installed plugin declares it (offered: {', '.join(s['id'] for s in offered) or 'none'})"
+               for i in ids if i not in {s["id"] for s in offered}]
+    return matched, unknown
+
+
+def setup_sections(manifests: list[dict], matched: list[dict]) -> list[dict]:
+    """Each matched stack's setup section, as a path setup-flow can read, in detection order."""
+    by_plugin = {m["plugin"]: m for m in manifests}
+    out = []
+    for found in matched:
+        manifest = by_plugin[found["plugin"]]
+        stack = next(s for s in manifest["stacks"] if isinstance(s, dict) and s.get("id") == found["id"])
+        value = (stack.get("descriptor") or {}).get("setup_section")
+        if isinstance(value, str) and value:
+            out.append({"stack": found["id"], "plugin": found["plugin"], "path": str(plugin_root(manifest) / value)})
+    return out
 
 
 def merged_descriptor(manifests: list[dict], matched: list[dict]) -> tuple[dict, dict, list[str]]:
@@ -293,6 +355,8 @@ def merged_descriptor(manifests: list[dict], matched: list[dict]) -> tuple[dict,
         stack = next(s for s in manifest["stacks"] if isinstance(s, dict) and s.get("id") == found["id"])
         label = f"{found['plugin']}:{found['id']}"
         for key, value in (stack.get("descriptor") or {}).items():
+            if key in PER_STACK_KEYS:
+                continue
             if key in owner and owner[key] != found["plugin"]:
                 conflicts.append(f"descriptor {key} is declared by two plugins: {owner[key]} and {found['plugin']}")
                 continue
@@ -302,11 +366,15 @@ def merged_descriptor(manifests: list[dict], matched: list[dict]) -> tuple[dict,
     return merged, {k: sorted(v) for k, v in sources.items()}, conflicts
 
 
-def run(project: Path, dirs: list[Path]) -> tuple[int, dict]:
+def run(project: Path, dirs: list[Path], stacks: list[str] | None = None) -> tuple[int, dict]:
+    """Detect the project's stacks, or, given `stacks` (a new project: nothing to detect), take those."""
     manifests, problems = load_manifests(dirs)
     for manifest in manifests:
         problems += descriptor_problems(manifest)
-    if not project.is_dir():
+    if stacks:
+        matched, unknown = chosen_stacks(manifests, stacks)
+        problems += unknown
+    elif not project.is_dir():
         # A missing path, or a file, has no markers to read: "cannot judge", never "no stack" (#2188 review).
         problems.append(f"{project}: not a directory, so no stack can be judged")
         matched = []
@@ -316,7 +384,8 @@ def run(project: Path, dirs: list[Path]) -> tuple[int, dict]:
     descriptor, sources, conflicts = merged_descriptor(manifests, matched)
     problems += conflicts
     report = {"project": str(project), "stacks": matched, "manifests": [m["_path"] for m in manifests], "problems": problems,
-              "descriptor": descriptor, "descriptor_sources": sources}
+              "descriptor": descriptor, "descriptor_sources": sources, "setup_sections": setup_sections(manifests, matched),
+              "available": available(manifests)}
     if problems:
         return 2, report
     return (0 if matched else 1), report
@@ -543,6 +612,44 @@ def selftest() -> int:
         code, report = run(proj("nothing", {}), [go, nextjs])
         case(code == 1 and report["descriptor"] == {}, f"with no stack detected the descriptor is empty: {code} {report['descriptor']}")
 
+        # SETUP SECTIONS AND THE NEW-PROJECT CHOICE (#2180).
+        sec_a = plug("sec-a", [{"id": "ruby", "all": [{"file": "Gemfile"}], "descriptor": {"setup_section": "setup/ruby.md"}}])
+        (sec_a / "setup").mkdir()
+        (sec_a / "setup" / "ruby.md").write_text("# ruby", encoding="utf-8")
+        sec_b = plug("sec-b", [{"id": "node", "all": [{"file": "package.json"}], "descriptor": {"setup_section": "setup/node.md"}}])
+        (sec_b / "setup").mkdir()
+        (sec_b / "setup" / "node.md").write_text("# node", encoding="utf-8")
+        both = proj("both", {"Gemfile": "", "package.json": "{}"})
+        code, report = run(both, [sec_a, sec_b])
+        paths = [Path(x["path"]) for x in report["setup_sections"]]
+        case(code == 0 and paths == [sec_a / "setup" / "ruby.md", sec_b / "setup" / "node.md"] and "setup_section" not in report["descriptor"],
+             f"two plugins' setup sections are both listed, never a merge conflict: {code} {report['setup_sections']} {report['problems']}")
+        for n, (label, value, needle) in enumerate((
+            ("a setup section naming no file is a problem", "setup/missing.md", "names no file"),
+            ("a setup section leaving its plugin is a problem", "../sec-a/setup/ruby.md", "must stay inside its plugin"),
+        )):
+            bad = plug(f"sec-bad-{n}", [{"id": "ruby", "all": [{"file": "Gemfile"}], "descriptor": {"setup_section": value}}])
+            code, report = run(both, [bad])
+            case(code == 2 and any(needle in p for p in report["problems"]), f"{label}: {code} {report['problems']}")
+        empty_new = proj("brand-new", {})
+        case(run(empty_new, [sec_a, sec_b])[0] == 1, "a new project's empty directory detects nothing (exit 1)")
+        code, report = run(empty_new, [sec_a, sec_b], ["node"])
+        case(code == 0 and [s["id"] for s in report["stacks"]] == ["node"] and [x["stack"] for x in report["setup_sections"]] == ["node"],
+             f"--stack takes the chosen stack for a project with nothing to detect: {code} {report['stacks']}")
+        code, report = run(empty_new, [sec_a, sec_b], ["cobol"])
+        case(code == 2 and any("no installed plugin declares it" in p for p in report["problems"]), f"an unknown --stack is a problem: {code} {report['problems']}")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = main(["--available", "--json"], dirs=[sec_a, sec_b, go])
+        try:
+            listed = [s["id"] for s in json.loads(out.getvalue())["available"]]
+        except (ValueError, KeyError, TypeError):
+            listed = []
+        case(rc == 0 and sorted(listed) == ["go", "node", "ruby"], f"--available lists every installed stack, from the manifests: rc={rc} {listed}")
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = main(["--available"], dirs=[])
+        case(rc == 1, f"--available with no stack plugin installed exits 1: {rc}")
+
     for f in failures:
         print(f"FAIL {f}")
     if failures:
@@ -558,6 +665,8 @@ def main(argv: list[str], dirs: list[Path] | None = None) -> int:
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--descriptor", action="store_true", help="print the detected stacks' merged descriptor as JSON")
     ap.add_argument("--check", action="store_true", help="validate every discovered manifest, whatever the project")
+    ap.add_argument("--available", action="store_true", help="list every stack the installed plugins declare (for a new project)")
+    ap.add_argument("--stack", action="append", metavar="ID", help="take this stack instead of detecting (a new project); repeatable")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
     if args.selftest:
@@ -569,10 +678,20 @@ def main(argv: list[str], dirs: list[Path] | None = None) -> int:
             code, report = run(Path(empty), dirs)
         print("\n".join(report["problems"]) if report["problems"] else f"{len(report['manifests'])} stack manifest(s) valid")
         return 2 if report["problems"] else 0
-    code, report = run(args.project.resolve(), dirs)
+    if args.available:
+        manifests, problems = load_manifests(dirs)
+        offered = available(manifests)
+        if args.json:
+            print(json.dumps({"available": offered, "problems": problems}, indent=2))
+        else:
+            print("\n".join([*(f"{s['id']}: {s['name']} ({s['plugin']})" for s in offered), *(f"problem: {p}" for p in problems)])
+                  or "no stack plugin installed")
+        return 2 if problems else (0 if offered else 1)
+    code, report = run(args.project.resolve(), dirs, args.stack)
     if args.descriptor:
         print(json.dumps({"stacks": [s["id"] for s in report["stacks"]], "descriptor": report["descriptor"],
-                          "sources": report["descriptor_sources"], "problems": report["problems"]}, indent=2))
+                          "sources": report["descriptor_sources"], "setup_sections": report["setup_sections"],
+                          "problems": report["problems"]}, indent=2))
     else:
         print(json.dumps(report, indent=2) if args.json else render(code, report))
     return code
