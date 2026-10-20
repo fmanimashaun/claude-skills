@@ -31,6 +31,8 @@ something actually RUNS:
     scripts/*.js          string and template literals, `//` comments excluded
     commands|agents/*.md  fenced code blocks only -- the bash an agent executes, the contracts it writes
     hooks/scripts/*.sh    comment-stripped source
+    stack setup sections  fenced code blocks, for the plugin that ships `detect_stack.py` only: its setup-flow runs
+                          every stack plugin's `setup_section` (#2180), so what a section writes, that plugin writes
 
 `*_selftest.py` is excluded: a fixture path is not a shipped writer, and including them would let a
 test double vouch for a phantom.
@@ -190,7 +192,36 @@ def surfaces(plugin: Path) -> list[tuple[Path, list[str]]]:
             out.append((path, [fenced(path.read_text(encoding="utf-8"))]))
     for path in sorted((plugin / "hooks" / "scripts").glob("*.sh")):
         out.append((path, [sh_source(path.read_text(encoding="utf-8"))]))
+    for path in setup_sections(plugin):
+        out.append((path, [fenced(path.read_text(encoding="utf-8"))]))
     return out
+
+
+def setup_sections(plugin: Path) -> list[Path]:
+    """The stack setup sections this plugin's setup-flow runs: none unless it ships the detector (#2180).
+
+    Read from every `stacks.json` in the repository (the root, for rails-stack, and each plugin's), the same files the
+    detector reads; a section outside its plugin or missing is the detector's `--check` finding, not this one's.
+    """
+    if not (plugin / "scripts" / "detect_stack.py").is_file():
+        return []
+    repo = plugin.parent.parent
+    found: list[Path] = []
+    for manifest in [repo / "stacks.json", *sorted((repo / PLUGINS).glob("*/stacks.json"))]:
+        try:
+            stacks = json.loads(manifest.read_text(encoding="utf-8")).get("stacks") or []
+        except (OSError, ValueError, AttributeError):
+            continue
+        for stack in stacks:
+            value = ((stack.get("descriptor") or {}).get("setup_section") if isinstance(stack, dict) else None)
+            path = manifest.parent / value if isinstance(value, str) and value else None
+            # A section that escapes its plugin (`../../docs/n.md`) vouches for nothing (#2199 review): the detector's `--check`
+            # refuses it too, but this gate must not be foolable on its own.
+            if path is None or not path.resolve().is_relative_to(manifest.parent.resolve()):
+                continue
+            if path.is_file() and path not in found:
+                found.append(path)
+    return found
 
 
 def named_paths(plugin: Path, roots: list[str]) -> dict[str, set[str]]:
@@ -414,6 +445,27 @@ def selftest() -> int:
         out = reconcile(plugin, _manifest(("c", ["out/trend.jsonl"], [])))
         check("a module-level path constant counts as agreement",
               out.findings == [], f"{out.findings}")
+
+        # ---- STACK SETUP SECTIONS (#2180): a path only a stack plugin's setup section writes counts for the plugin that
+        # runs the sections (it ships detect_stack.py), and for no other plugin.
+        repo = Path(tmpdir) / "repo"
+        runner = _plugin(repo / PLUGINS)
+        (repo / "setup").mkdir(parents=True)
+        (repo / "setup" / "x.md").write_text("```ruby\n# Boundaries.rb at the project root\n```\n", encoding="utf-8")
+        (repo / "stacks.json").write_text(json.dumps({"plugin": "x-stack", "stacks": [
+            {"id": "x", "all": [{"file": "x"}], "descriptor": {"setup_section": "setup/x.md"}}]}), encoding="utf-8")
+        wants = _manifest(("c", ["Boundaries.rb"], []))
+        check("without the detector, a stack setup section is no surface of the plugin",
+              any("Boundaries.rb" in f for f in reconcile(runner, wants).findings), "no finding")
+        (runner / "scripts" / "detect_stack.py").write_text("", encoding="utf-8")
+        out = reconcile(runner, wants)
+        check("a path a stack setup section writes counts for the plugin that runs the sections",
+              out.findings == [], f"{out.findings}")
+        (repo.parent / "outside.md").write_text("```ruby\n# Boundaries.rb at the project root\n```\n", encoding="utf-8")
+        (repo / "stacks.json").write_text(json.dumps({"plugin": "x-stack", "stacks": [
+            {"id": "x", "all": [{"file": "x"}], "descriptor": {"setup_section": "../outside.md"}}]}), encoding="utf-8")
+        check("a setup section that escapes its plugin vouches for nothing",
+              any("Boundaries.rb" in f for f in reconcile(runner, wants).findings), "no finding")
 
         # ---- FIRES.
         out = reconcile(plugin, _manifest(("c", ["out/nowhere"], [])))

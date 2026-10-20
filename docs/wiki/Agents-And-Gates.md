@@ -192,6 +192,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | rails-flow work order | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --selftest` | selftest |
 | rails-flow worktree guard helper | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/worktree_guard.py --selftest` | selftest |
 | stack detector selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/detect_stack.py --selftest` | selftest |
+| stack manifests valid | `rails-flow` | `python3 plugins/rails-flow/scripts/detect_stack.py --check` | live check |
 | status line | `rails-flow` | `python3 plugins/rails-flow/scripts/statusline.py --selftest` | selftest |
 | worktree teardown wording | `rails-flow` | `python3 plugins/rails-flow/scripts/worktree_teardown.py --check-wording` | live check |
 | agent output contract | `repo` | `python3 scripts/check_agent_output_contract.py` | live check |
