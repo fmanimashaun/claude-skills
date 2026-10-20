@@ -2213,34 +2213,38 @@
   "plugins/qa-flow/scripts/check_ts_strict.py": {
    "assumes": "names Rails paths or the Rails app as the host project in its messages and path filters",
    "categories": {
-    "concept": 7,
-    "path": 9,
+    "concept": 10,
+    "path": 11,
     "tool": 2
    },
    "decision": "detector",
    "how": "reuse for a Next.js project (#2170) once its path filters come from the detector",
    "ids": {
     "app-layers": 2,
-    "rails-config": 7,
+    "rails-config": 9,
+    "rails-word": 1,
     "rspec": 1,
     "ruby": 1,
-    "ruby-file": 7
+    "ruby-file": 9
    },
    "invokes": [
-    646
+    796
    ],
    "kind": "script",
    "lines": [
-    36,
-    288,
-    435,
-    438,
-    603,
-    612,
-    621,
-    622,
-    645,
-    646
+    37,
+    367,
+    395,
+    548,
+    551,
+    753,
+    762,
+    771,
+    772,
+    795,
+    796,
+    937,
+    938
    ],
    "move": ""
   },
@@ -8122,16 +8126,16 @@
  "policy": "docs/architecture/rails-assumptions.policy.json",
  "summary": {
   "by_category": {
-   "concept": 1936,
+   "concept": 1939,
    "gem": 156,
    "hotwire": 107,
-   "path": 1267,
+   "path": 1269,
    "tool": 935
   },
   "by_decision": {
    "detector": {
     "files": 90,
-    "lines": 1315
+    "lines": 1318
    },
    "neutral": {
     "files": 7,
@@ -8166,7 +8170,7 @@
    "qa-flow": {
     "detector": 29,
     "files": 36,
-    "lines": 272,
+    "lines": 275,
     "neutral": 1,
     "rails-stack": 0,
     "reword": 6
@@ -8219,7 +8223,7 @@
    },
    "script": {
     "files": 87,
-    "lines": 2197
+    "lines": 2200
    },
    "selftest": {
     "files": 16,
@@ -8244,18 +8248,18 @@
    "gem": 156,
    "gemfile": 173,
    "hotwire": 107,
-   "rails-config": 113,
-   "rails-word": 313,
+   "rails-config": 115,
+   "rails-word": 314,
    "rake": 56,
    "routes": 37,
    "rspec": 194,
    "rubocop": 96,
    "rubocop-yml": 3,
    "ruby": 221,
-   "ruby-file": 1243,
+   "ruby-file": 1245,
    "spec-dir": 190
   },
   "files": 226,
-  "lines": 3221
+  "lines": 3224
  }
 }
