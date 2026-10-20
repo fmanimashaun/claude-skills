@@ -2785,11 +2785,12 @@ def check_setup_flow_preflight() -> tuple[list[Finding], int]:
         rel = section.relative_to(ROOT) if section.is_relative_to(ROOT) else section
         body = read(section) if section.is_file() else ""
         part = re.search(r"### Test-run preflight\n(.*?)(?:\n#{2,3} |\Z)", body, re.S)
+        preflight = part.group(1) if part is not None else ""    # read once, so a missing part is a finding, never an AttributeError
         if "## CLAUDE.md facts" not in body or part is None:
             bad(f"{rel}: stack {stack!r} has no `## CLAUDE.md facts` with a `### Test-run preflight`, so the template's preflight is empty for it")
             continue
         for needle, what in _STACK_PREFLIGHT_NEEDLES.get(stack, ()):
-            if needle not in part.group(1):
+            if needle not in preflight:
                 bad(f"{rel}: stack {stack!r}'s test-run preflight lost {what} (no `{needle}`)")
     see_also = re.search(r"## See Also\n(.*?)```", text, re.S)
     if see_also is None or "/rails-flow:handoff" not in see_also.group(1):
@@ -4885,7 +4886,7 @@ def selftest() -> int:
     SP = "setup-flow-preflight"
     _RAILS_SECTION = "# Rails\n## CLAUDE.md facts\n### Test-run preflight\n`pg_isready`; no held `bundler.lock`.\n## Next\n"
 
-    def _setup_flow(*, wrap=True, block=None, guard=None, handoff=True, extra="", second_block=False, rails_section=_RAILS_SECTION):
+    def _setup_flow(*, wrap=True, block=None, guard=None, handoff=True, extra="", second_block=False, rails_section=_RAILS_SECTION, stack_id="rails"):
         """A minimal setup-flow.md carrying everything the rule reads; each scenario breaks exactly one piece."""
         body = block if block is not None else ("## Test-run preflight\nthe stack's preflight checks pass; every test path; uptime; "
                                                 "never swap hooks or config mid-sweep. Advice, not enforced.\n")
@@ -4895,7 +4896,7 @@ def selftest() -> int:
         return {SETUP_FLOW_TEMPLATE: ("# /rails-flow:setup-flow\n## 2. CLAUDE.md\n```markdown\n# CLAUDE.md\n" + open_ + body + close
                                       + (open_ + "## Another\n" + close if second_block else "")
                                       + "## See Also\n" + see + "\n```\n## 3. Create `GUARDRAILS.md`\n" + git + "\n## 4. Seed the memory system\n" + extra),
-                "stacks.json": json.dumps({"plugin": "rails-stack", "stacks": [{"id": "rails", "descriptor": {"setup_section": "setup/rails.md"}}]}),
+                "stacks.json": json.dumps({"plugin": "rails-stack", "stacks": [{"id": stack_id, "descriptor": {"setup_section": "setup/rails.md"}}]}),
                 "setup/rails.md": rails_section}
     spf = lambda label, files, expect: scenario(label, rule=SP, expect_finding=expect, files=files, only=check_setup_flow_preflight)
     spf("CONTROL: a template with the conditional preflight, both git rules and the pointer is silent", _setup_flow(), False)
@@ -4904,6 +4905,7 @@ def selftest() -> int:
     spf("a preflight block that lost the load check", _setup_flow(block="## Test-run preflight\nthe stack's preflight checks; test path; swap hooks or config. Advice, not enforced.\n"), True)
     spf("the Rails section's preflight lost the held-lock check", _setup_flow(rails_section="## CLAUDE.md facts\n### Test-run preflight\n`pg_isready`.\n"), True)
     spf("the Rails section has no CLAUDE.md facts preflight", _setup_flow(rails_section="# Rails\n## Something\n`pg_isready`; `bundler.lock`.\n"), True)
+    spf("a stack with no needle list still needs a CLAUDE.md facts preflight", _setup_flow(stack_id="go", rails_section="# Go\n## Something\n"), True)
     spf("the held-lock check outside the preflight part does not count", _setup_flow(rails_section="## CLAUDE.md facts\n### Test-run preflight\n`pg_isready`.\n### loop.md checks\nbundler.lock\n"), True)
     spf("two conditional blocks where the template promises one", _setup_flow(second_block=True), True)
     spf("a GUARDRAILS section with no placeholder-SHA rule", _setup_flow(guard="Git: `git rev-parse HEAD`; `run_sweep && gh pr ready`.\n"), True)

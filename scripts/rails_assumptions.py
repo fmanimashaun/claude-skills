@@ -101,6 +101,13 @@ PATTERNS: tuple[Pattern, ...] = (
     Pattern("erb", "concept", r"\.erb\b|\bERB\b|\bViewComponent\b", "ERB or ViewComponent templates", re.I),
     Pattern("ruby-file", "concept", r"\.rb\b", "a Ruby source file"),
     Pattern("hotwire", "hotwire", r"\bHotwire\b|\bTurbo\b|\bStimulus\b|\bturbo[_-]frame\b|\bturbo[_-]stream\b", "Hotwire (Turbo, Stimulus)"),
+    # RAILS IDIOMS NAMED WITHOUT THE WORD RAILS (#2200 review): a template saying `Current.*` or "idempotent `perform`" writes Rails into a
+    # Next.js project's CLAUDE.md and no pattern above sees it. Narrow on purpose: `perform` only as code or with its `_later`/`_now`
+    # forms, never the English verb; the association macros and callbacks only as the Rails spellings.
+    Pattern("rails-idiom", "concept",
+            r"\bCurrent\.(?:\*|[a-z_]\w*)|`perform`|\bdef perform\b|\bperform_(?:later|now)\b|\bform_(?:with|for)\b|"
+            r"\b(?:has_many|has_one|belongs_to|has_and_belongs_to_many)\b|\b(?:before|after|around)_action\b|\bafter_(?:commit|create_commit)\b",
+            "a Rails idiom named without the word Rails (`Current.*`, `perform`, `form_with`, an association macro, a controller callback)"),
 )
 PATTERN_IDS = tuple(p.id for p in PATTERNS)
 
@@ -506,6 +513,10 @@ def _selftest() -> int:
     check("the framework in lowercase before a Rails noun is a hit", "rails-word" in ids("this is a rails app"))
     check("`off-rails` and `the rails` are not the framework", not ids("goes off-rails; the run inside the rails"))
     check("rails-flow, rails_flow and rails: stay plugin names, not hits", not ids("rails-flow rails_flow RAILS_FLOW_LANE rails:begin"))
+    check("`Current.*` and Current.account are Rails idioms", "rails-idiom" in ids("how scope is set (Current.*?)") and "rails-idiom" in ids("through Current.account"))
+    check("an idempotent `perform` and perform_later are Rails idioms", "rails-idiom" in ids("job shape (idempotent `perform`)") and "rails-idiom" in ids("Job.perform_later(x)"))
+    check("form_with, has_many and before_action are Rails idioms", {"rails-idiom"} <= ids("form_with") and {"rails-idiom"} <= ids("has_many :posts") and {"rails-idiom"} <= ids("before_action :x"))
+    check("the English verb perform and the word current are not idioms", not ids("nothing performed it; perform the check on the current branch"))
     # an invocation is not wording
     inv = lambda s: bool(INVOCATION.search(s))  # noqa: E731
     check("bin/rails db:migrate is an invocation", inv("run bin/rails db:migrate"))

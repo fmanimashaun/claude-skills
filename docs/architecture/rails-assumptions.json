@@ -94,7 +94,7 @@
   "plugins/design-flow/agents/design-porter.md": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 3,
+    "concept": 5,
     "gem": 2,
     "hotwire": 9,
     "tool": 1
@@ -105,6 +105,7 @@
     "erb": 2,
     "gem": 2,
     "hotwire": 9,
+    "rails-idiom": 2,
     "rails-word": 1,
     "ruby": 1
    },
@@ -113,11 +114,13 @@
    "lines": [
     5,
     7,
+    8,
     27,
     41,
     42,
     43,
     57,
+    73,
     75,
     76
    ],
@@ -288,19 +291,21 @@
   "plugins/design-flow/commands/port.md": {
    "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
    "categories": {
-    "concept": 1,
+    "concept": 2,
     "hotwire": 3
    },
    "decision": "reword",
    "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
    "ids": {
     "hotwire": 3,
+    "rails-idiom": 1,
     "rails-word": 1
    },
    "invokes": [],
    "kind": "command",
    "lines": [
     2,
+    11,
     55,
     56
    ],
@@ -2803,7 +2808,7 @@
   "plugins/rails-flow/agents/code-reviewer.md": {
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
-    "concept": 4,
+    "concept": 5,
     "gem": 1,
     "hotwire": 2,
     "path": 2
@@ -2814,6 +2819,7 @@
     "app-layers": 2,
     "gem": 1,
     "hotwire": 2,
+    "rails-idiom": 1,
     "rails-word": 2,
     "ruby-file": 2
    },
@@ -2824,6 +2830,7 @@
     5,
     11,
     22,
+    23,
     27,
     79,
     80
@@ -2833,7 +2840,7 @@
   "plugins/rails-flow/agents/design-auditor.md": {
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
-    "concept": 4,
+    "concept": 7,
     "gem": 5,
     "hotwire": 3,
     "path": 5
@@ -2846,6 +2853,7 @@
     "gem": 5,
     "hotwire": 3,
     "rails-config": 1,
+    "rails-idiom": 3,
     "ruby-file": 1
    },
    "invokes": [],
@@ -2855,6 +2863,7 @@
     6,
     19,
     22,
+    23,
     24,
     30,
     31,
@@ -2940,7 +2949,7 @@
   "plugins/rails-flow/agents/rails-developer.md": {
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
-    "concept": 3,
+    "concept": 4,
     "gem": 1,
     "hotwire": 4,
     "path": 2,
@@ -2952,6 +2961,7 @@
     "app-layers": 1,
     "gem": 1,
     "hotwire": 4,
+    "rails-idiom": 1,
     "rails-word": 2,
     "rspec": 1,
     "ruby-file": 1,
@@ -2967,6 +2977,7 @@
     19,
     24,
     25,
+    27,
     44
    ],
    "move": "rails-agents"
@@ -2974,7 +2985,7 @@
   "plugins/rails-flow/agents/security-auditor.md": {
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
-    "concept": 3,
+    "concept": 4,
     "path": 1,
     "tool": 6
    },
@@ -2985,6 +2996,7 @@
     "brakeman": 3,
     "bundler": 2,
     "bundler-audit": 1,
+    "rails-idiom": 1,
     "rails-word": 1,
     "ruby-file": 2
    },
@@ -2998,6 +3010,7 @@
     11,
     14,
     15,
+    21,
     34,
     52,
     53
@@ -3066,7 +3079,7 @@
   "plugins/rails-flow/checks.json": {
    "assumes": "registers the Rails gates and names Rails paths in applies_when",
    "categories": {
-    "concept": 14,
+    "concept": 15,
     "gem": 2,
     "path": 21,
     "tool": 6
@@ -3082,6 +3095,7 @@
     "gem": 2,
     "gemfile": 5,
     "rails-config": 3,
+    "rails-idiom": 1,
     "rails-word": 1,
     "rubocop": 1,
     "ruby": 1,
@@ -3331,7 +3345,7 @@
   "plugins/rails-flow/commands/review.md": {
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
    "categories": {
-    "concept": 2,
+    "concept": 3,
     "hotwire": 1,
     "path": 2
    },
@@ -3340,6 +3354,7 @@
    "ids": {
     "app-layers": 2,
     "hotwire": 1,
+    "rails-idiom": 1,
     "rails-word": 1,
     "ruby-file": 1
    },
@@ -3348,6 +3363,7 @@
    "lines": [
     12,
     32,
+    33,
     66
    ],
    "move": ""
@@ -3355,8 +3371,7 @@
   "plugins/rails-flow/commands/setup-flow.md": {
    "assumes": "the scaffold, Gemfile, Rails config and gem doctrine it writes into CLAUDE.md",
    "categories": {
-    "concept": 9,
-    "hotwire": 1,
+    "concept": 10,
     "path": 8,
     "tool": 12
    },
@@ -3369,8 +3384,8 @@
     "brakeman": 1,
     "db": 2,
     "gemfile": 1,
-    "hotwire": 1,
     "rails-config": 2,
+    "rails-idiom": 1,
     "rails-word": 3,
     "rake": 2,
     "routes": 1,
@@ -3379,38 +3394,38 @@
     "ruby-file": 6
    },
    "invokes": [
-    396,
-    399,
-    730,
-    769,
-    783,
-    788
+    392,
+    395,
+    726,
+    765,
+    779,
+    784
    ],
    "kind": "command",
    "lines": [
-    296,
-    352,
-    370,
-    371,
-    386,
-    396,
-    399,
-    561,
-    652,
-    653,
-    691,
-    705,
-    706,
-    725,
-    727,
-    730,
-    767,
-    769,
-    783,
-    788,
-    795,
-    824,
-    916
+    348,
+    351,
+    366,
+    367,
+    382,
+    392,
+    395,
+    557,
+    648,
+    649,
+    687,
+    701,
+    702,
+    721,
+    723,
+    726,
+    763,
+    765,
+    779,
+    784,
+    791,
+    820,
+    912
    ],
    "move": ""
   },
@@ -3780,7 +3795,7 @@
   "plugins/rails-flow/reference/agent-instruction-conventions.md": {
    "assumes": "text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec)",
    "categories": {
-    "concept": 7,
+    "concept": 8,
     "gem": 1,
     "tool": 4
    },
@@ -3788,6 +3803,7 @@
    "how": "the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example",
    "ids": {
     "gem": 1,
+    "rails-idiom": 1,
     "rails-word": 6,
     "rspec": 2,
     "ruby": 2,
@@ -3805,6 +3821,7 @@
     139,
     142,
     145,
+    153,
     178,
     225,
     267,
@@ -3892,12 +3909,14 @@
   "plugins/rails-flow/reference/model-tiers.md": {
    "assumes": "text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec)",
    "categories": {
+    "concept": 1,
     "tool": 2
    },
    "decision": "detector",
    "how": "the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example",
    "ids": {
     "bundler": 1,
+    "rails-idiom": 1,
     "rspec": 1
    },
    "invokes": [
@@ -3905,14 +3924,15 @@
    ],
    "kind": "reference",
    "lines": [
-    116
+    116,
+    117
    ],
    "move": ""
   },
   "plugins/rails-flow/scaffold/tenancy/scoped_lookup.rb": {
    "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
    "categories": {
-    "concept": 5,
+    "concept": 7,
     "path": 2,
     "tool": 3
    },
@@ -3921,6 +3941,7 @@
    "ids": {
     "active-framework": 1,
     "app-layers": 2,
+    "rails-idiom": 2,
     "rails-word": 2,
     "rubocop": 3,
     "ruby-file": 2
@@ -3931,9 +3952,11 @@
    "kind": "scaffold",
    "lines": [
     3,
+    9,
     13,
     14,
     15,
+    16,
     25,
     26,
     27,
@@ -3944,7 +3967,7 @@
   "plugins/rails-flow/scripts/architecture_graph.py": {
    "assumes": "reads routes, app/**, db/schema.rb to draw the architecture, wiki and help",
    "categories": {
-    "concept": 59,
+    "concept": 68,
     "hotwire": 9,
     "path": 26,
     "tool": 2
@@ -3958,6 +3981,7 @@
     "db": 8,
     "erb": 3,
     "hotwire": 9,
+    "rails-idiom": 9,
     "rails-word": 17,
     "routes": 3,
     "ruby": 1,
@@ -3999,6 +4023,11 @@
     680,
     703,
     727,
+    737,
+    743,
+    748,
+    751,
+    758,
     772,
     774,
     787,
@@ -4006,13 +4035,16 @@
     805,
     806,
     807,
+    822,
     836,
     837,
+    851,
     864,
     940,
     942,
     944,
     945,
+    967,
     1316,
     1807,
     2168,
@@ -4098,7 +4130,7 @@
   "plugins/rails-flow/scripts/build_project_wiki.py": {
    "assumes": "reads routes, app/**, db/schema.rb to draw the architecture, wiki and help",
    "categories": {
-    "concept": 74,
+    "concept": 77,
     "gem": 2,
     "hotwire": 2,
     "path": 45,
@@ -4115,6 +4147,7 @@
     "gem": 2,
     "gemfile": 8,
     "hotwire": 2,
+    "rails-idiom": 3,
     "rails-word": 7,
     "routes": 4,
     "ruby": 1,
@@ -4150,6 +4183,7 @@
     240,
     287,
     299,
+    300,
     301,
     319,
     339,
@@ -4170,6 +4204,7 @@
     525,
     526,
     527,
+    528,
     532,
     547,
     548,
@@ -4186,6 +4221,7 @@
     592,
     599,
     600,
+    617,
     628,
     629,
     633,
@@ -4489,7 +4525,7 @@
   "plugins/rails-flow/scripts/check_guide_selftest.py": {
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
    "categories": {
-    "concept": 29,
+    "concept": 30,
     "tool": 8
    },
    "decision": "reword",
@@ -4498,6 +4534,7 @@
    "ids": {
     "bin-rails": 6,
     "bundler": 1,
+    "rails-idiom": 1,
     "rails-word": 1,
     "ruby": 1,
     "ruby-file": 28
@@ -4521,6 +4558,7 @@
     418,
     420,
     426,
+    428,
     452,
     453,
     454,
@@ -4919,7 +4957,7 @@
   "plugins/rails-flow/scripts/check_i18n_setup.py": {
    "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
    "categories": {
-    "concept": 13,
+    "concept": 19,
     "path": 5,
     "tool": 1
    },
@@ -4930,6 +4968,7 @@
     "app-layers": 1,
     "bundler": 1,
     "gemfile": 4,
+    "rails-idiom": 6,
     "rails-word": 6,
     "ruby-file": 4
    },
@@ -4942,18 +4981,24 @@
     33,
     34,
     80,
+    82,
+    87,
+    92,
     97,
     100,
     108,
     120,
     139,
+    140,
     144,
     153,
     156,
     159,
     167,
     175,
+    176,
     193,
+    199,
     205,
     208
    ],
@@ -5625,7 +5670,7 @@
   "plugins/rails-flow/scripts/check_simple_form_only.py": {
    "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
    "categories": {
-    "concept": 35,
+    "concept": 41,
     "gem": 22,
     "path": 28
    },
@@ -5636,6 +5681,7 @@
     "erb": 32,
     "gem": 22,
     "gemfile": 7,
+    "rails-idiom": 6,
     "rails-word": 3
    },
    "invokes": [],
@@ -5648,13 +5694,16 @@
     14,
     15,
     17,
+    19,
     26,
     31,
     32,
     39,
     44,
+    63,
     73,
     74,
+    75,
     77,
     79,
     80,
@@ -5672,6 +5721,7 @@
     184,
     192,
     206,
+    209,
     223,
     254,
     257,
@@ -5679,6 +5729,7 @@
     260,
     262,
     264,
+    268,
     270,
     275,
     283,
@@ -5851,7 +5902,7 @@
   "plugins/rails-flow/scripts/check_tenancy_cop.py": {
    "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
    "categories": {
-    "concept": 28,
+    "concept": 30,
     "path": 26,
     "tool": 65
    },
@@ -5862,6 +5913,7 @@
     "app-layers": 21,
     "bin-rails": 3,
     "db": 3,
+    "rails-idiom": 2,
     "rubocop": 49,
     "rubocop-yml": 2,
     "ruby": 13,
@@ -5925,6 +5977,7 @@
     231,
     280,
     284,
+    286,
     294,
     315,
     330,
@@ -5933,6 +5986,7 @@
     383,
     408,
     451,
+    452,
     455,
     495,
     506,
@@ -6513,7 +6567,7 @@
   "plugins/rails-flow/scripts/mutations/build_project_wiki.py": {
    "assumes": "reads routes, app/**, db/schema.rb to draw the architecture, wiki and help",
    "categories": {
-    "concept": 8,
+    "concept": 9,
     "path": 2
    },
    "decision": "rails-stack",
@@ -6522,12 +6576,14 @@
    "ids": {
     "db": 1,
     "gemfile": 1,
+    "rails-idiom": 1,
     "ruby-file": 8
    },
    "invokes": [],
    "kind": "mutation",
    "lines": [
     19,
+    66,
     83,
     120,
     139,
@@ -6910,7 +6966,7 @@
   "plugins/rails-flow/scripts/mutations/check_simple_form_only.py": {
    "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
    "categories": {
-    "concept": 9,
+    "concept": 17,
     "gem": 7,
     "path": 6
    },
@@ -6922,6 +6978,7 @@
     "erb": 7,
     "gem": 7,
     "gemfile": 3,
+    "rails-idiom": 8,
     "rails-word": 2
    },
    "invokes": [],
@@ -6929,6 +6986,12 @@
    "lines": [
     3,
     4,
+    14,
+    15,
+    21,
+    22,
+    23,
+    24,
     51,
     67,
     71,
@@ -6938,6 +7001,8 @@
     77,
     78,
     79,
+    108,
+    109,
     130,
     132,
     135,
@@ -7502,7 +7567,7 @@
   "plugins/rails-flow/scripts/self_consistency_selftest.py": {
    "assumes": "hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test",
    "categories": {
-    "concept": 24,
+    "concept": 25,
     "path": 20,
     "tool": 25
    },
@@ -7514,6 +7579,7 @@
     "binstub": 3,
     "bundler": 2,
     "rails-config": 1,
+    "rails-idiom": 1,
     "rails-word": 2,
     "rspec": 14,
     "rubocop": 3,
@@ -7534,6 +7600,7 @@
     69,
     71,
     75,
+    76,
     81,
     87,
     95,
@@ -8073,16 +8140,16 @@
  "policy": "docs/architecture/rails-assumptions.policy.json",
  "summary": {
   "by_category": {
-   "concept": 1910,
+   "concept": 1963,
    "gem": 138,
-   "hotwire": 105,
+   "hotwire": 104,
    "path": 1243,
    "tool": 890
   },
   "by_decision": {
    "detector": {
     "files": 90,
-    "lines": 1222
+    "lines": 1225
    },
    "neutral": {
     "files": 7,
@@ -8090,18 +8157,18 @@
    },
    "rails-stack": {
     "files": 68,
-    "lines": 1632
+    "lines": 1673
    },
    "reword": {
     "files": 63,
-    "lines": 275
+    "lines": 278
    }
   },
   "by_flow": {
    "design-flow": {
     "detector": 2,
     "files": 38,
-    "lines": 547,
+    "lines": 550,
     "neutral": 0,
     "rails-stack": 18,
     "reword": 18
@@ -8125,7 +8192,7 @@
    "rails-flow": {
     "detector": 50,
     "files": 135,
-    "lines": 2245,
+    "lines": 2289,
     "neutral": 3,
     "rails-stack": 47,
     "reword": 35
@@ -8134,11 +8201,11 @@
   "by_kind": {
    "agent": {
     "files": 21,
-    "lines": 98
+    "lines": 104
    },
    "command": {
     "files": 27,
-    "lines": 158
+    "lines": 160
    },
    "data": {
     "files": 3,
@@ -8158,23 +8225,23 @@
    },
    "mutation": {
     "files": 44,
-    "lines": 252
+    "lines": 261
    },
    "reference": {
     "files": 8,
-    "lines": 29
+    "lines": 31
    },
    "scaffold": {
     "files": 2,
-    "lines": 9
+    "lines": 11
    },
    "script": {
     "files": 88,
-    "lines": 2220
+    "lines": 2244
    },
    "selftest": {
     "files": 16,
-    "lines": 210
+    "lines": 212
    },
    "template": {
     "files": 1,
@@ -8194,8 +8261,9 @@
    "erb-lint": 73,
    "gem": 138,
    "gemfile": 176,
-   "hotwire": 105,
+   "hotwire": 104,
    "rails-config": 107,
+   "rails-idiom": 53,
    "rails-word": 312,
    "rake": 56,
    "routes": 37,
@@ -8207,6 +8275,6 @@
    "spec-dir": 182
   },
   "files": 228,
-  "lines": 3153
+  "lines": 3200
  }
 }

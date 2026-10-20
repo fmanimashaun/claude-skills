@@ -458,17 +458,8 @@
   "sections": [
    {
     "lines": [
-     177,
-     309
-    ],
-    "assumes": "what the template still names after #2196 moved its fact lines into each stack's CLAUDE.md facts: the structural-map line lists the Rails graph's node kinds (controller, model, job, Stimulus controller)",
-    "disposition": "detector",
-    "how": "the node kinds come from the graph the stack's generator writes (the rails-docs-generators move); the stack line, commands, overrides, preflight and loop checks now come from setup/rails.md's CLAUDE.md facts (#2196)"
-   },
-   {
-    "lines": [
-     310,
-     533
+     308,
+     531
     ],
     "assumes": "path-scoped rules over app/models/**/*.rb and **/*.rb, config/database.yml as the database marker, config/ci.rb and bin/ci, and the one RAILS_ENV=test bin/rails command guard-bash allows",
     "disposition": "detector",
@@ -476,8 +467,8 @@
    },
    {
     "lines": [
-     534,
-     762
+     532,
+     760
     ],
     "assumes": "companion workflows: bundle exec rspec, rubocop, bundler-audit, brakeman, the architecture graph over routes/app/db, derived docs over db/schema.rb and Gemfile.lock, the help registry rake task",
     "disposition": "detector",
@@ -485,8 +476,8 @@
    },
    {
     "lines": [
-     763,
-     1003
+     761,
+     1001
     ],
     "assumes": "what stays of §8 after the Rails-only repairs moved: the CI economy section's 'the Rails 8 default' ci.yml and `bin/ci`, the doctrine gate's Brakeman and 'no Ruby' wording",
     "disposition": "reword",

@@ -1499,7 +1499,7 @@ GUARD = Guard(
             "a stack section with no CLAUDE.md facts preflight stops being a finding",
             '        if "## CLAUDE.md facts" not in body or part is None:\n',
             "        if False:\n",
-            "the Rails section has no CLAUDE.md facts preflight",
+            "a stack with no needle list still needs a CLAUDE.md facts preflight",
         ),
         Mutation(
             "the held-lock check counts anywhere in the section, not only in its preflight part",

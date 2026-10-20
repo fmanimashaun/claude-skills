@@ -29,6 +29,21 @@ lines fill it.
 - **Style reference**: the rails-8 skill's `skills/rails-8/references/style.md`, read before writing or reviewing Ruby
   (conditional returns, method and invocation ordering, bang methods, visibility modifiers, `_later`/`_now` job naming).
 
+- **Scope idiom** (the Architecture Overview): how scope is set per request, by middleware or `Current.*`.
+- **Pattern kinds** (the Patterns section): controller shape, service invocation and result object, job shape (an
+  idempotent `perform`; the argument convention the codebase actually uses, a record or an id, never imposed), key
+  concerns.
+
+### Structural map
+
+Written into the project's CLAUDE.md as `## Structural map (read before grepping)`, verbatim:
+
+`docs/architecture/graph.json` — `{nodes, edges, flows}` for this app: every controller,
+model, job, mailer, service, component, Stimulus controller, route and table, plus named
+request flows. To locate something or size a change, query the graph instead of reading
+the tree; walk `edges` backwards from a node for its blast radius. Regenerate with
+`/rails-flow:graph`; `index.html` is the human view. Generated — never hand-edit.
+
 ### Test-run preflight
 
 The database is up (`pg_isready` for Postgres; start it and re-check if it is not), and no `bundler.lock` is held (a

@@ -195,12 +195,12 @@ filled from the §1 inspection>
 ## Architecture Overview
 <the NON-OBVIOUS, cross-cutting mechanisms and domain vocabulary an agent must know before
 touching anything — 5-10 lines, prose. Include ONLY what cannot be derived by reading the
-code: the tenancy model and how scope is set (middleware? Current.*?), the auth model, any
+code: the tenancy model and how scope is set per request (each stack's CLAUDE.md facts name its idiom), the auth model, any
 non-standard primary key, domain terms whose meaning is not their English meaning, and any
 rule that holds app-wide ("every query is tenant-scoped"). NOT a directory tour, NOT a
 dependency list, NOT "it uses Service Objects" — Claude Code's own /doctor trims derivable
-overviews, and an agent can read the tree. Structure lives in the graph; point there:
-"for what-calls-what, query docs/architecture/graph.json". An empty section is a valid
+overviews, and an agent can read the tree. Where a stack's facts give a structural map, structure lives there; point
+to it rather than describing it. An empty section is a valid
 answer for a simple CRUD app — say so rather than padding it.>
 
 ## Before you change an area, read its doc
@@ -221,8 +221,8 @@ use both where an area has both.>
 line: what the project does instead, and why. Keep this section honest — an empty list is a valid answer.>
 
 ## Patterns
-<the 3-6 patterns agents must copy: controller shape, service invocation + result object,
-job shape (idempotent `perform`; the argument convention THIS codebase actually uses — record or id, do not impose one), key concerns — short code snippets from THIS codebase>
+<the 3-6 patterns agents must copy, of the kinds each stack's CLAUDE.md facts lists — short code snippets from THIS
+codebase, following the conventions THIS codebase actually uses; do not impose one>
 
 ## Verification Commands
 <grep one-liners that mechanically check the overrides (the stack's facts give examples), e.g. no raw palette colors>
@@ -291,12 +291,8 @@ execution to subagents; keep judgment here.
 - Before writing or reviewing code, read the **style reference** each stack's CLAUDE.md facts names: how code
   should read here. Project Overrides above win where they conflict; everything else follows the skill.
 
-## Structural map (read before grepping)
-`docs/architecture/graph.json` — `{nodes, edges, flows}` for this app: every controller,
-model, job, mailer, service, component, Stimulus controller, route and table, plus named
-request flows. To locate something or size a change, query the graph instead of reading
-the tree; walk `edges` backwards from a node for its blast radius. Regenerate with
-`/rails-flow:graph`; `index.html` is the human view. Generated — never hand-edit.
+<each stack's CLAUDE.md facts' `### Structural map`, written as its own `## Structural map (read before grepping)`
+section; a project whose stacks give none gets no such section>
 
 ## See Also
 AGENTS routing → the rails-flow plugin agents · GUARDRAILS.md · docs/brain/MEMORY.md · `/rails-flow:handoff` (the work order for another session or an executor)
