@@ -27,7 +27,7 @@ with no markers (it would match every project), two manifests for one plugin at 
 
 WHERE MANIFESTS ARE FOUND. Only at PLUGIN ROOTS -- a directory carrying `.claude-plugin/plugin.json`,
 or `.claude-plugin/marketplace.json` for a marketplace whose plugin is its own root (`rails-stack`'s
-source is `./`) -- so a stray `docs/notes/stacks.json` is never read. The same two shapes
+source is `./`) -- so a stray `stacks.json` in any other directory is never read. The same two shapes
 `project_gates.plugin_roots` handles (sibling `plugins/*` in a checkout, `<plugin>/<version>/` in the
 installed cache) plus the repo root. Several versions of one plugin collapse to the highest, by the
 manifest's own `plugin` and `version`, not by directory names.
