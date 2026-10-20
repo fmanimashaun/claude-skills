@@ -124,7 +124,7 @@ def kind_of(path: str) -> str:
     return "doc"
 
 
-def scan(root: Path, files: list[str] | None = None) -> dict[str, dict]:
+def scan(root: Path, files: list[str] | None = None, patterns: tuple[Pattern, ...] | None = None) -> dict[str, dict]:
     """`{path: {"kind", "lines": [n, ...], "ids": {pattern id: count}, "categories": {category: count}}}` for every file with at least one hit."""
     result: dict[str, dict] = {}
     for rel in files if files is not None else tracked_files(root):
@@ -138,7 +138,7 @@ def scan(root: Path, files: list[str] | None = None) -> dict[str, dict]:
         ids: Counter[str] = Counter()
         cats: Counter[str] = Counter()
         for number, line in enumerate(raw.decode("utf-8", errors="replace").splitlines(), 1):
-            for pat in PATTERNS:
+            for pat in patterns or PATTERNS:
                 if pat.rx.search(line):
                     lines.add(number)
                     ids[pat.id] += 1

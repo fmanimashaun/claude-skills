@@ -151,7 +151,14 @@
    ],
    "decision": "detector",
    "assumes": "hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command",
-   "how": "asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer"
+   "how": "asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer",
+   "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
+   "issues": {
+    "rails-flow": 2183,
+    "qa-flow": 2184,
+    "pipeline": 2184,
+    "design-flow": 2185
+   }
   },
   {
    "match": [
@@ -178,7 +185,14 @@
    ],
    "decision": "detector",
    "assumes": "hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test",
-   "how": "reads source globs, risky paths and commands from the detector's stack descriptor"
+   "how": "reads source globs, risky paths and commands from the detector's stack descriptor",
+   "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
+   "issues": {
+    "rails-flow": 2183,
+    "qa-flow": 2184,
+    "pipeline": 2184,
+    "design-flow": 2185
+   }
   },
   {
    "match": [
@@ -186,7 +200,14 @@
    ],
    "decision": "detector",
    "assumes": "registers the Rails gates and names Rails paths in applies_when",
-   "how": "the Rails rows leave with their gates (rails-gates, rails-mandated-gems); what remains is stack-neutral"
+   "how": "the Rails rows leave with their gates (rails-gates, rails-mandated-gems); what remains is stack-neutral",
+   "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
+   "issues": {
+    "rails-flow": 2183,
+    "qa-flow": 2184,
+    "pipeline": 2184,
+    "design-flow": 2185
+   }
   },
   {
    "match": [
@@ -194,7 +215,9 @@
    ],
    "decision": "detector",
    "assumes": "the scaffold, Gemfile, Rails config and gem doctrine it writes into CLAUDE.md",
-   "how": "asks the detector which stack descriptor to scaffold; the Rails sections move with the rails-stack scaffold"
+   "how": "asks the detector which stack descriptor to scaffold; the Rails sections move with the rails-stack scaffold",
+   "seam": "setup-flow asks the stack detector for stack facts and runs each stack's own scaffold section",
+   "issue": 2180
   },
   {
    "match": [
@@ -213,7 +236,14 @@
    ],
    "decision": "detector",
    "assumes": "maps .rb files, spec/ and app/ paths to routes and blast radius, reads bin/rails routes, or names Rails boot failures",
-   "how": "reads source and route extraction from the detector; the Rails route command becomes the rails-stack answer"
+   "how": "reads source and route extraction from the detector; the Rails route command becomes the rails-stack answer",
+   "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
+   "issues": {
+    "rails-flow": 2183,
+    "qa-flow": 2184,
+    "pipeline": 2184,
+    "design-flow": 2185
+   }
   },
   {
    "match": [
@@ -224,7 +254,14 @@
    ],
    "decision": "detector",
    "assumes": "names Rails paths or the Rails app as the host project in its messages and path filters",
-   "how": "reuse for a Next.js project (#2170) once its path filters come from the detector"
+   "how": "reuse for a Next.js project (#2170) once its path filters come from the detector",
+   "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
+   "issues": {
+    "rails-flow": 2183,
+    "qa-flow": 2184,
+    "pipeline": 2184,
+    "design-flow": 2185
+   }
   },
   {
    "match": [
@@ -236,7 +273,14 @@
    ],
    "decision": "detector",
    "assumes": "reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan",
-   "how": "reads the project's dependency manifest from the detector"
+   "how": "reads the project's dependency manifest from the detector",
+   "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
+   "issues": {
+    "rails-flow": 2183,
+    "qa-flow": 2184,
+    "pipeline": 2184,
+    "design-flow": 2185
+   }
   },
   {
    "match": [
@@ -252,7 +296,14 @@
    ],
    "decision": "reword",
    "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral"
+   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
+   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "issues": {
+    "rails-flow": 2183,
+    "qa-flow": 2184,
+    "pipeline": 2184,
+    "design-flow": 2185
+   }
   },
   {
    "match": [
@@ -264,7 +315,14 @@
    ],
    "decision": "reword",
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
-   "how": "reworded in the slice that touches the file; no code changes"
+   "how": "reworded in the slice that touches the file; no code changes",
+   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "issues": {
+    "rails-flow": 2183,
+    "qa-flow": 2184,
+    "pipeline": 2184,
+    "design-flow": 2185
+   }
   },
   {
    "match": [
@@ -275,7 +333,14 @@
    ],
    "decision": "reword",
    "assumes": "prose or examples that name bin/rails, RSpec or Rails paths",
-   "how": "reworded to reference the detector's commands"
+   "how": "reworded to reference the detector's commands",
+   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "issues": {
+    "rails-flow": 2183,
+    "qa-flow": 2184,
+    "pipeline": 2184,
+    "design-flow": 2185
+   }
   },
   {
    "match": [
@@ -285,7 +350,14 @@
    ],
    "decision": "reword",
    "assumes": "prose or examples that name Rails, the Gemfile or Rails binstubs",
-   "how": "reworded to reference the detector's commands"
+   "how": "reworded to reference the detector's commands",
+   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "issues": {
+    "rails-flow": 2183,
+    "qa-flow": 2184,
+    "pipeline": 2184,
+    "design-flow": 2185
+   }
   },
   {
    "match": [
@@ -364,6 +436,286 @@
    "setup-flow asks the detector (#2163) which stacks the repository holds (more than one is allowed), fills the stack line, commands, source globs and database marker from the descriptor, and then runs each stack's section in turn.",
    "For a nextjs-stack repository that means: the same rule scaffold; stack facts from package.json, next.config and supabase/ as the detector reports them; and nextjs-stack's section proposing its own repairs (strict TypeScript, Storybook, local-first CI) as approved diffs, the way the Rails repairs are proposed today.",
    "A project's rules arrive by running setup-flow, not by a hand-written copy: a repository adopting the rules (flo-it-ui, for one) gets the neutral scaffold plus its stack section, and a later release updates it the same idempotent way."
+  ]
+ },
+ "components": {
+  "declared": [
+   {
+    "match": [
+     "plugins/design-flow/agents/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/design-flow/brands/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/design-flow/commands/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/design-flow/hooks/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/design-flow/reference/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/design-flow/scripts/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/flow-suite/.claude-plugin/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/pipeline/.claude-plugin/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/pipeline/README.md"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/pipeline/agents/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/pipeline/commands/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/pipeline/git-hooks/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/pipeline/hooks/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/pipeline/pipeline.actions.yml.example"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/pipeline/reference/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/pipeline/scripts/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/qa-flow/.claude-plugin/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/qa-flow/README.md"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/qa-flow/agents/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/qa-flow/checks.json"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/qa-flow/commands/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/qa-flow/hooks/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/qa-flow/reference/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/qa-flow/scaffold/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/qa-flow/scripts/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/rails-flow/agents/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/rails-flow/commands/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/rails-flow/git-shim/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/rails-flow/hooks/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/rails-flow/reference/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/rails-flow/scripts/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/rails-flow/templates/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/rails-flow/tests/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/rails-flow/checks.json#architecture-boundaries",
+     "plugins/rails-flow/checks.json#erb-parse-safety"
+    ],
+    "class": "rails",
+    "issue": 2175,
+    "why": "runs bundle exec archspec / herb: a Rails-only tool with no script of ours"
+   },
+   {
+    "match": [
+     "skills/rails-8",
+     "skills/hotwire"
+    ],
+    "class": "rails",
+    "issue": 2182,
+    "why": "Rails 8 and Hotwire doctrine; they move with rails-stack into plugins/rails-stack (step 1)"
+   },
+   {
+    "match": [
+     "skills/design-system"
+    ],
+    "class": "mixed",
+    "seam": "neutral catalog plus Rails implementation references; the Rails half moves to a rails-stack skill",
+    "issue": 2185,
+    "why": "the plan's step 7 splits the catalog from its implementations"
+   },
+   {
+    "match": [
+     "skills/quality-pass",
+     "skills/derived-artifacts"
+    ],
+    "class": "neutral",
+    "why": "stack-neutral doctrine, bundled under the rails-stack name today; step 8 gives them a plugin of their own (#2186)"
+   },
+   {
+    "match": [
+     "skills/code-review",
+     "skills/parallel-session-lane"
+    ],
+    "class": "mixed",
+    "seam": "stack-neutral doctrine whose examples name Rails; the Rails examples move out when core-skills is split (step 8)",
+    "issue": 2186,
+    "why": "measured: code-review and parallel-session-lane name Rails in examples; quality-pass and derived-artifacts do not"
+   }
   ]
  }
 }

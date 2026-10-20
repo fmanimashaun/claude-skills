@@ -209,6 +209,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | checks.json paths selftest | `repo` | `python3 scripts/check_manifest_paths.py --selftest` | selftest |
 | claude plugin validate --strict | `repo` | `python3 scripts/check_plugin_validate.py` | live check |
 | close-on-dev-merge selftest | `repo` | `python3 scripts/close_on_dev_merge.py --selftest` | selftest |
+| component classes drift | `repo` | `python3 scripts/component_classes.py --check` | live check |
+| component classes selftest | `repo` | `python3 scripts/component_classes.py --selftest` | selftest |
 | component passthrough | `repo` | `python3 scripts/check_component_passthrough.py` | live check |
 | component passthrough selftest | `repo` | `python3 scripts/check_component_passthrough.py --selftest` | selftest |
 | component shapes reconciled | `repo` | `python3 scripts/check_component_shapes.py` | live check |
