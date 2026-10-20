@@ -9,8 +9,8 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 | decision | what it means | files | lines |
 |---|---|---:|---:|
 | `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 68 | 1632 |
-| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 82 | 1078 |
-| `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 69 | 487 |
+| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 90 | 1315 |
+| `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 61 | 250 |
 | `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change | 7 | 24 |
 | **all** | | **226** | **3221** |
 
@@ -18,9 +18,9 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 
 | flow | files | lines | `rails-stack` | `detector` | `reword` | `neutral` |
 |---|---:|---:|---:|---:|---:|---:|
-| `rails-flow` | 133 | 2313 | 47 | 46 | 37 | 3 |
-| `qa-flow` | 36 | 272 | 0 | 27 | 8 | 1 |
-| `pipeline` | 19 | 89 | 3 | 7 | 6 | 3 |
+| `rails-flow` | 133 | 2313 | 47 | 50 | 33 | 3 |
+| `qa-flow` | 36 | 272 | 0 | 29 | 6 | 1 |
+| `pipeline` | 19 | 89 | 3 | 9 | 4 | 3 |
 | `design-flow` | 38 | 547 | 18 | 2 | 18 | 0 |
 
 ## By what is named
@@ -141,12 +141,12 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `hooks/scripts/stop-gate.sh:26`<br>L26, 31, 32, 44, 178 +12 more | hook | 17 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
 | `hooks/scripts/test-preflight.sh:4`<br>L4, 5, 14, 21 | hook | 4 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
 | `mandated_gems.json:5`<br>L5, 17, 18, 20, 22 +2 more | data | 7 | a list of Ruby gems and the Gemfile reader for it | `rails-stack` (rails-mandated-gems) | moves with its checks.json row |
-| `reference/agent-instruction-conventions.md:5`<br>L5, 6, 8, 104, 139 +6 more | reference | 11 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
+| `reference/agent-instruction-conventions.md:5`<br>L5, 6, 8, 104, 139 +6 more | reference | 11 | text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec) | `detector` | the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example |
 | `reference/case-per-change.md:31`<br>L31 | reference | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `reference/context-budget.md:274`<br>L274 | reference | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
+| `reference/context-budget.md:274`<br>L274 | reference | 1 | text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec) | `detector` | the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example |
 | `reference/downstream-spec-fixtures.md:11`<br>L11 | reference | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `reference/help.md:34`<br>L34, 52, 53, 64, 67 | reference | 5 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `reference/model-tiers.md:116`<br>L116 | reference | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
+| `reference/model-tiers.md:116`<br>L116 | reference | 1 | text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec) | `detector` | the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example |
 | `scaffold/tenancy/scoped_lookup.rb:3`<br>L3, 13, 14, 15, 25 +3 more | scaffold | 8 | parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project | `rails-stack` (rails-gates) | moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin |
 | `scripts/architecture_graph.py:2`<br>L2, 20, 81, 176, 178 +74 more | script | 79 | reads routes, app/**, db/schema.rb to draw the architecture, wiki and help | `rails-stack` (rails-docs-generators) | moves with /rails-flow:graph (commands/graph.md names it) |
 | `scripts/assign_lanes.py:146`<br>L146, 174, 181, 185, 188 +4 more | script | 9 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
@@ -162,7 +162,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `scripts/check_guide_selftest.py:23`<br>L23, 79, 229, 238, 256 +31 more ↳ | selftest | 36 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/check_handoff.py:99`<br>L99, 184, 258 | script | 3 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/check_handoff_selftest.py:11`<br>L11, 18, 24, 59, 60 +18 more ↳ | selftest | 23 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `scripts/check_hook_gates.py:12`<br>L12, 20, 21, 57, 62 +200 more | script | 205 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
+| `scripts/check_hook_gates.py:12`<br>L12, 20, 21, 57, 62 +200 more | script | 205 | the harness that drives every hook, including the Rails ones, with Rails command fixtures (bin/rails, rspec) | `detector` | learns the sibling stack plugin's hooks directory (step 3d of the plan) and drives each stack's hooks with that stack's fixtures |
 | `scripts/check_i18n_setup.py:15`<br>L15, 33, 34, 80, 97 +13 more | script | 18 | parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project | `rails-stack` (rails-gates) | moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin |
 | `scripts/check_issue_mockup.py:47`<br>L47, 51, 206 | script | 3 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/check_issue_ready.py:27`<br>L27, 297, 298 | script | 3 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
@@ -246,7 +246,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 |---|---|---:|---|---|---|
 | `agents/a11y-auditor.md:234`<br>L234 | agent | 1 | prose or examples that name bin/rails, RSpec or Rails paths | `reword` | reworded to reference the detector's commands |
 | `agents/e2e-tester.md:13`<br>L13 | agent | 1 | prose or examples that name bin/rails, RSpec or Rails paths | `reword` | reworded to reference the detector's commands |
-| `agents/functional-tester.md:295`<br>L295, 308, 311 | agent | 3 | prose or examples that name bin/rails, RSpec or Rails paths | `reword` | reworded to reference the detector's commands |
+| `agents/functional-tester.md:295`<br>L295, 308, 311 | agent | 3 | text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec) | `detector` | the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example |
 | `agents/qa-lead.md:12`<br>L12, 51, 74 | agent | 3 | prose or examples that name bin/rails, RSpec or Rails paths | `reword` | reworded to reference the detector's commands |
 | `agents/qa-reporter.md:35`<br>L35 | agent | 1 | prose or examples that name bin/rails, RSpec or Rails paths | `reword` | reworded to reference the detector's commands |
 | `agents/security-scanner.md:5`<br>L5, 10 | agent | 2 | prose or examples that name bin/rails, RSpec or Rails paths | `reword` | reworded to reference the detector's commands |
@@ -254,7 +254,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `commands/smoke.md:19`<br>L19, 22, 24, 29, 77 +1 more | command | 6 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
 | `commands/verify.md:46`<br>L46, 61, 132, 133 | command | 4 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
 | `hooks/scripts/lib/trusted-env.sh:13`<br>L13, 18, 29, 37, 45 +2 more | hook | 7 | a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others | `detector` | the env scrub keeps working exactly as today; only its stack facts (the repo-root markers and the RUBY*/GEM_*/BUNDLE_* names) move to a per-stack list the stack descriptor provides |
-| `reference/stand-ins.md:24`<br>L24, 25, 27, 35, 36 +3 more | reference | 8 | prose or examples that name bin/rails, RSpec or Rails paths | `reword` | reworded to reference the detector's commands |
+| `reference/stand-ins.md:24`<br>L24, 25, 27, 35, 36 +3 more | reference | 8 | text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec) | `detector` | the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example |
 | `scaffold/qa/e2e/support/totp.ts:2`<br>L2 | scaffold | 1 | prose or examples that name bin/rails, RSpec or Rails paths | `reword` | reworded to reference the detector's commands |
 | `scripts/blast_radius.py:69`<br>L69, 70, 72, 73, 77 +41 more | script | 46 | maps .rb files, spec/ and app/ paths to routes and blast radius, reads bin/rails routes, or names Rails boot failures | `detector` | reads source and route extraction from the detector; the Rails route command becomes the rails-stack answer |
 | `scripts/blast_radius_selftest.py:13`<br>L13, 62, 64, 66, 69 +50 more ↳ | selftest | 55 | maps .rb files, spec/ and app/ paths to routes and blast radius, reads bin/rails routes, or names Rails boot failures | `detector` | reads source and route extraction from the detector; the Rails route command becomes the rails-stack answer |
@@ -288,7 +288,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `agents/kamal-configurator.md:15`<br>L15, 30, 34, 37, 38 +7 more | agent | 12 | routes deploy values into Rails credentials and config/deploy.yml | `rails-stack` (rails-deploy) | the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector |
 | `commands/deploy-cloud.md:10`<br>L10, 37, 43, 55, 57 +2 more | command | 7 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
 | `commands/release.md:26`<br>L26, 76, 136 | command | 3 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
-| `commands/setup-cloud.md:25`<br>L25, 37 | command | 2 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
+| `commands/setup-cloud.md:25`<br>L25, 37 | command | 2 | text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec) | `detector` | the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example |
 | `commands/setup-pipeline.md:45`<br>L45 | command | 1 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
 | `git-hooks/pre-commit:76`<br>L76 | hook | 1 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
 | `hooks/scripts/lib/trusted-env.sh:13`<br>L13, 18, 29, 37, 45 +2 more | hook | 7 | a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others | `detector` | the env scrub keeps working exactly as today; only its stack facts (the repo-root markers and the RUBY*/GEM_*/BUNDLE_* names) move to a per-stack list the stack descriptor provides |
@@ -303,7 +303,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `scripts/release_build.py:307`<br>L307 | script | 1 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
 | `scripts/scan_committed_secrets.py:13`<br>L13, 128 | script | 2 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
 | `scripts/status_board_selftest.py:376`<br>L376 | selftest | 1 | fixture repositories use Rails-shaped sample paths (app/models/user.rb) to exercise a stack-neutral guard, board or hook | `neutral` | nothing to change: the guard under test is neutral and the sample path is arbitrary |
-| `templates/deploy.env.example:5`<br>L5, 12, 13, 14, 36 +1 more | template | 6 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
+| `templates/deploy.env.example:5`<br>L5, 12, 13, 14, 36 +1 more | template | 6 | text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec) | `detector` | the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example |
 
 ### design-flow
 
