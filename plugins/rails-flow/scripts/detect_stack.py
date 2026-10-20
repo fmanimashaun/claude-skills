@@ -142,9 +142,12 @@ def package_dependencies(project: Path) -> set[str] | object | None:
         return CORRUPT                     # valid JSON that is not an object is no package.json a dependency can be read from
     names: set[str] = set()
     for key in ("dependencies", "devDependencies"):
-        section = data.get(key) if isinstance(data, dict) else None
-        if isinstance(section, dict):
-            names.update(section)
+        section = data.get(key)
+        if section is None:
+            continue
+        if not isinstance(section, dict):
+            return CORRUPT                 # a `dependencies` list is no map of names, so "none" would be a guess (#2188 review)
+        names.update(section)
     return names
 
 
@@ -205,8 +208,13 @@ def detect(project: Path, manifests: list[dict]) -> tuple[list[dict], list[str]]
 
 def run(project: Path, dirs: list[Path]) -> tuple[int, dict]:
     manifests, problems = load_manifests(dirs)
-    matched, more = detect(project, manifests)
-    problems += more
+    if not project.is_dir():
+        # A missing path, or a file, has no markers to read: "cannot judge", never "no stack" (#2188 review).
+        problems.append(f"{project}: not a directory, so no stack can be judged")
+        matched = []
+    else:
+        matched, more = detect(project, manifests)
+        problems += more
     report = {"project": str(project), "stacks": matched, "manifests": [m["_path"] for m in manifests], "problems": problems}
     if problems:
         return 2, report
@@ -295,6 +303,12 @@ def selftest() -> int:
         case(ids(bad_pkg, [rails]) == (1, []), "a corrupt package.json is no problem when no stack reads dependencies")
         list_pkg = project("list-package", {"package.json": "[1, 2]"})
         case(ids(list_pkg)[0] == 2, f"a package.json that is valid JSON but not an object is a problem when a stack reads it: {ids(list_pkg)}")
+        list_deps = project("list-deps", {"package.json": json.dumps({"dependencies": ["next"]})})
+        case(ids(list_deps)[0] == 2, f"a `dependencies` that is not a map is a problem: {ids(list_deps)}")
+
+        # A project path that is missing, or a file, cannot be judged (#2188 review).
+        case(ids(empty / "no-such-dir")[0] == 2, f"a missing project path is a problem (exit 2): {ids(empty / 'no-such-dir')}")
+        case(ids(empty.parent / "list-deps" / "package.json")[0] == 2, "a project path that is a file is a problem (exit 2)")
 
         # ADDING A STACK IS A MANIFEST: a stack no plugin ships is detected the moment its manifest exists.
         go = manifest("go-stack", {"plugin": "go-stack", "stacks": [{"id": "go", "name": "Go", "all": [{"file": "go.mod"}]}]})
