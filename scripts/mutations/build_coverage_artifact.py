@@ -13,7 +13,7 @@ GUARD = Guard(
     # real page, so the matrix source has to exist in the workdir. Without these the selftest dies
     # at import and EVERY mutation reports as "caught" — by a traceback, not by a fixture.
     deps=("scripts/build_coverage.py",),
-    needs=("skills/design-system/references/coverage.md",),
+    needs=("plugins/rails-stack/skills/design-system/references/coverage.md",),
     mutations=(
         Mutation(
             "the drift comparison stops comparing, so a stale artifact passes",

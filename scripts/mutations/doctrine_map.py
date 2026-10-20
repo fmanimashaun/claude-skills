@@ -12,7 +12,7 @@ GUARD = Guard(
            "CLAUDE.md", "AGENTS.md"),
     mutations=(
         # #798. The map answered "which claim is enforced by what" for repo-process doctrine
-        # only -- skills/rails-8, hotwire and design-system were not declared sources at all,
+        # only -- plugins/rails-stack/skills/rails-8, hotwire and design-system were not declared sources at all,
         # so the question was unanswerable for the doctrine users actually follow. Three claims
         # (#778/#797, #779, #792) were each found by a downstream project, one at a time.
         Mutation(

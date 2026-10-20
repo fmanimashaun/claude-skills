@@ -14,7 +14,7 @@ guarantee stated in prose that nothing makes true:
 
 Three strikes across three PRs. The full class list -- including the ones that
 need judgement -- lives in the shipped `code-review` skill
-(`skills/code-review/SKILL.md`), so the rules sit where reviewers already look
+(`plugins/rails-stack/skills/code-review/SKILL.md`), so the rules sit where reviewers already look
 and we are held to the same doctrine we sell. This file mechanises only the
 subset needing no judgement, because per this repo's own thesis a rule that stays
 in prose gets violated again. `lint_markdown_shell.py` exists for exactly that
@@ -478,7 +478,7 @@ def check_component_call_sites() -> tuple[list[Finding], int]:
 # (`search`, `multistep`, `countdown`) and appear in no reference markup at all. A rule firing
 # on those would be the false-positive kind that gets a linter switched off.
 
-_CONTROLLER_REFS = "skills/design-system/references"
+_CONTROLLER_REFS = "plugins/rails-stack/skills/design-system/references"
 _CONTROLLER_INVENTORY = f"{_CONTROLLER_REFS}/interaction-stimulus.md"
 _CONTROLLER_INVENTORY_HEADING = "## Controller conventions"
 
@@ -2414,7 +2414,7 @@ def check_non_hermetic_fixture_git() -> tuple[list[Finding], int]:
 
 # A pointer to one of OUR files, in one of the two forms that are unambiguously ours:
 #   `${CLAUDE_PLUGIN_ROOT}/reference/x.md`  -- resolved against the OWNING plugin's directory
-#   `skills/rails-8/references/style.md`    -- resolved against the repo root
+#   `plugins/rails-stack/skills/rails-8/references/style.md`    -- resolved against the repo root
 # Both must name a file (a real extension), so `skills/**` and a bare `skills/` stay out: a glob
 # is not a pointer. A trailing `:28` line-anchor is stripped -- CLAUDE.md cites doctrine that way.
 # ANY extension, not a named list. The first version allowlisted `md|py|sh|json` and therefore
@@ -2438,7 +2438,7 @@ def check_doc_pointers() -> tuple[list[Finding], int]:
     """A documented path to one of our own files must resolve.
 
     Commands and skills tell an agent to READ a specific file of ours -- setup-flow points at
-    `skills/rails-8/references/style.md` for style doctrine, and at its own
+    `plugins/rails-stack/skills/rails-8/references/style.md` for style doctrine, and at its own
     `${CLAUDE_PLUGIN_ROOT}/reference/…` for rationale. Nothing made those true. Rename or move the
     target and the pointer still reads as authoritative while resolving to nothing, so a downstream
     agent is told to consult doctrine it cannot find -- claims-vs-enforcement, in the shipped
@@ -2553,10 +2553,10 @@ def check_link_leaves_package() -> tuple[list[Finding], int]:
     """A shipped plugin's or skill's relative link must stay inside what ships with it.
 
     #1480. Each plugin and each skill installs ALONE, so a link that climbs out of it -- to a sibling
-    plugin, or from design-flow into rails-stack's `skills/design-system/` -- names a path that does
+    plugin, or from design-flow into rails-stack's `plugins/rails-stack/skills/design-system/` -- names a path that does
     not exist in an install, even when it resolves in this clone. Four did, in design-flow; two were
     broken even here (`../../skills/...` from `commands/`). Name the other package's file in prose
-    (`` `skills/design-system/references/brand.md` ``, in rails-stack) instead.
+    (`` `plugins/rails-stack/skills/design-system/references/brand.md` ``, in rails-stack) instead.
 
     A package is `plugins/<name>/` or `skills/<name>/`. Fences, inline code and comments only quote a
     link; URLs and `#anchors` carry no path.
@@ -3138,7 +3138,7 @@ def check_cross_plugin_doctrine_path() -> tuple[list[Finding], int]:
 
     THE EXEMPTION IS STRUCTURAL, not by name. A path that stays INSIDE design-flow -- `brands/`,
     `assets/` -- has a fixed offset and is correctly resolved by hop count; only a path leaving the
-    plugin has the depth problem. So the rule fires on `skills/design-system`, and `parents[N]`
+    plugin has the depth problem. So the rule fires on `plugins/rails-stack/skills/design-system`, and `parents[N]`
     reaching a sibling directory of the same plugin is not its business.
     """
 
@@ -3179,11 +3179,11 @@ def check_cross_plugin_doctrine_path() -> tuple[list[Finding], int]:
             # (the segment alone, exactly) or as a joined path; prose is neither.
             if id(node) in docstrings:
                 continue
-            if node.value != "design-system" and "skills/design-system" not in node.value:
+            if node.value != "design-system" and "plugins/rails-stack/skills/design-system" not in node.value:
                 continue
             findings.append(Finding(
                 "clone-shaped-doctrine-path", rel, node.lineno,
-                "reaches `skills/design-system` (which ships in rails-stack) without importing "
+                "reaches `plugins/rails-stack/skills/design-system` (which ships in rails-stack) without importing "
                 "`doctrine_path`. Hop counts are calibrated for the clone; an install interposes "
                 "`<plugin>/<version>/` and the shapes differ in DEPTH, so the check never runs for "
                 "install users. Use `doctrine_path.find()`, and `describe()` in the refusal."))
@@ -3329,7 +3329,7 @@ def check_unimported_agent_instructions() -> tuple[list[Finding], int]:
 def check_undeclared_skill_dependency() -> tuple[list[Finding], int]:
     """A command that reads a skill from ANOTHER plugin must check the skill is there.
 
-    #513. All four `design-flow` agents and five of its commands read `skills/design-system`, which
+    #513. All four `design-flow` agents and five of its commands read `plugins/rails-stack/skills/design-system`, which
     ships only inside the `rails-stack` bundle. No `plugin.json` carries a `requires` field -- checked,
     all four -- so nothing can declare the pairing, and `/plugin install design-flow@claude-skills`
     alone yields agents whose own text calls that doctrine "the law" about a file that is absent.
@@ -3347,7 +3347,7 @@ def check_undeclared_skill_dependency() -> tuple[list[Finding], int]:
     if not root.is_dir():
         return findings, 0
     # Which skills ship inside another plugin rather than beside the command that reads them.
-    FOREIGN_SKILL = "skills/design-system"
+    FOREIGN_SKILL = "plugins/rails-stack/skills/design-system"
     STOP = re.compile(r"and stop\b|must be readable", re.I)
     examined = 0
     for command in sorted(root.glob("*/commands/*.md")):
@@ -3460,7 +3460,7 @@ def check_unguarded_key_filter() -> tuple[list[Finding], int]:
                 "`new Event(\"keydown\")` -- which browser extensions dispatch at fields they "
                 "decorate -- skips it and runs the handler. Bind the bare event and narrow it in "
                 "the method (`event instanceof KeyboardEvent`, then `event.key`), or let the "
-                "dismissable layer own Escape. See skills/hotwire/references/stimulus.md, "
+                "dismissable layer own Escape. See plugins/rails-stack/skills/hotwire/references/stimulus.md, "
                 "'A key filter is not a type check'."))
     return findings, examined
 
@@ -4391,7 +4391,7 @@ def selftest() -> int:
     scenario("a docstring naming the path is not a finding", {
         RESOLVER: "def find(p):\n    return None\n",
         f"{SCRIPTS}/check_thing.py":
-            '"""Source of truth is skills/design-system/references/foundations-tokens.md."""\n'
+            '"""Source of truth is plugins/rails-stack/skills/design-system/references/foundations-tokens.md."""\n'
             'from pathlib import Path\n'
             'THEME = Path(__file__).resolve().parents[1] / "brands" / "fidara" / "theme.css"\n',
     }, rule=CSD, expect_finding=False)
@@ -4410,12 +4410,12 @@ def selftest() -> int:
         RESOLVER:
             'from pathlib import Path\n'
             'BASE = Path(__file__).resolve().parents[3]\n'
-            'SKILL_REL = "skills/design-system"\n',
+            'SKILL_REL = "plugins/rails-stack/skills/design-system"\n',
     }, rule=CSD, expect_finding=False)
 
     # -- dangling-conditional-floor (#531) --------------------------------
     DCF = "dangling-conditional-floor"
-    AUTH = "skills/rails-8/references/auth-security.md"
+    AUTH = "plugins/rails-stack/skills/rails-8/references/auth-security.md"
     # Carries the SINGLE-factor floor line too, so these fixtures stay silent for
     # `password-floor-drift` — otherwise they trip that rule as well and steal its mutation.
     OFFER = ("| minimum **15** characters where the password is the *only* factor | SHALL |\n"
@@ -4436,7 +4436,7 @@ def selftest() -> int:
 
     # -- flattened-conditional-role (#483) ---------------------------------
     FCR = "flattened-conditional-role"
-    DOCTRINE = ("skills/design-system/references/component-implementations.md",
+    DOCTRINE = ("plugins/rails-stack/skills/design-system/references/component-implementations.md",
                 "<div role=\"<%= intent == :error ? 'alert' : 'status' %>\">\n")
     STEP = "plugins/design-flow/commands/setup.md"
     scenario("one branch stated as a literal", rule=FCR, expect_finding=True,
@@ -4489,7 +4489,7 @@ def selftest() -> int:
     # Files the fixtures cite. A path must EXIST to count as evidence, so they have to be here.
     _TREE = {".claude-plugin/marketplace.json": _M2,
              "plugins/rails-flow/hooks/scripts/guard-lane.sh": "#!/bin/sh\n",
-             "skills/parallel-session-lane/SKILL.md": "---\nname: x\n---\n",
+             "plugins/rails-stack/skills/parallel-session-lane/SKILL.md": "---\nname: x\n---\n",
              "scripts/doctrine_map.py": "print(1)\n"}
 
     scenario("a bullet placed in the section that owns its code", rule=CBS, expect_finding=False,
@@ -4507,7 +4507,7 @@ def selftest() -> int:
     # entries on first input, which is #476's lesson.
     _BOTH = ("- **Advice became a guarantee.** (#660) "
              "`plugins/rails-flow/hooks/scripts/guard-lane.sh` refuses the write, and "
-             "`skills/parallel-session-lane/SKILL.md` §1 says so.")
+             "`plugins/rails-stack/skills/parallel-session-lane/SKILL.md` §1 says so.")
     scenario("...a two-component bullet is accepted under the plugin heading", rule=CBS,
              expect_finding=False,
              files={**_TREE, "CHANGELOG.md": _cl("rails-flow (agentic flow plugin)", _BOTH)})
@@ -4568,7 +4568,7 @@ def selftest() -> int:
     LLP = "link-leaves-package"
     scenario("a design-flow command linking into rails-stack's skills/ leaves its package", rule=LLP, expect_finding=True,
              files={"plugins/design-flow/commands/setup.md": "See [b](../../../skills/design-system/references/brand.md).\n",
-                    "skills/design-system/references/brand.md": "x\n"})
+                    "plugins/rails-stack/skills/design-system/references/brand.md": "x\n"})
     scenario("...even when it resolves to nothing", rule=LLP, expect_finding=True,
              files={"plugins/design-flow/commands/setup.md": "See [b](../../skills/design-system/references/brand.md).\n"})
     scenario("...a skill linking to a sibling skill", rule=LLP, expect_finding=True,
@@ -4576,7 +4576,7 @@ def selftest() -> int:
     scenario("...silent on a link inside the same package, a prose path, a URL and an anchor", rule=LLP,
              expect_finding=False,
              files={"plugins/design-flow/commands/setup.md":
-                    "[r](../reference/x.md) `skills/design-system/references/brand.md` [u](https://x.test) [t](#top)\n",
+                    "[r](../reference/x.md) `plugins/rails-stack/skills/design-system/references/brand.md` [u](https://x.test) [t](#top)\n",
                     "plugins/design-flow/reference/x.md": "x\n"})
     scenario("...silent inside a fenced block", rule=LLP, expect_finding=False,
              files={"plugins/p/a.md": "```md\n[x](../../out.md)\n```\n"})
@@ -4758,12 +4758,12 @@ def selftest() -> int:
     UDS = "undocumented-skill"
     scenario("a shipped skill named nowhere in CLAUDE.md", rule=UDS, expect_finding=True,
              files={"CLAUDE.md": "# CLAUDE.md\n\nWe ship rails-8.\n",
-                    "skills/rails-8/SKILL.md": "---\nname: rails-8\n---\n",
-                    "skills/derived-artifacts/SKILL.md": "---\nname: derived-artifacts\n---\n"})
+                    "plugins/rails-stack/skills/rails-8/SKILL.md": "---\nname: rails-8\n---\n",
+                    "plugins/rails-stack/skills/derived-artifacts/SKILL.md": "---\nname: derived-artifacts\n---\n"})
     scenario("...silent once it is named", rule=UDS, expect_finding=False,
              files={"CLAUDE.md": "# CLAUDE.md\n\nWe ship rails-8 and derived-artifacts.\n",
-                    "skills/rails-8/SKILL.md": "---\nname: rails-8\n---\n",
-                    "skills/derived-artifacts/SKILL.md": "---\nname: derived-artifacts\n---\n"})
+                    "plugins/rails-stack/skills/rails-8/SKILL.md": "---\nname: rails-8\n---\n",
+                    "plugins/rails-stack/skills/derived-artifacts/SKILL.md": "---\nname: derived-artifacts\n---\n"})
     # BOTH homes are scanned. A maintainer-only skill nobody is told about misleads a reader of
     # CLAUDE.md exactly as a shipped one does -- and that is the half that actually happened.
     scenario("...catches a maintainer-only skill too", rule=UDS, expect_finding=True,
@@ -4896,7 +4896,7 @@ def selftest() -> int:
 
     # -- undeclared-skill-dependency (#513) -------------------------------
     USD_ = "undeclared-skill-dependency"
-    READS = "See skills/design-system/SKILL.md for the catalog.\n"
+    READS = "See plugins/rails-stack/skills/design-system/SKILL.md for the catalog.\n"
     scenario("a command reading a foreign skill with no stop instruction", rule=USD_,
              expect_finding=True, files={"plugins/x/commands/a.md": READS})
     scenario("...with the stop instruction is silent", rule=USD_, expect_finding=False,
@@ -4915,7 +4915,7 @@ def selftest() -> int:
     # -- password-floor-drift (#484) --------------------------------------
     PF = "password-floor-drift"
     STATED = "| minimum **15** characters where the password is the *only* factor | SHALL |\n"
-    DOCP = "skills/rails-8/references/auth-security.md"
+    DOCP = "plugins/rails-stack/skills/rails-8/references/auth-security.md"
     scenario("a worked example below the stated floor", rule=PF, expect_finding=True,
              files={DOCP: STATED + "validates :password, length: { minimum: 12 }\n"})
     scenario("the example matching the stated floor is silent", rule=PF, expect_finding=False,
@@ -4940,7 +4940,7 @@ def selftest() -> int:
     OC = "orphaned-controller"
     IMPL = "## Toast\ncode\n\n## Modal\ncode\n"
     def _setup(line: str) -> dict:
-        return {"skills/design-system/references/component-implementations.md": IMPL,
+        return {"plugins/rails-stack/skills/design-system/references/component-implementations.md": IMPL,
                 "plugins/design-flow/commands/setup.md": line}
     scenario("a controller whose component is not scaffolded", rule=OC, expect_finding=True,
              files=_setup("the `modal`/`toast` controllers built on them.\n`Ui::Modal`\n"))
@@ -4956,7 +4956,7 @@ def selftest() -> int:
     scenario("no implementations file is silent", rule=OC, expect_finding=False,
              files={"plugins/design-flow/commands/setup.md": "the `toast` controllers\n"})
     scenario("no setup file is silent", rule=OC, expect_finding=False,
-             files={"skills/design-system/references/component-implementations.md": IMPL})
+             files={"plugins/rails-stack/skills/design-system/references/component-implementations.md": IMPL})
 
     # -- unplaceable-findings-path (#948) ---------------------------------
     UFP = "unplaceable-findings-path"
@@ -4999,7 +4999,7 @@ def selftest() -> int:
 
     # -- unguarded-key-filter (#949) --------------------------------------
     UKF = "unguarded-key-filter"
-    DOC = "skills/design-system/references/component-implementations.md"
+    DOC = "plugins/rails-stack/skills/design-system/references/component-implementations.md"
 
     # THE DEFECT, exactly as it shipped for months.
     scenario("the modal root we shipped", rule=UKF, expect_finding=True,
@@ -5027,7 +5027,7 @@ def selftest() -> int:
     # NEAR MISS: doctrine has to be able to NAME the anti-pattern. It names the halves separately,
     # so prose about `keydown.esc` and about `modal#close` in one sentence stays silent.
     scenario("prose naming the two halves separately is silent", rule=UKF, expect_finding=False,
-             files={"skills/hotwire/references/stimulus.md":
+             files={"plugins/rails-stack/skills/hotwire/references/stimulus.md":
                     "never wire a `keydown.esc` filter to a `modal#close` handler\n"})
     # SCOPE: the CHANGELOG quotes the defect verbatim to explain it, and is not doctrine anyone
     # pastes. If this fires there, the rule punishes the record of its own bug.
@@ -5489,13 +5489,13 @@ def selftest() -> int:
              files={**XP_TREE, "plugins/qa-flow/agents/a.md": "rails-flow/scripts/findings.py owns it\n"})
     scenario("a rails-stack skill reaching ../rails-flow/ is a finding", rule=XP, expect_finding=True,
              only=check_cross_plugin_relative_path,
-             files={**XP_TREE, "skills/hotwire/SKILL.md": "run ../../plugins/x ../rails-flow/scripts/a.py\n"})
+             files={**XP_TREE, "plugins/rails-stack/skills/hotwire/SKILL.md": "run ../../plugins/x ../rails-flow/scripts/a.py\n"})
     scenario("`cd ../rails-flow` with no trailing slash is a finding", rule=XP, expect_finding=True,
              only=check_cross_plugin_relative_path,
              files={**XP_TREE, "plugins/qa-flow/commands/c.md": "cd ../rails-flow && python3 scripts/findings.py\n"})
     scenario("a skill's clone path ../../plugins/rails-flow/ is a finding", rule=XP, expect_finding=True,
              only=check_cross_plugin_relative_path,
-             files={**XP_TREE, "skills/hotwire/SKILL.md": "python3 ../../plugins/rails-flow/scripts/findings.py\n"})
+             files={**XP_TREE, "plugins/rails-stack/skills/hotwire/SKILL.md": "python3 ../../plugins/rails-flow/scripts/findings.py\n"})
     scenario("a longer name that only starts with a plugin's is silent", rule=XP, expect_finding=False,
              only=check_cross_plugin_relative_path,
              files={**XP_TREE, "plugins/qa-flow/agents/a.md": "see ../rails-flow-notes/x.md\n"})
@@ -6538,16 +6538,16 @@ def selftest() -> int:
                     "plugins/rails-flow/reference/agent-instruction-conventions.md": "# rationale\n"})
     scenario("command points at a skill doc that was renamed away", rule=P, expect_finding=True,
              files={"plugins/rails-flow/commands/setup-flow.md":
-                    "Before writing Ruby read `skills/rails-8/references/style.md`.\n"})
+                    "Before writing Ruby read `plugins/rails-stack/skills/rails-8/references/style.md`.\n"})
     scenario("...and is silent when the skill doc is there", rule=P, expect_finding=False,
              files={"plugins/rails-flow/commands/setup-flow.md":
-                    "Before writing Ruby read `skills/rails-8/references/style.md`.\n",
-                    "skills/rails-8/references/style.md": "# Style\n"})
+                    "Before writing Ruby read `plugins/rails-stack/skills/rails-8/references/style.md`.\n",
+                    "plugins/rails-stack/skills/rails-8/references/style.md": "# Style\n"})
     # A line anchor is how CLAUDE.md cites doctrine (`jobs-and-realtime.md:28`); the pointer is
     # still the file, so the anchor must not defeat resolution.
     scenario("a `:line` anchor does not break resolution", rule=P, expect_finding=False,
-             files={"CLAUDE.md": "see `skills/rails-8/references/jobs-and-realtime.md:28`\n",
-                    "skills/rails-8/references/jobs-and-realtime.md": "# jobs\n"})
+             files={"CLAUDE.md": "see `plugins/rails-stack/skills/rails-8/references/jobs-and-realtime.md:28`\n",
+                    "plugins/rails-stack/skills/rails-8/references/jobs-and-realtime.md": "# jobs\n"})
     # NEAR MISS: the exact false positive this rule had before it shipped. `${CLAUDE_PLUGIN_ROOT}`
     # in a CHANGELOG or a skill is prose ABOUT a plugin variable and has no plugin to resolve
     # against; guessing an owner would invent a finding on correct text.
@@ -6580,7 +6580,7 @@ def selftest() -> int:
 
     # -- controller-inventory-gap (#95) ---------------------------------------
     CI = "controller-inventory-gap"
-    REFS = "skills/design-system/references"
+    REFS = "plugins/rails-stack/skills/design-system/references"
 
     def _inventory(*names: str) -> str:
         # The helper's own fenced example prescribes `dropdown`, and the rule reads every

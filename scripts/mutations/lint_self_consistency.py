@@ -282,7 +282,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the rule matches nothing, so every clone-shaped path passes",
-            '            if node.value != "design-system" and "skills/design-system" not in node.value:',
+            '            if node.value != "design-system" and "plugins/rails-stack/skills/design-system" not in node.value:',
             '            if id(node) in docstrings or "zzz-never" not in node.value:',
             "__file__.parents reaching a sibling plugin's doctrine",
         ),

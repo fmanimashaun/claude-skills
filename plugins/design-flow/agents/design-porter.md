@@ -17,7 +17,7 @@ canvas's scaffolding into the commit.
 
 ## Preconditions
 
-**`skills/design-system/references/design-handoff.md` is the mapping and it is the law.** It ships in
+**`plugins/rails-stack/skills/design-system/references/design-handoff.md` is the mapping and it is the law.** It ships in
 the **`rails-stack`** plugin, not this one, and no `plugin.json` can declare that dependency — there is
 no `requires` field. Confirm you can read it, together with `SKILL.md`, `components.md`,
 `crud-modal-pattern.md` and `interaction-stimulus.md`, before touching code. **If you cannot, name what

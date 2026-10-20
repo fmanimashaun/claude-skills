@@ -115,7 +115,7 @@ The fenced blocks are what an agent pastes verbatim into a user's project.
 
 ## Self-review
 
-- [ ] I read **`skills/code-review/SKILL.md`** against this diff before requesting review, and
+- [ ] I read **`plugins/rails-stack/skills/code-review/SKILL.md`** against this diff before requesting review, and
       recorded anything it found — including findings I did not act on. We are held to the rules
       we ship.
 - [ ] Only files I authored are staged (`git status` first — never `git add -A`).

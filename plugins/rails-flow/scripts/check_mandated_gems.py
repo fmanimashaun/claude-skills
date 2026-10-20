@@ -33,7 +33,7 @@ from pathlib import Path
 
 GEMFILE = Path("Gemfile")
 APPLICATION_RB = Path("config/application.rb")
-# The testing stack, DERIVED from `skills/rails-8/references/testing.md` and committed beside this
+# The testing stack, DERIVED from `plugins/rails-stack/skills/rails-8/references/testing.md` and committed beside this
 # script by `scripts/derive_mandated_gems.py` (#797). Read from a file in THIS plugin at a fixed
 # offset -- reading testing.md at runtime would cross into rails-stack, where a clone and an install
 # differ in depth and not offset (#617 / #763 / #777). The `mandated gems derived` gate fails if
@@ -82,7 +82,7 @@ def problems(gems: set[str], application_rb: str | None) -> list[str]:
         found.append(
             f"the prescribed testing stack is incomplete — missing "
             f"{', '.join('`' + g + '`' for g in missing)}.\n"
-            f"    skills/rails-8/references/testing.md declares the full block; that file is this "
+            f"    plugins/rails-stack/skills/rails-8/references/testing.md declares the full block; that file is this "
             f"stack's testing doctrine, not a menu.\n"
             f"    Install:  bundle add {' '.join(missing)} --group 'development,test'")
     if "simple_form" not in gems:

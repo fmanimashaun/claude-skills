@@ -283,7 +283,7 @@ def provenance() -> dict:
     # be the thing that fails a build.
     watched = ["scripts/build_coverage.py", "scripts/build_coverage_artifact.py"]
     watched.append(str(bc.OUT.relative_to(REPO)) if bc.OUT.is_relative_to(REPO)
-                   else "skills/design-system/references/coverage.md")
+                   else "plugins/rails-stack/skills/design-system/references/coverage.md")
     dirty = dirty_paths(_git("status", "--porcelain", "--", *watched, raw=True) or "")
 
     released = None
@@ -466,7 +466,7 @@ TEMPLATE = r"""<title>design-system component coverage</title>
 <style>
 /* ---------------------------------------------------------------------- tokens
    Palette, type scale, spacing, radius and the light/dark role mapping are the
-   fidara pack's OWN, from skills/design-system/references/foundations-tokens.md:
+   fidara pack's OWN, from plugins/rails-stack/skills/design-system/references/foundations-tokens.md:
    fm-* primitives bound through the semantic role layer. The one thing a page
    documenting a design system must not do is invent a look. */
 :root {

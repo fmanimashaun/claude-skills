@@ -13,7 +13,7 @@ GUARD = Guard(
     name="check_section_landmarks",
     subject="scripts/check_section_landmarks.py",
     selftest="scripts/check_section_landmarks.py",
-    needs=("skills/design-system/references",),
+    needs=("plugins/rails-stack/skills/design-system/references",),
     mutations=(
         Mutation(
             "the name test accepts any aria-* attribute, so aria-hidden passes as a name",

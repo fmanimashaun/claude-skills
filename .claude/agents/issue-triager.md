@@ -97,7 +97,7 @@ resolve: an empty search of a tree that does not exist is not evidence of a gap.
 pins only the marketplace version predates this rule; say which version you searched and why.
 
 - **No hit**: a real gap. Queue it as `type:skill-gap`, and say what you searched for in your
-  triage comment ("searched `skills/rails-8/` at v1.148.0 for X and Y: no hit").
+  triage comment ("searched `plugins/rails-stack/skills/rails-8/` at v1.148.0 for X and Y: no hit").
 - **No hit at the pinned version, but a hit at `origin/dev`**: fixed since. Comment with the
   version it landed in, apply `needs-info`, and ask the reporter to update and re-check.
 - **A hit that covers the case**: a **lapse**. Comment with the `file:line` and the quoted

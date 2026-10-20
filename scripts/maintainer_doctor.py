@@ -91,7 +91,7 @@ MUST_NOT_IGNORE = (
     "scripts/build_coverage.py",                    # not everything is ignored
     f"{CORPORA_DIR}-notes/README.md",               # exact name, not a prefix
     "docs/flowbite-notes.md",                       # `/flowbite*` is root-anchored
-    "skills/design-system/references/coverage.md",   # the drift guard needs this committed
+    "plugins/rails-stack/skills/design-system/references/coverage.md",   # the drift guard needs this committed
 )
 
 GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -1179,7 +1179,7 @@ class Doctor:
         git stores a symlink as mode 120000 — so none of the three matched, and all three sat
         UNTRACKED in the guard written to hide them, directly under doctrine warning about
         656 MB of licensed blobs the rule could not actually stop. That is
-        `claims-vs-enforcement` from skills/code-review/SKILL.md, so it is re-checked by script
+        `claims-vs-enforcement` from plugins/rails-stack/skills/code-review/SKILL.md, so it is re-checked by script
         rather than remembered.
 
         Asserted in a THROWAWAY repo seeded with our `.gitignore`, against paths that DO NOT

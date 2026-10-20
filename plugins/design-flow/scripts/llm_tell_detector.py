@@ -216,7 +216,7 @@ def _rules() -> tuple[Rule, ...]:
             exempt=_defines_a_token,
         ),
         Rule(
-            # #738. Measured absent: `grep -rn googleapis plugins/design-flow skills/design-system`
+            # #738. Measured absent: `grep -rn googleapis plugins/design-flow plugins/rails-stack/skills/design-system`
             # found only an unrelated API URL, while BOTH Claude Design artboards read from a real
             # project carry a `fonts.googleapis.com` link. A canvas export ships one as a preview
             # convenience; carried into a commit it costs a render-blocking third-party request, a

@@ -240,7 +240,7 @@ def selftest() -> int:
                agent_problems(agent("tools: Read, Bash\n", "Consult the rails-8 skill for doctrine."))))
     expect("...including a path-style mention",
            any("agent-unloadable-skill" in p for p in
-               agent_problems(agent("tools: Read\n", "Follow `skills/design-system/SKILL.md`."))))
+               agent_problems(agent("tools: Read\n", "Follow `plugins/rails-stack/skills/design-system/SKILL.md`."))))
     expect("...and a Skill in disallowedTools blocks it",
            any("agent-unloadable-skill" in p for p in
                agent_problems(agent("disallowedTools: Skill\n", "Apply the `code-review` skill."))))

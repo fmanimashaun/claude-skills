@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The maintainer sessions need the doctrine they collide over.
 
-`skills/parallel-session-lane` is SHIPPED: it reaches downstream projects inside `rails-stack`, and
+`plugins/rails-stack/skills/parallel-session-lane` is SHIPPED: it reaches downstream projects inside `rails-stack`, and
 a consuming repo loads it because that repo enables the plugin. This repository does not. Measured
 on 17 Sep 2026, `.claude/settings.json` here enables exactly one plugin — `remember` — so a session
 maintaining this marketplace never loads the parallel-session skill at all.
@@ -36,18 +36,18 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # source -> derived. One entry today; the list is the mechanism, not the special case.
 MIRRORED = {
-    Path("skills/parallel-session-lane/SKILL.md"): Path(".claude/skills/parallel-session-lane/SKILL.md"),
+    Path("plugins/rails-stack/skills/parallel-session-lane/SKILL.md"): Path(".claude/skills/parallel-session-lane/SKILL.md"),
     # #1481: the mirrored SKILL.md links these, so a mirror without them links to nothing.
-    Path("skills/parallel-session-lane/references/reading-a-list.md"):
+    Path("plugins/rails-stack/skills/parallel-session-lane/references/reading-a-list.md"):
         Path(".claude/skills/parallel-session-lane/references/reading-a-list.md"),
-    Path("skills/parallel-session-lane/references/session-identity.md"):
+    Path("plugins/rails-stack/skills/parallel-session-lane/references/session-identity.md"):
         Path(".claude/skills/parallel-session-lane/references/session-identity.md"),
-    Path("skills/parallel-session-lane/references/process-hygiene.md"):
+    Path("plugins/rails-stack/skills/parallel-session-lane/references/process-hygiene.md"):
         Path(".claude/skills/parallel-session-lane/references/process-hygiene.md"),
     # #1581: SKILL.md §1 and §1a link these.
-    Path("skills/parallel-session-lane/references/isolated-resources.md"):
+    Path("plugins/rails-stack/skills/parallel-session-lane/references/isolated-resources.md"):
         Path(".claude/skills/parallel-session-lane/references/isolated-resources.md"),
-    Path("skills/parallel-session-lane/references/one-issue-at-a-time.md"):
+    Path("plugins/rails-stack/skills/parallel-session-lane/references/one-issue-at-a-time.md"):
         Path(".claude/skills/parallel-session-lane/references/one-issue-at-a-time.md"),
 }
 
@@ -107,7 +107,7 @@ def committed_blob(relative: str, cwd: Path = ROOT) -> str | None:
 
     Two near-identical six-line functions and one of a different shape. A shared module keeps one
     copy and adds an import to each of three files, so the net removal is about **three lines** —
-    against `skills/quality-pass/references/worked-example.md`, where 345 duplicated lines reduced
+    against `plugins/rails-stack/skills/quality-pass/references/worked-example.md`, where 345 duplicated lines reduced
     to 72 net and were still judged not worth extracting. The helper would also have to live under
     `scripts/`, which is maintainer-only, so shipped plugin code could never import it and the
     split would be per-audience rather than per-concern.
@@ -128,7 +128,7 @@ def unregistered_mirrors() -> list[str]:
     """Copies of a SHIPPED skill sitting in `.claude/skills/` that no registry entry governs.
 
     `--check` proves every mirror it KNOWS ABOUT is a clean build. It cannot prove there are no
-    other copies, and `cp skills/code-review/SKILL.md .claude/skills/code-review/` — the likeliest
+    other copies, and `cp plugins/rails-stack/skills/code-review/SKILL.md .claude/skills/code-review/` — the likeliest
     route by far, because it needs nobody to read this file — passed a full green sweep. That is
     exactly the two-homes defect the module docstring says this design prevents.
 

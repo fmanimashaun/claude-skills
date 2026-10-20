@@ -93,7 +93,7 @@ unable to block. `bash -n` on `.sh` files does not cover them.
 seconds now that `mutation coverage` runs on `dev` pushes and at promotion rather than per PR (#866).
 It covers both linters above and every other content gate; a PR opened on a red local sweep is a PR
 that asks the runner to find what a minute at the keyboard would have. Then review your own diff
-against the `code-review` skill (`skills/code-review/SKILL.md`).** Both exist because a rented reviewer
+against the `code-review` skill (`plugins/rails-stack/skills/code-review/SKILL.md`).** Both exist because a rented reviewer
 kept catching a class our own review missed — and it had no special power: it checked the
 diff against rules already written in this repo's markdown. The recurring class is
 **claims-vs-enforcement**, a guarantee stated in prose that nothing makes true. It has
