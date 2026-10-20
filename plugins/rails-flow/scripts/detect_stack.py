@@ -617,6 +617,9 @@ def selftest() -> int:
             short = {k: v for k, v in {"tests": {"command": ["go", "test"], "glob": "*_test.go"}, "agents": AGENTS}.items() if k != key}
             code, report = run(go_app, [plug(f"short-{n}", [{"id": "go", "all": [{"file": "go.mod"}], "descriptor": short}])])
             case(code == 2 and any("declare no" in p for p in report["problems"]), f"a plugin whose descriptors lack `{key}` is a problem: {code} {report['problems']}")
+        markers_only = plug("markers-only", [{"id": "go", "all": [{"file": "go.mod"}]}])
+        case(run(go_app, [markers_only], roots=[root / "tree"])[0] == 0,
+             "a manifest with markers and no descriptor passes: REQUIRED applies only to one that declares a descriptor")
         addon = plug("addon-stack", [{"id": "core", "all": [{"file": "go.mod"}], "descriptor": {"tests": {"command": ["go", "test"], "glob": "*_test.go"}, "agents": AGENTS}},
                                      {"id": "extra", "all": [{"file": "go.mod"}], "descriptor": {"deploy": {"target": "fly"}}}])
         case(run(go_app, [addon])[0] == 0, f"an add-on stack need not repeat the required keys its plugin's main stack declares: {run(go_app, [addon])[1]['problems']}")

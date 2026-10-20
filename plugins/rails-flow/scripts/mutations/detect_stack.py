@@ -254,5 +254,11 @@ GUARD = Guard(
             "        if False:",
             "a list item missing a key a reader takes is a problem",
         ),
+        Mutation(
+            "REQUIRED is enforced on a manifest with no descriptor, so a markers-only stack plugin can never pass",
+            "    if declared:\n        missing",
+            "    if True:\n        missing",
+            "a manifest with markers and no descriptor passes",
+        ),
     ),
 )
