@@ -258,7 +258,12 @@ def shape_problems(value: object, shape: object, where: str) -> list[str]:
     if isinstance(shape, list):
         if not isinstance(value, list) or not value:
             return [f"{where} must be a non-empty list"]
-        return [p for i, item in enumerate(value) for p in shape_problems(item, shape[0], f"{where}[{i}]")]
+        found = [p for i, item in enumerate(value) for p in shape_problems(item, shape[0], f"{where}[{i}]")]
+        if isinstance(shape[0], dict):
+            # A LIST ITEM IS A RECORD (#2189 review): a reader takes every key of it (`.allowed`), so each one is required.
+            found += [f"{where}[{i}] needs `{key}`" for i, item in enumerate(value) if isinstance(item, dict)
+                      for key in shape[0] if key != "*" and key not in item]
+        return found
     if not isinstance(value, dict) or not value:
         return [f"{where} must be a non-empty block"]
     found = []
@@ -634,6 +639,13 @@ def selftest() -> int:
             code, report = run(go_app, [bad], [agents_root])
             case(code == 2 and any(needle in p for p in report["problems"]), f"{label}: {code} {report['problems']}")
         for n, (label, extra, needle) in enumerate((
+            ("a deploy agent that names no agent is a problem", {"deploy": {"agent": "ghost:deployer"}}, "deploy.agent 'ghost:deployer' names no agent"),
+            ("a ui composer that names no agent is a problem", {"ui": {"composer": "ghost:composer"}}, "ui.composer 'ghost:composer' names no agent"),
+        )):
+            bad = plug(f"agent-extra-{n}", [{"id": "go", "all": [{"file": "go.mod"}], "descriptor": {"tests": {"command": ["go"], "glob": "*_test.go"}, "agents": AGENTS, **extra}}])
+            code, report = run(go_app, [bad], [agents_root])
+            case(code == 2 and any(needle in p for p in report["problems"]), f"{label}: {code} {report['problems']}")
+        for n, (label, extra, needle) in enumerate((
             ("a bool is not a port", {"boot": {"port": True}}, "boot.port must be a whole number"),
             ("a port above 65535 is a problem", {"boot": {"port": 99999999}}, "must be a port"),
             ("a negative port is a problem", {"boot": {"port": -1}}, "must be a port"),
@@ -641,6 +653,7 @@ def selftest() -> int:
             ("an empty string in a list is a problem", {"runner_prefix": ["bundle", ""]}, "runner_prefix must be a non-empty list of strings"),
             ("an empty string is a problem", {"tests": {"command": ["go"], "glob": ""}}, "tests.glob must be a non-empty string"),
             ("a nested list item of the wrong shape is a problem", {"dangerous_commands": [{"pattern": "x", "allowd": "y"}]}, "dangerous_commands[0].allowd is not a declared"),
+            ("a list item missing a key a reader takes is a problem", {"dangerous_commands": [{"pattern": "x"}]}, "dangerous_commands[0] needs `allowed`"),
         )):
             descriptor = {"tests": {"command": ["go"], "glob": "*_test.go"}, "agents": AGENTS, **extra}
             code, report = run(go_app, [plug(f"value-{n}", [{"id": "go", "all": [{"file": "go.mod"}], "descriptor": descriptor}])])
