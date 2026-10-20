@@ -14,6 +14,18 @@ GUARD = Guard(
     needs=("plugins/rails-flow/scripts/fixture_git.py",),   # the selftest builds throwaway repos through it (#1588, #1738)
     mutations=(
         Mutation(
+            "#2190: our own git-shim stays on a fixture's PATH, so four gates are red in every agent shell",
+            '        out["PATH"] = without_shim(out["PATH"])',
+            "        pass",
+            "#2190: hermetic_git.env must drop every rails-flow git-shim entry",
+        ),
+        Mutation(
+            "#2190: any directory named git-shim is dropped, so another tool's shim leaves PATH too",
+            'SHIM_ON_PATH = re.compile(r"(^|/)rails-flow(/[^/]+)?/git-shim/?$")',
+            'SHIM_ON_PATH = re.compile(r"git-shim/?$")',
+            "#2190: hermetic_git.env must drop every rails-flow git-shim entry",
+        ),
+        Mutation(
             "a caller's GIT_CONFIG pairs are overwritten",
             '    start = int(count) if count else 0',
             '    start = 0',
