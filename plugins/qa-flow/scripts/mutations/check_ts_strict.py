@@ -71,15 +71,15 @@ GUARD = Guard(
                  "TypeScript with no tsconfig at all is caught"),
         # ts-no-typecheck
         Mutation("a missing typecheck step stops being a finding",
-                 "    if typecheck_step(root) is None:\n", "    if False:\n",
+                 "    if typecheck_step(root, scope) is None:\n", "    if False:\n",
                  "no typecheck step is caught"),
         Mutation("a tsc on the app counts as a suite typecheck",
-                 '        if p and _under_qa(here, p.group("path")) and _enforces(cmd, m.start(), m.end(), later):',
+                 '        if path is not None and scope.under(here, path) and _enforces(cmd, m.start(), m.end(), later):',
                  '        if p and _enforces(cmd, m.start(), m.end(), later):',
                  "a tsc on the APP, not the suite"),
         Mutation("a tsc with no -p counts as a suite typecheck",
-                 '        if p and _under_qa(here, p.group("path")) and _enforces(cmd, m.start(), m.end(), later):',
-                 '        if not p or _under_qa(here, p.group("path")):',
+                 '        if path is not None and scope.under(here, path) and _enforces(cmd, m.start(), m.end(), later):',
+                 '        if (path is None or scope.under(here, path)) and _enforces(cmd, m.start(), m.end(), later):',
                  "a tsc with no -p is not a suite typecheck"),
         Mutation("a verdict swallowed with || counts again",
                  r'SWALLOWED = re.compile(r"^\s*\|\||(?:^|[;&|]\s*)exit\s+0\b|;\s*(?:true|:)\s*(?:[;#]|$)")',
@@ -101,16 +101,16 @@ GUARD = Guard(
                  "    if words[:1] and words[0] in PRINTED:\n", "    if False:\n",
                  "an echoed tsc is only printed"),
         Mutation("a runner's swallowed verdict counts again",
-                 "        if isinstance(script, str) and _checks_suite(script, pkg) and _enforces(cmd, m.start(), m.end(), later):",
-                 "        if isinstance(script, str) and _checks_suite(script, pkg):",
+                 "        if isinstance(script, str) and _checks_suite(script, pkg, \"\", scope) and _enforces(cmd, m.start(), m.end(), later):",
+                 "        if isinstance(script, str) and _checks_suite(script, pkg, \"\", scope):",
                  "a swallowed verdict is not a typecheck: a runner's || true"),
         Mutation("any script CI runs counts, whatever it checks",
-                 "        if isinstance(script, str) and _checks_suite(script, pkg) and _enforces(cmd, m.start(), m.end(), later):",
+                 "        if isinstance(script, str) and _checks_suite(script, pkg, \"\", scope) and _enforces(cmd, m.start(), m.end(), later):",
                  "        if isinstance(script, str) and _enforces(cmd, m.start(), m.end(), later):",
                  "a CI line running a script that type-checks the APP does not count"),
         Mutation("a package script counts whether or not CI runs it (the pre-review behaviour)",
-                 '        hit = _script_finds(root, str(p.relative_to(root)), lines, ".")\n        if hit:\n            return hit\n    return None\n',
-                 '        hit = _script_finds(root, str(p.relative_to(root)), lines, ".")\n        if hit:\n            return hit\n'
+                 '        hit = _script_finds(root, str(p.relative_to(root)), lines, ".", scope)\n        if hit:\n            return hit\n    return None\n',
+                 '        hit = _script_finds(root, str(p.relative_to(root)), lines, ".", scope)\n        if hit:\n            return hit\n'
                  '    for p in root.glob("**/package.json"):\n'
                  '        d = str(p.parent.relative_to(root))\n'
                  '        if any(isinstance(c, str) and _checks_suite(c, d) for c in _scripts(root, d).values()):\n'
