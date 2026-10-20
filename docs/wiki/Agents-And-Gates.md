@@ -266,6 +266,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | published blocks | `repo` | `python3 scripts/check_published_blocks.py` | live check |
 | published blocks selftest | `repo` | `python3 scripts/check_published_blocks.py --selftest` | selftest |
 | python floor selftest | `repo` | `python3 scripts/check_python_floor.py --selftest` | selftest |
+| rails assumptions drift | `repo` | `python3 scripts/rails_assumptions.py --check` | live check |
+| rails assumptions selftest | `repo` | `python3 scripts/rails_assumptions.py --selftest` | selftest |
 | registry reader parity | `repo` | `python3 scripts/check_registry_reader_parity.py` | live check |
 | registry reader parity selftest | `repo` | `python3 scripts/check_registry_reader_parity.py --selftest` | selftest |
 | release notes complete | `repo` | `python3 scripts/extract_release_notes.py --check --all-tags` | live check |
