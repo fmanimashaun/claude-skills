@@ -278,5 +278,29 @@ GUARD = Guard(
             "            declared |= set(values)",
             "two plugins' setup sections are both listed",
         ),
+        Mutation(
+            "deploy.agent is never resolved, so a deploy hands off to an agent that does not exist",
+            'AGENT_VALUES = ("agents.*", "deploy.agent", "ui.porter", "ui.composer")',
+            'AGENT_VALUES = ("agents.*", "ui.porter", "ui.composer")',
+            "a deploy agent that names no agent is a problem",
+        ),
+        Mutation(
+            "ui.composer is never resolved",
+            'AGENT_VALUES = ("agents.*", "deploy.agent", "ui.porter", "ui.composer")',
+            'AGENT_VALUES = ("agents.*", "deploy.agent", "ui.porter")',
+            "a ui composer that names no agent is a problem",
+        ),
+        Mutation(
+            "a list item's keys are optional, so a flow reading `.allowed` crashes",
+            "        if isinstance(shape[0], dict):",
+            "        if False:",
+            "a list item missing a key a reader takes is a problem",
+        ),
+        Mutation(
+            "REQUIRED is enforced on a manifest with no descriptor, so a markers-only stack plugin can never pass",
+            "    if declared:\n        missing",
+            "    if True:\n        missing",
+            "a manifest with markers and no descriptor passes",
+        ),
     ),
 )
