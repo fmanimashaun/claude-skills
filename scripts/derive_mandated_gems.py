@@ -34,7 +34,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCTRINE = ROOT / "skills" / "rails-8" / "references" / "testing.md"
+DOCTRINE = ROOT / "plugins" / "rails-stack" / "skills" / "rails-8" / "references" / "testing.md"
 ARTIFACT = ROOT / "plugins" / "rails-flow" / "mandated_gems.json"
 
 FENCE_ANCHOR = "group :development, :test do"

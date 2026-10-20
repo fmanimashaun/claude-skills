@@ -88,7 +88,7 @@ def findings(files: list[Path], root: Path) -> list[str]:
 
 
 def shipped(root: Path) -> list[Path]:
-    return sorted(p for d in ("skills", "plugins") for p in (root / d).rglob("*.md") if p.is_file())
+    return sorted(p for d in ("plugins",) for p in (root / d).rglob("*.md") if p.is_file())
 
 
 def selftest() -> int:

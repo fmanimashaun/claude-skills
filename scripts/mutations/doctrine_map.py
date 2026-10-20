@@ -8,7 +8,7 @@ GUARD = Guard(
     name="doctrine_map",
     subject="scripts/doctrine_map.py",
     selftest="scripts/doctrine_map.py",
-    needs=(".claude-plugin", ".github", ".claude", "scripts", "plugins", "skills", "docs",
+    needs=(".claude-plugin", ".github", ".claude", "scripts", "plugins", "docs",
            "CLAUDE.md", "AGENTS.md"),
     mutations=(
         # #798. The map answered "which claim is enforced by what" for repo-process doctrine

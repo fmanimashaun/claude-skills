@@ -866,7 +866,7 @@ worker API is `TurboOffline.addRule({ match, handler })` then `TurboOffline.star
 `cacheFirst`, `networkFirst` and `staleWhileRevalidate`. Its examples use `networkFirst`: one matches
 `/\/topics\/\d+/` for 7 days, and one has no `match`, which defaults to `/.*/` and so caches every URL for
 24 hours, signed-in HTML included. The PR says nothing about authentication, cookies or sign-out. Copied as
-written, either rule breaks `skills/rails-8/references/pwa.md` section 3 (a service worker never caches
+written, either rule breaks `plugins/rails-stack/skills/rails-8/references/pwa.md` section 3 (a service worker never caches
 signed-in pages). Looked at 2026-10-10: the PR was open, unmerged, last updated 2026-04-13.
 
 This is the most valuable finding in the file precisely because it is negative. Reading Fizzy's

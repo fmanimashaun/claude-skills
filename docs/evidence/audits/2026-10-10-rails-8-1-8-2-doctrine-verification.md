@@ -1,7 +1,7 @@
 # doctrine-verifier verdicts for #1741 and #1748 (rails-8), 2026-10-10
 
 Five read-only `doctrine-verifier` runs, one per claim cluster, plus a second run on #1741 that settled four
-routing claims from the framework source and a reproduction. Edits in `skills/rails-8/` follow CONFIRMED rows
+routing claims from the framework source and a reproduction. Edits in `plugins/rails-stack/skills/rails-8/` follow CONFIRMED rows
 only; an INCONCLUSIVE or REFUTED row left (or corrected) the doctrine as stated in the last column.
 
 Rails 8.2 is **unreleased**. Every 8.2 row is `[On main, unreleased]`; the edge guide
@@ -52,6 +52,6 @@ the authority used for those four, and the doctrine says so.
 | H4 | structural HTML errors fail compilation; ViewComponent sidecars | CONFIRMED for the compile failure; the sidecar statement rests on ViewComponent#2717 (a report, open) | On main, unreleased | #58721; ViewComponent#2717 |
 | H5 | ReActionView is a third-party gem, not Rails core | INCONCLUSIVE | — | left out of the doctrine, as the issue asked |
 
-Where the written doctrine is, and what it was not allowed to say: `skills/rails-8/references/rails-8-2-readiness.md`
+Where the written doctrine is, and what it was not allowed to say: `plugins/rails-stack/skills/rails-8/references/rails-8-2-readiness.md`
 (new, every item labelled unreleased), `jobs-and-realtime.md` (8.1 J1, J3), `controllers-routing.md` (C1-C6),
 with one-line pointers in `auth-security.md`, `ecosystem-gems.md`, `mail-storage-richtext.md` and `SKILL.md`.

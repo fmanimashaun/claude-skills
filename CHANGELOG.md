@@ -71,8 +71,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 - **A failing RSpec run is classified NEW, PASSED ALONE or PREEXISTING against a recorded dev baseline, and `test-runner` reports the classes — `plugins/rails-flow/scripts/dev_baseline.py`, `plugins/rails-flow/scripts/triage_failures.py`, `plugins/rails-flow/scripts/mutations/dev_baseline.py`, `plugins/rails-flow/scripts/mutations/triage_failures.py`, `plugins/rails-flow/agents/test-runner.md`** (#1567; our own design, authority: the maintainer's decision recorded on the issue, no framework claim). `dev_baseline.py record` writes the failing example ids at one commit (a ratchet, not a threshold); `check` says STALE when that commit is not the merge base with the integration ref. `triage_failures.py` calls a failure PREEXISTING only against a fresh baseline and only in a spec file the branch did not change; PASSED ALONE when it passed every one of its reruns (default 2, foreground, one at a time, the count always shown, each rerun passing only on `1 example, 0 failures`), which is NOT a flake verdict and fails the run like NEW, since an order-dependent regression looks the same; and NEW otherwise, so a stale or missing baseline hides nothing. A run with errors outside of examples (a spec file failed to load) is refused by both scripts. Ids are compared whole. Both scripts carry a `--selftest` (NEW, PASSED ALONE, PREEXISTING, stale baseline, an id that is a substring of another, a load error, an edited spec, a rerun that matched nothing) and a mutation guard. Adopting it in Retask is a separate step after release.
 
-- **The Mission Control recipe now admits your admins, and says what `filter_arguments` and `adapters` do — `skills/rails-8/references/ecosystem-gems.md`, `skills/rails-8/references/jobs-and-realtime.md`, `dist/rails-8.skill`, `docs/evidence/audits/2026-10-11-mission-control-1816.md`** (#1816; CONFIRMED by a `doctrine-verifier` run over the whole files of mission_control-jobs 1.3.1; rows M1-M3 and X1-X5). The doctrine said to set `base_controller_class` to your admin controller, which still answers 401 to everyone: the engine's controller always includes its basic-auth concern, so `http_basic_auth_enabled = false` is needed as well (both recipes, in `ecosystem-gems.md` §8 and `jobs-and-realtime.md`). New: `filter_arguments` matches root-level hash keys only and never filters positional values; `adapters` defaults to the app's queue adapter and the Solid Queue extension is prepended only when `:solid_queue` is listed (an `:async` app shows an empty dashboard); the README's route-constraint alternative. The `:test` failure mode is inferred from the code and says so. The verifier's note that README:101-104 reads "you can disable" is recorded. Its route-helper precedence finding is not written (unverified against the authentication generator).
-- **rails-8 `observability.md` covers the in-house OpenTelemetry path, and corrects what Rails reports on its own — `skills/rails-8/references/observability.md`, `dist/rails-8.skill`, `docs/evidence/audits/2026-10-11-observability-otel-1694.md`** (#1694). Two new subsections. §5 "What is reported automatically, and what a subscriber receives (Rails 8.1.4)": a request error is reported on two paths (after a rendered error page when the class has no `rescue_responses` entry, and whenever it propagates out of the app, as under `show_exceptions = :none`), the `original_path` / `original_request_method` env keys, `retry_on` / `discard_on` and `report:`, live objects in `context`, and personal data in `error.message`; the §5 sentence that said unhandled exceptions are reported automatically now says some are not. §7 "An in-house OpenTelemetry store": the Rack query-string leak and an allow-list as one safe design, ActionPack installs the middleware (do not insert it again), `use_all` or per-component `c.use`, PG PREPARE/EXECUTE spans, a custom `id_generator`, exporter-error swallowing, WebMock hiding Net::HTTP, timestamps in seconds, `benchmark` on Ruby 4.0, `autoload_lib_once`, a separate database for the store, `pg_stat_statements` (preload, `track_utility`, the Kamal accessory `cmd:` applied by `reboot` and not `restart`) and an alert-scan design. Verified by three `doctrine-verifier` runs against the installed gems; only CONFIRMED claims are written, partly confirmed ones are narrowed, a retracted one (inserting the Rack middleware yourself) and an inconclusive one (`perform_enqueued_jobs` under RSpec) are left out, and design opinions say so. Out of scope, for separate issues: `ecosystem-gems.md` §8 contradicts a confirmed finding (the Mission Control recipe needs `http_basic_auth_enabled = false`), and the route-constraint / 404 pattern.
+- **The Mission Control recipe now admits your admins, and says what `filter_arguments` and `adapters` do — `plugins/rails-stack/skills/rails-8/references/ecosystem-gems.md`, `plugins/rails-stack/skills/rails-8/references/jobs-and-realtime.md`, `dist/rails-8.skill`, `docs/evidence/audits/2026-10-11-mission-control-1816.md`** (#1816; CONFIRMED by a `doctrine-verifier` run over the whole files of mission_control-jobs 1.3.1; rows M1-M3 and X1-X5). The doctrine said to set `base_controller_class` to your admin controller, which still answers 401 to everyone: the engine's controller always includes its basic-auth concern, so `http_basic_auth_enabled = false` is needed as well (both recipes, in `ecosystem-gems.md` §8 and `jobs-and-realtime.md`). New: `filter_arguments` matches root-level hash keys only and never filters positional values; `adapters` defaults to the app's queue adapter and the Solid Queue extension is prepended only when `:solid_queue` is listed (an `:async` app shows an empty dashboard); the README's route-constraint alternative. The `:test` failure mode is inferred from the code and says so. The verifier's note that README:101-104 reads "you can disable" is recorded. Its route-helper precedence finding is not written (unverified against the authentication generator).
+- **rails-8 `observability.md` covers the in-house OpenTelemetry path, and corrects what Rails reports on its own — `plugins/rails-stack/skills/rails-8/references/observability.md`, `dist/rails-8.skill`, `docs/evidence/audits/2026-10-11-observability-otel-1694.md`** (#1694). Two new subsections. §5 "What is reported automatically, and what a subscriber receives (Rails 8.1.4)": a request error is reported on two paths (after a rendered error page when the class has no `rescue_responses` entry, and whenever it propagates out of the app, as under `show_exceptions = :none`), the `original_path` / `original_request_method` env keys, `retry_on` / `discard_on` and `report:`, live objects in `context`, and personal data in `error.message`; the §5 sentence that said unhandled exceptions are reported automatically now says some are not. §7 "An in-house OpenTelemetry store": the Rack query-string leak and an allow-list as one safe design, ActionPack installs the middleware (do not insert it again), `use_all` or per-component `c.use`, PG PREPARE/EXECUTE spans, a custom `id_generator`, exporter-error swallowing, WebMock hiding Net::HTTP, timestamps in seconds, `benchmark` on Ruby 4.0, `autoload_lib_once`, a separate database for the store, `pg_stat_statements` (preload, `track_utility`, the Kamal accessory `cmd:` applied by `reboot` and not `restart`) and an alert-scan design. Verified by three `doctrine-verifier` runs against the installed gems; only CONFIRMED claims are written, partly confirmed ones are narrowed, a retracted one (inserting the Rack middleware yourself) and an inconclusive one (`perform_enqueued_jobs` under RSpec) are left out, and design opinions say so. Out of scope, for separate issues: `ecosystem-gems.md` §8 contradicts a confirmed finding (the Mission Control recipe needs `http_basic_auth_enabled = false`), and the route-constraint / 404 pattern.
 - **The directory-symlink selftest row reports an error as a failed row — `scripts/mutation_incremental_selftest.py`** (Refs #1738). The row added in round 3 raised under the mutant that treats a link as a file, which ended the selftest before the earlier row that mutant is declared to trip was reported, so run 38063301637 shard 3 read it as caught by the wrong fixture. The row now catches the error and fails the check; all five symlink-related mutants of `scripts/mutations/mutation_incremental.py` replayed by hand, each failing its named row. Our own design; no framework claim.
 - **The doctrine map no longer lists guard-bash as a guarantee for `git add -A` — `scripts/doctrine_map.py`, `docs/architecture/doctrine-map.html`** (#1788, part 1 of the owner decision recorded on #1793: enforce git safety where the effect happens, not in shell text). The row becomes `advice` (guard-bash is a tripwire: 18 of 21 hostile spellings passed it on dev), and a new tracked `gap` row states the guarantee that does not exist yet, pointing at the wrapper (#1790) and the git hooks (#1789). The fail-closed hook row keeps guard-bash for its posture only, and says so. Our own design, so no doctrine-verifier verdict applies.
 - **`mutation coverage` skips a guard unchanged since a trusted full run, records costs only from the runner, warns on cost growth in the release, and runs weekly on Linux and macOS — `scripts/mutation_incremental.py`, `scripts/mutation_check.py`, `scripts/maintainer_doctor.py`, `.github/workflows/mutation-weekly.yml`, `scripts/linux_check.sh`** (#1738). The v1.155.0 release failed five times and no failure was a surviving mutant: ten findings that exist only on Linux (#1729), deadline fixtures under load, and the cost ratchet tripping three times because its records mixed laptop and runner measurements. Four changes, all our own design (no framework claim); the first was reworked after a security review of this branch. (1) **Incremental proof.** A guard's result is a function of the files the runner stages for it, so `guard_hash` hashes its declaration, subject, selftest, deps and `needs` (CRLF-normalised, directories recursively) and `harness_hash` hashes the runner and its helpers. A guard is skipped, and reported `skip (unchanged since <sha>)` with a line saying a skip is not a pass, only when its hash NOW equals its hash AT A TRUSTED PROOF COMMIT. **Where the state lives: a commit status, not a file.** The first design committed the hashes in `docs/evidence/mutation-proof.json`, which a pull request can edit: weaken a guard, write its new hash beside it, and the release skips a guard it never ran. Now CI posts `mutation-proof/<os>` = success on a commit of `main`, only from a complete full run in which nothing was skipped (`post_proof` refuses a pull request, a branch dispatch, `dev` and a laptop), and a later run takes the newest `main` first-parent commit that carries one and RECOMPUTES every hash from that commit's own git objects (`GitTree`), so no file a pull request writes is read. **Second security pass: where the deciding code runs is part of the trust.** A hash comparison made by the checkout's own code proves nothing when that code is a branch's: a pull request or a dispatch on a branch can edit `trusted_skips` (or the harness) to skip any guard and print a green result, and a dispatched branch run is the evidence this repository asks for before a slot. So `skip_allowed(env)` is true only in CI on `refs/heads/main` (a release, the weekly sweep, a dispatch on main), and `main()` skips nothing anywhere else: a dispatch on a branch, a pull request, a tag and a laptop run every guard, as before the incremental proof existed. Negative tests: `skip_allowed` is false for a pull request ref, a branch ref, `dev`, a tag, `refs/heads/main-evil`, a laptop with the ref set, a bare laptop and `GITHUB_ACTIONS=1`; end to end, a valid proof and an unchanged guard still run every guard on a branch dispatch, a pull request, a tag and a laptop; four mutants (a skip allowed off main, a laptop allowed, a ref that only starts like main, `main()` ignoring the rule) each fail by that test. **Adversary findings on that head, both closed.** (1) CRLF blindness: the hash normalised `\r\n` in every file, but the runner stages a guard's subject, selftest and deps through `read_text`/`write_text` (normalised) and copies `needs` byte for byte, so a CRLF rewrite of `plugins/rails-flow/hooks/scripts/guard-bash.sh` (which then exits 2 on every command, "set: pipefail: invalid option name") skipped every guard (measured by the reviewer: exit 0, skipped=203, ran=0). `needs` are now hashed raw and the rest normalised, the mode being part of the digest; negatives: a CRLF rewrite of a `needs` file, of a file inside a `needs` directory and of a shell hook each change the hash, a CRLF subject, selftest and dep do not; three mutants. (2) A forgeable proof status: a same-repo pull request whose edited workflow holds `statuses: write` posts `mutation-proof/linux = success` as github-actions[bot], like a real one. A status is now believed only with the run behind it: `post_proof` sets `target_url` to the run it came from and refuses a missing run id, and `github_proof_lookup` reads that run back and requires a run of this repository (not a fork), of `release.yml` or `mutation-weekly.yml`, started by a push, the schedule or a dispatch, on `main`, for exactly the commit, completed and successful; negatives: no `target_url`, another repository's run, a URL that is not a run, a look-alike host, a repository name that is only a prefix, a pull request run (also one that claims branch main), a run on another branch, another workflow, another commit, a failed, cancelled or in-progress run, a fork, another repository, an unknown event, a failing run lookup and a non-JSON answer; twelve mutants, one per check. Also corrected: the cost ratchet's growth is advisory in every automated run (the shard jobs and the doctor's `--require-slow` pass `--ratchet-warn`, and pull request CI runs no mutation job); it blocks only a bare `--ratchet`, which a maintainer runs by hand. **Round 2 of the adversary, one blocker and two advisories, all closed.** BLOCKER: a genuine run can still prove nothing. `release.yml` SKIPS `gates` whenever the tree matched a maintainer's local `--record-proof` (recorded on macOS), so a successful push run of `main` may hold no mutation job at all, and a forged `mutation-proof/linux` status pointing at it was believed (all 203 of 203 guards skipped, and the next Linux shards then skip guards never run on Linux, the #1729 class). `github_proof_lookup` now also reads `/actions/runs/<id>/jobs?filter=latest` and `jobs_prove` requires the run's own jobs to show a full sweep for the OS: every shard 1..4 and the summary job that posts the proof, each completed with conclusion success and no duplicate that did not succeed (`release.yml`: `gates / mutation (N)` and `gates / mutation coverage`, Linux only; `mutation-weekly.yml`: `mutation (<runner>, N)` and `summary (<runner>)` per OS). Negatives: a release run whose `gates` were skipped, mutation coverage skipped, cancelled, failed or missing, one of the four shards missing, a fifth numbered shard instead, a skipped, failed or in-progress shard, a shard that succeeded once and failed on another attempt, no jobs, a body that is not a job list, look-alike names, a failing jobs lookup, a release run offered as a darwin proof, a weekly run with a shard or its summary missing for the OS asked about while the other OS is complete, a darwin proof at a weekly run that swept only ubuntu, and gates.yml or another workflow; the selftest also reads both workflows and fails if their `shard:` matrix or `--expect-shards` is not `EXPECTED_SHARDS`, and the two workflows are now `needs` of the guard. ADVISORY (a): `copytree` keeps the executable bit but the hash ignored the file mode, so 100755 against 100644 was no change; the mode is now part of the digest on both sides (the commit's tree entry, the working tree's `st_mode`). ADVISORY (b): `GitTree.read` returned a symlink's text while `WorkTree.read` followed the link; a symlink in a staged path now makes the guard UNHASHABLE (never equal to anything), so it always runs, on both sides. Thirteen more mutants, each failing by its own fixture. No status, no `gh`, no `origin/main`, a lookup error or a harness change since the proof: nothing is skipped, which is a full run. Nothing is skipped on `--full`, with `--guard`, or for another OS. The weekly full run is the forced re-proof. (2) **Cost records from the runner only.** `--rebaseline` exits 2 outside `GITHUB_ACTIONS` unless given `--host LABEL`, which may not impersonate the runner (`github-actions/...`) and, outside CI, writes only a gitignored `.local` record nothing reads (the committed record that CI trusts comes from CI alone); the record carries `host`; the ratchet context names it. (3) **Growth warns in the release, and only growth.** `--ratchet-warn` (what `--require-slow` now passes) prints cost growth as `warning:` and passes; a survivor, an INERT guard, a wrong-fixture catch, a missing record and a gone guard still fail; bare `--ratchet` still fails on growth. (4) **`.github/workflows/mutation-weekly.yml`** runs every guard (`--full`) on `ubuntu-latest` and `macos-latest`, Mondays. Also **`scripts/linux_check.sh <guard>...`** runs `mutation_check.py --guard` (or `--run <selftest>`) in `ubuntu:24.04` and fails closed, exit 2, when docker is absent or not running; its selftest drives it with a stub `docker`. Selftests prove an unchanged guard is skipped and a changed `needs` file re-runs it, a harness edit forces a full run, release-mode growth is a warning, and each forgery path is closed; the new branches carry mutants (`scripts/mutations/mutation_incremental.py`, `mutation_check_harness.py`, `linux_check.py`). `docs/evidence/mutation-cost-baseline.json` is re-set from the hosted runner's measured run (dispatched run 38006520886, host `github-actions/Linux`, jobs 4) instead of the laptop-and-runner mix: with the old record the first N=4 run's shard 1 took 44 minutes against 17 to 23 for the others, and the re-set record splits the 199 guards at 7019, 7018, 6964 and 7020 CPU seconds. Round 3 (Fable): a symlink to a DIRECTORY inside a `needs` directory was never listed (`rglob` + `is_file`) while the runner's copytree staged it as real files, so 51 of 51 guards were skipped; `WorkTree.files_under` now walks with `os.walk(followlinks=False)` and lists any symlink as one `link` entry, with two selftest rows and two mutants. Limit, fail-safe: a `filter=latest` listing that holds only re-run jobs never serves as a proof, so the guards run.
@@ -125,7 +125,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 - **The `release_gate_repos` fixture group has a mutation guard — `scripts/mutations/hook_release_gate_repos.py`, `plugins/rails-flow/scripts/check_hook_gates.py`** (#1592). The group proves the release gate acts on the repository a command acts on (`-R`, `GH_REPO`, a `repos/<o>/<r>` path, a remote) and the stamp of another repository, and nothing proved its fixtures could fail. Seventeen mutations break the resolution code and `judge_remote`, and proving them found fixtures that could not tell the hook from a broken one: a `GH_REPO` signal that a PR's URL repeated, a host-qualified repository that the classifier refuses before the hook's own check, a stalled compare call hidden behind a stalled stamp read, and `?` cases that the classifier refused. Each is now caught by its own fixture. The guard runs each mutant against its one fixture (`--match`, #1599): `@real_setup` keeps the group's git setup real and stubs only the hook, which cost 588 s of work in a real framework run, where a whole-group run per mutant would have cost several times that. Our own design; no framework claim.
 
 - **The hook-lib drift rule covers the second shared lib, and the slow-path harness drops its stale markers — `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`, `scripts/hook_slow_paths.py`** (Refs #1575). `hook-lib-drift` compared only the two `normalize_cmd.sh` copies; it now compares each pair in `HOOK_LIB_PAIRS`, so `deadline.sh` cannot be fixed in one plugin and left broken in the other. Three new scenarios, and one new mutation (comparing only the first pair) caught by its scenario. `hook_slow_paths.py` marked the two #1519 shapes known-slow for #1575; its own ratchet reported both as stale (0.1-0.2 CPU s), so the markers are gone and no case is marked known-slow. Our own design; no framework claim.
-- **The mutation runner's git environment drops an inherited `GIT_DIR`, and the fixture-git copies cannot drift — `scripts/hermetic_git.py`, `scripts/lint_self_consistency.py`, `scripts/mutation_check_selftest.py`** (Refs #1588, Refs #1577). ROOT CAUSE of #1588, measured: an INHERITED `GIT_DIR`. git exports it (with the rest of `git rev-parse --local-env-vars`) to any child it runs -- a hook, `rebase --exec`, `bisect run`, `submodule foreach` -- and under it `git init <tmp>` re-initialises the real repo while `git -C <tmp> commit` commits into `$GIT_DIR`. `scripts/mutation_check_selftest.py`'s #1493 probe, run verbatim under an inherited GIT_DIR naming a stand-in repo, wrote `t <t@t>` / `m` into it and left the temp dir with no `.git` -- the incident's exact signature. The trigger on 2026-10-03 is unidentified (the shared repo has no git hooks installed); the fix holds whatever it was. `hermetic_git.env()`, which every subprocess the gate and mutation runners launch already uses, now drops the repository-locating variables, so the path is closed for every selftest before any wrapper moves. Red-first: the probe under an inherited GIT_DIR lands a commit in a stand-in repo without the strip, none with it; guard `hermetic_git` 5/5 (+1). New rule `fixture-git-drift` (three copies byte-identical; 3 scenarios; it fires on a one-byte drift), lint guard 177/177 (+1). `skills/quality-pass/references/worked-example.md`: the `check(label, ok, detail)` harness count is 47 (reach 25), because the three fixture_git copies' selftests are new copies. A DETECTOR beside the prevention, `scripts/maintainer_doctor.py`: the gate sweep records every ref tip and HEAD before it runs and lists every commit added during it (`rev-list <after> --not <before>`); any commit not authored by the configured user turns the new gate "the sweep committed nothing into the real repository" red and names it -- other sessions commit as that user, so their own work during a sweep is not flagged. That catches the next unknown path whatever its trigger. Three fixtures (a foreign commit planted mid-sweep is FAIL; the configured user's commit and a quiet sweep PASS), all absent on dev. From PR #1594's review: it watches only local branches, the stash and HEAD, and leaves out anything a remote-tracking ref reaches -- a `git fetch` or a `pull` into a local branch during a sweep brings other authors' commits, which made the first version a false alarm (a fixture fetching and pulling one now passes; on the reviewed head it failed). Guard `maintainer_doctor` +4.
+- **The mutation runner's git environment drops an inherited `GIT_DIR`, and the fixture-git copies cannot drift — `scripts/hermetic_git.py`, `scripts/lint_self_consistency.py`, `scripts/mutation_check_selftest.py`** (Refs #1588, Refs #1577). ROOT CAUSE of #1588, measured: an INHERITED `GIT_DIR`. git exports it (with the rest of `git rev-parse --local-env-vars`) to any child it runs -- a hook, `rebase --exec`, `bisect run`, `submodule foreach` -- and under it `git init <tmp>` re-initialises the real repo while `git -C <tmp> commit` commits into `$GIT_DIR`. `scripts/mutation_check_selftest.py`'s #1493 probe, run verbatim under an inherited GIT_DIR naming a stand-in repo, wrote `t <t@t>` / `m` into it and left the temp dir with no `.git` -- the incident's exact signature. The trigger on 2026-10-03 is unidentified (the shared repo has no git hooks installed); the fix holds whatever it was. `hermetic_git.env()`, which every subprocess the gate and mutation runners launch already uses, now drops the repository-locating variables, so the path is closed for every selftest before any wrapper moves. Red-first: the probe under an inherited GIT_DIR lands a commit in a stand-in repo without the strip, none with it; guard `hermetic_git` 5/5 (+1). New rule `fixture-git-drift` (three copies byte-identical; 3 scenarios; it fires on a one-byte drift), lint guard 177/177 (+1). `plugins/rails-stack/skills/quality-pass/references/worked-example.md`: the `check(label, ok, detail)` harness count is 47 (reach 25), because the three fixture_git copies' selftests are new copies. A DETECTOR beside the prevention, `scripts/maintainer_doctor.py`: the gate sweep records every ref tip and HEAD before it runs and lists every commit added during it (`rev-list <after> --not <before>`); any commit not authored by the configured user turns the new gate "the sweep committed nothing into the real repository" red and names it -- other sessions commit as that user, so their own work during a sweep is not flagged. That catches the next unknown path whatever its trigger. Three fixtures (a foreign commit planted mid-sweep is FAIL; the configured user's commit and a quiet sweep PASS), all absent on dev. From PR #1594's review: it watches only local branches, the stash and HEAD, and leaves out anything a remote-tracking ref reaches -- a `git fetch` or a `pull` into a local branch during a sweep brings other authors' commits, which made the first version a false alarm (a fixture fetching and pulling one now passes; on the reviewed head it failed). Guard `maintainer_doctor` +4.
 
 - **The status board's record field names are checked against the writer — `scripts/check_coordination_readers.py`, `scripts/mutations/check_coordination_readers.py`, `scripts/maintainer_doctor.py`** (#1585). `pipeline` cannot import rails-flow's `coordination.py`, so the board repeats the record's field names, and a repeated name is a claim nothing makes true. The check requires every name the reader lists as written to appear in the writer, every name it lists as planned to be absent from the writer (the day a writer adds one, the check fails and says to move it), and every listed name to be read. 13 selftest checks, 9 mutations, each caught by its fixture. It reads the writer with `ast` (dict-literal keys, `x["k"] = ...` stores and `setdefault`), so renaming a write site while a `.get("k")` read keeps the old spelling is drift. Our own design; no framework claim.
 
@@ -135,7 +135,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 - **The cost ratchet is enforced: a committed cost record, a cheap record check on every pull request, and `--ratchet` on the runs that measure it — `docs/evidence/mutation-cost-baseline.json`, `scripts/mutation_check.py`, `scripts/maintainer_doctor.py`, `scripts/mutations/maintainer_doctor.py`, `scripts/mutations/mutation_check_harness.py`** (#1599). #1603 shipped the ratchet without a record, because the CI log had never shown a per-guard cost. The record now holds the 19 guards over the 60 s floor, from the `work by guard` line of full run 37183258895 (green on `7dde86f`, `jobs=4`; the newest green dev push run before it, 37185540312, predates the table and prints none), and `python3 scripts/mutation_check.py --rebaseline` re-sets it from a later run. `python3 scripts/mutation_check.py --check-record` runs no guard: it fails when the record is missing, unreadable, or names a guard that is gone, and it is the new gate `mutation cost record`, which pull requests run. `slow_gate_command` passes `--ratchet` to `mutation coverage` only under `--require-slow` (CI's push and promotion runs), because a seconds figure from a busy laptop is not growth. `ratchet_problems` and `--check-record` read one function, `record_problems`, so they cannot disagree. Four doctor mutations and four harness mutations are added, each applied by hand (control passes, all caught by their own fixture); one existing harness mutation was re-anchored onto `record_problems`. Decision: the coordinator's relayed owner order of 2026-10-04 on #1599 (our own design, no upstream claim). Not done, on purpose: `narrow_with` for `hook_release_gate` and `hook_guard_bash`. `--match` refuses a group it cannot survey with every subprocess stubbed, and the `release_gate` group cannot be (it raises `IndexError`), so those guards cannot set it yet. **The ratchet's first enforcing run (37269461430) did its job:** it tripped three guards that dev had grown since the record was seeded, `hook_coordination` (109 to 265 s; 25 to 55 mutations with #1585 part 2b) and two new guards from the deadline work, `hook_deadline` (340 s, 8 mutations) and `hook_release_gate_deadline` (289 s, 17). They are recorded from that run's measured costs, as a reviewable diff of `docs/evidence/mutation-cost-baseline.json`, not by widening any constant; the two deadline guards are the next candidates for `narrow_with` once the `release_gate` group can be surveyed. **Runs 4 and 5 (37278867214, 37279335358) added two findings.** (1) The growth tolerance was set below the runner's own noise: `hook_coordination` (guard and selftest byte-identical) cost 840 s in one run and 1301 s in the next (1.55x), so `RATCHET_GROWTH` is now 2.0, with the measurement beside it. (2) Dev kept adding heavy guards while this PR was open (`remote_evidence` 174 s, `hook_release_gate_repos` 191 s, `hook_release_gate_deadline` 289 to 673 s), recorded from those runs, the second figure stable at 662 and 673 s. (The first run, 37223022427, was red for a different reason, an inert baseline from this PR's own test reading the real guard registry.) **The second enforcing run (37273819948) tripped two more, both from the #1585 board work that had merged to dev since:** `hook_coordination` went from 265 s to 840 s (the part 2b pointer made its selftest run the real SessionStart hook, so each mutant costs about 18 s instead of 6 s, measured twice at each commit with the harness's own staged baseline, and the guard gained 11 mutations), and `status_board` is a new guard at 136 s. Both are recorded from that run; neither came from this PR. **The rule the ratchet now enforces (coordinator, 2026-10-05):** whoever adds or grows a heavy guard re-records it in the same PR, so the cost lands as a reviewed one-line diff of `docs/evidence/mutation-cost-baseline.json` and a later PR's dispatched run never trips on someone else's guard. The refusal says so: "re-record docs/evidence/mutation-cost-baseline.json in this PR" (`scripts/mutation_check.py`), pinned by a test and a mutation.
 
-- **The mutation runner's git environment drops an inherited `GIT_DIR`, and the fixture-git copies cannot drift — `scripts/hermetic_git.py`, `scripts/lint_self_consistency.py`, `scripts/mutation_check_selftest.py`** (Refs #1588, Refs #1577). ROOT CAUSE of #1588, measured: an INHERITED `GIT_DIR`. git exports it (with the rest of `git rev-parse --local-env-vars`) to any child it runs -- a hook, `rebase --exec`, `bisect run`, `submodule foreach` -- and under it `git init <tmp>` re-initialises the real repo while `git -C <tmp> commit` commits into `$GIT_DIR`. `scripts/mutation_check_selftest.py`'s #1493 probe, run verbatim under an inherited GIT_DIR naming a stand-in repo, wrote `t <t@t>` / `m` into it and left the temp dir with no `.git` -- the incident's exact signature. The trigger on 2026-10-03 is unidentified (the shared repo has no git hooks installed); the fix holds whatever it was. `hermetic_git.env()`, which every subprocess the gate and mutation runners launch already uses, now drops the repository-locating variables, so the path is closed for every selftest before any wrapper moves. Red-first: the probe under an inherited GIT_DIR lands a commit in a stand-in repo without the strip, none with it; guard `hermetic_git` 5/5 (+1). New rule `fixture-git-drift` (three copies byte-identical; 3 scenarios; it fires on a one-byte drift), lint guard 177/177 (+1). `skills/quality-pass/references/worked-example.md`: the `check(label, ok, detail)` harness count is 47 (reach 25), because the three fixture_git copies' selftests are new copies. A DETECTOR beside the prevention, `scripts/maintainer_doctor.py`: the gate sweep records every ref tip and HEAD before it runs and lists every commit added during it (`rev-list <after> --not <before>`); any commit not authored by the configured user turns the new gate "the sweep committed nothing into the real repository" red and names it -- other sessions commit as that user, so their own work during a sweep is not flagged. That catches the next unknown path whatever its trigger. Three fixtures (a foreign commit planted mid-sweep is FAIL; the configured user's commit and a quiet sweep PASS), all absent on dev. From PR #1594's review: it watches only local branches, the stash and HEAD, and leaves out anything a remote-tracking ref reaches -- a `git fetch` or a `pull` into a local branch during a sweep brings other authors' commits, which made the first version a false alarm (a fixture fetching and pulling one now passes; on the reviewed head it failed). Guard `maintainer_doctor` +4.
+- **The mutation runner's git environment drops an inherited `GIT_DIR`, and the fixture-git copies cannot drift — `scripts/hermetic_git.py`, `scripts/lint_self_consistency.py`, `scripts/mutation_check_selftest.py`** (Refs #1588, Refs #1577). ROOT CAUSE of #1588, measured: an INHERITED `GIT_DIR`. git exports it (with the rest of `git rev-parse --local-env-vars`) to any child it runs -- a hook, `rebase --exec`, `bisect run`, `submodule foreach` -- and under it `git init <tmp>` re-initialises the real repo while `git -C <tmp> commit` commits into `$GIT_DIR`. `scripts/mutation_check_selftest.py`'s #1493 probe, run verbatim under an inherited GIT_DIR naming a stand-in repo, wrote `t <t@t>` / `m` into it and left the temp dir with no `.git` -- the incident's exact signature. The trigger on 2026-10-03 is unidentified (the shared repo has no git hooks installed); the fix holds whatever it was. `hermetic_git.env()`, which every subprocess the gate and mutation runners launch already uses, now drops the repository-locating variables, so the path is closed for every selftest before any wrapper moves. Red-first: the probe under an inherited GIT_DIR lands a commit in a stand-in repo without the strip, none with it; guard `hermetic_git` 5/5 (+1). New rule `fixture-git-drift` (three copies byte-identical; 3 scenarios; it fires on a one-byte drift), lint guard 177/177 (+1). `plugins/rails-stack/skills/quality-pass/references/worked-example.md`: the `check(label, ok, detail)` harness count is 47 (reach 25), because the three fixture_git copies' selftests are new copies. A DETECTOR beside the prevention, `scripts/maintainer_doctor.py`: the gate sweep records every ref tip and HEAD before it runs and lists every commit added during it (`rev-list <after> --not <before>`); any commit not authored by the configured user turns the new gate "the sweep committed nothing into the real repository" red and names it -- other sessions commit as that user, so their own work during a sweep is not flagged. That catches the next unknown path whatever its trigger. Three fixtures (a foreign commit planted mid-sweep is FAIL; the configured user's commit and a quiet sweep PASS), all absent on dev. From PR #1594's review: it watches only local branches, the stash and HEAD, and leaves out anything a remote-tracking ref reaches -- a `git fetch` or a `pull` into a local branch during a sweep brings other authors' commits, which made the first version a false alarm (a fixture fetching and pulling one now passes; on the reviewed head it failed). Guard `maintainer_doctor` +4.
 
 - **A mutant runs only the fixture that must catch it, and a cost ratchet fails a new expensive guard — `plugins/rails-flow/scripts/check_hook_gates.py`, `scripts/mutation_check.py`, `scripts/mutation_types.py`, `scripts/maintainer_doctor.py`, `scripts/mutations/hook_command_cwd.py`, `scripts/mutations/hook_guard_claims.py`, `scripts/mutations/mutation_check_harness.py`, `scripts/mutations/check_hook_gates_harness.py`** (#1599). `mutation coverage` finished #1516's last full run in 3490 s of its 3600 s budget (run 37150517265, 2359 mutations, 166 guards, `jobs=4`). **Measured first:** the 199-check `guard_claims` group takes 116 s, and two loops (the cd and environment shapes) hold 61% of it, so splitting those fixtures off, as the issue proposed, saves at most about 40% per mutant. And `hook_command_cwd` had no `selftest_args`, so each of its 53 mutants re-ran **all twelve** fixture groups: 8559 s of work in one run. **What changed:** `check_hook_gates.py --match SUBSTR` runs only the checks whose label contains it, in two passes over a group (a survey with every subprocess stubbed, then a run in which only the code before a matching check executes for real); a selection that matches nothing, or a blank one, exits 2 and never passes empty, and a fixture whose result steers which checks follow raises instead of guessing. A guard that sets `narrow_with="--match"` now runs each mutant as `--match <its expects>`, **after a control run of the unmutated code with the same selection that must pass**, so a fixture that cannot pass alone can never "catch" a mutant by failing for that reason; `Mutation.narrow=False` opts one out. `hook_command_cwd` and `hook_guard_claims` opt in, and `hook_command_cwd` also gains `--only guard_claims`. **Measured locally, `jobs=3`, under load, all 77 mutants caught by their own fixture:** `hook_command_cwd` 8559 s to 1762 s of work, `hook_guard_claims` 2629 s to 712 s, about 78% less for the pair; one narrowed run is about 3.5 s of CPU against 116 s, and the rest of the per-mutant time is both passes running every fixture's own Python with only the subprocesses stubbed, so a survey cache is the next saving if the numbers ask for it. The runner's wall time is not measured yet; it comes from the CI run of this branch. **The ratchet** (`--ratchet`, `--rebaseline`, `docs/evidence/mutation-cost-baseline.json`): a guard over 60 s of work must be on record, a recorded one may cost 1.5x its record plus 30 s, a record naming a guard that is gone is drift, and no record, or an unreadable one, never passes. Seconds depend on the runner, so the record is made from a CI run and enforced only on the run whose job is to prove this gate. **It is not enforced yet, and says so:** the CI log never showed a per-guard cost (the doctor kept one summary line), so no record existed to ratchet against; the doctor now prints the heaviest guards and the work-by-guard table of a passing slow gate, and the record is seeded from that run in the next commit of this PR. 18 mutations are added (seven for `--match` and the group selection, five for narrowing, six for the ratchet) and four existing ones re-pointed at the lines they mutate; the harness selftest is at 3474 checks. **Under narrowing only the selftest's own failure (exit 1) is a catch** (review of the draft PR, F1): a mutant that made the selection refuse exited 2 with a message quoting the label its `expects` names, so "non-zero and the label appears" scored it as caught; a refusal or a crash is now reported as a problem. The branch's first full run (37179089233) was red on one `TypeError` in the mutation gate, and mutation coverage itself completed in about 2756 s: one of the new ratchet mutations ("no record at all passes") crashed the selftest with a traceback that named no fixture, so the harness refused it as caught by the wrong thing; the selftest now turns a raise into a named failure. The `check_hook_gates_harness` guard, run on the first draft, found three defects in this PR's own checks, all fixed: a meta-check restored `FAILURES` from a snapshot and so erased its own verdict (three mutants were caught by the wrong fixture); one mutation survived because a second line caught the same scenario; and two older mutants timed out because a mutant of the group machinery ran the whole suite after its meta-check had already caught it. `--fail-fast` skips the real groups once a meta-check has failed, and a nested selftest, which only proves a refusal, never runs them. That guard went from 682 s of work and red to 79 s of work (36 s wall) and 16 of 16 caught. Not done: the other heavy guards (`hook_guard_bash`, the release-gate ones) can opt in with `narrow_with`, each after its own control run. Our own design, no framework claim; the order of work was set by the coordinator on 2026-10-04.
 
@@ -159,7 +159,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 - **A process-group fixture reads its gate's pid record whole, and only once it exists — `scripts/pid_record.py`, `scripts/pid_record_selftest.py`, `scripts/mutations/pid_record.py`, `scripts/maintainer_doctor_selftest.py`, `scripts/mutation_check_selftest.py`, `scripts/maintainer_doctor.py`** (#1556). Full gates run 37041063728 failed on `int(pidfile.read_text())` in the #1459 control: the gate wrote its grandchild's pid with `open(path, 'w').write(...)`, which truncates first, and the control's one-second `subprocess.run` timeout could land between the truncate and the content (`int('')`), or before the gate wrote at all (a stale pid from the first run, read as "the control proves nothing"). Reproduced by looping the control 1000 times at 300 in parallel: 296 failures (1 the CI traceback, 295 no record); after, 0 in 1000. The record is now written atomically (`pid_record.write`: temporary sibling, then `os.replace`) after the line is printed and read with a bounded wait (`pid_record.wait`); the control waits for the record and then kills the direct child, as `subprocess.run`'s timeout does, instead of racing a timeout; and a timed-out gate (and mutation_check's 1e mutant) is retried with a longer timeout only while it never started. The same non-atomic write is gone from mutation_check's escapee fixture. New gate `pid record selftest` injects the delay between open and content deterministically; its guard carries 3 mutations. Our own tooling; no upstream claim.
 
-- **A pre-review gauntlet: two adversary agents, `/gauntlet`, and a catalogue of what reviewers blocked on — `.claude/agents/shell-adversary.md`, `.claude/agents/mutation-verifier.md`, `.claude/commands/gauntlet.md`, `docs/evidence/reviews/blocked-catalogue.md`, `scripts/check_blocked_catalogue.py`, `scripts/mutations/check_blocked_catalogue.py`, `scripts/gauntlet_core.py`, `scripts/mutations/gauntlet_core.py`** (#1563). 14 PRs carry a real BLOCK, read from their PR comments (none of the 9 PRs checked for it has a GitHub review object, which is why `docs/evidence/reviews/prs/` has none). Each class that is merged on dev names a fixture (`path :: literal`), and the new gate `blocked catalogue` refuses a row whose file is gone or whose literal no longer appears; seven guard mutations, each caught by its intended fixture. A catalogue section that is renamed or emptied now exits 2 and names the section; before, renaming one heading dropped 8 of 15 rows and the check printed `7 rows examined, 0 findings` and exited 0 (review B1). Two literals that were not distinctive (`<<EOF`, 11 occurrences; `no_grep`, 8) now name a fixture string that occurs once. `shell-adversary` runs hostile commands against a diff's parsers; `mutation-verifier` runs the guards for the scripts a diff changes. **Each agent now runs a script for the part that is not judgement:** `python3 scripts/gauntlet_core.py guards` finds a changed script's guard in the mutation harness's own registry by its declared subject (a guard's name is not its script's name: `guard-bash.sh` is `hook_guard_bash`, and the old prose lookup by file name found a guard for 0 of the 16 hook scripts, review B2), and `python3 scripts/gauntlet_core.py battery` feeds the catalogue's measured hostile inputs and three legitimate commands to a hook. The script's selftest returns BLOCKED on a known-bad fixture diff and CLEAN on a known-good one, a hook that refuses everything still fails, and it goes red when an agent's instructions stop naming its command (review B3, the owner's kept bar: each agent has a selftest that can fail); nine guard mutations, each caught by its own fixture. **What this does not test:** what a model does with the instructions. A live run costs money and the repository's benchmark rule is that one never gates a release (`evals/README.md`), so that part stays the replay's one sample. `skills/quality-pass/references/worked-example.md`: the `check(label, ok, detail)` harness copy count moves 48 → 49, because `scripts/gauntlet_core.py`'s selftest is a new copy; `check_shared_shapes.py` refused the stale number, which is what it is for, and `dist/quality-pass.skill` is repackaged (a measured figure about our own repository, no framework claim). **Scope narrowed from the issue, with the evidence on it:** three of its seven classes (a quadratic loop, a mutation grep missing singular output, an ungated `gh pr ready`) have no blocked PR, so no `perf-auditor` and no `failopen-hunter` (every fail-open found was a parser fail-open, so it is merged into `shell-adversary`). **Replay, measured: 2 of 3 caught, one after a change made following a miss** (`docs/evidence/reviews/gauntlet-replay.md`); PR 1511's fixture race is not catchable by a mutation run and is #1577. Our own design, no framework claim; the owner's decision (narrowed scope, selftest bar kept) is recorded on #1563: https://github.com/fmanimashaun/claude-skills/issues/1563#issuecomment-5970370529.
+- **A pre-review gauntlet: two adversary agents, `/gauntlet`, and a catalogue of what reviewers blocked on — `.claude/agents/shell-adversary.md`, `.claude/agents/mutation-verifier.md`, `.claude/commands/gauntlet.md`, `docs/evidence/reviews/blocked-catalogue.md`, `scripts/check_blocked_catalogue.py`, `scripts/mutations/check_blocked_catalogue.py`, `scripts/gauntlet_core.py`, `scripts/mutations/gauntlet_core.py`** (#1563). 14 PRs carry a real BLOCK, read from their PR comments (none of the 9 PRs checked for it has a GitHub review object, which is why `docs/evidence/reviews/prs/` has none). Each class that is merged on dev names a fixture (`path :: literal`), and the new gate `blocked catalogue` refuses a row whose file is gone or whose literal no longer appears; seven guard mutations, each caught by its intended fixture. A catalogue section that is renamed or emptied now exits 2 and names the section; before, renaming one heading dropped 8 of 15 rows and the check printed `7 rows examined, 0 findings` and exited 0 (review B1). Two literals that were not distinctive (`<<EOF`, 11 occurrences; `no_grep`, 8) now name a fixture string that occurs once. `shell-adversary` runs hostile commands against a diff's parsers; `mutation-verifier` runs the guards for the scripts a diff changes. **Each agent now runs a script for the part that is not judgement:** `python3 scripts/gauntlet_core.py guards` finds a changed script's guard in the mutation harness's own registry by its declared subject (a guard's name is not its script's name: `guard-bash.sh` is `hook_guard_bash`, and the old prose lookup by file name found a guard for 0 of the 16 hook scripts, review B2), and `python3 scripts/gauntlet_core.py battery` feeds the catalogue's measured hostile inputs and three legitimate commands to a hook. The script's selftest returns BLOCKED on a known-bad fixture diff and CLEAN on a known-good one, a hook that refuses everything still fails, and it goes red when an agent's instructions stop naming its command (review B3, the owner's kept bar: each agent has a selftest that can fail); nine guard mutations, each caught by its own fixture. **What this does not test:** what a model does with the instructions. A live run costs money and the repository's benchmark rule is that one never gates a release (`evals/README.md`), so that part stays the replay's one sample. `plugins/rails-stack/skills/quality-pass/references/worked-example.md`: the `check(label, ok, detail)` harness copy count moves 48 → 49, because `scripts/gauntlet_core.py`'s selftest is a new copy; `check_shared_shapes.py` refused the stale number, which is what it is for, and `dist/quality-pass.skill` is repackaged (a measured figure about our own repository, no framework claim). **Scope narrowed from the issue, with the evidence on it:** three of its seven classes (a quadratic loop, a mutation grep missing singular output, an ungated `gh pr ready`) have no blocked PR, so no `perf-auditor` and no `failopen-hunter` (every fail-open found was a parser fail-open, so it is merged into `shell-adversary`). **Replay, measured: 2 of 3 caught, one after a change made following a miss** (`docs/evidence/reviews/gauntlet-replay.md`); PR 1511's fixture race is not catchable by a mutation run and is #1577. Our own design, no framework claim; the owner's decision (narrowed scope, selftest bar kept) is recorded on #1563: https://github.com/fmanimashaun/claude-skills/issues/1563#issuecomment-5970370529.
 
 - **A shipped plugin's or skill's link may not leave what ships with it — `scripts/lint_self_consistency.py`** (#1480). New rule `link-leaves-package`: each plugin and each skill installs alone, so a relative link that climbs out of `plugins/<name>/` or `skills/<name>/` names a path an install does not have, even when it resolves in this clone. `broken-relative-link` covers only `docs/**`, which is why these were not reported mechanically. On dev it found 6; all are fixed in this change. Selftest scenarios both ways; the guard gains a mutation.
 
@@ -223,7 +223,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 - **Each mutation's time limit scales with its guard's own baseline — `scripts/mutation_check.py`** (#1486). A fixed 300 s per-mutation bound was shorter than the hook suite takes under load (60 s idle, 367 s at load ~149), so 10 of 12 `hook_guard_bash` mutations "timed out" on one run and all 12 were caught on the next. The baseline now records how long the unmutated selftest took, and each mutation gets `3 × baseline` within 300–900 s; the baseline is bounded at 600 s. Both caps stay under the gate's 1800 s total, so a hung guard is reported by name here rather than killed unnamed by the doctor, and `maintainer_doctor_selftest` asserts that relation (review of PR #1491). A timeout message names the limit and where it came from. Fixture and control on one slow guard: scaled, its mutant is caught; with the scale zeroed, the same mutant times out. `main()`'s pool is driven end to end on the same slow guard, with its control; `mutation_limits()` has its own fixture including the cap; 5 new mutations in `mutation_check_harness`, 10/10 caught.
 
-- **The shipped-doctrine passthrough check reads each component's own initializer — `scripts/check_component_passthrough.py`, `scripts/mutations/check_component_passthrough.py`** (#1434, the same defect as design-flow's contract check). It took the first `def initialize(` in a class body and has the same `own_lines()` fix. Its class regex spanned blank lines above a class, which made a nested component's body start at its own `class` line: the fix exposed it as a false "RowComponent defines no initializer" in `skills/design-system/references/component-implementations.md`, now gone. The doctrine still reports 23 components and 0 findings, as on dev. Its selftest pins `own_lines()` and its patterns identical to design-flow's copy, compared as source by `ast`, so a fix cannot reach one copy only. The guard stages that file and catches 13/13.
+- **The shipped-doctrine passthrough check reads each component's own initializer — `scripts/check_component_passthrough.py`, `scripts/mutations/check_component_passthrough.py`** (#1434, the same defect as design-flow's contract check). It took the first `def initialize(` in a class body and has the same `own_lines()` fix. Its class regex spanned blank lines above a class, which made a nested component's body start at its own `class` line: the fix exposed it as a false "RowComponent defines no initializer" in `plugins/rails-stack/skills/design-system/references/component-implementations.md`, now gone. The doctrine still reports 23 components and 0 findings, as on dev. Its selftest pins `own_lines()` and its patterns identical to design-flow's copy, compared as source by `ast`, so a fix cannot reach one copy only. The guard stages that file and catches 13/13.
 
 - **A wrong-fixture mutation report carries the mutant's exit status and last 12 lines — `scripts/mutation_check.py`, `scripts/mutation_check_selftest.py`, `scripts/mutations/mutation_check_harness.py`** (#1493). Two CI-only wrong-fixture catches in the `release_evidence` guard (runs 36621081781 and 36623350546) could not be diagnosed, because the report named only the missing label and CI kept nothing else. The report now prints what the INERT report already did, each line cut to 300 characters, and a non-UTF-8 byte in the output is decoded rather than raised. The checker's selftest drives a noisy mutant and asserts exactly the last 12 lines come back (the first missing), the width bound and the decoding. One harness mutation per bound is caught (9/9), after the independent review found the 12-line bound untested. The flake itself stays open on #1493 until a capture names its cause.
 
@@ -246,7 +246,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 - **`Agents-And-Gates.md` no longer stamps a gate count, in the total or per plugin — `scripts/build_wiki.py`, `docs/wiki/Agents-And-Gates.md`, `scripts/mutations/build_wiki.py`** (#1404, [maintainer decision](https://github.com/fmanimashaun/claude-skills/issues/1404#issuecomment-5896594402)). Two open PRs that each added a gate made each other's committed page stale with no textual conflict (three times on PRs #1382 and #1401). One row per gate stays; it conflicts only when two PRs touch the same gate, and `maintainer_doctor.py` prints the live total. The selftest refuses a stamped count and a plugin row wider than its header, and a new mutation guard puts each count back, as a heading and as a bare cell (3/3 caught).
 
-- **The coverage generator carries the Bottom navigation clause d6e4383 added to the committed row — `scripts/build_coverage.py`, `docs/evidence/coverage.html`, `scripts/build_coverage_selftest.py`, `scripts/mutations/build_coverage.py`** (#1408). `build_coverage.py --check` failed whenever `design-corpora/` was present, because the generator was the stale side. The selftest now checks, with no corpora, that every `USE` value appears as a whole cell in the committed `coverage.md`; it fails on origin/dev and a mutation restoring the stale row is caught. `skills/design-system/references/coverage.md` is unchanged byte for byte; doctrine is unaffected.
+- **The coverage generator carries the Bottom navigation clause d6e4383 added to the committed row — `scripts/build_coverage.py`, `docs/evidence/coverage.html`, `scripts/build_coverage_selftest.py`, `scripts/mutations/build_coverage.py`** (#1408). `build_coverage.py --check` failed whenever `design-corpora/` was present, because the generator was the stale side. The selftest now checks, with no corpora, that every `USE` value appears as a whole cell in the committed `coverage.md`; it fails on origin/dev and a mutation restoring the stale row is caught. `plugins/rails-stack/skills/design-system/references/coverage.md` is unchanged byte for byte; doctrine is unaffected.
 
 - **`SLOW_GATES["mutation coverage"]` is set from the runner's own measurement: 1800 s — `scripts/maintainer_doctor.py`** (#1444). The first green dev push run printed `jobs=4, 604s` for 1602 mutations across 145 guards. The 5400 s placeholder from PR #1457 was 9x that, so a hung gate would take 90 minutes to surface; 1800 s is 3x.
 
@@ -1131,7 +1131,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   floor. Measured: `doctrine_map.py` 6 lines, `build_maintainer_skills.py` 6 lines (timeout, two
   exception classes, an injectable repository), `build_wiki.py` 4 lines inline that never return a
   blob at all. A module removes about **three** net lines, against
-  `skills/quality-pass/references/worked-example.md`, where 345 duplicated lines reduced to 72 net
+  `plugins/rails-stack/skills/quality-pass/references/worked-example.md`, where 345 duplicated lines reduced to 72 net
   and were still judged not worth extracting — and the helper would have to live in maintainer-only
   `scripts/`, which shipped plugin code cannot import, so the split would be per-audience rather
   than per-concern. What travels between the three is the RULE, not the code, so
@@ -1143,7 +1143,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   `scripts/build_wiki.py`, `scripts/build_coverage_artifact.py`, `scripts/build_coverage.py`. Every
   one told the reader to `git add`, and `git show HEAD:` reads the commit, so every one sent them
   round a loop that could not end. Found by grepping for the pattern after fixing the first, which
-  is what `skills/code-review/SKILL.md` says to do and is the only reason five of the six were seen.
+  is what `plugins/rails-stack/skills/code-review/SKILL.md` says to do and is the only reason five of the six were seen.
   Demonstrated twice while this branch was being written: `wiki reference drift` and then
   `doctrine map drift` both went red on pages that were rebuilt and not yet committed.
   `scripts/rebuild_generated.py` carries the seventh and is deliberately untouched — another session
@@ -1442,7 +1442,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 - **The doctrine map's declared surface excluded every SHIPPED skill.** (#798) #655 built
   `docs/architecture/doctrine-map.html` to answer one question — *which claim is made true by which gate, and
   which by nothing* — and its `DOCTRINE_SOURCES` were eleven files, all repo-process doctrine or
-  maintainer-facing skills. **`skills/rails-8/`, `skills/hotwire/` and `skills/design-system/` were
+  maintainer-facing skills. **`plugins/rails-stack/skills/rails-8/`, `plugins/rails-stack/skills/hotwire/` and `plugins/rails-stack/skills/design-system/` were
   not declared sources at all**: the doctrine other people's agents follow verbatim, which is the
   whole product.
 
@@ -1487,7 +1487,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
   It bit on the v1.94.0 arm, and the omission was mine: resolving a CHANGELOG conflict I rebuilt the
   file from dev's side and re-grafted only the rails-flow body, so the rails-stack bullet was silently
-  lost while `skills/parallel-session-lane/SKILL.md` merged fine. It surfaced because the arm script
+  lost while `plugins/rails-stack/skills/parallel-session-lane/SKILL.md` merged fine. It surfaced because the arm script
   happened to assert the number of `### Unreleased` headings — **an assertion in throwaway code, not
   in the repo.**
 
@@ -2315,7 +2315,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   the authority is the maintainer decision recorded on
   [#398](https://github.com/fmanimashaun/claude-skills/issues/398) rather than a `doctrine-verifier`
   citation — and the numbers behind it are measured against the repo, not asserted. The reasoning
-  now lives in `skills/quality-pass/references/worked-example.md` so the next reader inherits it
+  now lives in `plugins/rails-stack/skills/quality-pass/references/worked-example.md` so the next reader inherits it
   instead of re-measuring, which was the issue's own acceptance criterion.
   - **The boundary is `${CLAUDE_PLUGIN_ROOT}`, not file absence.** The marketplace is one git repo,
     so an install may hold every plugin tree on disk; what a plugin is *given* is its own root. No
@@ -2698,7 +2698,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   - **A green light says what it does not know.** On an issue declaring no edges the verdict
     carries a note: the tracker names no blocker, which is not the same as nothing blocking it.
     Until the epic backfill lands that is the common case, and reporting the first as the second is
-    the `unverified-negative` class from `skills/code-review/SKILL.md`.
+    the `unverified-negative` class from `plugins/rails-stack/skills/code-review/SKILL.md`.
   - **59 selftest checks** (was 43) and **6 new declared mutations** appended to
     `mutation_check.py`'s `issue_graph` guard — 17 total, all caught, each observed failing on
     purpose. They cover both directions of the group carve-out, the absent/closed refusals, and
@@ -3283,7 +3283,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   **every `*_selftest.py` in the repo is reachable from `GATES`** — and on its first run it found a
   second omission nobody had noticed: the doctor was not running **its own** selftest either. Both
   are wired in; the sweep is 13 gates.
-- This is the `coverage-gap` class from `skills/code-review/SKILL.md` — a check exercised against
+- This is the `coverage-gap` class from `plugins/rails-stack/skills/code-review/SKILL.md` — a check exercised against
   only part of what it covers — applied to the thing that runs the checks. Cheap to pin, and it
   cannot silently regress the next time a script is added.
 
@@ -3636,7 +3636,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   them in `docs/review-rubric.md` *and* inline in two agent files — two homes for one doctrine,
   which is precisely the drift this repo exists to prevent, and `docs/` was referenced by nothing,
   so the discovery path that made the trial reviewer work (read the codebase's own markdown rules)
-  never reached it. Now `skills/code-review/SKILL.md` is the single source:
+  never reached it. Now `plugins/rails-stack/skills/code-review/SKILL.md` is the single source:
   `carve-out-without-negative-test`, `coverage-gap`, `doctrine-contradiction`,
   `unverified-negative` (count first, then read), `gate-that-cannot-fail`. Every class is named and
   traceable to a real finding; a class with no instance behind it is speculation and is excluded.
@@ -4094,7 +4094,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   - **Checked in CI, which has no `claude` binary, through the existing "mod unit tests" gate (#1547), not a second harness:** `tests/lane-band.unit.mjs` runs the module against a fake host in plain Node (29 checks): the registration, the 2000 ms timer, that `session.start` returns before any git runs, the three read-only git calls (the status call with `--no-optional-locks`), the band's text, a detached HEAD, no repository or no git, a throwing redraw request, an overlapping tick, and, from the source, only the reviewed mods API calls and no awaited `refresh` in a hook (each of those source checks has a fixture that must fail), plus that `hooks.json` names `./register.js` and that `register.js` calls the band. `plugins/rails-flow/scripts/mutations/lane_band.py` holds 11 mutations through `scripts/check_mods.py`, each caught by its own fixture. `register.js` now calls both mods, so `plugins/rails-flow/scripts/mutations/mods_register.py` stages `lane-band.js` and its "no mod registered" mutation removes both calls (it would otherwise have survived), with a third mutation for a twice-registered band. `claude plugin test` still runs the 4 tests in `tests/lane-band.test.ts` locally.
   - **`$` cannot cross an import** (`claude plugin validate` fails, verified), and two hooks for one event with no matcher fail to load, so a second mod in `rails-flow` must use different events: this one uses only `session.start` and `ui.render` on `AbovePrompt`, and the context-nudge mod in #1555 uses `session.measure` and `prompt.submit`.
 
-- **simple-form-only keeps refusing `f.collection_check_boxes` / `f.collection_radio_buttons`, and now says what to write instead — `plugins/rails-flow/scripts/check_simple_form_only.py`, `plugins/rails-flow/scripts/mutations/check_simple_form_only.py`** (#1458). Maintainer decision: [keep refused](https://github.com/fmanimashaun/claude-skills/issues/1458#issuecomment-5938116850). Both are simple_form's own methods (v5.4.1 `form_builder.rb:397`/`:451`). Called directly, though, they render items with no label, error or hint, which breaks the wrapper rule ("author fields with `f.input`", `skills/design-system/references/component-implementations.md` §191–236), the same reason `f.label` is refused. The finding now names the wrapper spelling, using the template's own builder variable: `f.input :attr, as: :check_boxes` / `as: :radio_buttons, collection: …` (`form.input` for a `|form|` builder). A fixture through `check()` asserts the wording, with a control that other raw calls get no such remedy; the guard catches 32/32. Downstream, Retask's two findings in `admin/actions/new.html.erb` now name their fix.
+- **simple-form-only keeps refusing `f.collection_check_boxes` / `f.collection_radio_buttons`, and now says what to write instead — `plugins/rails-flow/scripts/check_simple_form_only.py`, `plugins/rails-flow/scripts/mutations/check_simple_form_only.py`** (#1458). Maintainer decision: [keep refused](https://github.com/fmanimashaun/claude-skills/issues/1458#issuecomment-5938116850). Both are simple_form's own methods (v5.4.1 `form_builder.rb:397`/`:451`). Called directly, though, they render items with no label, error or hint, which breaks the wrapper rule ("author fields with `f.input`", `plugins/rails-stack/skills/design-system/references/component-implementations.md` §191–236), the same reason `f.label` is refused. The finding now names the wrapper spelling, using the template's own builder variable: `f.input :attr, as: :check_boxes` / `as: :radio_buttons, collection: …` (`form.input` for a `|form|` builder). A fixture through `check()` asserts the wording, with a control that other raw calls get no such remedy; the guard catches 32/32. Downstream, Retask's two findings in `admin/actions/new.html.erb` now name their fix.
 
 - **`guard-claims` judges a PR body against the template of the repository the command runs in, not the session's —
   `plugins/rails-flow/hooks/scripts/guard-claims.sh`, new `plugins/rails-flow/hooks/scripts/lib/command_cwd.py`** (#1509).
@@ -4931,7 +4931,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   - **The defect.** The warning fired whenever `test.rb` set `config.cache_store = :null_store` and the app used
     `rate_limit`. It ignored both ways a limiter gets a real store: a `rate_limit … store:` argument (Retask's
     limiters, every one proven by a request spec), and `config.action_controller.cache_store = :memory_store`, the fix
-    our own `skills/rails-8/references/auth-security.md` prescribes. A project following our doctrine was warned.
+    our own `plugins/rails-stack/skills/rails-8/references/auth-security.md` prescribes. A project following our doctrine was warned.
   - **The fix.** It warns only when some `rate_limit` has no `store:` and no non-null
     `config.action_controller.cache_store` is set. The message now names that setting as the fix.
   - **Tests.** Every limit passing `store:` gives no warning; one limit without it is warned (control). A
@@ -7313,7 +7313,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
     Claude Code's own `/doctor` trims overviews it can derive from the codebase and keeps
     "conventions that differ from tool defaults" — so an unconstrained overview is worse than none.
   - **A per-project `STYLE.md` is rejected, and the pointer replaces it.** fizzy's `AGENTS.md`
-    ends with "read STYLE.md"; we already extracted that file into `skills/rails-8/references/style.md`
+    ends with "read STYLE.md"; we already extracted that file into `plugins/rails-stack/skills/rails-8/references/style.md`
     in Phase A (#97). Copying it per project would duplicate shipped doctrine and drift, so the
     generated `CLAUDE.md` now points at the skill instead. Where a genuine per-project style file
     is warranted, the Claude-native home is a **path-scoped `.claude/rules/style.md`**
@@ -7391,13 +7391,13 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
 - **A doctrine contradiction was live in users' hands, in three files.** `pr-reviewer.md` told the
   merge gate to check jobs for "id args", `rails-developer.md` said "pass IDs, never AR objects",
   and `setup-flow.md` wrote "job shape (ids only)" into the generated project CLAUDE.md. But
-  `skills/rails-8/references/jobs-and-realtime.md:28` says the opposite — `def perform(order)
+  `plugins/rails-stack/skills/rails-8/references/jobs-and-realtime.md:28` says the opposite — `def perform(order)
   # pass records, not ids: GlobalID (de)serializes them` — and :39 lists records (GlobalID) as
   serializable. **So the shipped merge gate would block a PR for correctly following our own
   doctrine**, the developer agent would write the wrong thing, and setup-flow would propagate the
   wrong rule into the user's own doctrine file for pr-reviewer to then enforce against them.
   Self-reinforcing, and worse than a plain bug because it blames the user.
-  **No framework claim is introduced or changed here, deliberately.** `skills/rails-8` is
+  **No framework claim is introduced or changed here, deliberately.** `plugins/rails-stack/skills/rails-8` is
   untouched, and review flagged that the first draft *restated* the mechanism (GlobalID,
   `discard_on`) in three shipped plugin files — which would have been authoring an externally
   verifiable claim, and `CLAUDE.md` requires a CONFIRMED `doctrine-verifier` verdict for that even
@@ -8130,12 +8130,12 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
 
 ### 2026-09-17 (release v1.131.1)
 
-- **§2a: each session merges its own work — `skills/parallel-session-lane/SKILL.md`** (#1004). Both alternatives failed in one day on one repository: routing every merge through a single session stalled eighteen merges behind one queue with two authors idle holding green work, and leaving it unstated let a session merge a peer's PR before its author's message arrived. The author merges and carries the rebase-and-re-verify; measurement moves after the merge.
+- **§2a: each session merges its own work — `plugins/rails-stack/skills/parallel-session-lane/SKILL.md`** (#1004). Both alternatives failed in one day on one repository: routing every merge through a single session stalled eighteen merges behind one queue with two authors idle holding green work, and leaving it unstated let a session merge a peer's PR before its author's message arrived. The author merges and carries the rebase-and-re-verify; measurement moves after the merge.
 
 ### 2026-09-17 (release v1.131.0)
 
 - **The parallel-session protocol now says what four sessions actually do, and the maintainers can
-  finally read it — `skills/parallel-session-lane/SKILL.md`, `.claude/skills/parallel-session-lane/`,
+  finally read it — `plugins/rails-stack/skills/parallel-session-lane/SKILL.md`, `.claude/skills/parallel-session-lane/`,
   `scripts/build_maintainer_skills.py`** (#1004). Four agent sessions worked this repo and a
   downstream one simultaneously on 17 Sep 2026. The skill that exists for exactly that described
   something none of them were doing, and none of them could read it anyway.
@@ -8187,7 +8187,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   **The drift gate proved the registry clean and not the directory — `scripts/build_maintainer_skills.py`,
   `scripts/mutations/build_maintainer_skills.py`.** Reviewed by mutating the tree rather than reading the
   code: an edited mirror, an edited source, and a deleted mirror all went red correctly, and
-  `cp skills/code-review/SKILL.md .claude/skills/code-review/` — the likeliest route to a second home,
+  `cp plugins/rails-stack/skills/code-review/SKILL.md .claude/skills/code-review/` — the likeliest route to a second home,
   because it needs nobody to read the generator — passed with `1 derived file(s), no drift`. The scan is
   now of the DIRECTORY: a `.claude/skills/<name>/SKILL.md` whose `<name>` also exists under `skills/`
   must be a registered mirror. `.claude/skills/plugin-boundaries/` stays legal because it is
@@ -8197,7 +8197,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   comparison disabled, the banner moved above the frontmatter) now do, and all three are caught.
 
   **Then the skill's own §4 collided with its authors, twice in four minutes —
-  `skills/parallel-session-lane/SKILL.md`.** Written and merged, it said nothing about the case that
+  `plugins/rails-stack/skills/parallel-session-lane/SKILL.md`.** Written and merged, it said nothing about the case that
   immediately followed: one session read a peer's pushed branch and open PR as its own to finish and
   **merged #1005**; the other read ` M scripts/build_maintainer_skills.py` in the shared checkout and
   **announced a peer's in-progress diff as its own work**. Both were reasonable readings, because
@@ -8215,7 +8215,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
 ### 2026-09-17 (release v1.130.0)
 
 - **The port checklist documents the status a faithful port needed —
-  `skills/design-system/references/design-handoff.md`** (#1000). The handoff reference listed four
+  `plugins/rails-stack/skills/design-system/references/design-handoff.md`** (#1000). The handoff reference listed four
   port-report statuses and said `check` verifies every `implemented` text against the file it names.
   It had no way to describe copy a port changed ON PURPOSE, which is a thing faithful ports do: a
   recorded decision restructures a screen, or the app grows something the canvas never drew. The
@@ -8226,8 +8226,8 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
 
 ### 2026-09-16 (release v1.128.0)
 
-- **A failed request has an interface, not just events — `skills/hotwire/references/turbo.md` §8b,
-  `skills/hotwire/SKILL.md`, `skills/design-system/references/page-anatomies.md`** (#967). §8 listed
+- **A failed request has an interface, not just events — `plugins/rails-stack/skills/hotwire/references/turbo.md` §8b,
+  `plugins/rails-stack/skills/hotwire/SKILL.md`, `plugins/rails-stack/skills/design-system/references/page-anatomies.md`** (#967). §8 listed
   `turbo:fetch-request-error` and `turbo:frame-missing` with *"handle gracefully"* as the whole
   guidance, and Turbo's default is silence: the button's text is restored in a `finally`, so a lost
   save looks like a button that did nothing, and a missing frame is overwritten with `Content
@@ -8250,7 +8250,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
 
 - **The fifteen doctrine proposals in #978 are decided, and the document they were attributed to does
   not exist — `docs/evidence/audits/2026-09-16-no-enterprise-manual.md`,
-  `skills/design-system/references/components.md`, `responsive.md`, `interaction-stimulus.md`,
+  `plugins/rails-stack/skills/design-system/references/components.md`, `responsive.md`, `interaction-stimulus.md`,
   `forms.md`** (#978). The issue, filed 15 Sep 2026 from a downstream session, attributed its
   proposals to a "B2B Enterprise UI/UX Design System Manual supplied by the maintainer"; the
   maintainer confirmed on 16 Sep that **no such manual exists**. The first version of this work
@@ -8278,7 +8278,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   the HTML Standard's prompt-to-unload algorithm, Turbo's `turbo:before-visit` history exception.
   Our design decisions, recorded on the issue.
 
-- **Structure snaps to the 8px grid; rhythm stays fluid — `skills/design-system/references/foundations-tokens.md`,
+- **Structure snaps to the 8px grid; rhythm stays fluid — `plugins/rails-stack/skills/design-system/references/foundations-tokens.md`,
   `scripts/check_structural_grid.py`, `scripts/mutations/check_structural_grid.py`,
   `scripts/doctrine_map.py`** (#976). The issue proposed anchoring every spatial figure to a strict
   8px grid with a checklist asking whether *all* padding, margins and heights are divisible by 8 (it
@@ -8297,7 +8297,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   block with no external source, and the block says so. Same answer recorded downstream (Retask
   `docs/brain/OPEN-QUESTIONS.md` Q3). Our design decision, recorded on the issue.
 
-- **An error toast does not auto-dismiss — `skills/design-system/references/components.md`,
+- **An error toast does not auto-dismiss — `plugins/rails-stack/skills/design-system/references/components.md`,
   `component-implementations.md`** (#977). Severity now decides the lifetime as well as the role:
   `status` toasts auto-dismiss after 5 s, an `alert` toast persists until closed and always carries
   the close button, `:loading` is unchanged. **Measured, not preferred**: driving a consuming app
@@ -8312,7 +8312,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   entry is fixed: it said each toast is the `box` primitive two sentences after forbidding `box`,
   against the shipped markup. Our design decision, recorded on the issue.
 
-- **File upload: the flow after the files are chosen — `skills/design-system/references/forms.md`**
+- **File upload: the flow after the files are chosen — `plugins/rails-stack/skills/design-system/references/forms.md`**
   (#966). The control was specified and everything after the picker closed was not, so a consuming
   app derived it all — seven rejection reasons, ceilings checked before extraction, a chunked retry
   that resumes. Now doctrine: per-file outcome with a reason, keeping the accepted files; **partial
@@ -8322,7 +8322,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   40 GB expansion), and post-flight; what progress means and whether retry resumes or restarts; and
   the outcome living beside the field, persisted — not a toast (#977). Our design decision, recorded on the issue.
 
-- **Work that outlives the request has an interface — `skills/design-system/references/components.md`
+- **Work that outlives the request has an interface — `plugins/rails-stack/skills/design-system/references/components.md`
   → Background operation, `scripts/build_coverage.py`** (#968). Every Rails 8 app ships Solid Queue and
   nothing said how an export, import or batch send appears to the person who started it. The entry:
   **the operation is a record, not a job**; **five states** — accepted, running, done, failed, and
@@ -8336,7 +8336,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   **`perform_later` returns `false` on a failed enqueue rather than raising** — the doctrine says to
   check it. The interface is our design decision, recorded on the issue.
 
-- **Bulk selection is specified — `skills/design-system/references/page-anatomies.md` → Selection and
+- **Bulk selection is specified — `plugins/rails-stack/skills/design-system/references/page-anatomies.md` → Selection and
   bulk actions, `components.md` → Table (CRUD)** (#969). The most destructive control on an index had
   zero hits for "bulk action" and "selected rows". Decided: the bulk toolbar **takes the filter
   toolbar's slot** on the first selection (same `--shell-toolbar` height, so nothing under the pointer
@@ -8348,7 +8348,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   (→ `aria-checked="mixed"`, normative per HTML-AAM), row checkboxes named by their row; and partial
   failure in one shape with upload and background operations. Our design decision, recorded on the issue.
 
-- **The period selector is URL state, not a date picker — `skills/design-system/references/components.md`
+- **The period selector is URL state, not a date picker — `plugins/rails-stack/skills/design-system/references/components.md`
   → Period selector, `page-anatomies.md` → The toolbar's order, `scripts/build_coverage.py`** (#970).
   Zero hits for "period selector" while every reporting screen has one. Decided: presets are the
   primary control and the custom range the escape hatch; `period=` / `from=&to=` in the URL, resetting
@@ -8363,7 +8363,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
 ### 2026-09-16 (release v1.127.0)
 
 - **Adaptive is now a stated position, with the bands, the panes and the navigation —
-  `skills/design-system/references/responsive.md`, `page-anatomies.md`, `components.md`,
+  `plugins/rails-stack/skills/design-system/references/responsive.md`, `page-anatomies.md`, `components.md`,
   `interaction-stimulus.md`** (#972). `responsive.md` was a good fluid-first doctrine that stopped
   at `2xl` and never said what a screen becomes when scaling is no longer enough. Nothing named a
   pane count, nothing said which navigation belongs at which width, and nothing covered a 2560px
@@ -8403,7 +8403,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
 
 ### 2026-09-15 (release v1.126.0)
 
-- **Tabs are fully specified except for how many — `skills/design-system/references/components.md`**
+- **Tabs are fully specified except for how many — `plugins/rails-stack/skills/design-system/references/components.md`**
   (#971). The entry ruled the ARIA wiring thoroughly and said nothing about capacity, so an app
   grows a tab bar until somebody notices: one downstream area reached **ten**, which at 1214px was
   1650px of strip with five of ten off-screen and no cue, two of them linked from the dashboard.
@@ -8428,7 +8428,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   separately rather than blended. Apple and APG say nothing about wrapping, so their silence is
   reported as silence.
 
-- **A capped list must never be silently capped — `skills/design-system/references/components.md`**
+- **A capped list must never be silently capped — `plugins/rails-stack/skills/design-system/references/components.md`**
   (#963). The Pagination entry ruled "Showing X–Y of Z" and `coverage.md` ruled *"any index over ~25
   rows"*, and neither caught the pattern that actually ships: a bare `.limit(20)` in the controller
   with no total and no way to reach row 21. That is not an un-paginated list, it is a list that
@@ -8438,7 +8438,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   cap IS the developer's answer to "this could get long"; they believe they have paginated. Our
   design decision, no upstream to cite, recorded on the issue.
 
-- **How the parts of a data table compose — `skills/design-system/references/page-anatomies.md`,
+- **How the parts of a data table compose — `plugins/rails-stack/skills/design-system/references/page-anatomies.md`,
   `scripts/build_coverage.py`** (#964). Table (CRUD), Pagination, Empty state, Skeleton, Search
   input and the filter combobox were each specified alone, and nothing said how they fit together,
   so each app assembled a different answer — or, downstream, hand-rolled a `<div role="table">` with
@@ -8452,15 +8452,15 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
 
 ### 2026-09-07 (release v1.124.0)
 
-- **`skills/quality-pass/references/worked-example.md`: the `Unusable` copy-count moves 6 → 7 (reach 5 → 6)
+- **`plugins/rails-stack/skills/quality-pass/references/worked-example.md`: the `Unusable` copy-count moves 6 → 7 (reach 5 → 6)
   and the `check()` harness 32 → 33** — `layout_fit.py` (#953) is a new copy of both.
   `check_shared_shapes.py` refuses the stale numbers, which is what it is for: the decision *not* to
   extract those shapes rests on them.
 
 ### 2026-09-07 (release v1.123.0)
 
-- **A Stimulus key filter is not a type check — `skills/hotwire/references/stimulus.md`,
-  `skills/design-system/references/component-implementations.md`, `skills/rails-8/references/views-hotwire.md`**
+- **A Stimulus key filter is not a type check — `plugins/rails-stack/skills/hotwire/references/stimulus.md`,
+  `plugins/rails-stack/skills/design-system/references/component-implementations.md`, `plugins/rails-stack/skills/rails-8/references/views-hotwire.md`**
   (#949). We shipped `<div data-controller="modal" data-action="keydown.esc->modal#close">` as the modal root.
   `Binding#willBeInvokedByEvent` consults the filter only inside `event instanceof KeyboardEvent`
   (`src/core/binding.ts`, Stimulus **3.2.0+** — filters did not exist before 3.2.0; `shouldIgnoreKeyboardEvent`
@@ -8476,41 +8476,41 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
 
 ### 2026-09-04 (release v1.118.0)
 
-- **`skills/design-system/references/brand.md`: several packs ship in one plugin; a project selects exactly one and records it**
+- **`plugins/rails-stack/skills/design-system/references/brand.md`: several packs ship in one plugin; a project selects exactly one and records it**
   (#919) — a per-project choice, never per component and never two at once.
 
 ### 2026-09-04 (release v1.117.0)
 
-- **`skills/design-system/references/design-handoff.md` §8: the port is not done until every manifest item is accounted
+- **`plugins/rails-stack/skills/design-system/references/design-handoff.md` §8: the port is not done until every manifest item is accounted
   for by id** (#908) — the fidelity half a script can hold; layout and rhythm parity stay the porter's to confirm.
 
 ### 2026-09-03 (release v1.116.0)
 
-- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 31 → 32** — `inventory_data.py`
+- **`plugins/rails-stack/skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 31 → 32** — `inventory_data.py`
   (#892) is a new copy; `check_shared_shapes.py` refuses the stale number.
 
 ### 2026-09-03 (release v1.115.0)
 
-- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 30 → 31, reach 16 → 17**
+- **`plugins/rails-stack/skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 30 → 31, reach 16 → 17**
   — `branch_rulesets.py` (#895) is a new copy; `check_shared_shapes.py` refuses the stale number.
 
 ### 2026-09-03 (release v1.114.0)
 
-- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 28 → 30, reach 14 → 16**
+- **`plugins/rails-stack/skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 28 → 30, reach 14 → 16**
   — `docs_layout.py` (#886) and `build_project_wiki.py` (#887) are new copies; `check_shared_shapes.py` refuses the stale number.
 
 ### 2026-09-03 (release v1.113.0)
 
-- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 27 → 28,
+- **`plugins/rails-stack/skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 27 → 28,
   reach 13 → 14** — `brain_local_sync.py` (#877) is a new copy; `check_shared_shapes.py` refuses the stale number.
 
 ### 2026-09-03 (release v1.112.0)
 
-- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 26 → 27,
+- **`plugins/rails-stack/skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 26 → 27,
   reach 12 → 13** — `claude_md_structure.py` (#875) is a new copy; `check_shared_shapes.py` refuses the
   stale number.
-- **`skills/design-system/references/components.md` splits: the commerce entries move verbatim to
-  `skills/design-system/references/components-commerce.md`** (#871). The catalogue was 1,600 lines /
+- **`plugins/rails-stack/skills/design-system/references/components.md` splits: the commerce entries move verbatim to
+  `plugins/rails-stack/skills/design-system/references/components-commerce.md`** (#871). The catalogue was 1,600 lines /
   ~33.7k tokens, the largest single file an agent may be told to read, and the ten commerce entries
   (Product card, Filter panel, Quick view, Cart drawer and cart line, Payment / card entry, Promo / discount code, Plan comparison / feature matrix, Seat / quantity selector, Saved payment methods, Subscription state and dunning) were ~40 % of it and irrelevant to every surface that does not sell.
   17 in-file links inside the moved block now point back at `components.md#…`; five links in
@@ -8522,13 +8522,13 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
 
 ### 1.56.1 — 2026-09-03 (release v1.110.0)
 
-- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 25 → 26,
+- **`plugins/rails-stack/skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 25 → 26,
   reach 11 → 12** — `check_issue_ready.py` (#849) is a new copy; `check_shared_shapes.py` refuses the
   stale number.
 
 ### 1.56.0 — 2026-09-02 (release v1.108.0)
 
-- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 24 → 25, reach
+- **`plugins/rails-stack/skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 24 → 25, reach
   10 → 11** — `architecture_graph.py`'s first selftest (#836) is a new copy, and `check_shared_shapes.py`
   refused the stale number, as it should.
 - **The `fidara-design` skill is now `design-system`** (#840). Maintainer decision, recorded on the
@@ -8536,12 +8536,12 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   which roles exist, the primitives, the catalog, scale, motion, a11y — and a brand pack is a theme
   on top of it; naming the system after its first pack meant a Reliance project loaded a skill called
   `fidara-design`, and the question *"what is fidara-design and how does it affect the reliance
-  brand pack?"* got asked because of the name alone. `skills/design-system/` and
+  brand pack?"* got asked because of the name alone. `plugins/rails-stack/skills/design-system/` and
   `dist/design-system.skill`; the string is renamed in 66 files (every command, agent, script and
   gate pinned to the path); the `fidara` pack and its private `fm-*` prefix are untouched, because
   that is a real brand. **Downstream:** a project whose `.claude/skills/.manifest.tsv` names
   `fidara-design` will report it missing after upgrade — `/rails-flow:curate` re-links.
-- **`skills/design-system/SKILL.md` routes by task instead of "read in order"** (#827). Following
+- **`plugins/rails-stack/skills/design-system/SKILL.md` routes by task instead of "read in order"** (#827). Following
   its five-layer instruction loaded ~78k tokens before an agent wrote a button — the single largest
   context cost in the toolchain, in a file that costs nothing until opened (#158's finding, recorded
   in `check_skill_routing.py`). One table now, keyed on what the task involves, one row per
@@ -8553,23 +8553,23 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   generator sidecar.
 - **Five doctrine defects from the 2026-08-31 review, three of them verified against upstream
   first** (#831). **The 422 symbol is now `:unprocessable_content` everywhere** — twelve sites in
-  `skills/rails-8/references/controllers-routing.md`, `auth-security.md`, `testing.md`,
-  `views-hotwire.md`, `skills/design-system/references/crud-modal-pattern.md` and both `SKILL.md`s.
+  `plugins/rails-stack/skills/rails-8/references/controllers-routing.md`, `auth-security.md`, `testing.md`,
+  `views-hotwire.md`, `plugins/rails-stack/skills/design-system/references/crud-modal-pattern.md` and both `SKILL.md`s.
   The review had it backwards: it flagged the one `_content` as the outlier. `doctrine-verifier`
   found that Rack ≥ 3.1 lists `unprocessable_entity` in `OBSOLETE_SYMBOL_MAPPINGS` and **warns on
   every lookup**, Rails 8.1 pins rack 3.2, and the 8.1 scaffold emits the new name through
   `ActionDispatch::Constants::UNPROCESSABLE_CONTENT` (rack `lib/rack/utils.rb` @ v3.1.0; rails
   `8-1-stable` `actionpack/lib/action_dispatch/constants.rb`; rails/rails#55603). The eleven
-  `_entity` sites were the defect. Boundary recorded at `skills/rails-8/SKILL.md` §Turbo-compatible
+  `_entity` sites were the defect. Boundary recorded at `plugins/rails-stack/skills/rails-8/SKILL.md` §Turbo-compatible
   responses. **Hotwire Native iOS 1.3.0 → 1.3.1** (released 2026-08-14; Android 1.3.1 was already
   right), and the heading — the only version block in the skills without a date — is dated. **The
   form-builder comment had its direction backwards**: `checkbox`/`textarea`/`rich_textarea` are the
   canonical names since Rails 8.0.0 (actionview and actiontext CHANGELOGs @ v8.0.0: *"Old names are
   still available as aliases"*), not "modern aliases" of the old ones; it now says so with the
-  boundary. And `skills/rails-8/SKILL.md`'s version heading said 2026-08-01 over bullets
+  boundary. And `plugins/rails-stack/skills/rails-8/SKILL.md`'s version heading said 2026-08-01 over bullets
   re-verified 2026-08-29.
 
-- **`skills/quality-pass/references/worked-example.md`: the measured copy-count for the `check()`
+- **`plugins/rails-stack/skills/quality-pass/references/worked-example.md`: the measured copy-count for the `check()`
   selftest harness moves 23 → 24, reach 9 → 10** — `check_hook_gates.py` (#822–#826) is a new copy.
   `check_shared_shapes.py` refused the stale number, which is the gate doing its one job: the worked
   example's numbers must match the repo, or the decision it records ("do not extract") rests on a
@@ -8601,13 +8601,13 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   this reference only has to set the attribute.
 
   `SKILL.md:184`'s dangling *"when the app already uses"* now resolves to the declaration and the
-  reference. Files: `skills/rails-8/references/i18n.md`, `skills/rails-8/SKILL.md`,
-  `skills/rails-8/references/ecosystem-gems.md`.
+  reference. Files: `plugins/rails-stack/skills/rails-8/references/i18n.md`, `plugins/rails-stack/skills/rails-8/SKILL.md`,
+  `plugins/rails-stack/skills/rails-8/references/ecosystem-gems.md`.
 
 - **`quality-pass`'s worked example: the shared harness 22 → 23, its reach 8 → 9.** (#799)
   `check_i18n_setup.py` uses the `check(label, ok, detail)` shape. `check_shared_shapes.py` caught
   both numbers.
-  File: `skills/quality-pass/references/worked-example.md`.
+  File: `plugins/rails-stack/skills/quality-pass/references/worked-example.md`.
 
 
 - **`testing.md`: the commented-out `minimum_coverage 90` is replaced by the ratchet.** (#800) §2
@@ -8617,7 +8617,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   covers committing `coverage/.last_run.json` with the `.gitignore` exception, since a ratchet with
   no memory in CI is not a ratchet; adds `minimum_coverage_by_file` because an aggregate hides a
   hole; and states that code coverage and route coverage answer different questions.
-  File: `skills/rails-8/references/testing.md`.
+  File: `plugins/rails-stack/skills/rails-8/references/testing.md`.
 
 
 - **`testing.md` §8 states the boundary between developer system specs and QA's browser passes.**
@@ -8625,18 +8625,18 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   in-browser feedback, `qa-flow` is independent verification by someone who did not write the code,
   and folding either into the other destroys what it is for. §8 also now says the support file does
   nothing until `spec/support/**` is auto-loaded — the line Rails generates commented out.
-  File: `skills/rails-8/references/testing.md`.
+  File: `plugins/rails-stack/skills/rails-8/references/testing.md`.
 
 - **`quality-pass`'s worked example: the shared harness 21 → 22, its reach 7 → 8.** (#800)
   `check_coverage_ratchet.py` uses the `check(label, ok, detail)` shape. `check_shared_shapes.py`
   caught both numbers — the gate refuses a **number** in the example disagreeing with the repo.
-  File: `skills/quality-pass/references/worked-example.md`.
+  File: `plugins/rails-stack/skills/quality-pass/references/worked-example.md`.
 
 - **`quality-pass`'s worked example: the shared harness 20 → 21, its reach 6 → 7.** (#803)
   `check_spec_support.py` uses the `check(label, ok, detail)` shape and widens the largest install
   root. `check_shared_shapes.py` caught both — that gate refuses a **number** in the example
   disagreeing with the repo, never a duplicate.
-  File: `skills/quality-pass/references/worked-example.md`.
+  File: `plugins/rails-stack/skills/quality-pass/references/worked-example.md`.
 
 ### 1.54.0 — 2026-08-30 (release v1.105.0)
 
@@ -8645,7 +8645,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   **number** in the example disagreeing with the repo, never a duplicate. It also caught me bumping
   the *wrong* row first: I assumed the `check(label, ok, detail)` harness had grown, and the new
   script's helper is named `check_`, so it had not. Read the finding; do not infer it.
-  File: `skills/quality-pass/references/worked-example.md`.
+  File: `plugins/rails-stack/skills/quality-pass/references/worked-example.md`.
 
 - **§10 recommended `bullet` for N+1 detection and never mentioned the request lifecycle it
   needs.** (#796) An agent following that into a spec-driven guard gets a gem in the Gemfile that
@@ -8679,15 +8679,15 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
 
   **Neither gem is mandated** — N+1 detection is a conditional row of the §1 decision table, and
   demanding it would be the false positive that gets a gate switched off. Files:
-  `skills/rails-8/references/ecosystem-gems.md`,
-  `skills/rails-8/references/performance-caching.md`.
+  `plugins/rails-stack/skills/rails-8/references/ecosystem-gems.md`,
+  `plugins/rails-stack/skills/rails-8/references/performance-caching.md`.
 
 ### 1.53.1 — 2026-08-29 (release v1.104.0)
 
 - **`quality-pass`'s worked example: the shared-harness count 19 → 20.** (#792) `qa_config.py`
   uses the `check(label, ok, detail)` shape. `check_shared_shapes.py` caught it — that gate
   refuses a **number** in the example disagreeing with the repo, never a duplicate.
-  File: `skills/quality-pass/references/worked-example.md`.
+  File: `plugins/rails-stack/skills/quality-pass/references/worked-example.md`.
 
 ### 1.53.0 — 2026-08-29 (release v1.102.0)
 
@@ -8696,20 +8696,20 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   doctrine-self-check had no example to judge and `literal-font-family` shipped broken for two
   releases while reporting green. The wrong form is shown too, carrying a documented disable —
   the checker is right to flag it, which is the point of the example.
-  File: `skills/design-system/references/brand.md`.
+  File: `plugins/rails-stack/skills/design-system/references/brand.md`.
 
 - **The contract now says a single-value feedback role cannot serve both grounds.** (#775) Both
   shipped packs prove it from opposite sides — fidara's bright hues clear dark and fail light;
   reliance's, darkened for 1.4.3 in light, clear light and fail dark. Neither is a pack defect; it
   is what one value for two grounds means. `brand.md` records the rule and the two enforced
   thresholds, and `foundations-tokens.md` re-points `--ring` for dark, which it had not.
-  Files: `skills/design-system/references/brand.md`,
-  `skills/design-system/references/foundations-tokens.md`.
+  Files: `plugins/rails-stack/skills/design-system/references/brand.md`,
+  `plugins/rails-stack/skills/design-system/references/foundations-tokens.md`.
 
 - **`quality-pass`'s worked example: the shared-harness count 17 → 19.** (#778, #779) Both new gates
   use the `check(label, ok, detail)` shape. `check_shared_shapes.py` caught it, which is that gate's
   whole job: it refuses a **number** in the example disagreeing with the repo, never a duplicate.
-  File: `skills/quality-pass/references/worked-example.md`.
+  File: `plugins/rails-stack/skills/quality-pass/references/worked-example.md`.
 
 
 - **The version-facts warning named the weakest false signal and missed the strongest.** (#776) It
@@ -8728,13 +8728,13 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   "Highlights" and "Major Features"), and adds two commands that settle it **mechanically** rather
   than by reading a page: a released version has **both** a gem and a tag. The date stamp moves
   2026-08-01 → 2026-08-29 because the claim was re-verified, not merely restated.
-  File: `skills/rails-8/SKILL.md`.
+  File: `plugins/rails-stack/skills/rails-8/SKILL.md`.
 
 ### 1.52.3 — 2026-08-29 (release v1.101.0)
 
 - **`brand.md`: `wordmark` documented in the pack manifest contract.** (#771) It is a **pack**
   property, never a variant's, and the reference states why — a variant re-labels, it does not
-  re-theme. File: `skills/design-system/references/brand.md`.
+  re-theme. File: `plugins/rails-stack/skills/design-system/references/brand.md`.
 
 ### 1.52.2 — 2026-08-22 (release v1.100.0)
 
@@ -8742,12 +8742,12 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   `brand_pack_lint.py --selftest` uses the `check(label, ok, detail)` shape, so the number the
   worked example quotes moved. `check_shared_shapes.py` caught it — which is the whole point of that
   gate: it refuses a **number** in the example disagreeing with the repo, never a duplicate.
-  File: `skills/quality-pass/references/worked-example.md`.
+  File: `plugins/rails-stack/skills/quality-pass/references/worked-example.md`.
 
 ### 1.52.1 — 2026-08-22 (release v1.99.1)
 
 - **Our own modal example taught the misuse a downstream project was reported for.** (#758)
-  `skills/design-system/references/component-implementations.md`'s modal scrim used `bg-fm-navy/50` —
+  `plugins/rails-stack/skills/design-system/references/component-implementations.md`'s modal scrim used `bg-fm-navy/50` —
   a raw primitive in a component, which roles-only forbids. #750 reported exactly that usage from a
   live project; the project copied it from here. It now binds `bg-overlay/50`, using the role added in
   v1.98.0. Found the moment the new `primitive-as-role` rule ran against our own references.
@@ -8756,7 +8756,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
 
 - **The palette could not express the design that already existed.** (#750) Reported from a live
   project and confirmed against its artboards: **every one sets `--background: var(--paper-50)`**, and
-  `skills/design-system/references/foundations-tokens.md` was slate-cool only. The project carried six local slate overrides — not a
+  `plugins/rails-stack/skills/design-system/references/foundations-tokens.md` was slate-cool only. The project carried six local slate overrides — not a
   preference, a gap. The warm ground is folded in as a **paired** palette (`--color-fm-paper-*` plus a
   `slate-warm-*` variant), never a replacement, so cool-ground adopters are untouched.
 
@@ -8770,7 +8770,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
   no other brand pack could declare; #750 flagged the naming and this is it.
 
 - **The fluid scales promised steps they never declared.** (#750, found by studying the design rather
-  than reported) In `skills/design-system/references/foundations-tokens.md` the space comment read *"`--space-3xs … --space-3xl` + one-off pairs
+  than reported) In `plugins/rails-stack/skills/design-system/references/foundations-tokens.md` the space comment read *"`--space-3xs … --space-3xl` + one-off pairs
   (`--space-s-l`)"* and declared `2xs…l`, closing with *"… xl/2xl/3xl similarly"*. The type comment
   announced *"`--text-step--2 … --text-step-5`"* and declared `-1…3`. **Nine promised tokens did not
   exist**, including the pair the comment names outright.
@@ -8787,7 +8787,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
 ### 1.51.0 — 2026-08-22 (release v1.96.0)
 
 - **A multi-page port shipped the same fact three times.** (#739)
-  `skills/design-system/references/design-handoff.md` §6. A canvas repeats itself **on purpose** —
+  `plugins/rails-stack/skills/design-system/references/design-handoff.md` §6. A canvas repeats itself **on purpose** —
   every artboard has to stand alone as a picture, so the value proposition and the headline figure get
   restated across the landing, pricing and partner frames. **Pages are not pictures.** Port that
   repetition and there are three places to update with no arbiter between them; the first edit that
@@ -8805,7 +8805,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
 
 
 - **A Claude Design artboard had no shipped route into Rails 8 + Hotwire.** (#738)
-  `skills/design-system/references/design-handoff.md` is the fixed mapping: source construct → the one
+  `plugins/rails-stack/skills/design-system/references/design-handoff.md` is the fixed mapping: source construct → the one
   sanctioned Rails-Hotwire form. It **composes** `rails-8`, `hotwire` and this skill's own
   `components.md` / `crud-modal-pattern.md` / `interaction-stimulus.md` rather than restating them.
 
@@ -8835,7 +8835,7 @@ Not fixed here: `remote_evidence`'s fetch-timeout check fails about half the tim
 ### 1.50.1 — 2026-08-21 (release v1.94.0)
 
 - **`parallel-session-lane` §0 now says you will be told when you need it.** (#723)
-  `skills/parallel-session-lane/SKILL.md`'s §0 described a mode a human had to enter deliberately.
+  `plugins/rails-stack/skills/parallel-session-lane/SKILL.md`'s §0 described a mode a human had to enter deliberately.
   It now records that `rails-flow`'s SessionStart hook detects sibling live sessions sharing one
   working directory with no lane assigned — and that the detection **under-detects** rather than risk
   a false alarm on ordinary single-session work, because an advisory people learn to ignore is worth
@@ -10124,7 +10124,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
     An issue body is a hypothesis, including one we wrote.
 - **`hotwire/references/stimulus.md` §1 prescribed `stimulus:manifest:update`, the one command that
   destroys the auto-registration the same sentence promised** (#382) — a `doctrine-contradiction` in
-  the `skills/code-review/SKILL.md` sense, not merely a stale fact. The importmap installer writes a
+  the `plugins/rails-stack/skills/code-review/SKILL.md` sense, not merely a stale fact. The importmap installer writes a
   four-line `index.js` calling `eagerLoadControllersFrom("controllers", application)` and appends
   `pin_all_from "app/javascript/controllers", under: "controllers"`, so a new controller needs **no
   command**; the rake task overwrites that file with explicit `application.register` lines, deleting
@@ -14419,7 +14419,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   in `installed_plugins.json` that applies to the project (`$CLAUDE_PROJECT_DIR`, else the working directory). For a
   linked git worktree, both the worktree and the same subdirectory of its main checkout are compared, so a record
   naming either one applies, including a project recorded below its repository root. A bare clone's worktree is not
-  mapped. A record whose install lacks `skills/design-system`, or with malformed fields, is skipped rather than
+  mapped. A record whose install lacks `plugins/rails-stack/skills/design-system`, or with malformed fields, is skipped rather than
   winning or raising.
   On a case-insensitive volume, a `projectPath` differing only in case still matches, via `os.path.samefile`. It uses
   #1407's rule restated here, since design-flow cannot import rails-flow.
@@ -14481,7 +14481,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 - **design-flow agents can load the design-system doctrine they cite — `plugins/design-flow/agents/ui-composer.md`,
   `plugins/design-flow/agents/brand-guardian.md`, `plugins/design-flow/agents/design-auditor.md`,
   `plugins/design-flow/agents/design-critic.md`, `plugins/design-flow/agents/design-porter.md`** (#1345). Each pointed at
-  `skills/design-system/references/*.md`, a path that does not exist in a user's project (the skill lives in the plugin
+  `plugins/rails-stack/skills/design-system/references/*.md`, a path that does not exist in a user's project (the skill lives in the plugin
   cache), without the `Skill` tool that reaches it. `Skill` is added. doctrine-verifier CONFIRMED on 2026-09-26 against code.claude.com/docs/en/sub-agents: *"To prevent a subagent from invoking skills entirely, omit `Skill` from the `tools` list or add it to `disallowedTools`."* A `skills:` preload is the other route (*"The full skill content is injected"*), and plugin agents honour both.
 
 - **Hook commands quote `${CLAUDE_PLUGIN_ROOT}`, so the plugin works from an install path with a space — `plugins/design-flow/hooks/hooks.json`** (#1334).
@@ -14863,7 +14863,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   an item nobody had read. Eight new selftest cases (33 total) drive every rule from both sides, and
   three new mutations in `scripts/mutations/canvas_manifest.py` (11 total) prove each one can fail.
   Documented in `plugins/design-flow/agents/design-porter.md`,
-  `plugins/design-flow/commands/port.md` and `skills/design-system/references/design-handoff.md`,
+  `plugins/design-flow/commands/port.md` and `plugins/rails-stack/skills/design-system/references/design-handoff.md`,
   each saying the same thing: `reworded` is for copy a decision changed, never for copy nobody got
   round to.
 
@@ -15315,8 +15315,8 @@ boot/validation path — with a bullet each so the promotion could close them se
   `plugins/design-flow/commands/variants.md`, `plugins/design-flow/commands/audit.md`,
   `plugins/design-flow/reference/model-tiers.md`, `plugins/design-flow/scripts/generate_asset.py`,
   `plugins/design-flow/scripts/brand_pack_lint.py`, `scripts/check_component_shapes.py`,
-  `skills/design-system/references/visual-assets.md`,
-  `skills/design-system/references/component-shapes.json`.
+  `plugins/rails-stack/skills/design-system/references/visual-assets.md`,
+  `plugins/rails-stack/skills/design-system/references/component-shapes.json`.
 
 ### 1.33.1 — 2026-08-22 (release v1.99.1)
 
@@ -16139,7 +16139,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   regex-parsing that is the failure `derived-artifacts` exists to prevent.
 
   So the drawable skeleton moved into a structured source beside it:
-  `skills/design-system/references/component-shapes.json`, one entry per row declaring parts, role
+  `plugins/rails-stack/skills/design-system/references/component-shapes.json`, one entry per row declaring parts, role
   tokens and layout. The generator reads it and emits **66 nodes covering 51 components**; nothing in
   `pen_library.py` names a component or its anatomy.
 
@@ -16902,7 +16902,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   [#160](https://github.com/fmanimashaun/claude-skills/issues/160), not a citation. The one
   externally-verifiable half is **reused, not invented**: the switcher is `turbo_frame_tag` plus
   `data-turbo-frame` links, the same mechanism `crud-modal-pattern.md:7` and
-  `skills/hotwire/references/turbo.md:141` already ship, so no new framework surface enters a skill.
+  `plugins/rails-stack/skills/hotwire/references/turbo.md:141` already ship, so no new framework surface enters a skill.
 - **The constraint is checked, not stated** — `variant_conformance.py`, ten named rules, each
   citing what it enforces. Every variant is fully brand-conformant and they differ in **composition
   only**: same role tokens, same components, same API. That sentence in prose with nothing making it
@@ -17075,7 +17075,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 - **FIX — two pointers added in v1.9.0 named a directory that does not exist.** `design-auditor`'s
   new Marketing-copy and Visual-assets checklist rows pointed at `references/marketing-copy.md` and
   `references/visual-assets.md`. There is no `plugins/design-flow/references/`; the files live under
-  `skills/design-system/references/`. An agent following either found nothing.
+  `plugins/rails-stack/skills/design-system/references/`. An agent following either found nothing.
   - **The same commit got this right three times and wrong twice**, which is the part worth
     recording. `/design-flow:component`'s three pointers were written as full paths *specifically*
     so the doc-pointer lint would validate them — and the auditor's two were not, so the lint could
@@ -17180,7 +17180,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   mutation. The first also moved a *judgement* out of the collector into Python where a fixture can
   see it — the collector reports `display`, and `is_inline_link_in_text` decides.
 
-  The mutation check and a self-review against `skills/code-review/SKILL.md` then found nine more,
+  The mutation check and a self-review against `plugins/rails-stack/skills/code-review/SKILL.md` then found nine more,
   all in this diff. The ones worth naming: `outline: 2px solid var(--ring)` written as the shorthand
   was read as *no* focus indicator, so the rule flagged the exact fix it recommends — and the fix
   for the forced-colors gap above; the printed `--schema` contract had already gone stale against
@@ -17371,26 +17371,26 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### 1.76.0 (release v1.157.6) — 2026-10-17
 
-- **MCP write tools: a "before you add a write tool" checklist — `skills/rails-8/references/mcp-server.md`** (#2052, #2051). A new §6 opens with "If you cannot answer these, do not ship a write tool." and asks five decisions each project records in its CLAUDE.md: who may write, how a change is confirmed, what stops a retried call writing twice, how the audit tells agent writes from human ones, how a wrong write is undone. The scope change is the owner's ruling on #2056 (a checklist, not rules); every spec-cited mechanism is `doctrine-verifier` CONFIRMED against MCP revision 2026-07-28 (verdicts on #2051), and the three gaps the spec leaves are labelled our design. Registered as advice in `scripts/doctrine_map.py`.
-- **The write-tool checklist says which parts are our reading and which spec MUSTs are conditional — `skills/rails-8/references/mcp-server.md`** (#2056, review of #2113). "A preview token is a state handle" is now labelled *our reading*, and §6 item 2 quotes MRTR's two `requestState` MUSTs with their conditions (integrity "If requestState influences authorization, resource access, or business logic"; server-side enforcement for a requestState that "must be consumed at most once"), wording verified on #2051.
+- **MCP write tools: a "before you add a write tool" checklist — `plugins/rails-stack/skills/rails-8/references/mcp-server.md`** (#2052, #2051). A new §6 opens with "If you cannot answer these, do not ship a write tool." and asks five decisions each project records in its CLAUDE.md: who may write, how a change is confirmed, what stops a retried call writing twice, how the audit tells agent writes from human ones, how a wrong write is undone. The scope change is the owner's ruling on #2056 (a checklist, not rules); every spec-cited mechanism is `doctrine-verifier` CONFIRMED against MCP revision 2026-07-28 (verdicts on #2051), and the three gaps the spec leaves are labelled our design. Registered as advice in `scripts/doctrine_map.py`.
+- **The write-tool checklist says which parts are our reading and which spec MUSTs are conditional — `plugins/rails-stack/skills/rails-8/references/mcp-server.md`** (#2056, review of #2113). "A preview token is a state handle" is now labelled *our reading*, and §6 item 2 quotes MRTR's two `requestState` MUSTs with their conditions (integrity "If requestState influences authorization, resource access, or business logic"; server-side enforcement for a requestState that "must be consumed at most once"), wording verified on #2051.
 
 ### 1.75.0 (release v1.157.5) — 2026-10-17
 
-- **Postgres index health and bloat, measured — `skills/rails-8/references/observability.md`** (#2045). Five catalog queries (window, unused, invalid, duplicate, unindexed foreign key), each run on `postgres:16` against a planted case, and a cheap-screen/on-demand-measure bloat rule with its own `pg_stat_scan_tables` role (our design, recorded on #2045). Measured correction to #2037's issue text: after a crash reset `pg_stat_database.stats_reset` stays null, so the window is `greatest(stats_reset, pg_postmaster_start_time())`. Docs claims `doctrine-verifier` CONFIRMED on PostgreSQL 16; verdicts and runs: `docs/evidence/audits/2026-10-16-observability-postgres-index-bloat-2045.md`.
-- **`rails-8` doctrine moves its PostgreSQL baseline from 16 and 17 to 18 — `skills/rails-8/references/deployment-kamal.md`, `skills/rails-8/references/observability.md`, `skills/rails-8/references/models.md`** (#2057). The Kamal accessory example now uses `postgres:18` and tells the reader the data path depends on the image's major: from 18 the official image declares `VOLUME /var/lib/postgresql` and `PGDATA=/var/lib/postgresql/18/docker` (17 and earlier keep `/var/lib/postgresql/data`), a mount at the old path on 18 stops the container from starting (measured on `postgres:18.6`), and a major version is never a tag bump (dump and restore or `pg_upgrade`). The version notes in `observability.md` and `models.md` are re-based on the PostgreSQL 18 docs, `stats_since`/`minmax_stats_since` are stated as present since 17, 18's constant-list squashing is noted, and one sentence is **corrected**: `queryid` splits when a referenced *function* is dropped and recreated, not a table (a recreated table can make two queries count as the same). Verified by `doctrine-verifier` against the PostgreSQL 16.0, 17.0, 18.0 release notes and 18 docs and the Docker Hub `postgres` page (`docs/evidence/audits/2026-10-16-postgres-18-baseline-2057.md`); three sentences from #2047 are INCONCLUSIVE and left as they were or labelled, and the `/data`-mount consequence on 18 is now a measured fact (a6, 2026-10-16); the design decision is the owner's (everything on 18, 2026-10-14).
-- **`parallel-session-lane` tells a session to end its worktree with the teardown, not a bare `git worktree remove` — `skills/parallel-session-lane/SKILL.md`, `skills/parallel-session-lane/references/one-issue-at-a-time.md`** (#2058). Rule 3 ("Clean up when done") now points at `worktree_teardown.py`, which stops the worktree's own servers, drops its databases (`dropdb --if-exists --force`, PostgreSQL 13 or later; it can still fail while a prepared transaction or an active logical replication slot holds the database) and then runs `git worktree remove` (never `--force`); a bare remove leaves every database behind. Verified by `doctrine-verifier` against the PostgreSQL 18 and git docs (`docs/evidence/audits/2026-10-14-worktree-teardown-2058.md`).
-- **Three Postgres sentences the #2057 pass left unverified, now measured on 18.6 — `skills/rails-8/references/observability.md`, `skills/rails-8/references/models.md`** (#2107). "Created per database" and "a generic plan can differ from the custom plans" are CONFIRMED, quoted and measured; "a `pg_read_all_stats` reader can still read `n_dead_tup`" was true but misleading (a role with no grants reads it too) and is reworded. Verdicts and the run: `docs/evidence/audits/2026-10-16-postgres-inconclusive-2107.md`.
+- **Postgres index health and bloat, measured — `plugins/rails-stack/skills/rails-8/references/observability.md`** (#2045). Five catalog queries (window, unused, invalid, duplicate, unindexed foreign key), each run on `postgres:16` against a planted case, and a cheap-screen/on-demand-measure bloat rule with its own `pg_stat_scan_tables` role (our design, recorded on #2045). Measured correction to #2037's issue text: after a crash reset `pg_stat_database.stats_reset` stays null, so the window is `greatest(stats_reset, pg_postmaster_start_time())`. Docs claims `doctrine-verifier` CONFIRMED on PostgreSQL 16; verdicts and runs: `docs/evidence/audits/2026-10-16-observability-postgres-index-bloat-2045.md`.
+- **`rails-8` doctrine moves its PostgreSQL baseline from 16 and 17 to 18 — `plugins/rails-stack/skills/rails-8/references/deployment-kamal.md`, `plugins/rails-stack/skills/rails-8/references/observability.md`, `plugins/rails-stack/skills/rails-8/references/models.md`** (#2057). The Kamal accessory example now uses `postgres:18` and tells the reader the data path depends on the image's major: from 18 the official image declares `VOLUME /var/lib/postgresql` and `PGDATA=/var/lib/postgresql/18/docker` (17 and earlier keep `/var/lib/postgresql/data`), a mount at the old path on 18 stops the container from starting (measured on `postgres:18.6`), and a major version is never a tag bump (dump and restore or `pg_upgrade`). The version notes in `observability.md` and `models.md` are re-based on the PostgreSQL 18 docs, `stats_since`/`minmax_stats_since` are stated as present since 17, 18's constant-list squashing is noted, and one sentence is **corrected**: `queryid` splits when a referenced *function* is dropped and recreated, not a table (a recreated table can make two queries count as the same). Verified by `doctrine-verifier` against the PostgreSQL 16.0, 17.0, 18.0 release notes and 18 docs and the Docker Hub `postgres` page (`docs/evidence/audits/2026-10-16-postgres-18-baseline-2057.md`); three sentences from #2047 are INCONCLUSIVE and left as they were or labelled, and the `/data`-mount consequence on 18 is now a measured fact (a6, 2026-10-16); the design decision is the owner's (everything on 18, 2026-10-14).
+- **`parallel-session-lane` tells a session to end its worktree with the teardown, not a bare `git worktree remove` — `plugins/rails-stack/skills/parallel-session-lane/SKILL.md`, `plugins/rails-stack/skills/parallel-session-lane/references/one-issue-at-a-time.md`** (#2058). Rule 3 ("Clean up when done") now points at `worktree_teardown.py`, which stops the worktree's own servers, drops its databases (`dropdb --if-exists --force`, PostgreSQL 13 or later; it can still fail while a prepared transaction or an active logical replication slot holds the database) and then runs `git worktree remove` (never `--force`); a bare remove leaves every database behind. Verified by `doctrine-verifier` against the PostgreSQL 18 and git docs (`docs/evidence/audits/2026-10-14-worktree-teardown-2058.md`).
+- **Three Postgres sentences the #2057 pass left unverified, now measured on 18.6 — `plugins/rails-stack/skills/rails-8/references/observability.md`, `plugins/rails-stack/skills/rails-8/references/models.md`** (#2107). "Created per database" and "a generic plan can differ from the custom plans" are CONFIRMED, quoted and measured; "a `pg_read_all_stats` reader can still read `n_dead_tup`" was true but misleading (a role with no grants reads it too) and is reworded. Verdicts and the run: `docs/evidence/audits/2026-10-16-postgres-inconclusive-2107.md`.
 
 ### 1.74.0 (release v1.157.4) — 2026-10-16
 
-- **`rails-8` `mcp-server.md` says how to design, bound, type and test an agent's tools — `skills/rails-8/references/mcp-server.md`** (#2033). A new section 5, every rule with its source and revision date (spec 2026-07-28, the Anthropic tools post of 2025-09-11, Claude Code's MCP docs, the Inspector docs), advice marked as advice: descriptions and names, bounded output and Claude Code's 25,000-token default, `outputSchema` / `structuredContent` / `isError`, the annotations beyond the two required, Inspector in CI and an evaluation step. The Ruby SDK is pinned at `mcp` 1.7.0 (it was 1.6.0) and the file now says the gem supports revision 2026-07-28 and serves it statelessly since 1.2.0 (the legacy handshake still defaults to 2025-03-26); `validate_tool_call_results` is opt-in. Write tools are out of scope for now (#2034; tracked in #2049). Verified by an independent `doctrine-verifier`-role read, `docs/evidence/audits/2026-10-14-mcp-server-tool-design-2033.md`; two unquoted points stay out. Claude Code's over-limit behaviour carries the page's qualifiers (successful results saved to a file, error text truncated, 50,000 characters for a tool without its own limit).
-- **MCP server authorization gains the 2026-07-28 spec points, and the rate-limit and sanitize MUSTs — `skills/rails-8/references/mcp-server.md`** (#2035). §2 now says: a `401` SHOULD carry `scope` and a too-narrow token SHOULD get `403 insufficient_scope` with `scope` and `resource_metadata`; `tools/list` MAY vary by the request's authorization and MUST NOT vary per connection; clients are identified by Client ID Metadata Documents (SHOULD; DCR a MAY, both unchanged from 2025-11-25), and Dynamic Client Registration is newly deprecated in 2026-07-28 with at least a twelve-month window; and RFC 9207 `iss` is SHOULD-emitted by the authorization server, which MUST advertise it, while a client MUST validate a present `iss`. §3 rule 5 adds that servers MUST rate limit tool invocations (keyed by the token's user, linking `auth-security.md`'s rate-limit section) and MUST sanitize tool outputs (the read side of #2034). §4 adds the rate-limit request spec and its per-user control. Verified by `doctrine-verifier` against the MCP specification revision 2026-07-28 (authorization, tools, changelog); citations and version boundaries in `docs/evidence/audits/2026-10-14-mcp-authorization-2035.md`.
-- **Postgres production signals: what `pg_stat_statements` cannot tell you, `auto_explain`, logging, least privilege, standbys — `skills/rails-8/references/observability.md`** (#2037). Six bullets, each `doctrine-verifier` CONFIRMED against the PostgreSQL 16 docs (version boundary: 16; `stats_since`/`minmax_stats_since` named as 17+). Verdicts and citations: `docs/evidence/audits/2026-10-14-observability-postgres-2037.md`.
+- **`rails-8` `mcp-server.md` says how to design, bound, type and test an agent's tools — `plugins/rails-stack/skills/rails-8/references/mcp-server.md`** (#2033). A new section 5, every rule with its source and revision date (spec 2026-07-28, the Anthropic tools post of 2025-09-11, Claude Code's MCP docs, the Inspector docs), advice marked as advice: descriptions and names, bounded output and Claude Code's 25,000-token default, `outputSchema` / `structuredContent` / `isError`, the annotations beyond the two required, Inspector in CI and an evaluation step. The Ruby SDK is pinned at `mcp` 1.7.0 (it was 1.6.0) and the file now says the gem supports revision 2026-07-28 and serves it statelessly since 1.2.0 (the legacy handshake still defaults to 2025-03-26); `validate_tool_call_results` is opt-in. Write tools are out of scope for now (#2034; tracked in #2049). Verified by an independent `doctrine-verifier`-role read, `docs/evidence/audits/2026-10-14-mcp-server-tool-design-2033.md`; two unquoted points stay out. Claude Code's over-limit behaviour carries the page's qualifiers (successful results saved to a file, error text truncated, 50,000 characters for a tool without its own limit).
+- **MCP server authorization gains the 2026-07-28 spec points, and the rate-limit and sanitize MUSTs — `plugins/rails-stack/skills/rails-8/references/mcp-server.md`** (#2035). §2 now says: a `401` SHOULD carry `scope` and a too-narrow token SHOULD get `403 insufficient_scope` with `scope` and `resource_metadata`; `tools/list` MAY vary by the request's authorization and MUST NOT vary per connection; clients are identified by Client ID Metadata Documents (SHOULD; DCR a MAY, both unchanged from 2025-11-25), and Dynamic Client Registration is newly deprecated in 2026-07-28 with at least a twelve-month window; and RFC 9207 `iss` is SHOULD-emitted by the authorization server, which MUST advertise it, while a client MUST validate a present `iss`. §3 rule 5 adds that servers MUST rate limit tool invocations (keyed by the token's user, linking `auth-security.md`'s rate-limit section) and MUST sanitize tool outputs (the read side of #2034). §4 adds the rate-limit request spec and its per-user control. Verified by `doctrine-verifier` against the MCP specification revision 2026-07-28 (authorization, tools, changelog); citations and version boundaries in `docs/evidence/audits/2026-10-14-mcp-authorization-2035.md`.
+- **Postgres production signals: what `pg_stat_statements` cannot tell you, `auto_explain`, logging, least privilege, standbys — `plugins/rails-stack/skills/rails-8/references/observability.md`** (#2037). Six bullets, each `doctrine-verifier` CONFIRMED against the PostgreSQL 16 docs (version boundary: 16; `stats_since`/`minmax_stats_since` named as 17+). Verdicts and citations: `docs/evidence/audits/2026-10-14-observability-postgres-2037.md`.
   Index health and bloat (the issue's items 7-8) need a run on a real database and moved to #2045.
-- **rails-8 `observability.md` says how to find slow pages and N+1s on a live app, and what the query-log tags are — `skills/rails-8/references/observability.md`** (#2038). A new §7 subsection: production N+1 comes from sampled spans (Prosopite's README guards its examples with `unless Rails.env.production?` and says nothing on production use, so it stays the post-fix regression test), Sentry's published N+1 rule as a threshold template (similar sequential spans, over 50 ms combined, usually five or more; configurable), how to sample (`traces_sample_rate` vs `traces_sampler`; `OTEL_TRACES_SAMPLER=traceidratio` with `OTEL_TRACES_SAMPLER_ARG`), and what the Rails Pulse README does and does not say (drops under load; no sampling or SQL-literal redaction described; no default thresholds documented). §6 gains the `query_log_tags` defaults, the `:sqlcommenter` default from `load_defaults 7.1`, the `:source_location` cost, and a note that the `pg_stat_statements` `queryid` effect is unmeasured. Each point cites the page it was read on (2026-10-14). Solid Queue/Solid Cache signals, the strict-loading combination and noise-control rules stay out until measured.
-- **rails-8 `performance-caching.md` §7 has an ordered fix menu and a verify-the-metric loop; the techniques are `models.md` §13 — `skills/rails-8/references/performance-caching.md`, `skills/rails-8/references/models.md`, `dist/rails-8.skill`, `docs/evidence/audits/2026-10-14-rails-8-fix-menu-2039.md`** (#2039; framework claims CONFIRMED against the PostgreSQL 16 and Rails 8.1 API docs, rows 1-9 of the evidence file, to be re-run by `doctrine-verifier` in review; the ordering, the per-entry fields, the one-home split and the loop are our own design, maintainer decision recorded on #2039 on 2026-10-14). Seven steps in order (index, query rewrite, N+1, counter cache, cache, materialised view or summary table, structural levers), each with its precondition evidence, verification, rollback and risk; a cache is never the first fix for an unindexed or N+1 query. A fix is accepted only when the plan change reproduces on a staging copy, a regression test fails before and passes after, and the post-deploy metric beats the recorded "before" over an equal-traffic window with a minimum-calls floor set per app and recorded beside the measurement (no universal number). `models.md` §13 holds partial, composite and covering indexes, concurrent build and `remove_index ... algorithm: :concurrently`, OFFSET to keyset, `REFRESH MATERIALIZED VIEW CONCURRENTLY` and `EXPLAIN (GENERIC_PLAN)` (in the 16 docs, absent from 15, not with `ANALYZE`). Dropping an unused index waits on #2045.
-- **`observability.md`: `query_log_tags` do not split a `pg_stat_statements` row by route — `skills/rails-8/references/observability.md`** (#2046, item 1; split from #2038). Measured on PostgreSQL 18.6: the same statement with no comment, a sqlcommenter comment appended or prepended, and different tag values gave one Query Identifier (`SET compute_query_id = on`, `EXPLAIN (VERBOSE)`). `doctrine-verifier` CONFIRMED against https://www.postgresql.org/docs/18/pgstatstatements.html ("computed on the post-parse-analysis representation"; the stored text is that of the first query) and https://www.postgresql.org/docs/18/monitoring-stats.html (`pg_stat_activity.query` while active; truncated at 1024 bytes by default), plus the Rails 8.1 `ActiveRecord::QueryLogs` API for `query_log_tags_prepend_comment`, whose default the API does not state, so the reference names the option, not a default. Version boundary: PostgreSQL 18, Rails 8.1. Verdict and measurement on #2046.
-- **`observability.md`: queue latency, Solid Cache hits, strict loading and Rails Pulse defaults, measured and verified — `skills/rails-8/references/observability.md`** (#2065, items 2-5 of #2046, split from #2038). Measured on rails 8.1.4, solid_queue 1.7.0 and solid_cache 1.0.10 (Retask's lock); `doctrine-verifier` CONFIRMED each against the installed gem source by file and line (recorded on #2065). Version boundary: verified at these versions.
+- **rails-8 `observability.md` says how to find slow pages and N+1s on a live app, and what the query-log tags are — `plugins/rails-stack/skills/rails-8/references/observability.md`** (#2038). A new §7 subsection: production N+1 comes from sampled spans (Prosopite's README guards its examples with `unless Rails.env.production?` and says nothing on production use, so it stays the post-fix regression test), Sentry's published N+1 rule as a threshold template (similar sequential spans, over 50 ms combined, usually five or more; configurable), how to sample (`traces_sample_rate` vs `traces_sampler`; `OTEL_TRACES_SAMPLER=traceidratio` with `OTEL_TRACES_SAMPLER_ARG`), and what the Rails Pulse README does and does not say (drops under load; no sampling or SQL-literal redaction described; no default thresholds documented). §6 gains the `query_log_tags` defaults, the `:sqlcommenter` default from `load_defaults 7.1`, the `:source_location` cost, and a note that the `pg_stat_statements` `queryid` effect is unmeasured. Each point cites the page it was read on (2026-10-14). Solid Queue/Solid Cache signals, the strict-loading combination and noise-control rules stay out until measured.
+- **rails-8 `performance-caching.md` §7 has an ordered fix menu and a verify-the-metric loop; the techniques are `models.md` §13 — `plugins/rails-stack/skills/rails-8/references/performance-caching.md`, `plugins/rails-stack/skills/rails-8/references/models.md`, `dist/rails-8.skill`, `docs/evidence/audits/2026-10-14-rails-8-fix-menu-2039.md`** (#2039; framework claims CONFIRMED against the PostgreSQL 16 and Rails 8.1 API docs, rows 1-9 of the evidence file, to be re-run by `doctrine-verifier` in review; the ordering, the per-entry fields, the one-home split and the loop are our own design, maintainer decision recorded on #2039 on 2026-10-14). Seven steps in order (index, query rewrite, N+1, counter cache, cache, materialised view or summary table, structural levers), each with its precondition evidence, verification, rollback and risk; a cache is never the first fix for an unindexed or N+1 query. A fix is accepted only when the plan change reproduces on a staging copy, a regression test fails before and passes after, and the post-deploy metric beats the recorded "before" over an equal-traffic window with a minimum-calls floor set per app and recorded beside the measurement (no universal number). `models.md` §13 holds partial, composite and covering indexes, concurrent build and `remove_index ... algorithm: :concurrently`, OFFSET to keyset, `REFRESH MATERIALIZED VIEW CONCURRENTLY` and `EXPLAIN (GENERIC_PLAN)` (in the 16 docs, absent from 15, not with `ANALYZE`). Dropping an unused index waits on #2045.
+- **`observability.md`: `query_log_tags` do not split a `pg_stat_statements` row by route — `plugins/rails-stack/skills/rails-8/references/observability.md`** (#2046, item 1; split from #2038). Measured on PostgreSQL 18.6: the same statement with no comment, a sqlcommenter comment appended or prepended, and different tag values gave one Query Identifier (`SET compute_query_id = on`, `EXPLAIN (VERBOSE)`). `doctrine-verifier` CONFIRMED against https://www.postgresql.org/docs/18/pgstatstatements.html ("computed on the post-parse-analysis representation"; the stored text is that of the first query) and https://www.postgresql.org/docs/18/monitoring-stats.html (`pg_stat_activity.query` while active; truncated at 1024 bytes by default), plus the Rails 8.1 `ActiveRecord::QueryLogs` API for `query_log_tags_prepend_comment`, whose default the API does not state, so the reference names the option, not a default. Version boundary: PostgreSQL 18, Rails 8.1. Verdict and measurement on #2046.
+- **`observability.md`: queue latency, Solid Cache hits, strict loading and Rails Pulse defaults, measured and verified — `plugins/rails-stack/skills/rails-8/references/observability.md`** (#2065, items 2-5 of #2046, split from #2038). Measured on rails 8.1.4, solid_queue 1.7.0 and solid_cache 1.0.10 (Retask's lock); `doctrine-verifier` CONFIRMED each against the installed gem source by file and line (recorded on #2065). Version boundary: verified at these versions.
   - **Queue latency** comes from Active Job: `perform_start.active_job` time minus `job.enqueued_at` (a scheduled job counts from `scheduled_at`). Solid Queue instruments no per-job latency; its `SolidQueue::Queue#latency` is queue-level and not instrumented.
   - **Solid Cache** reports `hit` and `super_operation` through the standard `cache_read` event, because it subclasses `ActiveSupport::Cache::Store`.
   - **`strict_loading_mode = :n_plus_one_only` does not report the top-level N+1 loop** (0 events measured), only a lazy load on records loaded through a `has_many`. Mode `:all` (the default) with `:log` reports every lazy load on a strict record, which is noisy, not a sampled N+1 signal; a detector is the alternative.
@@ -17399,71 +17399,71 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### 1.73.1 (release v1.157.0) — 2026-10-13
 
-- **hotwire: `turbo_stream_request?` does not exist; the request predicate is `request.format.turbo_stream?` — `skills/hotwire/references/turbo.md`** (#1960, the 2026-10-12 Hotwire audit). The cheat sheet listed `turbo_stream_request?` beside `turbo_frame_request?`; turbo-rails 2.0.23 defines only the latter, so an agent following it got a `NoMethodError`. `request.format.turbo_stream?` works because turbo-rails registers the type (`lib/turbo/engine.rb:77`, `Mime::Type.register "text/vnd.turbo-stream.html", :turbo_stream`) and Rails' `Mime::Type#method_missing` answers `<symbol>?` (`actionpack/lib/action_dispatch/http/mime_type.rb:336-338`, 8-0-stable and 8-1-stable). It is true when Turbo's `Accept` header leads with turbo-stream: non-GET form submissions, or a GET with `data-turbo-stream`. Same file: the refresh `method`/`scroll` precedence is now traced (the attribute wins, `visit?.refresh?.method || this.snapshot.refreshMethod`, `@hotwired/turbo` 8.0.23), and `turbo_frame_tag`'s signature reads `(*ids, src: nil, target: nil, **attributes)`. doctrine-verifier CONFIRMED all of it against the turbo-rails 2.0.23 and turbo 8.0.23 source.
-- **hotwire native: `push` is an Android-only presentation, and `hideTabBarWhenPushed` was never renamed in a release — `skills/hotwire/references/native.md`** (#1961, the 2026-10-12 Hotwire audit). The path-configuration list gave `push` as cross-platform. iOS's `Navigation` has `default`, `pop`, `replace`, `refresh`, `clear_all`, `replace_root` and `none` (hotwire-native-ios 1.3.1 `Source/Turbo/Navigator/Helpers/Navigation.swift`). `hideTabBarWhenPushed` is new in 1.3.0: the rename happened before release (commit 90d34c3), and neither name is in 1.2.2. The `matchQueryStrings = true` example now says it is already the default (`PathConfiguration.swift:25`). doctrine-verifier CONFIRMED against hotwire-native-ios 1.3.1 and hotwire-native-android 1.3.2 at their release tags.
-- **hotwire stimulus: click modifiers and the `page_up`/`page_down` key filters are 3.2.2, not 3.2.0 — `skills/hotwire/references/stimulus.md`** (#1962, the 2026-10-12 Hotwire audit). Both were true, but the file's "v3.2" header implied 3.2.0. `ctrl+click->x#y` arrived in 3.2.2 (#665, "Support keyboard modifier for click events"), as did `page_up`/`page_down` (#677). On 3.2.0 and 3.2.1 the syntax does nothing; the boundaries are now inline. doctrine-verifier CONFIRMED against hotwired/stimulus v3.2.2 and its release notes; the other 21 Stimulus claims held.
+- **hotwire: `turbo_stream_request?` does not exist; the request predicate is `request.format.turbo_stream?` — `plugins/rails-stack/skills/hotwire/references/turbo.md`** (#1960, the 2026-10-12 Hotwire audit). The cheat sheet listed `turbo_stream_request?` beside `turbo_frame_request?`; turbo-rails 2.0.23 defines only the latter, so an agent following it got a `NoMethodError`. `request.format.turbo_stream?` works because turbo-rails registers the type (`lib/turbo/engine.rb:77`, `Mime::Type.register "text/vnd.turbo-stream.html", :turbo_stream`) and Rails' `Mime::Type#method_missing` answers `<symbol>?` (`actionpack/lib/action_dispatch/http/mime_type.rb:336-338`, 8-0-stable and 8-1-stable). It is true when Turbo's `Accept` header leads with turbo-stream: non-GET form submissions, or a GET with `data-turbo-stream`. Same file: the refresh `method`/`scroll` precedence is now traced (the attribute wins, `visit?.refresh?.method || this.snapshot.refreshMethod`, `@hotwired/turbo` 8.0.23), and `turbo_frame_tag`'s signature reads `(*ids, src: nil, target: nil, **attributes)`. doctrine-verifier CONFIRMED all of it against the turbo-rails 2.0.23 and turbo 8.0.23 source.
+- **hotwire native: `push` is an Android-only presentation, and `hideTabBarWhenPushed` was never renamed in a release — `plugins/rails-stack/skills/hotwire/references/native.md`** (#1961, the 2026-10-12 Hotwire audit). The path-configuration list gave `push` as cross-platform. iOS's `Navigation` has `default`, `pop`, `replace`, `refresh`, `clear_all`, `replace_root` and `none` (hotwire-native-ios 1.3.1 `Source/Turbo/Navigator/Helpers/Navigation.swift`). `hideTabBarWhenPushed` is new in 1.3.0: the rename happened before release (commit 90d34c3), and neither name is in 1.2.2. The `matchQueryStrings = true` example now says it is already the default (`PathConfiguration.swift:25`). doctrine-verifier CONFIRMED against hotwire-native-ios 1.3.1 and hotwire-native-android 1.3.2 at their release tags.
+- **hotwire stimulus: click modifiers and the `page_up`/`page_down` key filters are 3.2.2, not 3.2.0 — `plugins/rails-stack/skills/hotwire/references/stimulus.md`** (#1962, the 2026-10-12 Hotwire audit). Both were true, but the file's "v3.2" header implied 3.2.0. `ctrl+click->x#y` arrived in 3.2.2 (#665, "Support keyboard modifier for click events"), as did `page_up`/`page_down` (#677). On 3.2.0 and 3.2.1 the syntax does nothing; the boundaries are now inline. doctrine-verifier CONFIRMED against hotwired/stimulus v3.2.2 and its release notes; the other 21 Stimulus claims held.
 
 ### 1.73.0 (release v1.156.0) — 2026-10-11
 
-- **System specs: Playwright is documented as a declared alternative driver, and Selenium stays mandated — `skills/rails-8/references/testing.md`** (#1441). doctrine-verifier (2026-10-12): Rails ≥ 7.1 ships `driven_by :playwright` (rails/rails `actionpack/lib/action_dispatch/system_testing/driver.rb`: 0 matches at v7.0.0, present from v7.1.0; 8-1-stable lists `:selenium, :cuprite, :rack_test, :playwright`); it needs `capybara-playwright-driver` (0.5.12, 2026-09-28) and, per its README, `npm install playwright@<Playwright::COMPATIBLE_PLAYWRIGHT_VERSION>` plus `playwright install --with-deps`; the driver's README, Rails integration guide (https://playwright-ruby-client.vercel.app/docs/article/guides/rails_integration) and open issues list its differences from Selenium; and Lexxy's move (https://dev.37signals.com/lexxy-1-0/) was off Capybara, so it is not evidence for a driver swap. Measured on Retask (a 20-file sample of 123 browser spec files, 3 runs per driver, 2026-10-12): the 53 portable examples passed on both drivers in every run, about a minute each warm, no flake measured in 3 runs; 83 of the 123 files call `page.driver.browser` (Selenium API, CDP), and in the 3 such files run under Playwright all 9 examples failed (`NoMethodError: private method 'browser'`). Decision (coordinator claude-skills-4d, a tooling choice, recorded on #1441): keep the Selenium mandate; Playwright is a project's declared choice, recorded in its CLAUDE.md "Project Overrides", after counting the specs that reach into `page.driver.browser`. `dist/rails-8.skill` rebuilt.
-- **rails-8: Rails 8.2 readiness, round 2 — about thirty more items on `main`, unreleased, each verified — `skills/rails-8/references/rails-8-2-readiness.md`** (#1756, after #1748). Three `doctrine-verifier` runs read rails/rails `main` at `d05a45b41edf679d2dfba4e40366af80628626ff` and `v8.1.4` / `8-1-stable` on 2026-10-12: 8 + 9 + 20 rows, 36 CONFIRMED and 1 REFUTED, none INCONCLUSIVE, plus a fourth run (6 sub-claims: 4 CONFIRMED, 2 REFUTED as worded) after review added `rescue_from_event_backtrace` and corrected the "before 8.2" column for `strict_accept_header` and `raise_on_invalid_time_zone_parse` (neither option exists in 8.1.4); the tables are in `docs/evidence/audits/2026-10-12-rails-8-2-readiness-round-2.md`. Every item is labelled `[On main, unreleased]` (8.2 is not tagged), so nothing is doctrine for a released Rails. New sections: floors and removals (Ruby >= 3.3.5, PostgreSQL 10.0, dynamic `:controller`/`:action` raising at draw time, the 6.1 Marshal format removed, `not_<value>` enum scopes now including NULL rows); the HTTP `QUERY` verb and `bin/rails query`; a `load_defaults "8.2"` table; secret rotation, ffmpeg/ffprobe input arguments and `ACTIVE_RECORD_ENCRYPTION__*`; `Rails.app` and the CHANGELOG-only additions. Corrections the verifiers made: `shuffle_unordered_selects` and `draw_direct_upload_route` are **not** `load_defaults` values, the `message_verifiers.rotate(secret_key_base:)` API is already in 8.1.4 (only the Security guide section is new), and `frozen_string_literal` by default is new apps and application code only. Two one-line pointers sit in `skills/rails-8/SKILL.md` and `skills/rails-8/references/models.md`. `dist/rails-8.skill` is repackaged. Not covered: PR numbers for six CHANGELOG-only items were not looked up. The number is assigned at promotion.
-- **rails-8: how to hide an area's existence — answer the app's ordinary 404, from a route constraint and the same check in the base controller — `skills/rails-8/references/ecosystem-gems.md`** (#1817). Pundit's documented `rescue_from` redirects, or answers 403 through `rescue_responses`. Both tell a refused visitor the area exists. For an area whose existence is a secret, the skill now says: refuse at a route constraint (a refused request finds no route, so every refused persona gets the 404 of an unknown path); repeat the same predicate in the area's base controller with `prepend_before_action` and `raise ActionController::RoutingError` (prepended, so it runs before the generator's inherited `before_action :require_authentication`, which would otherwise redirect an anonymous visitor to sign in; it reads the session cookie itself, since `Current.user` is not set yet); and back both with a route-map spec that expects 404 for each refused persona on every path under the area. The redirect stays the default for ordinary pages. Our own design, with no upstream: the maintainer's decision is https://github.com/fmanimashaun/claude-skills/issues/1817#issuecomment-6117790301. The framework facts it rests on (a refused route is a `RoutingError`, which renders 404) were verified for #1902. The callback order was verified for this change (doctrine-verifier CONFIRMED): `activesupport/lib/active_support/callbacks.rb` "Before and around callbacks are called in the order that they are set"; `actionpack/lib/abstract_controller/callbacks.rb` `prepend_before_action`; the generator template's `before_action :require_authentication`. So was the development behaviour: `consider_all_requests_local = true` renders the `DebugExceptions` routing page, not `public/404.html` (Rails v8.0.0 and v8.1.0).
-- **rails-8: the authenticated route constraint reads the session the generator actually writes — `skills/rails-8/references/controllers-routing.md`** (#1817, from #1694). The example `constraints ->(req) { req.session[:user_id] }` matched no signed-in user. The Rails 8 authentication generator stores a signed `:session_id` cookie pointing at a `Session` row and never sets `session[:user_id]` (`authentication.rb.tt`, `start_new_session_for` / `find_session_by_cookie`, Rails v8.0.0 and v8.1.0). The skill now shows a `matches?(request)` constraint reading `request.cookie_jar.signed[:session_id]`, says to share one lookup with the controller when the concern adds checks, and states that a refused request finds no route, so `ActionController::RoutingError` renders the same 404 as an unknown path (`exception_wrapper.rb` `rescue_responses`, `:not_found`, v8.0.0 and v8.1.0; Routing guide, Advanced Constraints). doctrine-verifier: CONFIRMED (claims A and B). Not in this change: advice to answer 404 rather than 403 or a redirect to hide an area's existence. Pundit documents only a redirect or 403, so that is our own design and awaits the maintainer's decision on #1817.
-- **quality-pass's worked example counts the `check(label, ok, detail)` copies again, 61 with a reach of 33 — `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1839). The gh shim's selftest (`plugins/rails-flow/scripts/gh_shim_selftest.py`) is a new copy of the shape, so `check_shared_shapes.py` reported the table's 60 and reach of 32 stale; the row now says 61 and 33 and `dist/quality-pass.skill` is repackaged. The doc records the decision not to extract the shape; only its numbers move. Our own measurement, re-run by the script.
-- **The MCP reference points at the `mcp-annotations` check — `skills/rails-8/references/mcp-server.md`** (#1882, umbrella #1306).
+- **System specs: Playwright is documented as a declared alternative driver, and Selenium stays mandated — `plugins/rails-stack/skills/rails-8/references/testing.md`** (#1441). doctrine-verifier (2026-10-12): Rails ≥ 7.1 ships `driven_by :playwright` (rails/rails `actionpack/lib/action_dispatch/system_testing/driver.rb`: 0 matches at v7.0.0, present from v7.1.0; 8-1-stable lists `:selenium, :cuprite, :rack_test, :playwright`); it needs `capybara-playwright-driver` (0.5.12, 2026-09-28) and, per its README, `npm install playwright@<Playwright::COMPATIBLE_PLAYWRIGHT_VERSION>` plus `playwright install --with-deps`; the driver's README, Rails integration guide (https://playwright-ruby-client.vercel.app/docs/article/guides/rails_integration) and open issues list its differences from Selenium; and Lexxy's move (https://dev.37signals.com/lexxy-1-0/) was off Capybara, so it is not evidence for a driver swap. Measured on Retask (a 20-file sample of 123 browser spec files, 3 runs per driver, 2026-10-12): the 53 portable examples passed on both drivers in every run, about a minute each warm, no flake measured in 3 runs; 83 of the 123 files call `page.driver.browser` (Selenium API, CDP), and in the 3 such files run under Playwright all 9 examples failed (`NoMethodError: private method 'browser'`). Decision (coordinator claude-skills-4d, a tooling choice, recorded on #1441): keep the Selenium mandate; Playwright is a project's declared choice, recorded in its CLAUDE.md "Project Overrides", after counting the specs that reach into `page.driver.browser`. `dist/rails-8.skill` rebuilt.
+- **rails-8: Rails 8.2 readiness, round 2 — about thirty more items on `main`, unreleased, each verified — `plugins/rails-stack/skills/rails-8/references/rails-8-2-readiness.md`** (#1756, after #1748). Three `doctrine-verifier` runs read rails/rails `main` at `d05a45b41edf679d2dfba4e40366af80628626ff` and `v8.1.4` / `8-1-stable` on 2026-10-12: 8 + 9 + 20 rows, 36 CONFIRMED and 1 REFUTED, none INCONCLUSIVE, plus a fourth run (6 sub-claims: 4 CONFIRMED, 2 REFUTED as worded) after review added `rescue_from_event_backtrace` and corrected the "before 8.2" column for `strict_accept_header` and `raise_on_invalid_time_zone_parse` (neither option exists in 8.1.4); the tables are in `docs/evidence/audits/2026-10-12-rails-8-2-readiness-round-2.md`. Every item is labelled `[On main, unreleased]` (8.2 is not tagged), so nothing is doctrine for a released Rails. New sections: floors and removals (Ruby >= 3.3.5, PostgreSQL 10.0, dynamic `:controller`/`:action` raising at draw time, the 6.1 Marshal format removed, `not_<value>` enum scopes now including NULL rows); the HTTP `QUERY` verb and `bin/rails query`; a `load_defaults "8.2"` table; secret rotation, ffmpeg/ffprobe input arguments and `ACTIVE_RECORD_ENCRYPTION__*`; `Rails.app` and the CHANGELOG-only additions. Corrections the verifiers made: `shuffle_unordered_selects` and `draw_direct_upload_route` are **not** `load_defaults` values, the `message_verifiers.rotate(secret_key_base:)` API is already in 8.1.4 (only the Security guide section is new), and `frozen_string_literal` by default is new apps and application code only. Two one-line pointers sit in `plugins/rails-stack/skills/rails-8/SKILL.md` and `plugins/rails-stack/skills/rails-8/references/models.md`. `dist/rails-8.skill` is repackaged. Not covered: PR numbers for six CHANGELOG-only items were not looked up. The number is assigned at promotion.
+- **rails-8: how to hide an area's existence — answer the app's ordinary 404, from a route constraint and the same check in the base controller — `plugins/rails-stack/skills/rails-8/references/ecosystem-gems.md`** (#1817). Pundit's documented `rescue_from` redirects, or answers 403 through `rescue_responses`. Both tell a refused visitor the area exists. For an area whose existence is a secret, the skill now says: refuse at a route constraint (a refused request finds no route, so every refused persona gets the 404 of an unknown path); repeat the same predicate in the area's base controller with `prepend_before_action` and `raise ActionController::RoutingError` (prepended, so it runs before the generator's inherited `before_action :require_authentication`, which would otherwise redirect an anonymous visitor to sign in; it reads the session cookie itself, since `Current.user` is not set yet); and back both with a route-map spec that expects 404 for each refused persona on every path under the area. The redirect stays the default for ordinary pages. Our own design, with no upstream: the maintainer's decision is https://github.com/fmanimashaun/claude-skills/issues/1817#issuecomment-6117790301. The framework facts it rests on (a refused route is a `RoutingError`, which renders 404) were verified for #1902. The callback order was verified for this change (doctrine-verifier CONFIRMED): `activesupport/lib/active_support/callbacks.rb` "Before and around callbacks are called in the order that they are set"; `actionpack/lib/abstract_controller/callbacks.rb` `prepend_before_action`; the generator template's `before_action :require_authentication`. So was the development behaviour: `consider_all_requests_local = true` renders the `DebugExceptions` routing page, not `public/404.html` (Rails v8.0.0 and v8.1.0).
+- **rails-8: the authenticated route constraint reads the session the generator actually writes — `plugins/rails-stack/skills/rails-8/references/controllers-routing.md`** (#1817, from #1694). The example `constraints ->(req) { req.session[:user_id] }` matched no signed-in user. The Rails 8 authentication generator stores a signed `:session_id` cookie pointing at a `Session` row and never sets `session[:user_id]` (`authentication.rb.tt`, `start_new_session_for` / `find_session_by_cookie`, Rails v8.0.0 and v8.1.0). The skill now shows a `matches?(request)` constraint reading `request.cookie_jar.signed[:session_id]`, says to share one lookup with the controller when the concern adds checks, and states that a refused request finds no route, so `ActionController::RoutingError` renders the same 404 as an unknown path (`exception_wrapper.rb` `rescue_responses`, `:not_found`, v8.0.0 and v8.1.0; Routing guide, Advanced Constraints). doctrine-verifier: CONFIRMED (claims A and B). Not in this change: advice to answer 404 rather than 403 or a redirect to hide an area's existence. Pundit documents only a redirect or 403, so that is our own design and awaits the maintainer's decision on #1817.
+- **quality-pass's worked example counts the `check(label, ok, detail)` copies again, 61 with a reach of 33 — `plugins/rails-stack/skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1839). The gh shim's selftest (`plugins/rails-flow/scripts/gh_shim_selftest.py`) is a new copy of the shape, so `check_shared_shapes.py` reported the table's 60 and reach of 32 stale; the row now says 61 and 33 and `dist/quality-pass.skill` is repackaged. The doc records the decision not to extract the shape; only its numbers move. Our own measurement, re-run by the script.
+- **The MCP reference points at the `mcp-annotations` check — `plugins/rails-stack/skills/rails-8/references/mcp-server.md`** (#1882, umbrella #1306).
   §3 rule 2 now says the rails-flow check fails a tool whose source does not state both hints, and why it reads the source: the `mcp` gem
   emits all four hints, with the spec defaults, once any one is declared (`lib/mcp/tool/annotations.rb:8`, v1.6.0 and v1.7.0).
   Verified by the real `doctrine-verifier` (CONFIRMED) at ruby-sdk v1.6.0 and v1.7.0; the schema defaults hold at the draft and at the tagged 2025-11-25:
   `docs/evidence/audits/2026-10-11-mcp-annotations-gate-1882.md`.
-- **parallel-session-lane: the channel and roster are native, polling uses Monitor and `notify_when_idle`, and Claude Code's worktree sweep does not remove a lane you made — `skills/parallel-session-lane/SKILL.md`** (#1682). §2: read `ListAgents` instead of a roll call, address by the listed name (sessions sharing one get a short identifier), a received message cannot approve anything or change configuration, and a receiver may hold or refuse messages. §3 polling and §5a: the sweep removes worktrees Claude created for subagents and background sessions, never one made with `git worktree add`. To stay under the 500-line SKILL.md budget, §4's "a long-running read is a second party in your own tree" moved verbatim to `skills/parallel-session-lane/references/process-hygiene.md`, with a pointer left. `skills/quality-pass/references/worked-example.md` counts the new `check(label, ok, detail)` copy in `wrap_round.py` (#1725): 56 copies, reach 28, across four plugins (it said three). Verified by doctrine-verifier (CONFIRMED, 2026-10-10) against https://code.claude.com/docs/en/cross-session-messaging.md , /tools-reference.md , /worktrees.md .
-- **quality-pass worked example: the selftest-harness copy count is 52 with a reach of 26, not 53 and 27 — `skills/quality-pass/references/worked-example.md`** (#1785; our own measured count, re-checked by `scripts/check_shared_shapes.py`). `check_hook_gates.py`'s `check()` gained an optional fourth parameter (`starved_max_cpu_s`), so it is no longer a verbatim copy of the `check(label, ok, detail)` shape; the table now says what the repo holds. (#1795 added one copy, #1785 changed one: 53 and 27 became 52 and 26, measured after both). `dist/quality-pass.skill` repackaged. The number is assigned at promotion.
-- **design-system: the asset and prompt paths follow design-flow's move to `docs/design/` — `skills/design-system/references/brand.md`, `skills/design-system/references/visual-assets.md`, `skills/design-system/references/component-implementations.md`** (#1779; our own design, recorded on the issue). `docs/assets/…` is now `docs/design/assets/…` and `docs/design-system/brand-assets/` is `docs/design/assets/brand/` (the layout's own rename), so the paths the skill prescribes pass rails-flow's docs-layout gate. `dist/design-system.skill` repackaged. The number is assigned at promotion.
-- **The quality-pass worked example's count of the `check(label, ok, detail)` selftest harness is 55, not 52 — `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (Refs #1738, #1739). Two new selftests (`scripts/mutation_incremental_selftest.py`, `scripts/linux_check_selftest.py`) each carry the harness, so `scripts/check_shared_shapes.py` found 55 (54 before the merge of dev added one) and the table said 52. The number is updated and the skill repackaged; the decision not to extract a shared harness stands, and is what the table records. Our own measurement of our own repository; no framework claim.
-- **rails-8 `pwa.md` states what makes a Rails app installable, and adds offline, Web Push and the Play Store — `skills/rails-8/references/pwa.md`, `skills/hotwire/references/production.md`** (#1750). Four independent verifier passes against primary sources, each claim in `docs/evidence/audits/2026-10-10-pwa-doctrine-1750.md`. Installability now cites web.dev's install criteria (the Lighthouse page says "PWA testing in Lighthouse is deprecated"), adds `window-controls-overlay` to `display` and the click-plus-30-seconds engagement rule, and states that the Rails 8.1 manifest lists `/icon.png` twice at 512px (one maskable) and no 192px, so a fresh app is not installable until one is added; the issue said "a single 512px icon", and that was refuted. New sections: the offline fallback is on rails/rails `main` only (#57184, `gem_version` 8.2.0) and in no released 8.1.x, with its service-worker examples commented; Web Push (the `web-push` gem, VAPID, the commented 8.1 handlers, iOS 16.4 Home-Screen-only and gesture-only, macOS Safari 16.1); and Trusted Web Activity with Bubblewrap and Digital Asset Links. `hotwire/references/production.md` warns that hotwired/turbo#1427's `networkFirst` examples, one with no `match` so it caches every URL, break the no-signed-in-caching rule; #1427 was an open, unmerged PR on 2026-10-10. Not asserted, because the sources do not say it: that the engagement rule is why automated tests never see the prompt, how Rails serves `assetlinks.json` beyond static files, and Play's current target-API policy. Our own rule (notification permission only from a user action) is marked as ours.
+- **parallel-session-lane: the channel and roster are native, polling uses Monitor and `notify_when_idle`, and Claude Code's worktree sweep does not remove a lane you made — `plugins/rails-stack/skills/parallel-session-lane/SKILL.md`** (#1682). §2: read `ListAgents` instead of a roll call, address by the listed name (sessions sharing one get a short identifier), a received message cannot approve anything or change configuration, and a receiver may hold or refuse messages. §3 polling and §5a: the sweep removes worktrees Claude created for subagents and background sessions, never one made with `git worktree add`. To stay under the 500-line SKILL.md budget, §4's "a long-running read is a second party in your own tree" moved verbatim to `plugins/rails-stack/skills/parallel-session-lane/references/process-hygiene.md`, with a pointer left. `plugins/rails-stack/skills/quality-pass/references/worked-example.md` counts the new `check(label, ok, detail)` copy in `wrap_round.py` (#1725): 56 copies, reach 28, across four plugins (it said three). Verified by doctrine-verifier (CONFIRMED, 2026-10-10) against https://code.claude.com/docs/en/cross-session-messaging.md , /tools-reference.md , /worktrees.md .
+- **quality-pass worked example: the selftest-harness copy count is 52 with a reach of 26, not 53 and 27 — `plugins/rails-stack/skills/quality-pass/references/worked-example.md`** (#1785; our own measured count, re-checked by `scripts/check_shared_shapes.py`). `check_hook_gates.py`'s `check()` gained an optional fourth parameter (`starved_max_cpu_s`), so it is no longer a verbatim copy of the `check(label, ok, detail)` shape; the table now says what the repo holds. (#1795 added one copy, #1785 changed one: 53 and 27 became 52 and 26, measured after both). `dist/quality-pass.skill` repackaged. The number is assigned at promotion.
+- **design-system: the asset and prompt paths follow design-flow's move to `docs/design/` — `plugins/rails-stack/skills/design-system/references/brand.md`, `plugins/rails-stack/skills/design-system/references/visual-assets.md`, `plugins/rails-stack/skills/design-system/references/component-implementations.md`** (#1779; our own design, recorded on the issue). `docs/assets/…` is now `docs/design/assets/…` and `docs/design-system/brand-assets/` is `docs/design/assets/brand/` (the layout's own rename), so the paths the skill prescribes pass rails-flow's docs-layout gate. `dist/design-system.skill` repackaged. The number is assigned at promotion.
+- **The quality-pass worked example's count of the `check(label, ok, detail)` selftest harness is 55, not 52 — `plugins/rails-stack/skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (Refs #1738, #1739). Two new selftests (`scripts/mutation_incremental_selftest.py`, `scripts/linux_check_selftest.py`) each carry the harness, so `scripts/check_shared_shapes.py` found 55 (54 before the merge of dev added one) and the table said 52. The number is updated and the skill repackaged; the decision not to extract a shared harness stands, and is what the table records. Our own measurement of our own repository; no framework claim.
+- **rails-8 `pwa.md` states what makes a Rails app installable, and adds offline, Web Push and the Play Store — `plugins/rails-stack/skills/rails-8/references/pwa.md`, `plugins/rails-stack/skills/hotwire/references/production.md`** (#1750). Four independent verifier passes against primary sources, each claim in `docs/evidence/audits/2026-10-10-pwa-doctrine-1750.md`. Installability now cites web.dev's install criteria (the Lighthouse page says "PWA testing in Lighthouse is deprecated"), adds `window-controls-overlay` to `display` and the click-plus-30-seconds engagement rule, and states that the Rails 8.1 manifest lists `/icon.png` twice at 512px (one maskable) and no 192px, so a fresh app is not installable until one is added; the issue said "a single 512px icon", and that was refuted. New sections: the offline fallback is on rails/rails `main` only (#57184, `gem_version` 8.2.0) and in no released 8.1.x, with its service-worker examples commented; Web Push (the `web-push` gem, VAPID, the commented 8.1 handlers, iOS 16.4 Home-Screen-only and gesture-only, macOS Safari 16.1); and Trusted Web Activity with Bubblewrap and Digital Asset Links. `hotwire/references/production.md` warns that hotwired/turbo#1427's `networkFirst` examples, one with no `match` so it caches every URL, break the no-signed-in-caching rule; #1427 was an open, unmerged PR on 2026-10-10. Not asserted, because the sources do not say it: that the engagement rule is why automated tests never see the prompt, how Rails serves `assetlinks.json` beyond static files, and Play's current target-API policy. Our own rule (notification permission only from a user action) is marked as ours.
 
-- **rails-8: the test `eager_load` default, executor re-entrancy, the Reloader for long-running loops, and `Rails.error.add_middleware` — `skills/rails-8/references/project-setup.md`, `skills/rails-8/references/jobs-and-realtime.md`, `skills/rails-8/references/observability.md`** (#1755; `doctrine-verifier` CONFIRMED each, full report on the issue). (1) The skill said "test: eager_load off"; the generated test environment sets `config.eager_load = ENV["CI"].present?` (https://github.com/rails/rails/blob/v8.1.4/railties/lib/rails/generators/rails/app/templates/config/environments/test.rb.tt#L16, and the testing guide's "Testing Eager Loading", https://guides.rubyonrails.org/testing.html), which is `false` in Rails 6.1 and the CI form from Rails 7.0.0. (2) "Never nest `executor.wrap`" overstated the risk: the Executor is re-entrant and `wrap` is a no-op when it is already active (https://guides.rubyonrails.org/threading_and_code_execution.html; `ActiveSupport::ExecutionWrapper.wrap` returns `yield if active?`, https://github.com/rails/rails/blob/v8.1.4/activesupport/lib/active_support/execution_wrapper.rb#L87; the guard is in 6.1 and the guide sentence in 5.2 and later), so the rule is now "unnecessary but harmless; wrap only threads you start". (3) Added the Reloader for a top-level long-running loop, `executor.wrap` for child threads (a Reloader in a child thread under a waiting parent deadlocks), and `run!`/`complete!` where a block is impractical (the same guide). (4) Added `Rails.error.add_middleware`: it exists from Rails 8.1.0 (`ActiveSupport::ErrorReporter#add_middleware`, https://github.com/rails/rails/blob/v8.1.4/activesupport/lib/active_support/error_reporter.rb#L206-L219 and the 8.1.0 `activesupport/CHANGELOG.md` entry) and is absent from 8.0.x; the 8.1.4 error-reporting guide does not document it (only `main` does), so the skill cites no signature and says to read the source for the project's version. The version number is assigned at promotion.
-- **A model whose name differs from its resource route: polymorphic helpers follow `model_name` — `skills/rails-8/references/controllers-routing.md`** (#1741; verified 2026-10-10, `docs/evidence/audits/2026-10-10-rails-8-1-8-2-doctrine-verification.md`). `link_to record, record`, `redirect_to record`, `url_for` and `form_with model:` pick the helper from `model_name.singular_route_key` / `route_key`, not from `routes.rb`, so `HttpMonitor` with `resources :monitors` raises `NoMethodError` for `http_monitor_path`. The new section orders the fixes (name the resource after the model; `as:` renames helpers, not the URL; `resolve`, documented for singular resources; overriding `model_name` with the names that change with it) and the STI `form_with` rule (`url:` and `scope:` explicit). CONFIRMED against `actionpack/lib/action_dispatch/routing/polymorphic_routes.rb` and `activemodel/lib/active_model/naming.rb` at v8.1.4 plus a reproduction on Rails 8.1.4, the routing guide (`resolve`) and the form helpers guide (STI). **`direct` was REFUTED as a polymorphic mapping** and is stated as only a URL-helper definition. Version boundary: stated for Rails 8.1.4; no earlier tag was diffed. Our doctrine; the sources are the framework's.
+- **rails-8: the test `eager_load` default, executor re-entrancy, the Reloader for long-running loops, and `Rails.error.add_middleware` — `plugins/rails-stack/skills/rails-8/references/project-setup.md`, `plugins/rails-stack/skills/rails-8/references/jobs-and-realtime.md`, `plugins/rails-stack/skills/rails-8/references/observability.md`** (#1755; `doctrine-verifier` CONFIRMED each, full report on the issue). (1) The skill said "test: eager_load off"; the generated test environment sets `config.eager_load = ENV["CI"].present?` (https://github.com/rails/rails/blob/v8.1.4/railties/lib/rails/generators/rails/app/templates/config/environments/test.rb.tt#L16, and the testing guide's "Testing Eager Loading", https://guides.rubyonrails.org/testing.html), which is `false` in Rails 6.1 and the CI form from Rails 7.0.0. (2) "Never nest `executor.wrap`" overstated the risk: the Executor is re-entrant and `wrap` is a no-op when it is already active (https://guides.rubyonrails.org/threading_and_code_execution.html; `ActiveSupport::ExecutionWrapper.wrap` returns `yield if active?`, https://github.com/rails/rails/blob/v8.1.4/activesupport/lib/active_support/execution_wrapper.rb#L87; the guard is in 6.1 and the guide sentence in 5.2 and later), so the rule is now "unnecessary but harmless; wrap only threads you start". (3) Added the Reloader for a top-level long-running loop, `executor.wrap` for child threads (a Reloader in a child thread under a waiting parent deadlocks), and `run!`/`complete!` where a block is impractical (the same guide). (4) Added `Rails.error.add_middleware`: it exists from Rails 8.1.0 (`ActiveSupport::ErrorReporter#add_middleware`, https://github.com/rails/rails/blob/v8.1.4/activesupport/lib/active_support/error_reporter.rb#L206-L219 and the 8.1.0 `activesupport/CHANGELOG.md` entry) and is absent from 8.0.x; the 8.1.4 error-reporting guide does not document it (only `main` does), so the skill cites no signature and says to read the source for the project's version. The version number is assigned at promotion.
+- **A model whose name differs from its resource route: polymorphic helpers follow `model_name` — `plugins/rails-stack/skills/rails-8/references/controllers-routing.md`** (#1741; verified 2026-10-10, `docs/evidence/audits/2026-10-10-rails-8-1-8-2-doctrine-verification.md`). `link_to record, record`, `redirect_to record`, `url_for` and `form_with model:` pick the helper from `model_name.singular_route_key` / `route_key`, not from `routes.rb`, so `HttpMonitor` with `resources :monitors` raises `NoMethodError` for `http_monitor_path`. The new section orders the fixes (name the resource after the model; `as:` renames helpers, not the URL; `resolve`, documented for singular resources; overriding `model_name` with the names that change with it) and the STI `form_with` rule (`url:` and `scope:` explicit). CONFIRMED against `actionpack/lib/action_dispatch/routing/polymorphic_routes.rb` and `activemodel/lib/active_model/naming.rb` at v8.1.4 plus a reproduction on Rails 8.1.4, the routing guide (`resolve`) and the form helpers guide (STI). **`direct` was REFUTED as a polymorphic mapping** and is stated as only a URL-helper definition. Version boundary: stated for Rails 8.1.4; no earlier tag was diffed. Our doctrine; the sources are the framework's.
 
-- **Rails 8.1 Active Job changes in place, and Rails 8.2 recorded as UNRELEASED — `skills/rails-8/references/jobs-and-realtime.md`, `skills/rails-8/references/rails-8-2-readiness.md`** (#1748; verified 2026-10-10, same audit file). 8.1 [Released in 8.1.0]: `enqueue_after_transaction_commit` lost its `:never`/`:always`/`:default` values and the global config (removed, not deprecated); the built-in `sidekiq` adapter is deprecated. 8.2 [On main, unreleased; edge guide last changed in `54cce92c9a89445ea62b4df3e4cc327888e7339c`, 2026-02-15]: the boolean returns, default `true` with `load_defaults "8.2"`; the built-in `sidekiq` adapter is removed and `queue_classic`, `resque`, `delayed_job`, `backburner`, `sneakers` are deprecated; CSRF `Sec-Fetch-Site` checking (`protect_from_forgery using:`) and the deprecation of a bare `protect_from_forgery`; `has_secure_password algorithm: :argon2`; `Rails.app`; Active Storage `analyze:` and `process:` (`preprocessed: true` is deprecated in favour of `process: :later`); the Action Text Trix API deprecations; `has_json`/`has_delegated_json` (Active Model, not Active Record); Herb compiling HTML ERB (`erb_implementation`, `bin/rails herb:check`, in flux; rails/rails#58721, #58552, #58770, #58874). Every 8.2 item sits in the new `rails-8-2-readiness.md`, labelled unreleased with its source, and `SKILL.md`, `auth-security.md`, `ecosystem-gems.md` and `mail-storage-richtext.md` carry one-line pointers. **Left unsaid because INCONCLUSIVE:** the default of `enqueue_after_transaction_commit` in an 8.1 app, the `herb` version constraint, whether `using:` alone silences the CSRF deprecation, and ReActionView. Our doctrine; the sources are the Rails CHANGELOGs, release notes and merged pull requests.
+- **Rails 8.1 Active Job changes in place, and Rails 8.2 recorded as UNRELEASED — `plugins/rails-stack/skills/rails-8/references/jobs-and-realtime.md`, `plugins/rails-stack/skills/rails-8/references/rails-8-2-readiness.md`** (#1748; verified 2026-10-10, same audit file). 8.1 [Released in 8.1.0]: `enqueue_after_transaction_commit` lost its `:never`/`:always`/`:default` values and the global config (removed, not deprecated); the built-in `sidekiq` adapter is deprecated. 8.2 [On main, unreleased; edge guide last changed in `54cce92c9a89445ea62b4df3e4cc327888e7339c`, 2026-02-15]: the boolean returns, default `true` with `load_defaults "8.2"`; the built-in `sidekiq` adapter is removed and `queue_classic`, `resque`, `delayed_job`, `backburner`, `sneakers` are deprecated; CSRF `Sec-Fetch-Site` checking (`protect_from_forgery using:`) and the deprecation of a bare `protect_from_forgery`; `has_secure_password algorithm: :argon2`; `Rails.app`; Active Storage `analyze:` and `process:` (`preprocessed: true` is deprecated in favour of `process: :later`); the Action Text Trix API deprecations; `has_json`/`has_delegated_json` (Active Model, not Active Record); Herb compiling HTML ERB (`erb_implementation`, `bin/rails herb:check`, in flux; rails/rails#58721, #58552, #58770, #58874). Every 8.2 item sits in the new `rails-8-2-readiness.md`, labelled unreleased with its source, and `SKILL.md`, `auth-security.md`, `ecosystem-gems.md` and `mail-storage-richtext.md` carry one-line pointers. **Left unsaid because INCONCLUSIVE:** the default of `enqueue_after_transaction_commit` in an 8.1 app, the `herb` version constraint, whether `using:` alone silences the CSRF deprecation, and ReActionView. Our doctrine; the sources are the Rails CHANGELOGs, release notes and merged pull requests.
 
-- **Hotwire: the `turbo-view-transition` meta, reduced motion, visit direction, prefetch reach, the SVG link defect and Stimulus `keyMappings` — `skills/hotwire/references/turbo.md`, `skills/hotwire/references/stimulus.md`** (#1745). Read in the released npm builds (`@hotwired/turbo` 8.0.23 `dist/turbo.es2017-esm.js`, `@hotwired/stimulus` 3.2.2 `dist/stimulus.js`), with the earlier builds for version boundaries. View transitions: `getSetting("view-transition") === "true" || getMetaValue("view-transition") === "same-origin"`, so `<meta name="turbo-view-transition" content="true">` from **8.0.14** (hotwired/turbo PR #1380; the issue said 8.0.19, but the string is absent in 8.0.13 and present in 8.0.14), with the old tag still accepted. Since 8.0.14, transitions skip under `(prefers-reduced-motion: reduce)` (PR #1409). `html[data-turbo-visit-direction]` = `forward`/`back`/`none` from 8.0.0, not set for stream-accepting visits. Prefetch: the `turbo-prefetch` meta set to `false` is checked before any link, so no link re-enables it; under an ancestor's `data-turbo-prefetch="false"`, the nearest `[data-turbo-prefetch]` (the link included) decides, so `"true"` re-enables. SVG `<a>` clicks throw in 8.0.23 (`link.href.startsWith` on an `SVGAnimatedString`; issue hotwired/turbo#1510, fixed on `main`, with no release after 8.0.23 as of 2026-10-10). Stimulus 3.2.2: the default `keyMappings` have no F-keys; `Application.start(element, schema)` takes a custom schema (`defaultSchema` exported; https://stimulus.hotwired.dev/reference/actions). Verified by `doctrine-verifier` (CONFIRMED, 2026-10-10). The issue's claim that SVG links are not prefetched rests on inference, so it was left out. Component: rails-stack.
+- **Hotwire: the `turbo-view-transition` meta, reduced motion, visit direction, prefetch reach, the SVG link defect and Stimulus `keyMappings` — `plugins/rails-stack/skills/hotwire/references/turbo.md`, `plugins/rails-stack/skills/hotwire/references/stimulus.md`** (#1745). Read in the released npm builds (`@hotwired/turbo` 8.0.23 `dist/turbo.es2017-esm.js`, `@hotwired/stimulus` 3.2.2 `dist/stimulus.js`), with the earlier builds for version boundaries. View transitions: `getSetting("view-transition") === "true" || getMetaValue("view-transition") === "same-origin"`, so `<meta name="turbo-view-transition" content="true">` from **8.0.14** (hotwired/turbo PR #1380; the issue said 8.0.19, but the string is absent in 8.0.13 and present in 8.0.14), with the old tag still accepted. Since 8.0.14, transitions skip under `(prefers-reduced-motion: reduce)` (PR #1409). `html[data-turbo-visit-direction]` = `forward`/`back`/`none` from 8.0.0, not set for stream-accepting visits. Prefetch: the `turbo-prefetch` meta set to `false` is checked before any link, so no link re-enables it; under an ancestor's `data-turbo-prefetch="false"`, the nearest `[data-turbo-prefetch]` (the link included) decides, so `"true"` re-enables. SVG `<a>` clicks throw in 8.0.23 (`link.href.startsWith` on an `SVGAnimatedString`; issue hotwired/turbo#1510, fixed on `main`, with no release after 8.0.23 as of 2026-10-10). Stimulus 3.2.2: the default `keyMappings` have no F-keys; `Application.start(element, schema)` takes a custom schema (`defaultSchema` exported; https://stimulus.hotwired.dev/reference/actions). Verified by `doctrine-verifier` (CONFIRMED, 2026-10-10). The issue's claim that SVG links are not prefetched rests on inference, so it was left out. Component: rails-stack.
 
-- **Hotwire Native reference: native screens need a `NavigatorDelegate`, plus the iOS/Android config knobs, tabs and 1.3.1 notes — `skills/hotwire/references/native.md`** (#1744). The iOS native-screen rule only sets `proposal.viewController`; the screen requires a `NavigatorDelegate` `handle(proposal:from:)` returning `.acceptCustom(vc)` (https://native.hotwired.dev/ios/native-screens). Added iOS config (`backButtonDisplayMode`, `hideTabBarWhenPushed` 1.3.0, `animateReplaceActions` 1.3.0, `redirectResolutionTimeout`, `makeCustomWebView`, `makeCustomErrorView` 1.3.0, `log` 1.3.0, `matchQueryStrings`; https://native.hotwired.dev/ios/configuration), Android config (`webViewDebuggingEnabled`, `jsonConverter`, `defaultFragmentDestination`; `registerFragmentDestinations` must include `HotwireWebFragment`; https://native.hotwired.dev/android/configuration), a Tabs section (https://native.hotwired.dev/ios/tabs, /android/tabs; iOS `lazyLoadTabs` is an initializer argument defaulting to `false` from 1.3.0), and 1.3.1 notes (iOS #261, Android #207, Android #205 crash on `mailto:`/`tel:` introduced in 1.3.0; iOS #191 in 1.3.0: the default Safari route handler tries universal links first, no configuration — per `SafariViewControllerRouteDecisionHandler.swift`, whose only initializer is `init()` at tags 1.3.0 and 1.3.1). Verified by `doctrine-verifier` (CONFIRMED, 2026-10-09). Component: rails-stack.
-- **design-system teaches native `<dialog>` + `showModal()` for the Modal, and the newer native disclosure/popover/form CSS — `skills/design-system/references/components.md`, `skills/design-system/references/reference-implementation.md`, `skills/design-system/references/component-implementations.md`, `skills/design-system/references/interaction-stimulus.md`, `skills/design-system/references/crud-modal-pattern.md`, `skills/design-system/references/forms.md`** (#1746). The Modal was taught as `div role="dialog"` plus a hand-written focus-trap controller. As of 2026-10-10 (webstatus.dev, MDN, HTML spec): `<dialog>` + `showModal()` is Baseline Widely (2024-09-14), so it is now the recommended shape and the controller is a thin opener/closer plus backdrop-click close (`closedby="any"` is not Baseline: Chrome 134, Firefox 141, no Safari); invoker commands are offered as a Newly Baseline option (2025-12-12) with `data-action` as the fallback. Also corrected: `<details>` can animate via `::details-content` (Newly Baseline, 2025-09-16; height to `auto` still needs non-Baseline `interpolate-size`); `<details name>` exclusive accordion (Newly Baseline, 2024-09-03); `popover="auto"` light dismiss (Newly Baseline, 2025-01-27); `field-sizing: content` (Newly Baseline, 2026-06-16) and `:user-invalid` (Widely, 2026-05-02) in forms; `popover="hint"`, `interestfor`, `::scroll-marker`/`::scroll-button` and CSS anchor positioning are not Baseline, so those controllers stay. Verified by doctrine-verifier (CONFIRMED, 2026-10-10); per-property anchor-positioning versions INCONCLUSIVE and omitted. Sources (as of 2026-10-10): https://webstatus.dev/features/dialog, /features/invoker-commands, /features/details-content, /features/details-name, /features/popover, /features/field-sizing, /features/user-pseudos, /features/anchor-positioning; https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/dialog; HTML spec dialog focusing steps, https://html.spec.whatwg.org/multipage/interactive-elements.html. Evidence posted on #1746.
+- **Hotwire Native reference: native screens need a `NavigatorDelegate`, plus the iOS/Android config knobs, tabs and 1.3.1 notes — `plugins/rails-stack/skills/hotwire/references/native.md`** (#1744). The iOS native-screen rule only sets `proposal.viewController`; the screen requires a `NavigatorDelegate` `handle(proposal:from:)` returning `.acceptCustom(vc)` (https://native.hotwired.dev/ios/native-screens). Added iOS config (`backButtonDisplayMode`, `hideTabBarWhenPushed` 1.3.0, `animateReplaceActions` 1.3.0, `redirectResolutionTimeout`, `makeCustomWebView`, `makeCustomErrorView` 1.3.0, `log` 1.3.0, `matchQueryStrings`; https://native.hotwired.dev/ios/configuration), Android config (`webViewDebuggingEnabled`, `jsonConverter`, `defaultFragmentDestination`; `registerFragmentDestinations` must include `HotwireWebFragment`; https://native.hotwired.dev/android/configuration), a Tabs section (https://native.hotwired.dev/ios/tabs, /android/tabs; iOS `lazyLoadTabs` is an initializer argument defaulting to `false` from 1.3.0), and 1.3.1 notes (iOS #261, Android #207, Android #205 crash on `mailto:`/`tel:` introduced in 1.3.0; iOS #191 in 1.3.0: the default Safari route handler tries universal links first, no configuration — per `SafariViewControllerRouteDecisionHandler.swift`, whose only initializer is `init()` at tags 1.3.0 and 1.3.1). Verified by `doctrine-verifier` (CONFIRMED, 2026-10-09). Component: rails-stack.
+- **design-system teaches native `<dialog>` + `showModal()` for the Modal, and the newer native disclosure/popover/form CSS — `plugins/rails-stack/skills/design-system/references/components.md`, `plugins/rails-stack/skills/design-system/references/reference-implementation.md`, `plugins/rails-stack/skills/design-system/references/component-implementations.md`, `plugins/rails-stack/skills/design-system/references/interaction-stimulus.md`, `plugins/rails-stack/skills/design-system/references/crud-modal-pattern.md`, `plugins/rails-stack/skills/design-system/references/forms.md`** (#1746). The Modal was taught as `div role="dialog"` plus a hand-written focus-trap controller. As of 2026-10-10 (webstatus.dev, MDN, HTML spec): `<dialog>` + `showModal()` is Baseline Widely (2024-09-14), so it is now the recommended shape and the controller is a thin opener/closer plus backdrop-click close (`closedby="any"` is not Baseline: Chrome 134, Firefox 141, no Safari); invoker commands are offered as a Newly Baseline option (2025-12-12) with `data-action` as the fallback. Also corrected: `<details>` can animate via `::details-content` (Newly Baseline, 2025-09-16; height to `auto` still needs non-Baseline `interpolate-size`); `<details name>` exclusive accordion (Newly Baseline, 2024-09-03); `popover="auto"` light dismiss (Newly Baseline, 2025-01-27); `field-sizing: content` (Newly Baseline, 2026-06-16) and `:user-invalid` (Widely, 2026-05-02) in forms; `popover="hint"`, `interestfor`, `::scroll-marker`/`::scroll-button` and CSS anchor positioning are not Baseline, so those controllers stay. Verified by doctrine-verifier (CONFIRMED, 2026-10-10); per-property anchor-positioning versions INCONCLUSIVE and omitted. Sources (as of 2026-10-10): https://webstatus.dev/features/dialog, /features/invoker-commands, /features/details-content, /features/details-name, /features/popover, /features/field-sizing, /features/user-pseudos, /features/anchor-positioning; https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/dialog; HTML spec dialog focusing steps, https://html.spec.whatwg.org/multipage/interactive-elements.html. Evidence posted on #1746.
 
-- **rails-8 teaches SSRF-safe outbound HTTP to a user-supplied URL — `skills/rails-8/references/auth-security.md`, `skills/rails-8/SKILL.md`** (#1740). The skill had no guidance (`grep -rli ssrf skills plugins` returned nothing), and the Rails Security guide v8.1.4 never mentions SSRF, so the authorities are OWASP's *Server-Side Request Forgery Prevention Cheat Sheet* (https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html) and the Ruby 3.4 `Net::HTTP`, `IPAddr` and `Resolv` docs. **`doctrine-verifier` verdicts, per claim:** CONFIRMED (reworded as below): validate the *resolved* address against the permitted networks, not the string, and prefer an allow-list ("Deny-lists are bypass-prone"), http/https only; pin the validated address, because "a second, unchecked DNS lookup between validation and connection can bypass these checks" (`Net::HTTP#ipaddr=`, Ruby 2.7 and later, NEWS 2.7.0, Feature #5180; it raises `IOError` once started; TLS still checks the original hostname); do not follow redirects (OWASP: "Disable the support for the following of the redirection in your web client"; `Net::HTTP` does not follow them; re-validating each hop is **our rule**, labelled as such). PARTIAL: IPv6 and address encodings are confirmed (OWASP: "Hex, Octal, Dword, URL and Mixed encoding"); the trailing-dot hostname is only locally observed, so it is left out. **INCONCLUSIVE, so nothing was added:** explicit timeouts, TLS verification and ignoring proxy environment variables as SSRF doctrine (the Ruby docs confirm the setters and defaults, but no source ties them to SSRF, and an egress proxy can itself be the control). Two corrections the verifier found are in the text: `IPAddr#private?`, `loopback?` and `link_local?` are all false for `0.0.0.0`, `::` and `100.64.0.1`, so the ranges are listed; and validation must use `Addrinfo.getaddrinfo` (libc, as `TCPSocket` does), not `Resolv`, because `Resolv.getaddresses("127.1")` returns `[]` while libc returns `127.0.0.1`. **Round 2, after the adversarial review of #1757 at `78827cc1` (second `doctrine-verifier` pass, report on #1740):** CONFIRMED, now in the text: multicast `224.0.0.0/4` and `ff00::/8` are in OWASP's minimum deny-list table (IANA has no multicast row, so OWASP alone is cited); OWASP files the deny-list under "Deny-list (Last Resort)" and says "Prefer allow-lists", so the text now says allow-list when the destinations are known and that the code is the last-resort deny-list (the first version called it an allow-list); behind an environment proxy `Net::HTTP.new` connects to the proxy and the proxy resolves the host (net-http 0.9.1 `connect`: `conn_addr = proxy_address` when `proxy?`), so the pin covers a direct connection only, and no rule to disable the proxy is given (that stays INCONCLUSIVE); the IANA special-purpose rows that are not globally reachable (`192.0.0.0/24`, `198.18.0.0/15`, `240.0.0.0/4`, the three documentation blocks, `2001:db8::/32`) are in the list. INCONCLUSIVE: OWASP gives no rule for destination ports, so the text states that ports are not checked (`http://1.1.1.1:22/` passes) and labels a port check as our rule. Not in the list: `fec0::/10` (absent from the registries). NAT64 and 6to4 are handled in round 3. **Round 3, after the second adversarial review (third `doctrine-verifier` pass, report on #1740):** the reviewer showed that NAT64 and 6to4 addresses (`64:ff9b::a00:1`, `64:ff9b::7f00:1`, `64:ff9b:1::a00:1`, `2002:a00:1::`) were allowed, and that the text's account of `IPAddr#private?` was false. CONFIRMED and now in the code: RFC 6052 §2.2 puts the IPv4 address of `64:ff9b::/96` in the low 32 bits, RFC 3056 §2 puts it in bits 16-47 of `2002::/16`, so `public_address` also judges the embedded IPv4 address against the same list (labelled our rule; the prefixes are not refused, so IPv4-only destinations on a DNS64 network still work). RFC 6052 §3.1 forbids the Well-Known Prefix for non-global IPv4 ("MUST NOT be used to represent non-global IPv4 addresses ... MUST drop these packets"), but an operator's own prefix may carry a private address and no RFC makes a translator filter it (INCONCLUSIVE: RFC 7915 is silent on destinations), so the text says the check stays mandatory and that extraction never replaces the list. **Correction to the reviewer, by the RFC:** for `64:ff9b:1::/48` (RFC 8215, local use) the embedding is not "the low 32 bits": RFC 6052's /48 form puts the IPv4 octets in bytes 6-7 and 9-10 around a zero octet (`64:ff9b:1:a00:0:100::` is `10.0.0.1`), and RFC 8215 does not fix a prefix length, so the layout is deployment-defined; the code refuses that prefix and the text says to accept it only if the deployment declares its prefix length. The `IPAddr` account is corrected by measurement: `private?`, `loopback?` and `link_local?` together cover `10/8`, `172.16/12`, `192.168/16`, `fc00::/7`, `127/8`, `::1`, `169.254/16`, `fe80::/10` and mapped forms, and are false for `0.0.0.0`, `::`, `100.64/10`, multicast, `192.0.0/24`, `192.0.2/24`, `198.18/15`, `240/4`, `2001:db8::/32` and any NAT64 or 6to4 address. `URI::InvalidURIError` and `Socket::ResolutionError` are turned into `SafeFetch::Refused` in the code and the text says callers must treat them as refusals. **Measured on Ruby 4.0.6 (net-http 0.9.1, ipaddr 1.2.8):** the skill's `SafeFetch` module, extracted from the markdown and run, refuses `127.0.0.1`, `localhost`, `0x7f.0.0.1`, `2130706433`, `127.1`, `169.254.169.254`, `0.0.0.0`, `::1`, `::ffff:127.0.0.1`, `10.1.2.3`, `100.64.0.1`, `224.0.0.1`, `239.255.255.250`, `ff02::1`, `240.0.0.1`, `198.18.0.1`, `192.0.2.1`, `2001:db8::1`, `192.0.0.1`, `198.51.100.7`, `203.0.113.9`, `64:ff9b::a00:1`, `64:ff9b::7f00:1`, `64:ff9b:1::a00:1`, `64:ff9b:1:a00:0:100::`, `2002:a00:1::`, `2002:7f00:1::`, `::ffff:10.0.0.1` and `localhost.`; it passes the public `1.1.1.1`, `8.8.8.8`, `2606:4700:4700::1111`, `64:ff9b::808:808`, `2002:808:808::` and `64:ff9b::101:101`; a bad URL, an `ftp:` URL and an unresolvable name each raise `Refused`; a request pinned to a local server under another hostname connects and sends that hostname as `Host`; and with `http_proxy` set the request goes to the proxy with the host in the request line, `ipaddr=` unused. Ruby 3.4 itself was not run, so 3.4 statements rest on its docs. `dist/rails-8.skill` is rebuilt. Externally verifiable claims, so the gate applies and no maintainer decision is needed.
+- **rails-8 teaches SSRF-safe outbound HTTP to a user-supplied URL — `plugins/rails-stack/skills/rails-8/references/auth-security.md`, `plugins/rails-stack/skills/rails-8/SKILL.md`** (#1740). The skill had no guidance (`grep -rli ssrf skills plugins` returned nothing), and the Rails Security guide v8.1.4 never mentions SSRF, so the authorities are OWASP's *Server-Side Request Forgery Prevention Cheat Sheet* (https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html) and the Ruby 3.4 `Net::HTTP`, `IPAddr` and `Resolv` docs. **`doctrine-verifier` verdicts, per claim:** CONFIRMED (reworded as below): validate the *resolved* address against the permitted networks, not the string, and prefer an allow-list ("Deny-lists are bypass-prone"), http/https only; pin the validated address, because "a second, unchecked DNS lookup between validation and connection can bypass these checks" (`Net::HTTP#ipaddr=`, Ruby 2.7 and later, NEWS 2.7.0, Feature #5180; it raises `IOError` once started; TLS still checks the original hostname); do not follow redirects (OWASP: "Disable the support for the following of the redirection in your web client"; `Net::HTTP` does not follow them; re-validating each hop is **our rule**, labelled as such). PARTIAL: IPv6 and address encodings are confirmed (OWASP: "Hex, Octal, Dword, URL and Mixed encoding"); the trailing-dot hostname is only locally observed, so it is left out. **INCONCLUSIVE, so nothing was added:** explicit timeouts, TLS verification and ignoring proxy environment variables as SSRF doctrine (the Ruby docs confirm the setters and defaults, but no source ties them to SSRF, and an egress proxy can itself be the control). Two corrections the verifier found are in the text: `IPAddr#private?`, `loopback?` and `link_local?` are all false for `0.0.0.0`, `::` and `100.64.0.1`, so the ranges are listed; and validation must use `Addrinfo.getaddrinfo` (libc, as `TCPSocket` does), not `Resolv`, because `Resolv.getaddresses("127.1")` returns `[]` while libc returns `127.0.0.1`. **Round 2, after the adversarial review of #1757 at `78827cc1` (second `doctrine-verifier` pass, report on #1740):** CONFIRMED, now in the text: multicast `224.0.0.0/4` and `ff00::/8` are in OWASP's minimum deny-list table (IANA has no multicast row, so OWASP alone is cited); OWASP files the deny-list under "Deny-list (Last Resort)" and says "Prefer allow-lists", so the text now says allow-list when the destinations are known and that the code is the last-resort deny-list (the first version called it an allow-list); behind an environment proxy `Net::HTTP.new` connects to the proxy and the proxy resolves the host (net-http 0.9.1 `connect`: `conn_addr = proxy_address` when `proxy?`), so the pin covers a direct connection only, and no rule to disable the proxy is given (that stays INCONCLUSIVE); the IANA special-purpose rows that are not globally reachable (`192.0.0.0/24`, `198.18.0.0/15`, `240.0.0.0/4`, the three documentation blocks, `2001:db8::/32`) are in the list. INCONCLUSIVE: OWASP gives no rule for destination ports, so the text states that ports are not checked (`http://1.1.1.1:22/` passes) and labels a port check as our rule. Not in the list: `fec0::/10` (absent from the registries). NAT64 and 6to4 are handled in round 3. **Round 3, after the second adversarial review (third `doctrine-verifier` pass, report on #1740):** the reviewer showed that NAT64 and 6to4 addresses (`64:ff9b::a00:1`, `64:ff9b::7f00:1`, `64:ff9b:1::a00:1`, `2002:a00:1::`) were allowed, and that the text's account of `IPAddr#private?` was false. CONFIRMED and now in the code: RFC 6052 §2.2 puts the IPv4 address of `64:ff9b::/96` in the low 32 bits, RFC 3056 §2 puts it in bits 16-47 of `2002::/16`, so `public_address` also judges the embedded IPv4 address against the same list (labelled our rule; the prefixes are not refused, so IPv4-only destinations on a DNS64 network still work). RFC 6052 §3.1 forbids the Well-Known Prefix for non-global IPv4 ("MUST NOT be used to represent non-global IPv4 addresses ... MUST drop these packets"), but an operator's own prefix may carry a private address and no RFC makes a translator filter it (INCONCLUSIVE: RFC 7915 is silent on destinations), so the text says the check stays mandatory and that extraction never replaces the list. **Correction to the reviewer, by the RFC:** for `64:ff9b:1::/48` (RFC 8215, local use) the embedding is not "the low 32 bits": RFC 6052's /48 form puts the IPv4 octets in bytes 6-7 and 9-10 around a zero octet (`64:ff9b:1:a00:0:100::` is `10.0.0.1`), and RFC 8215 does not fix a prefix length, so the layout is deployment-defined; the code refuses that prefix and the text says to accept it only if the deployment declares its prefix length. The `IPAddr` account is corrected by measurement: `private?`, `loopback?` and `link_local?` together cover `10/8`, `172.16/12`, `192.168/16`, `fc00::/7`, `127/8`, `::1`, `169.254/16`, `fe80::/10` and mapped forms, and are false for `0.0.0.0`, `::`, `100.64/10`, multicast, `192.0.0/24`, `192.0.2/24`, `198.18/15`, `240/4`, `2001:db8::/32` and any NAT64 or 6to4 address. `URI::InvalidURIError` and `Socket::ResolutionError` are turned into `SafeFetch::Refused` in the code and the text says callers must treat them as refusals. **Measured on Ruby 4.0.6 (net-http 0.9.1, ipaddr 1.2.8):** the skill's `SafeFetch` module, extracted from the markdown and run, refuses `127.0.0.1`, `localhost`, `0x7f.0.0.1`, `2130706433`, `127.1`, `169.254.169.254`, `0.0.0.0`, `::1`, `::ffff:127.0.0.1`, `10.1.2.3`, `100.64.0.1`, `224.0.0.1`, `239.255.255.250`, `ff02::1`, `240.0.0.1`, `198.18.0.1`, `192.0.2.1`, `2001:db8::1`, `192.0.0.1`, `198.51.100.7`, `203.0.113.9`, `64:ff9b::a00:1`, `64:ff9b::7f00:1`, `64:ff9b:1::a00:1`, `64:ff9b:1:a00:0:100::`, `2002:a00:1::`, `2002:7f00:1::`, `::ffff:10.0.0.1` and `localhost.`; it passes the public `1.1.1.1`, `8.8.8.8`, `2606:4700:4700::1111`, `64:ff9b::808:808`, `2002:808:808::` and `64:ff9b::101:101`; a bad URL, an `ftp:` URL and an unresolvable name each raise `Refused`; a request pinned to a local server under another hostname connects and sends that hostname as `Host`; and with `http_proxy` set the request goes to the proxy with the host in the request line, `ipaddr=` unused. Ruby 3.4 itself was not run, so 3.4 statements rest on its docs. `dist/rails-8.skill` is rebuilt. Externally verifiable claims, so the gate applies and no maintainer decision is needed.
 
-- **rails-8 security omissions are filled: Active Storage URL exposure and variants, Action Cable origins, CSP nonce against ETags, same-name commit callbacks, query-log tags — `skills/rails-8/references/mail-storage-richtext.md`, `skills/rails-8/references/jobs-and-realtime.md`, `skills/rails-8/references/auth-security.md`, `skills/rails-8/references/models.md`, `skills/rails-8/references/observability.md`** (#1747). All nine claims were **CONFIRMED** by `doctrine-verifier` against the Rails 8.1 guides and the installed gem source (Rails 8.1.4), none contradicts the old text (each is an omission), and three were reworded to what the source says. Active Storage (https://guides.rubyonrails.org/active_storage_overview.html, quotes re-read by me on the live page): "Anyone who knows the URL can access the file, even if the rest of your application requires authentication"; the fix is your own authenticated controller plus `config.active_storage.draw_routes = false`; "It should be considered unsafe to provide arbitrary user supplied transformations or parameters to variant processors" (the guide says *unsafe*, so the skill does not say *never* as the issue did); libvips marks some loaders and savers "unfuzzed", ImageMagick is one and "disabled by default", re-enabling needs libvips 8.13 and ruby-vips 2.2.1 or later and the guide still calls it dangerous. Action Cable (guide plus `actioncable-8.1.4` `connection/base.rb:232`, `server/configuration.rb:29`, `engine.rb:45`): `allowed_request_origins`, and `disable_request_forgery_protection = true` accepts every origin; **reworded** because the guide calls the setting "required" but the source accepts a same-origin request by default, so the skill says to set it for other origins. CSP (https://guides.rubyonrails.org/security.html): a random per-request nonce is "incompatible with conditional GET caching" ("new nonces will result in new ETag values for every request"); the session-id generator "is compatible with ETags" but "its security depends on the session id being sufficiently random and not being exposed in insecure cookies", so it is written as a trade-off, not an upgrade. Callbacks (https://guides.rubyonrails.org/active_record_callbacks.html, `activerecord-8.1.4` `transactions.rb:290-306`): `after_create_commit` plus `after_update_commit` with the same method name registers only the last, and `after_save_commit` fires on both; measured on Ruby 4.0.6 and activerecord 8.1.4 with sqlite3, the pair fired nothing on create and once on update, `after_save_commit` fired on both; no skill file declares the pair, so it is a one-line pitfall in `models.md`. Query-log tags (https://guides.rubyonrails.org/debugging_rails_applications.html, `railtie.rb:402` on 8.1.4 and `:377` on 8.0.2): "Enabling Query tags automatically disables prepared statements"; older versions were not checked, so the skill says Rails 8.0 and 8.1. **Left out:** the guide's sentence that the query-tag format default is SQLCommenter, because `railtie.rb:36` sets `:legacy` (guide and source disagree, so that point is INCONCLUSIVE). `dist/rails-8.skill` is rebuilt. Externally verifiable claims, so the gate applies and no maintainer decision is needed.
-- **design-system: the Modal is a native `<dialog>` opened with `showModal()`, and the dismissable layer cancels Escape — `skills/design-system/references/component-implementations.md`, `skills/design-system/references/crud-modal-pattern.md`, `skills/design-system/references/reference-implementation.md`, `skills/design-system/references/interaction-stimulus.md`** (#1753). The Modal shape was a `div role="dialog"` plus a hand-written focus trap; it is now a `<dialog>` that is itself the full-viewport transparent wrapper (`open:flex`, `backdrop:bg-overlay/50`, no `role`/`aria-modal`), with a thin Stimulus controller (`showModal()` on connect, backdrop-click close, `closed()` empties the frame, `turbo:before-morph-attribute` guard on `open`). The div+trap shape stays as a one-sentence fallback. `dismissable_layer.js` calls `preventDefault()` as well as `stopPropagation()` on Escape so a dropdown inside a modal closes alone. The Drawer and Lightbox rows inherit the dialog. Version boundary: `::backdrop` inherits from its originating element only in Chrome/Edge 122, Firefox 120, Safari 17.4+; older browsers show an untinted backdrop and the dialog is still modal. Sources: https://html.spec.whatwg.org/multipage/interactive-elements.html , https://html.spec.whatwg.org/multipage/interaction.html (close requests, close watchers), https://html.spec.whatwg.org/multipage/rendering.html (UA dialog styles), https://tailwindcss.com/docs/hover-focus-and-other-states (`open:`, `backdrop:`), https://developer.chrome.com/blog/css-backdrop-inheritance, hotwired/turbo `src/core/morphing.js`, basecamp/fizzy `dialog_controller.js`. Removing an open dialog (the stream success path) restores no focus per the spec's dialog removing steps, so the controller refocuses the opener on `disconnect()`. The cart drawer (`skills/design-system/references/components-commerce.md`, and its ERB comment) now says `showModal()` supplies the inert background; hand-set `inert` is for the fallback only. Verified by doctrine-verifier (CONFIRMED, 2026-10-10).
+- **rails-8 security omissions are filled: Active Storage URL exposure and variants, Action Cable origins, CSP nonce against ETags, same-name commit callbacks, query-log tags — `plugins/rails-stack/skills/rails-8/references/mail-storage-richtext.md`, `plugins/rails-stack/skills/rails-8/references/jobs-and-realtime.md`, `plugins/rails-stack/skills/rails-8/references/auth-security.md`, `plugins/rails-stack/skills/rails-8/references/models.md`, `plugins/rails-stack/skills/rails-8/references/observability.md`** (#1747). All nine claims were **CONFIRMED** by `doctrine-verifier` against the Rails 8.1 guides and the installed gem source (Rails 8.1.4), none contradicts the old text (each is an omission), and three were reworded to what the source says. Active Storage (https://guides.rubyonrails.org/active_storage_overview.html, quotes re-read by me on the live page): "Anyone who knows the URL can access the file, even if the rest of your application requires authentication"; the fix is your own authenticated controller plus `config.active_storage.draw_routes = false`; "It should be considered unsafe to provide arbitrary user supplied transformations or parameters to variant processors" (the guide says *unsafe*, so the skill does not say *never* as the issue did); libvips marks some loaders and savers "unfuzzed", ImageMagick is one and "disabled by default", re-enabling needs libvips 8.13 and ruby-vips 2.2.1 or later and the guide still calls it dangerous. Action Cable (guide plus `actioncable-8.1.4` `connection/base.rb:232`, `server/configuration.rb:29`, `engine.rb:45`): `allowed_request_origins`, and `disable_request_forgery_protection = true` accepts every origin; **reworded** because the guide calls the setting "required" but the source accepts a same-origin request by default, so the skill says to set it for other origins. CSP (https://guides.rubyonrails.org/security.html): a random per-request nonce is "incompatible with conditional GET caching" ("new nonces will result in new ETag values for every request"); the session-id generator "is compatible with ETags" but "its security depends on the session id being sufficiently random and not being exposed in insecure cookies", so it is written as a trade-off, not an upgrade. Callbacks (https://guides.rubyonrails.org/active_record_callbacks.html, `activerecord-8.1.4` `transactions.rb:290-306`): `after_create_commit` plus `after_update_commit` with the same method name registers only the last, and `after_save_commit` fires on both; measured on Ruby 4.0.6 and activerecord 8.1.4 with sqlite3, the pair fired nothing on create and once on update, `after_save_commit` fired on both; no skill file declares the pair, so it is a one-line pitfall in `models.md`. Query-log tags (https://guides.rubyonrails.org/debugging_rails_applications.html, `railtie.rb:402` on 8.1.4 and `:377` on 8.0.2): "Enabling Query tags automatically disables prepared statements"; older versions were not checked, so the skill says Rails 8.0 and 8.1. **Left out:** the guide's sentence that the query-tag format default is SQLCommenter, because `railtie.rb:36` sets `:legacy` (guide and source disagree, so that point is INCONCLUSIVE). `dist/rails-8.skill` is rebuilt. Externally verifiable claims, so the gate applies and no maintainer decision is needed.
+- **design-system: the Modal is a native `<dialog>` opened with `showModal()`, and the dismissable layer cancels Escape — `plugins/rails-stack/skills/design-system/references/component-implementations.md`, `plugins/rails-stack/skills/design-system/references/crud-modal-pattern.md`, `plugins/rails-stack/skills/design-system/references/reference-implementation.md`, `plugins/rails-stack/skills/design-system/references/interaction-stimulus.md`** (#1753). The Modal shape was a `div role="dialog"` plus a hand-written focus trap; it is now a `<dialog>` that is itself the full-viewport transparent wrapper (`open:flex`, `backdrop:bg-overlay/50`, no `role`/`aria-modal`), with a thin Stimulus controller (`showModal()` on connect, backdrop-click close, `closed()` empties the frame, `turbo:before-morph-attribute` guard on `open`). The div+trap shape stays as a one-sentence fallback. `dismissable_layer.js` calls `preventDefault()` as well as `stopPropagation()` on Escape so a dropdown inside a modal closes alone. The Drawer and Lightbox rows inherit the dialog. Version boundary: `::backdrop` inherits from its originating element only in Chrome/Edge 122, Firefox 120, Safari 17.4+; older browsers show an untinted backdrop and the dialog is still modal. Sources: https://html.spec.whatwg.org/multipage/interactive-elements.html , https://html.spec.whatwg.org/multipage/interaction.html (close requests, close watchers), https://html.spec.whatwg.org/multipage/rendering.html (UA dialog styles), https://tailwindcss.com/docs/hover-focus-and-other-states (`open:`, `backdrop:`), https://developer.chrome.com/blog/css-backdrop-inheritance, hotwired/turbo `src/core/morphing.js`, basecamp/fizzy `dialog_controller.js`. Removing an open dialog (the stream success path) restores no focus per the spec's dialog removing steps, so the controller refocuses the opener on `disconnect()`. The cart drawer (`plugins/rails-stack/skills/design-system/references/components-commerce.md`, and its ERB comment) now says `showModal()` supplies the inert background; hand-set `inert` is for the fallback only. Verified by doctrine-verifier (CONFIRMED, 2026-10-10).
 
 ### 1.72.0 (release v1.155.0) — 2026-10-08
 
-- **The quality-pass worked example's harness count follows the repo: 52 copies of the `check(label, ok, detail)` selftest harness — `skills/quality-pass/references/worked-example.md`** (#1680; found by the `shared shapes` gate on PR #1688). #1688 added a copy of the harness, so the table's 51 disagreed with the repo's 52 and `scripts/check_shared_shapes.py` failed. It refuses only a number disagreeing with the repo, so the table was updated, not the gate. Measured: `python3 scripts/check_shared_shapes.py` reports the file matches the repo. `dist/quality-pass.skill` is rebuilt. Our own measurement; no framework claim.
+- **The quality-pass worked example's harness count follows the repo: 52 copies of the `check(label, ok, detail)` selftest harness — `plugins/rails-stack/skills/quality-pass/references/worked-example.md`** (#1680; found by the `shared shapes` gate on PR #1688). #1688 added a copy of the harness, so the table's 51 disagreed with the repo's 52 and `scripts/check_shared_shapes.py` failed. It refuses only a number disagreeing with the repo, so the table was updated, not the gate. Measured: `python3 scripts/check_shared_shapes.py` reports the file matches the repo. `dist/quality-pass.skill` is rebuilt. Our own measurement; no framework claim.
 
-- **Process hygiene doctrine, in step with the reaper and the advisory — `skills/parallel-session-lane/references/process-hygiene.md`** (#1582 item 4, the last increment). Rules 1 to 4 stay as slice A wrote them. Added: what the helper does when a second interrupt arrives during its cleanup (it waits until the cleanup has finished; it does not abandon it); that a process's environment is read as separate entries and each compared whole, never searched as printed text (the #1646 review finding, stated as our own incident); a section on what the `SessionEnd` reaper signals, with the one verified framework claim it rests on (Claude Code's environment-variables reference, https://code.claude.com/docs/en/env-vars, checked by `doctrine-verifier` on #1658: `CLAUDE_CODE_SESSION_ID` is set in Bash and PowerShell tool and hook command subprocesses from v2.1.132 and in stdio MCP server subprocesses from v2.1.154, matches the hook `session_id`, and is updated on `/clear`; so a process started before a `/clear` carries the old id and one the docs do not list may carry none; the first draft said every process of a session carried it, and was REFUTED as worded) (environment entry `CLAUDE_CODE_SESSION_ID` equal to the session's id, parent pid 1, stopped; CONT then TERM then KILL; never by name or command line; a running orphan left alone); and the stopped-orphan advisory with its threshold variable and the one-line command to reap a session now. Mixed: our own design, plus the one claim above; the rest are what the shipped scripts do, each proven by their selftests, and nothing states what `ps` or any signal guarantees on an OS. `dist/parallel-session-lane.skill` and the `.claude/skills/` mirror regenerated; no other skill changed. Decision: owner delegated technical calls (2026-10-06); coordinator decided item 4 as written (https://github.com/fmanimashaun/claude-skills/issues/1582#issuecomment-6032221780).
+- **Process hygiene doctrine, in step with the reaper and the advisory — `plugins/rails-stack/skills/parallel-session-lane/references/process-hygiene.md`** (#1582 item 4, the last increment). Rules 1 to 4 stay as slice A wrote them. Added: what the helper does when a second interrupt arrives during its cleanup (it waits until the cleanup has finished; it does not abandon it); that a process's environment is read as separate entries and each compared whole, never searched as printed text (the #1646 review finding, stated as our own incident); a section on what the `SessionEnd` reaper signals, with the one verified framework claim it rests on (Claude Code's environment-variables reference, https://code.claude.com/docs/en/env-vars, checked by `doctrine-verifier` on #1658: `CLAUDE_CODE_SESSION_ID` is set in Bash and PowerShell tool and hook command subprocesses from v2.1.132 and in stdio MCP server subprocesses from v2.1.154, matches the hook `session_id`, and is updated on `/clear`; so a process started before a `/clear` carries the old id and one the docs do not list may carry none; the first draft said every process of a session carried it, and was REFUTED as worded) (environment entry `CLAUDE_CODE_SESSION_ID` equal to the session's id, parent pid 1, stopped; CONT then TERM then KILL; never by name or command line; a running orphan left alone); and the stopped-orphan advisory with its threshold variable and the one-line command to reap a session now. Mixed: our own design, plus the one claim above; the rest are what the shipped scripts do, each proven by their selftests, and nothing states what `ps` or any signal guarantees on an OS. `dist/parallel-session-lane.skill` and the `.claude/skills/` mirror regenerated; no other skill changed. Decision: owner delegated technical calls (2026-10-06); coordinator decided item 4 as written (https://github.com/fmanimashaun/claude-skills/issues/1582#issuecomment-6032221780).
 
-- **Leave a where-I-stopped note a killed session could resume from — `skills/parallel-session-lane/references/where-i-stopped.md`, `skills/parallel-session-lane/SKILL.md`** (#1639). Advice only, a reference file with one pointer line at the end of §5a, which keeps SKILL.md at its 500-line budget. `skills/quality-pass/references/worked-example.md` now counts the new `check(label, ok, detail)` harness in `where_stopped.py` (50 copies, reach 26). It separates the facts file rails-flow's Stop hook writes for you from the note you keep in `HANDOFF.md`, and it is named apart from `/rails-flow:handoff`'s work orders. The note carries each claim with the command that verifies it, the last request word for word, and numbers copied from a measurement.
+- **Leave a where-I-stopped note a killed session could resume from — `plugins/rails-stack/skills/parallel-session-lane/references/where-i-stopped.md`, `plugins/rails-stack/skills/parallel-session-lane/SKILL.md`** (#1639). Advice only, a reference file with one pointer line at the end of §5a, which keeps SKILL.md at its 500-line budget. `plugins/rails-stack/skills/quality-pass/references/worked-example.md` now counts the new `check(label, ok, detail)` harness in `where_stopped.py` (50 copies, reach 26). It separates the facts file rails-flow's Stop hook writes for you from the note you keep in `HANDOFF.md`, and it is named apart from `/rails-flow:handoff`'s work orders. The note carries each claim with the command that verifies it, the last request word for word, and numbers copied from a measurement.
 
 ### 1.71.0 (release v1.154.0) — 2026-10-06
 
-- **`parallel-session-lane` states the owner's four rules for parallel sessions, and the limit of the guard that enforces them — `skills/parallel-session-lane/SKILL.md`, `skills/parallel-session-lane/references/one-issue-at-a-time.md`, `skills/parallel-session-lane/references/isolated-resources.md`, `skills/parallel-session-lane/references/process-hygiene.md`** (#1581, part 2). Our own design, not a framework claim; the owner's decision is recorded on [#1581](https://github.com/fmanimashaun/claude-skills/issues/1581). New §1a: one issue at a time (in progress until its PR merges); a mid-issue assignment is queued or handed back, never a second worktree; clean up with `git worktree remove` when the PR merges or the review finishes; resume in place after a restart. The coordinator's half (assign a build issue only to a session with nothing in progress; record each lane, and only the coordinator writes the record) is stated, and so is what rails-flow's `guard-worktree` hook refuses and its limit: it protects against accident, not impersonation. `references/process-hygiene.md` names the session-start zombie advisory. The skill body was exactly at the 500-line Level-2 budget, so the full text of §1a is in `references/one-issue-at-a-time.md`, and §1's long "three isolated resources" bullet moved VERBATIM to `references/isolated-resources.md` with a four-line summary left behind (`SKILL.md` is now 498 lines); nothing in it was reworded. Registered in the doctrine map as one guarantee and two `advice` rows.
-- **`parallel-session-lane`: the processes you start are yours to end — `skills/parallel-session-lane/references/process-hygiene.md`, `skills/parallel-session-lane/SKILL.md`** (#1582 slice A). §10's "do not clean up what you did not create" gains its other half as a reference (SKILL.md stays at 500 lines): run a reproduction of a process bug once and contained, never in a loop; count leftovers afterwards; a watcher loop reaps what it starts and stops on its own condition; ownership comes from what you can prove you started. The 2026-10-03 incident and the two measurements (`RLIMIT_NPROC` is per user; the environment survives re-parenting) are in the file. Also `skills/quality-pass/references/worked-example.md`: the `check(label, ok, detail)` harness count goes 42→43 (reach 22→23), because the helper's selftest is a new copy; `check_shared_shapes.py` only refuses a number that disagrees with the repo. Our own doctrine, no framework claim. Decision: the owner's decision on #1582 (https://github.com/fmanimashaun/claude-skills/issues/1582).
+- **`parallel-session-lane` states the owner's four rules for parallel sessions, and the limit of the guard that enforces them — `plugins/rails-stack/skills/parallel-session-lane/SKILL.md`, `plugins/rails-stack/skills/parallel-session-lane/references/one-issue-at-a-time.md`, `plugins/rails-stack/skills/parallel-session-lane/references/isolated-resources.md`, `plugins/rails-stack/skills/parallel-session-lane/references/process-hygiene.md`** (#1581, part 2). Our own design, not a framework claim; the owner's decision is recorded on [#1581](https://github.com/fmanimashaun/claude-skills/issues/1581). New §1a: one issue at a time (in progress until its PR merges); a mid-issue assignment is queued or handed back, never a second worktree; clean up with `git worktree remove` when the PR merges or the review finishes; resume in place after a restart. The coordinator's half (assign a build issue only to a session with nothing in progress; record each lane, and only the coordinator writes the record) is stated, and so is what rails-flow's `guard-worktree` hook refuses and its limit: it protects against accident, not impersonation. `references/process-hygiene.md` names the session-start zombie advisory. The skill body was exactly at the 500-line Level-2 budget, so the full text of §1a is in `references/one-issue-at-a-time.md`, and §1's long "three isolated resources" bullet moved VERBATIM to `references/isolated-resources.md` with a four-line summary left behind (`SKILL.md` is now 498 lines); nothing in it was reworded. Registered in the doctrine map as one guarantee and two `advice` rows.
+- **`parallel-session-lane`: the processes you start are yours to end — `plugins/rails-stack/skills/parallel-session-lane/references/process-hygiene.md`, `plugins/rails-stack/skills/parallel-session-lane/SKILL.md`** (#1582 slice A). §10's "do not clean up what you did not create" gains its other half as a reference (SKILL.md stays at 500 lines): run a reproduction of a process bug once and contained, never in a loop; count leftovers afterwards; a watcher loop reaps what it starts and stops on its own condition; ownership comes from what you can prove you started. The 2026-10-03 incident and the two measurements (`RLIMIT_NPROC` is per user; the environment survives re-parenting) are in the file. Also `plugins/rails-stack/skills/quality-pass/references/worked-example.md`: the `check(label, ok, detail)` harness count goes 42→43 (reach 22→23), because the helper's selftest is a new copy; `check_shared_shapes.py` only refuses a number that disagrees with the repo. Our own doctrine, no framework claim. Decision: the owner's decision on #1582 (https://github.com/fmanimashaun/claude-skills/issues/1582).
 
-- **The quality-pass worked example's count of `check(label, ok, detail)` harness copies is 42, not 41 — `skills/quality-pass/references/worked-example.md`** (Refs #1575). `scripts/hook_slow_paths.py` adds a selftest with that helper, and `scripts/check_shared_shapes.py` refused the stale number ("the table says 41, the repo has 42"). The number is re-measured, not the decision: the worked example's call not to extract is unchanged. Our own design; no framework claim.
+- **The quality-pass worked example's count of `check(label, ok, detail)` harness copies is 42, not 41 — `plugins/rails-stack/skills/quality-pass/references/worked-example.md`** (Refs #1575). `scripts/hook_slow_paths.py` adds a selftest with that helper, and `scripts/check_shared_shapes.py` refused the stale number ("the table says 41, the repo has 42"). The number is re-measured, not the decision: the worked example's call not to extract is unchanged. Our own design; no framework claim.
 
-- **The hotwire description is 829 characters, not 1,192, and keeps every trigger the body serves — `skills/hotwire/SKILL.md`, `dist/hotwire.skill`, `docs/wiki/Skills-Reference.md`** (#1558). **Kind of change: our own wording, no upstream claim, no Hotwire behaviour sentence changes.** Maintainer decision: [apply the revised description](https://github.com/fmanimashaun/claude-skills/issues/1558#issuecomment-5969355417). Descriptions ride in every session's skill listing, so the saving is paid on every turn. A full read of `SKILL.md` and all four references, with each trigger phrase mapped to the file and line that serves it (findings on #1558), set three rules for the rewrite: keep "morphing hazards" as a symptom phrase (`production.md` §2.4 is the skill's strongest content; the earlier 640-character draft would have lost it), add failed-request/offline states (`turbo.md` §8b and `production.md` §6, which the old description never triggered), and drop "typing indicators" (the body has no how-to for it: `production.md:553` and `:590` name it only as a channel in a list) and the named non-Rails backends (the body has one paragraph for them, `SKILL.md:96-99`, and no non-Rails example). "unread badges" is dropped too; its coverage is thin (`production.md:85`, `:553`, `:622`). Two triggers the review's draft had dropped are kept, because the body serves them and they cost almost nothing: "@hotwired packages" and "partial page updates". The parsed YAML `description` was compared against the intended text and `check_frontmatter.py` and `check_skill_routing.py` pass; `dist/hotwire.skill` is a clean `package_core.py` build. `parallel-session-lane` is deliberately unchanged (decision on #1558: leave it at 500 lines).
+- **The hotwire description is 829 characters, not 1,192, and keeps every trigger the body serves — `plugins/rails-stack/skills/hotwire/SKILL.md`, `dist/hotwire.skill`, `docs/wiki/Skills-Reference.md`** (#1558). **Kind of change: our own wording, no upstream claim, no Hotwire behaviour sentence changes.** Maintainer decision: [apply the revised description](https://github.com/fmanimashaun/claude-skills/issues/1558#issuecomment-5969355417). Descriptions ride in every session's skill listing, so the saving is paid on every turn. A full read of `SKILL.md` and all four references, with each trigger phrase mapped to the file and line that serves it (findings on #1558), set three rules for the rewrite: keep "morphing hazards" as a symptom phrase (`production.md` §2.4 is the skill's strongest content; the earlier 640-character draft would have lost it), add failed-request/offline states (`turbo.md` §8b and `production.md` §6, which the old description never triggered), and drop "typing indicators" (the body has no how-to for it: `production.md:553` and `:590` name it only as a channel in a list) and the named non-Rails backends (the body has one paragraph for them, `SKILL.md:96-99`, and no non-Rails example). "unread badges" is dropped too; its coverage is thin (`production.md:85`, `:553`, `:622`). Two triggers the review's draft had dropped are kept, because the body serves them and they cost almost nothing: "@hotwired packages" and "partial page updates". The parsed YAML `description` was compared against the intended text and `check_frontmatter.py` and `check_skill_routing.py` pass; `dist/hotwire.skill` is a clean `package_core.py` build. `parallel-session-lane` is deliberately unchanged (decision on #1558: leave it at 500 lines).
 
-- **Six hotwire corrections the `doctrine-verifier` verdicts back — `skills/hotwire/SKILL.md`, `skills/hotwire/references/turbo.md`, `skills/hotwire/references/production.md`, `skills/hotwire/references/stimulus.md`, `dist/hotwire.skill`** (#1558). **Kind of change: framework claims, so each edit rests on a recorded verdict**, checked 2026-10-03 against upstream source at the tag the skill pins; verdicts and citations are on [#1558](https://github.com/fmanimashaun/claude-skills/issues/1558#issuecomment-5966270508), and the maintainer's decision to review before rewriting is [here](https://github.com/fmanimashaun/claude-skills/issues/1558#issuecomment-5966218818). Only the sentences a verdict corrected changed; no description or structure change is made here.
+- **Six hotwire corrections the `doctrine-verifier` verdicts back — `plugins/rails-stack/skills/hotwire/SKILL.md`, `plugins/rails-stack/skills/hotwire/references/turbo.md`, `plugins/rails-stack/skills/hotwire/references/production.md`, `plugins/rails-stack/skills/hotwire/references/stimulus.md`, `dist/hotwire.skill`** (#1558). **Kind of change: framework claims, so each edit rests on a recorded verdict**, checked 2026-10-03 against upstream source at the tag the skill pins; verdicts and citations are on [#1558](https://github.com/fmanimashaun/claude-skills/issues/1558#issuecomment-5966270508), and the maintainer's decision to review before rewriting is [here](https://github.com/fmanimashaun/claude-skills/issues/1558#issuecomment-5966218818). Only the sentences a verdict corrected changed; no description or structure change is made here.
   - **REFUTED, fixed:** `turbo.md` said "`<html>` elements marked `data-turbo-permanent`". Drive's selector is `[id][data-turbo-permanent]` inside the body snapshot (Turbo 8.0.23 `src/core/snapshot.js:32-35, 56-60`), so it now says "Elements marked".
   - **CONFIRMED with a correction:** the 422 symbol rename is Rack's (Rack CHANGELOG `[3.1.0] - 2024-06-11`; `lib/rack/utils.rb`), and a second verdict pass on Rails and Rack versions corrected my first rewording: the lowest Rails whose `actionpack` gemspec allows Rack >= 3.1 is 7.1.0 (7.0.8 pins `rack ~> 2.0`, `actionpack.gemspec:38`); `:unprocessable_content` raises `ArgumentError` on Rack 2.2.8 and 3.0.9 (`lib/rack/utils.rb:596-598`, `:622-624`; the other 2.2.x and 3.0.x releases were not read), Rails 7.1.0 and 8.0.0 defer to `Rack::Utils.status_code`, and Rails 8.1.0 adds a shim (`action_dispatch/constants.rb:34-38`) that makes both symbols work on any Rack; `:unprocessable_entity` warned only on Rack 3.1.0-3.1.2 and was silent from 3.1.3 through 3.1.8 (later releases not read). `SKILL.md` and `turbo.md` now say that and name the releases checked: Rack 2.2.8, 3.0.9 and 3.1.0 through 3.1.8, and Rails 7.0.8, 7.1.0, 8.0.0 and 8.1.0 (a gemspec read for 7.0.10 and 7.2.0 as well). Not changed: the verifier's suggestion to recommend a numeric `status: 422`, which no source was shown for. A morph that *adds* a permanent node skips it only when it has an `id` and an element with that id is already in the page (`src/core/morphing.js:62`), which `turbo.md` now notes beside the bare-`hasAttribute` skip for existing elements. `production.md` no longer attributes "retried jobs re-enter with no positional privilege" to the Solid Queue README; a search of the README found no such sentence, and the quoted sentence at README line 548 is kept. `stimulus.md` notes that the importmap skip is the released stimulus-rails 1.3.4, and that unreleased `main` (commit d247817, 2025-02-27) appears to invert the generator condition (read, not run). The `refresh` meta-tag precedence (`turbo.md`) was not traced through Turbo's source, so the sentence now says so; that is the sixth edit.
   - **Left unchanged because no verdict supports an edit:** "before Stimulus has connected" (`turbo.md` §8b) is not in Turbo's source and still rests on the cited downstream measurement; that turbo-rails broadcast jobs set no priority or concurrency controls was not checked. The other confirmed claims (`_parent` frames and `before`/`after` de-duplication at 8.0.21, `method="morph"` at 8.0.5, `X-Turbo-Request-Id`, the morph events, `ThreadDebouncer`, `broadcasts_refreshes`, the Stimulus default-event table and key filters, Hotwire Native 1.2.0/1.3.0) are unchanged. The claim 6 aside the earlier review attributed to the skill ("contradicts commonly-read docs") is not in the skill's text; the handbook agrees with it.
 
-- **The design-system skill names hotwire's production reference in prose — `skills/design-system/references/interaction-stimulus.md`, `dist/design-system.skill`** (#1480, found by its new rule). Each skill ships as its own `.skill`, so the `../../hotwire/...` link broke once uploaded. A link change only; no doctrine claim changes.
+- **The design-system skill names hotwire's production reference in prose — `plugins/rails-stack/skills/design-system/references/interaction-stimulus.md`, `dist/design-system.skill`** (#1480, found by its new rule). Each skill ships as its own `.skill`, so the `../../hotwire/...` link broke once uploaded. A link change only; no doctrine claim changes.
 
 ### 1.70.0 (release v1.153.0) — 2026-10-02
 
 - **deployment-kamal: `.kamal/secrets` is committable only while it holds references, and nothing falls back —
-  `skills/rails-8/references/deployment-kamal.md`, `skills/rails-8/references/project-setup.md`, `dist/rails-8.skill`**
+  `plugins/rails-stack/skills/rails-8/references/deployment-kamal.md`, `plugins/rails-stack/skills/rails-8/references/project-setup.md`, `dist/rails-8.skill`**
   (#1499). doctrine-verifier **REFUTED** the
   old §3 ("committed", unqualified) and §8 ("`.kamal/secrets.staging` falls back to `.kamal/secrets-common`"), and
   **CONFIRMED** the replacement against **Kamal 2.12.0** (the installed gem; `lib/kamal/secrets.rb` byte-identical to
@@ -17483,7 +17483,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   actually reads (the independent review of PR #1517 found the second). Consistent with pipeline's `kamal-configurator`
   (#1465), which writes deploy secrets gitignored and `.kamal/secrets-common` for shared values.
 
-- **Action Text names Lexxy beside Trix, with the version boundary — `skills/rails-8/references/mail-storage-richtext.md`
+- **Action Text names Lexxy beside Trix, with the version boundary — `plugins/rails-stack/skills/rails-8/references/mail-storage-richtext.md`
   §3** (#1438). The doctrine said "Rich text (Trix editor)" and nothing else. 37signals shipped Lexxy 1.0 on
   2026-09-28, and the post's switch (`config.action_text.editor = :lexxy`) is Rails 8.2's, which has not been released.
   - **Verified 2026-10-01 by `doctrine-verifier` (8 CONFIRMED, 2 REFUTED, 1 INCONCLUSIVE), re-checked by hand:**
@@ -17509,7 +17509,7 @@ boot/validation path — with a bullet each so the promotion could close them se
     not describe 8.2 behaviour beyond naming the boundary.
   - Out of scope: #1441, a Playwright driver for system specs, which is a separate measurement.
 
-- **ai-llm.md names Claude Sonnet 5.5, and says why the default stays `claude-sonnet-5` — `skills/rails-8/references/ai-llm.md`,
+- **ai-llm.md names Claude Sonnet 5.5, and says why the default stays `claude-sonnet-5` — `plugins/rails-stack/skills/rails-8/references/ai-llm.md`,
   `dist/rails-8.skill`** (#1449). doctrine-verifier **CONFIRMED**:
   - `claude-sonnet-5-5` is the current Sonnet (released 2026-09-28), and Sonnet 5 is legacy (retirement not sooner
     than 2027-06-30); from platform.claude.com `models/sonnet-5-5/overview` and `models/sonnet-5/overview`.
@@ -17520,7 +17520,7 @@ boot/validation path — with a bullet each so the promotion could close them se
     it raises. So the default stays `claude-sonnet-5`, with the reason and the trigger to switch written beside it.
   - Boundary: ruby_llm 2.0.0.
 
-- **The Rails Pulse guard loads only a database with no Pulse table at all — `skills/rails-8/references/observability.md`,
+- **The Rails Pulse guard loads only a database with no Pulse table at all — `plugins/rails-stack/skills/rails-8/references/observability.md`,
   `dist/rails-8.skill`** (#1429). The final review of #1420 left three NITs, and all three came from the guard counting
   a list of 0.4.1's ten tables. The pin meant a later version that renamed a table would abort every run. The three
   states needed one message for two causes. And each repair named no environment.
@@ -17548,14 +17548,14 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 *Version number assigned at promotion.*
 
-- **The rich-text example is simple_form — `skills/rails-8/references/mail-storage-richtext.md`, `dist/rails-8.skill`** (#1439).
+- **The rich-text example is simple_form — `plugins/rails-stack/skills/rails-8/references/mail-storage-richtext.md`, `dist/rails-8.skill`** (#1439).
   §3 showed `form.rich_textarea :content`, which the simple_form mandate forbids. It is now
   `f.input :content, as: :rich_text_area`. doctrine-verifier CONFIRMED against simple_form **5.4.1**:
   `:rich_text_area` is the only name mapped (`form_builder.rb`, `map_type :rich_text_area`; added in 5.0.2),
   `:rich_textarea` is not; and `as:` is required, because a `has_rich_text` attribute has no column to infer the
   type from. It renders through `rich_text_area`, which Rails **8.0/8.1** keep as an alias of `rich_textarea`.
 
-- **Checkbox and radio rows keep their touch height, and the Remove list shows the brand mark — `skills/design-system/references/component-implementations.md`,
+- **Checkbox and radio rows keep their touch height, and the Remove list shows the brand mark — `plugins/rails-stack/skills/design-system/references/component-implementations.md`,
   `dist/design-system.skill`** (#1436). The simple_form rewrites in #1431 dropped `min-h-touch` from the filter
   checkbox rows and the payment radio group (WCAG 2.5.8 target size) and handed it to a wrapper nobody configured.
   The touch target is the **label**, the element a person taps: with the doctrine's `boolean_style = :inline`,
@@ -17568,13 +17568,13 @@ boot/validation path — with a bullet each so the promotion could close them se
   neither option, so the source is the citation. The Configure contract now says a checkbox or radio collection's
   `min-h-touch` belongs on its label. The Remove list now shows the brand mark
   its `aria-label` already names.
-- **The three primitive markers name their construct — `skills/design-system/references/component-implementations.md`,
+- **The three primitive markers name their construct — `plugins/rails-stack/skills/design-system/references/component-implementations.md`,
   `dist/design-system.skill`** (#1443). The Checkbox (`check_box_tag`), Combobox (`tag.input`) and Tabs picker
   (`<select`) blocks now say which raw construct they excuse, matching the stricter `check_shipped_erb_forms.py`.
 
 - **The pager sits bottom-left, no modal outgrows the viewport, a table in a modal is a full table, and a bulk import
-  asks before it updates — `skills/design-system/references/components.md`, `skills/design-system/references/page-anatomies.md`,
-  `skills/design-system/references/crud-modal-pattern.md`, `skills/design-system/references/component-implementations.md`,
+  asks before it updates — `plugins/rails-stack/skills/design-system/references/components.md`, `plugins/rails-stack/skills/design-system/references/page-anatomies.md`,
+  `plugins/rails-stack/skills/design-system/references/crud-modal-pattern.md`, `plugins/rails-stack/skills/design-system/references/component-implementations.md`,
   `dist/design-system.skill`** (#1419). *Pagination*: rows per page then "Showing X–Y of Z" bottom-left, links right, the
   left group never wrapping and the links wrapping below it; the bar always renders because it carries the count, so
   the Data table anatomy's count moves into it and rows per page leaves the toolbar. *Modal / Dialog*: never larger
@@ -17591,12 +17591,12 @@ boot/validation path — with a bullet each so the promotion could close them se
   changed since the preview is a conflict, never overwritten), an audit entry per update, and the identity key never
   updatable. Our own design, no upstream: maintainer decision recorded on #1419.
 
-- **Tables are master-detail with no horizontal scroll, and no card touches the viewport — `skills/design-system/references/components.md`,
-  `skills/design-system/references/page-anatomies.md`, `skills/design-system/references/mobile-reference-implementation.md`,
-  `skills/design-system/references/component-implementations.md`, `skills/design-system/references/foundations-tokens.md`,
-  `skills/design-system/references/responsive.md`, `skills/design-system/references/mobile.md`,
-  `skills/design-system/references/layout-primitives.md`, `skills/design-system/references/components-commerce.md`,
-  `skills/design-system/SKILL.md`, `skills/rails-8/references/models.md`, `dist/design-system.skill`, `dist/rails-8.skill`**
+- **Tables are master-detail with no horizontal scroll, and no card touches the viewport — `plugins/rails-stack/skills/design-system/references/components.md`,
+  `plugins/rails-stack/skills/design-system/references/page-anatomies.md`, `plugins/rails-stack/skills/design-system/references/mobile-reference-implementation.md`,
+  `plugins/rails-stack/skills/design-system/references/component-implementations.md`, `plugins/rails-stack/skills/design-system/references/foundations-tokens.md`,
+  `plugins/rails-stack/skills/design-system/references/responsive.md`, `plugins/rails-stack/skills/design-system/references/mobile.md`,
+  `plugins/rails-stack/skills/design-system/references/layout-primitives.md`, `plugins/rails-stack/skills/design-system/references/components-commerce.md`,
+  `plugins/rails-stack/skills/design-system/SKILL.md`, `plugins/rails-stack/skills/rails-8/references/models.md`, `dist/design-system.skill`, `dist/rails-8.skill`**
   (#1391). The skill told agents to wrap a table in `overflow-x-auto`, pin its identifier columns, link the id to a
   show page and dump every column into a phone card; an app built exactly that and the owner rejected it. *Table
   (CRUD)* is now the one home: no horizontal scroll at any width, a six-column budget, rows as summaries of at most
@@ -17624,8 +17624,8 @@ boot/validation path — with a bullet each so the promotion could close them se
   obsolete), so it was dropped and only the rule "labels are real elements" remains. Our own design, no upstream:
   maintainer decision recorded on #1391.
 
-- **A cop for the unscoped tenant query, and what it cannot see — `skills/rails-8/references/multi-tenancy.md`,
-  `skills/quality-pass/references/worked-example.md`, `dist/rails-8.skill`, `dist/quality-pass.skill`** (#1361). §7
+- **A cop for the unscoped tenant query, and what it cannot see — `plugins/rails-stack/skills/rails-8/references/multi-tenancy.md`,
+  `plugins/rails-stack/skills/quality-pass/references/worked-example.md`, `dist/rails-8.skill`, `dist/quality-pass.skill`** (#1361). §7
   said no tool enforced tenant scoping. It now ships `Tenancy/ScopedLookup`, a project-local cop that flags every Active
   Record query on a tenant-owned model's constant in a controller, with its `.rubocop.yml` block and a 12-example spec.
   The query list is Rails' own 113 `ActiveRecord::Querying::QUERYING_METHODS` plus `unscoped`, `find_by_sql` and
@@ -17651,7 +17651,7 @@ boot/validation path — with a bullet each so the promotion could close them se
     change the recorded decision not to extract.
   - Where the cop lives is our own design, per the maintainer decision on [#1361](https://github.com/fmanimashaun/claude-skills/issues/1361#issuecomment-5857528252).
 
-- **Style §1 and §5 are advice: neither can be enforced as written, because of their exceptions — `skills/rails-8/references/style.md`,
+- **Style §1 and §5 are advice: neither can be enforced as written, because of their exceptions — `plugins/rails-stack/skills/rails-8/references/style.md`,
   `dist/rails-8.skill`** (#1363). The issue asked whether the two lint-shaped sections of the style doctrine could be
   enforced by a cop. Neither can be enforced as written, because of its exceptions, and the doctrine now says so
   with the measurement:
@@ -17672,8 +17672,8 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### 1.69.0 (release v1.152.0) — 2026-09-28
 
-- **The design-system's own filter panel and billing radio group now use simple_form — `skills/design-system/references/component-implementations.md`,
-  `skills/design-system/references/page-anatomies.md`, `dist/design-system.skill`** (#1383, a framework claim).
+- **The design-system's own filter panel and billing radio group now use simple_form — `plugins/rails-stack/skills/design-system/references/component-implementations.md`,
+  `plugins/rails-stack/skills/design-system/references/page-anatomies.md`, `dist/design-system.skill`** (#1383, a framework claim).
   - **Why.** The independent pre-release review ran the new `simple-form-only` gate over our own ERB. The filter
     panel (`<form method="get">` with `check_box_tag`), its category anatomy, and the billing radio group
     (`f.radio_button` / `f.label` inside `simple_form_for`) all failed it. An app copying them exactly would have
@@ -17695,12 +17695,12 @@ boot/validation path — with a bullet each so the promotion could close them se
 
     Boundary: simple_form 5.x.
 
-- **The quality-pass worked example's `check(label, ok, detail)` count is refreshed to 40 — `skills/quality-pass/references/worked-example.md`,
+- **The quality-pass worked example's `check(label, ok, detail)` count is refreshed to 40 — `plugins/rails-stack/skills/quality-pass/references/worked-example.md`,
   `dist/quality-pass.skill`** (#1367). The new copy is `plugins/qa-flow/scripts/text_resize.py`; reach stays 21. It reuses
   `layout_fit.py`'s `Unusable` rather than declaring a thirteenth.
 
-- **rails-8 names a self-hosted APM and says when to adopt it — `skills/rails-8/references/observability.md`,
-  `skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1365). §7 listed hosted APMs and self-hosted
+- **rails-8 names a self-hosted APM and says when to adopt it — `plugins/rails-stack/skills/rails-8/references/observability.md`,
+  `plugins/rails-stack/skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1365). §7 listed hosted APMs and self-hosted
   error/trace stores, and nothing for request, query and job performance kept in-house. It now covers
   Rails Pulse: install into a separate database (`db:prepare`), `config.authorize`, the two recurring
   jobs, verification by `rails_pulse:status` exit 0, the 0.3 → 0.4 upgrade steps, and why it sits
@@ -17766,45 +17766,45 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### 1.68.3 (release v1.151.0) — 2026-09-26
 
-- **The quality-pass worked example's `Unusable` count is refreshed to 12 — `skills/quality-pass/references/worked-example.md`,
+- **The quality-pass worked example's `Unusable` count is refreshed to 12 — `plugins/rails-stack/skills/quality-pass/references/worked-example.md`,
   `dist/quality-pass.skill`** (#1338). The door classifier is the new copy; reach stays 6.
 
-- **rails-8 no longer says 8.1 alphabetizes `schema.rb` columns without the 8.1.4 revert — `skills/rails-8/references/models.md`,
-  `skills/rails-8/SKILL.md`, `skills/rails-8/references/project-setup.md`, `dist/rails-8.skill`** (#1356). doctrine-verifier
+- **rails-8 no longer says 8.1 alphabetizes `schema.rb` columns without the 8.1.4 revert — `plugins/rails-stack/skills/rails-8/references/models.md`,
+  `plugins/rails-stack/skills/rails-8/SKILL.md`, `plugins/rails-stack/skills/rails-8/references/project-setup.md`, `dist/rails-8.skill`** (#1356). doctrine-verifier
   CONFIRMED on 2026-09-26: the v8.1.0 activerecord CHANGELOG says *"The table columns inside `schema.rb` are now sorted
   alphabetically"*; v8.1.4 says *"Revert alphabetical sorting of table columns inside `schema.rb`. Alphabetical sorting
   of table columns inside the schema creates improper production tables when using `db:prepare`."* There is no config
   option. `SKILL.md`'s Version facts already had the revert, and three other passages contradicted it; all three now
   state the 8.1.0–8.1.3 / 8.1.4 boundary. Found while working #1347.
 
-- **`rename_column` on a live table is only the last step of expand–contract — `skills/rails-8/references/models.md`,
+- **`rename_column` on a live table is only the last step of expand–contract — `plugins/rails-stack/skills/rails-8/references/models.md`,
   `dist/rails-8.skill`** (#1347). The ops list offered `rename_column` with no warning. doctrine-verifier on 2026-09-26: the mechanism is CONFIRMED and the recipe corrected. Source: the strong_migrations README ("Renaming a column", "Changing the type of a column", "Removing a column"); the Rails 8.1 migrations guide says nothing about this and is not cited. `ignored_columns` belongs to the drop step only.
 
-- **The quality-pass worked example's `Unusable` count is refreshed to 11 — `skills/quality-pass/references/worked-example.md`,
+- **The quality-pass worked example's `Unusable` count is refreshed to 11 — `plugins/rails-stack/skills/quality-pass/references/worked-example.md`,
   `dist/quality-pass.skill`** (#1341). The deploy secret scanner is the new copy; reach stays 6.
 
 - **The brand-pack commands in the design-system brand doctrine quote `${CLAUDE_PLUGIN_ROOT}` —
-  `skills/design-system/references/brand.md`, `dist/design-system.skill`** (#1334). The new `unquoted-plugin-root` lint
+  `plugins/rails-stack/skills/design-system/references/brand.md`, `dist/design-system.skill`** (#1334). The new `unquoted-plugin-root` lint
   found them; unquoted, they split on an install path with a space.
 
 
 - **The quality-pass worked example's `Unusable` and `check()` harness counts are refreshed to 10 and 39 —
-  `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1328). The upstream-docs checker
+  `plugins/rails-stack/skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1328). The upstream-docs checker
   is the new copy of each; both reaches are unchanged (6 and 21).
 
 ### 1.68.2 (release v1.150.0) — 2026-09-25
 
 - **The quality-pass worked example's `class Unusable(RuntimeError)` count is refreshed to 9 —
-  `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1310). The privacy-inventory gate is
+  `plugins/rails-stack/skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1310). The privacy-inventory gate is
   the new copy; reach stays 6.
 
 - **The quality-pass worked example's `check()` harness count is refreshed to 38 copies, reach 21 —
-  `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1311). The label guard's helper
+  `plugins/rails-stack/skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1311). The label guard's helper
   is the new copy.
 
 ### 1.68.1 (release v1.149.0) — 2026-09-24
 
-- **The MCP reference corrects three facts it left unsaid — `skills/rails-8/references/mcp-server.md`,
+- **The MCP reference corrects three facts it left unsaid — `plugins/rails-stack/skills/rails-8/references/mcp-server.md`,
   `dist/rails-8.skill`** (#1302). Evidence from Retask's #880 design. Each fact is **CONFIRMED by doctrine-verifier on
   2026-09-24**:
   - **Annotation defaults.** Unset, a tool is `readOnlyHint: false`, `destructiveHint: true` and `openWorldHint: true`
@@ -17815,27 +17815,27 @@ boot/validation path — with a bullet each so the promotion could close them se
     CHANGELOG at `6.0.0.beta1` and `6.0.0.beta2`.
 
 - **rails-8 says the rate-limit half of the unauthenticated-endpoint rule is gated —
-  `skills/rails-8/references/auth-security.md`, `dist/rails-8.skill`** (#1300). Our own doctrine: it names the rails-flow
+  `plugins/rails-stack/skills/rails-8/references/auth-security.md`, `dist/rails-8.skill`** (#1300). Our own doctrine: it names the rails-flow
   gate, the exemption file, and the `:null_store` warning. The honeypot half stays proven by specs.
   The quality-pass worked example's `class Unusable(RuntimeError)` row is refreshed: 8 copies, reach 6, now across two
-  plugins plus non-shipped tooling (`skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`).
+  plugins plus non-shipped tooling (`plugins/rails-stack/skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`).
 
 - **rails-8 says to lint `app/components` as well as `app/views`, pinned to the locked herb version —
-  `skills/rails-8/references/ecosystem-gems.md`, `dist/rails-8.skill`** (#1296, #1285). Our doctrine's own transcript showed
+  `plugins/rails-stack/skills/rails-8/references/ecosystem-gems.md`, `dist/rails-8.skill`** (#1296, #1285). Our doctrine's own transcript showed
   both defects: `app/views` only, and an unversioned `npx`. The herb behaviour is read from the gem's `lib/herb/cli.rb` and
   CONFIRMED by doctrine-verifier; the shared version numbers were measured against rubygems and npm.
 
 ### 1.68.0 (release v1.148.0) — 2026-09-24
 
-- **Every unauthenticated endpoint needs a rate limit and a bot check — `skills/rails-8/references/auth-security.md`,
-  `skills/quality-pass/references/worked-example.md`, `dist/rails-8.skill`, `dist/quality-pass.skill`** (#1289). Our own
+- **Every unauthenticated endpoint needs a rate limit and a bot check — `plugins/rails-stack/skills/rails-8/references/auth-security.md`,
+  `plugins/rails-stack/skills/quality-pass/references/worked-example.md`, `dist/rails-8.skill`, `dist/quality-pass.skill`** (#1289). Our own
   doctrine, outcome-first, reusing the `rate_limit` doctrine already there; no gem is named.
   - It covers sign-in, password reset, sign-up and contact forms, because an app behind sign-in is still reachable.
   - A honeypot submission gets the same success response and is not saved. Each proving spec is paired with a
     control that succeeds.
   - The worked example's `check()` harness count is refreshed: `launch_readiness.py` is the 37th copy.
 
-- **rails-8's Version facts name Rails 8.1.4 as current stable, and say why to upgrade — `skills/rails-8/SKILL.md`,
+- **rails-8's Version facts name Rails 8.1.4 as current stable, and say why to upgrade — `plugins/rails-stack/skills/rails-8/SKILL.md`,
   `dist/rails-8.skill`.** Framework claims, each **CONFIRMED by doctrine-verifier on 2026-09-24**:
   - 8.1.4 (2026-09-24) is a bug-fix release with no CVE (rubyonrails.org release post), and no 8.0.x or 7.2.x release
     came with it (rubygems API).
@@ -17855,7 +17855,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### 1.67.1 (release v1.147.1) — 2026-09-24
 
-- **The quality-pass worked example's shared-shape counts are refreshed — `skills/quality-pass/references/worked-example.md`,
+- **The quality-pass worked example's shared-shape counts are refreshed — `plugins/rails-stack/skills/quality-pass/references/worked-example.md`,
   `dist/quality-pass.skill`** (#1285). `herb_lint.py` is a 36th copy of the `check(label, ok, detail)` selftest harness,
   and the rails-flow reach goes from 19 to 20. `check_shared_shapes.py` refuses only a number that disagrees with the
   repository, so the decision not to extract stands on the new numbers.
@@ -17863,7 +17863,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 ### 1.67.0 (release v1.147.0) — 2026-09-24
 
 - **rails-8 says when native (Rust) code earns its place, measured, and how to bridge it —
-  `skills/rails-8/references/performance-caching.md`, `dist/rails-8.skill`,
+  `plugins/rails-stack/skills/rails-8/references/performance-caching.md`, `dist/rails-8.skill`,
   `docs/evidence/benchmarks/2026-09-24-native-code/REPORT.md`** (#1282). **Maintainer decision, 2026-09-24**, recorded
   on the issue. It was prompted by a "Rails + AI-written Rust" post.
   - **Measured on an M2 Pro** (Ruby 4.0.6 with YJIT; Rust spawned and returning JSON, timed end to end):
@@ -17887,7 +17887,7 @@ boot/validation path — with a bullet each so the promotion could close them se
     v8.1.0).
 
 - **rails-8 says how an app lets agents pull reporting data: a per-user, read-only MCP server —
-  `skills/rails-8/references/mcp-server.md`, `skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1277).
+  `plugins/rails-stack/skills/rails-8/references/mcp-server.md`, `plugins/rails-stack/skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1277).
   - **Framework claims, each CONFIRMED by doctrine-verifier on 2026-09-24** against MCP spec revision 2026-07-28;
     verdicts on the issue:
     - the `mcp` gem v1.6.0 serves tools and resources over Streamable HTTP, mountable in Rails;
@@ -17902,12 +17902,12 @@ boot/validation path — with a bullet each so the promotion could close them se
   - No code recipe; the mount follows the SDK's own Rails example.
 
 - **The remaining 16 reference code blocks state what they achieve, and four paste defects are fixed —
-  `skills/rails-8/references/advanced-active-record.md`, `skills/rails-8/references/api-documentation.md`,
-  `skills/rails-8/references/auth-security.md`, `skills/rails-8/references/deployment-kamal.md`,
-  `skills/rails-8/references/ecosystem-gems.md`, `skills/rails-8/references/i18n.md`,
-  `skills/rails-8/references/jobs-and-realtime.md`, `skills/rails-8/references/mail-storage-richtext.md`,
-  `skills/rails-8/references/models.md`, `skills/rails-8/references/performance-caching.md`,
-  `skills/rails-8/references/sso.md`, `skills/rails-8/references/testing.md`, `skills/hotwire/references/native.md`,
+  `plugins/rails-stack/skills/rails-8/references/advanced-active-record.md`, `plugins/rails-stack/skills/rails-8/references/api-documentation.md`,
+  `plugins/rails-stack/skills/rails-8/references/auth-security.md`, `plugins/rails-stack/skills/rails-8/references/deployment-kamal.md`,
+  `plugins/rails-stack/skills/rails-8/references/ecosystem-gems.md`, `plugins/rails-stack/skills/rails-8/references/i18n.md`,
+  `plugins/rails-stack/skills/rails-8/references/jobs-and-realtime.md`, `plugins/rails-stack/skills/rails-8/references/mail-storage-richtext.md`,
+  `plugins/rails-stack/skills/rails-8/references/models.md`, `plugins/rails-stack/skills/rails-8/references/performance-caching.md`,
+  `plugins/rails-stack/skills/rails-8/references/sso.md`, `plugins/rails-stack/skills/rails-8/references/testing.md`, `plugins/rails-stack/skills/hotwire/references/native.md`,
   `dist/rails-8.skill`, `dist/hotwire.skill`** (#1265). This finishes #1256's sweep. Our own doctrine; the one
   framework fact reused (mission_control-jobs 1.3.1 ships with basic auth "enabled and closed") was CONFIRMED for #1264.
   - Every block gains its outcome sentence, and placeholder values are marked as placeholders.
@@ -17921,8 +17921,8 @@ boot/validation path — with a bullet each so the promotion could close them se
     characters.
 
 - **Every user-facing record shows a readable display number, `TSK-0001`, that links to it —
-  `skills/rails-8/references/models.md`, `skills/rails-8/references/multi-tenancy.md`,
-  `skills/design-system/references/components.md`, `dist/rails-8.skill`, `dist/design-system.skill`** (#1274).
+  `plugins/rails-stack/skills/rails-8/references/models.md`, `plugins/rails-stack/skills/rails-8/references/multi-tenancy.md`,
+  `plugins/rails-stack/skills/design-system/references/components.md`, `dist/rails-8.skill`, `dist/design-system.skill`** (#1274).
   **Maintainer decision, 2026-09-24**, recorded on the issue; our own design, and no framework mechanism is named.
   - Each model declares a 3-letter prefix. The number is sequential, zero-padded to at least 4 digits, unique within
     its tenant (or the app) and never reused.
@@ -17931,7 +17931,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   - The alternative considered, a 7-character short hash, collides with 17% probability at 10,000 records.
 
 - **Pagination defaults to 10 per page, with a 10/25/50/100 select hidden at 10 or fewer records —
-  `skills/design-system/references/components.md`, `skills/rails-8/references/ecosystem-gems.md`,
+  `plugins/rails-stack/skills/design-system/references/components.md`, `plugins/rails-stack/skills/rails-8/references/ecosystem-gems.md`,
   `dist/design-system.skill`, `dist/rails-8.skill`** (#1272).
   - **Maintainer decision, 2026-09-24**, recorded on the issue: default 10; options 10/25/50/100 as URL state;
     changing it resets to page 1 and keeps sort and filters; the select is hidden when the total is ≤ 10, and the
@@ -17944,7 +17944,7 @@ boot/validation path — with a bullet each so the promotion could close them se
     - A page past the end is rescued to an empty page unless `raise_range_error: true`.
 
 - **A labelled "More" item inside a bottom bar counts as the one control that reaches every destination —
-  `skills/design-system/references/responsive.md`, `skills/design-system/references/coverage.md`,
+  `plugins/rails-stack/skills/design-system/references/responsive.md`, `plugins/rails-stack/skills/design-system/references/coverage.md`,
   `dist/design-system.skill`** (#1268). **Maintainer decision, 2026-09-24**, recorded on the issue; our own rule.
   The rule at compact width said a bar qualifies only if it holds every top-level destination, and left open an app
   with 13 of them. A visibly labelled "More" item in the bar, opening a sheet with the rest, qualifies. A
@@ -17952,7 +17952,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   Material citations in the issue are not needed for our rule and are not added.
 
 - **A chart of 6 or more series carries direct labels or texture; a legend alone is not enough —
-  `skills/design-system/references/data-viz.md`, `dist/design-system.skill`** (#1267). **Maintainer decision,
+  `plugins/rails-stack/skills/design-system/references/data-viz.md`, `dist/design-system.skill`** (#1267). **Maintainer decision,
   2026-09-24**, recorded on the issue; our own doctrine, no framework claim.
   - Measured with dataviz `validate_palette.js`: the default dark series' slots 5↔6 are CVD ΔE 6.1, in the 6–8
     band that is legal only with direct labels, gaps or texture. The doctrine asked for a legend alone at 5+ series,
@@ -17963,11 +17963,11 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### 1.66.0 (release v1.146.0) — 2026-09-24
 
-- **Code blocks that were wrong to paste are fixed — `skills/rails-8/references/views-hotwire.md`,
-  `skills/rails-8/references/ecosystem-gems.md`, `skills/rails-8/references/advanced-active-record.md`,
-  `skills/rails-8/references/jobs-and-realtime.md`, `skills/rails-8/references/multi-tenancy.md`,
-  `skills/rails-8/references/style.md`, `skills/rails-8/references/testing.md`, `skills/hotwire/references/stimulus.md`,
-  `skills/hotwire/references/native.md`, `dist/rails-8.skill`, `dist/hotwire.skill`** (#1256). The #1256 sweep
+- **Code blocks that were wrong to paste are fixed — `plugins/rails-stack/skills/rails-8/references/views-hotwire.md`,
+  `plugins/rails-stack/skills/rails-8/references/ecosystem-gems.md`, `plugins/rails-stack/skills/rails-8/references/advanced-active-record.md`,
+  `plugins/rails-stack/skills/rails-8/references/jobs-and-realtime.md`, `plugins/rails-stack/skills/rails-8/references/multi-tenancy.md`,
+  `plugins/rails-stack/skills/rails-8/references/style.md`, `plugins/rails-stack/skills/rails-8/references/testing.md`, `plugins/rails-stack/skills/hotwire/references/stimulus.md`,
+  `plugins/rails-stack/skills/hotwire/references/native.md`, `dist/rails-8.skill`, `dist/hotwire.skill`** (#1256). The #1256 sweep
   classified all 307 blocks. It flagged 12 as wrong to paste; 11 were real, and a password "below the floor" was a
   miscount (`s3cure-password` is 15 characters).
   - **Our own doctrine**, no framework claim:
@@ -17989,7 +17989,7 @@ boot/validation path — with a bullet each so the promotion could close them se
     nil (turbo-rails `drive_helper.rb`).
 
 - **rails-8 says what makes the PWA stubs installable, and what a service worker may cache —
-  `skills/rails-8/references/pwa.md`, `skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1258). **Framework
+  `plugins/rails-stack/skills/rails-8/references/pwa.md`, `plugins/rails-stack/skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1258). **Framework
   claims, each CONFIRMED by doctrine-verifier on 2026-09-24**, verdicts recorded on the issue:
   - Chrome's installability criteria: HTTPS, `name`/`short_name`, `start_url`, a `display` mode, and 192px and
     512px icons. developer.chrome.com/docs/lighthouse/pwa/installable-manifest
@@ -18005,20 +18005,20 @@ boot/validation path — with a bullet each so the promotion could close them se
   **Maintainer decision, 2026-09-24**, recorded on the issue: a service worker never caches signed-in pages. Retask's
   service worker was the model for that rule.
 
-- **rails-8 and hotwire say their code blocks show a pattern, not a template — `skills/rails-8/SKILL.md`,
-  `skills/hotwire/SKILL.md`, `dist/rails-8.skill`, `dist/hotwire.skill`** (#1256). **Maintainer decision,
+- **rails-8 and hotwire say their code blocks show a pattern, not a template — `plugins/rails-stack/skills/rails-8/SKILL.md`,
+  `plugins/rails-stack/skills/hotwire/SKILL.md`, `dist/rails-8.skill`, `dist/hotwire.skill`** (#1256). **Maintainer decision,
   2026-09-24**, recorded on the issue; our own doctrine, no framework claim. rails-8 gains operating principle 6
   and hotwire a ground rule: the references state the convention and the result, and the agent writes the
   configuration for its app. Framework syntax with one right spelling is the stated exception. No reference
   block changes here; the sweep ships per file.
 
 - **§5 lists a JS harness's `node_modules/` among the gitignored files a fresh worktree lacks —
-  `skills/parallel-session-lane/SKILL.md`, `dist/parallel-session-lane.skill`**. Reported by a parallel
+  `plugins/rails-stack/skills/parallel-session-lane/SKILL.md`, `dist/parallel-session-lane.skill`**. Reported by a parallel
   Retask session: a new worktree's e2e suite under `qa/` needs `npm ci` before it runs. Our own doctrine;
   no framework claim.
 
-- **Our test doctrine stops teaching restating, mock-heavy tests — `skills/rails-8/references/testing.md`,
-  `skills/code-review/SKILL.md`, `dist/rails-8.skill`, `dist/code-review.skill`** (#1253). **Maintainer decision,
+- **Our test doctrine stops teaching restating, mock-heavy tests — `plugins/rails-stack/skills/rails-8/references/testing.md`,
+  `plugins/rails-stack/skills/code-review/SKILL.md`, `dist/rails-8.skill`, `dist/code-review.skill`** (#1253). **Maintainer decision,
   2026-09-24**, recorded on the issue; our own doctrine, no framework claim added. §6's `#total` example stubbed the
   association it tested with doubles and asserted the sum — a spec that restates the code and cannot fail; it now
   builds real records and includes another order's item that must not count, and the section opens with the outcome the example must reach (it fails when the logic is wrong), with the example's names marked as stand-ins for the app's own. §3's "many model specs, few system
@@ -18031,7 +18031,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 ### 1.65.2 (release v1.144.5) — 2026-09-23
 
 - **`parallel-session-lane` warns that `git reset --soft origin/dev` can squash away other people's merged work —
-  `skills/parallel-session-lane/SKILL.md`, `skills/parallel-session-lane/references/reading-a-list.md`,
+  `plugins/rails-stack/skills/parallel-session-lane/SKILL.md`, `plugins/rails-stack/skills/parallel-session-lane/references/reading-a-list.md`,
   `dist/parallel-session-lane.skill`** (#1237). `doctrine-verifier`: **CONFIRMED**, git 2.50.1, reproduced
   twice — remote-tracking refs are shared by every linked worktree (git-worktree: *"all refs starting with
   `refs/` are shared"*), and `--soft` leaves the index untouched (git-reset: *"Leave your working tree files
@@ -18039,13 +18039,13 @@ boot/validation path — with a bullet each so the promotion could close them se
   what the base gained. Safe form: squash to the base SHA recorded at branch creation, and read `git show
   --stat`. Hit twice by Retask sessions in one day; one commit reverted about 70 files.
 
-- **`brand.md` no longer teaches a palette that fails validation — `skills/design-system/references/brand.md`,
+- **`brand.md` no longer teaches a palette that fails validation — `plugins/rails-stack/skills/design-system/references/brand.md`,
   `dist/design-system.skill`** (#1235). Its fidara example carried the five `chart_hues` that fail the
   data-viz validator; the example drops them, and the page now says an override is **computed** by the lint
   and must not reuse status colours. Our own design and measured figures; no framework claim.
 
 - **`parallel-session-lane` states three git traps a parallel session hits —
-  `skills/parallel-session-lane/SKILL.md`, `dist/parallel-session-lane.skill`** (#1231). `doctrine-verifier`:
+  `plugins/rails-stack/skills/parallel-session-lane/SKILL.md`, `dist/parallel-session-lane.skill`** (#1231). `doctrine-verifier`:
   git 2.50.1, reproduced. (1) **The stash list is one per repository** — `refs/stash` is shared by every
   worktree (git-worktree: *"all refs starting with refs/ are shared"*), so a bare `stash pop`/`drop` can take
   a peer's entry; list with `--format='%gd|%gs'` and drop by ref. `-n1 'stash@{N}'` ignores the ref and
@@ -18058,7 +18058,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 ### 1.65.1 (release v1.144.1) — 2026-09-23
 
 - **`ai-llm.md`'s core chat example no longer 400s on its own default model —
-  `skills/rails-8/references/ai-llm.md`** (#1200). §2 chained `chat.with_temperature(0.2)` onto the
+  `plugins/rails-stack/skills/rails-8/references/ai-llm.md`** (#1200). §2 chained `chat.with_temperature(0.2)` onto the
   `claude-sonnet-5` default set in §1. `doctrine-verifier`: **CONFIRMED**. The Sonnet 5 migration
   guide (platform.claude.com/docs/en/models/sonnet-5/migration-guide): *"Sampling parameters
   (`temperature`, `top_p`, `top_k`) set to a non-default value are not accepted and return a 400
@@ -18070,7 +18070,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 ### 1.65.0 (release v1.144.0) — 2026-09-23
 
 - **The "don't extract" arithmetic in the quality-pass worked example is computed now, not written
-  down — `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`,
+  down — `plugins/rails-stack/skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`,
   `scripts/check_shared_shapes.py`, `scripts/mutations/check_shared_shapes.py`** (#1174). **Maintainer
   decision recorded on the issue**: keep the decision, replace the digits with a command. The section's
   figures had drifted twice — the second time about five-fold — while the table above them stayed gated.
@@ -18087,7 +18087,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   roots instead of copies — all caught (13 in the guard).
 
 - **The ruby_llm page moves to 2.x — its examples pinned a model two generations old, and an unpinned
-  gem line installed a major version the page did not describe — `skills/rails-8/references/ai-llm.md`,
+  gem line installed a major version the page did not describe — `plugins/rails-stack/skills/rails-8/references/ai-llm.md`,
   `dist/rails-8.skill`** (#1180). **`doctrine-verifier`: CONFIRMED**, against RubyLLM's own source at
   `crmne/ruby_llm` tag `v2.0.0` (CHANGELOG *Changed in 2.0*, rubyllm.com/upgrading, `models.json`,
   `lib/ruby_llm/{tool,models,embedding}.rb`, `active_record/{chat,message}_methods.rb`, the install
@@ -18112,7 +18112,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   appends, which a single call does not observe), `with_schema`, `Tool#description`.
 
 - **A green check can be silence about the property it is trusted for —
-  `skills/code-review/SKILL.md`, `dist/code-review.skill`** (#1185). **Maintainer decision recorded on
+  `plugins/rails-stack/skills/code-review/SKILL.md`, `dist/code-review.skill`** (#1185). **Maintainer decision recorded on
   the issue**; our own doctrine, no upstream. `gate-that-cannot-fail` asks *make it fail on purpose*,
   and `signal-that-cannot-discriminate` asks *what else produces this value* about a value you
   consume. Neither covered a check you **wrote**, which demonstrably can fail, whose input never
@@ -18127,7 +18127,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 ### 1.64.2 (release v1.143.0) — 2026-09-22
 
 - **The quality-pass worked example's harness row moves again, to 35 files / reach 19 —
-  `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1181).
+  `plugins/rails-stack/skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1181).
   `plugins/rails-flow/scripts/check_memory_systems.py` is one more copy of the `check(label, ok,
   detail)` selftest harness, and `check_shared_shapes.py` refused the old figure — counting, as it
   should, never refusing the copy. The decision resting on the row is unchanged here; its stale
@@ -18136,7 +18136,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 ### 1.64.1 (release v1.142.0) — 2026-09-22
 
 - **A count the quality-pass worked example quotes moved with the repository —
-  `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1173). The
+  `plugins/rails-stack/skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1173). The
   `check(label, ok, detail)` selftest harness row goes from **33 files / reach 17** to **34 / 18**:
   #1173 added a copy in `plugins/rails-flow/scripts/ci_verdict_hint.py`. `check_shared_shapes.py`
   re-derived both and refused the old figures, which is the gate doing exactly its job — it counts,
@@ -18148,7 +18148,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 ### 1.64.0 (release v1.141.0) — 2026-09-22
 
 - **§3a could say *not mine* and never *whose* —
-  `skills/parallel-session-lane/SKILL.md` (§3a), `dist/parallel-session-lane.skill`** (#1167).
+  `plugins/rails-stack/skills/parallel-session-lane/SKILL.md` (§3a), `dist/parallel-session-lane.skill`** (#1167).
   **Maintainer decision recorded on the issue**; our own doctrine, no upstream. The reflog method
   from #1131 is **elimination**, so a session holding a green PR it could not place messaged three
   peers and interrupted two for nothing. A lane worktree's path carries its owning session's id, so
@@ -18173,7 +18173,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   **a first-person record does not mean you are the author**.
 
 - **A worktree can disappear, and prune-and-recreate looks like success either way —
-  `skills/parallel-session-lane/SKILL.md` (§5a, §3), `dist/parallel-session-lane.skill`** (#1159).
+  `plugins/rails-stack/skills/parallel-session-lane/SKILL.md` (§5a, §3), `dist/parallel-session-lane.skill`** (#1159).
   **Maintainer decision recorded on the issue**; our own doctrine, no upstream. The skill sent every
   session into a scratch worktree and never said what to do when the directory is gone — which
   happened to three sessions in one day. New §5a gives the **discriminator before the recovery**,
@@ -18190,7 +18190,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   the branch just recovered.
 
 - **A set question is never answered by reading a list —
-  `skills/parallel-session-lane/SKILL.md` (§3), `dist/parallel-session-lane.skill`** (#1160).
+  `plugins/rails-stack/skills/parallel-session-lane/SKILL.md` (§3), `dist/parallel-session-lane.skill`** (#1160).
   **Maintainer decision recorded on the issue**; our own doctrine, no upstream. Five sessions in two
   days read a truncated list and reported the prefix as the whole — `tail -80` over a 31-stage run
   called "7 green, 1 red" while **8** were dying; `head -12` over 46 commits concluded a PR was
@@ -18206,7 +18206,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   it did not fire the next day, when the list was git commits — a rule scoped to the noun you last
   met it on does not generalise, and its author is the last to notice.
 
-- **`bin/ci` handed each run the previous run's rows — `skills/rails-8/references/testing.md`,
+- **`bin/ci` handed each run the previous run's rows — `plugins/rails-stack/skills/rails-8/references/testing.md`,
   `dist/rails-8.skill`** (#1154). The shipped block ran the suite and then `Tests: Seeds`, and
   `db:seed:replant` is truncate-**then**-seed (`activerecord-8.1.3.1`, `databases.rake:407`), so
   every run *ended* seeded and the next one opened on those rows — reported downstream as 14
@@ -18220,7 +18220,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   not have covered it. The `:540` reasoning kept its first half and gained the second.
 
 - **A ninth review class: a value two causes both produce, read as if it named one —
-  `skills/code-review/SKILL.md`, `dist/code-review.skill`** (#1156). **Maintainer decision recorded
+  `plugins/rails-stack/skills/code-review/SKILL.md`, `dist/code-review.skill`** (#1156). **Maintainer decision recorded
   on the issue**, as `CLAUDE.md` requires for our own doctrine. `signal-that-cannot-discriminate`:
   `conclusion: failure` cannot separate a failed suite from **a runner that never started**;
   `0 findings` cannot separate a clean repository from **a judge you just silenced**; an empty `grep`
@@ -18241,7 +18241,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 ### 1.63.0 (release v1.138.0) — 2026-09-22
 
 - **A lane says what is private and never said how to tell what is yours —
-  `skills/parallel-session-lane/SKILL.md` (§3a), `dist/parallel-session-lane.skill`** (#1131). §3
+  `plugins/rails-stack/skills/parallel-session-lane/SKILL.md` (§3a), `dist/parallel-session-lane.skill`** (#1131). §3
   answers *has this number been claimed*; nothing answered *is this branch, PR or worktree mine*,
   and **both obvious identifiers give a wrong answer**. `--author @me` is the **account**, shared by
   every session on the machine — measured downstream at **five open PRs, one** belonging to the
@@ -18258,7 +18258,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 ### 1.62.0 (release v1.137.0) — 2026-09-21
 
 - **The rule was quotable but not actionable, and a review class had no name —
-  `skills/rails-8/references/directory-structure.md`, `skills/code-review/SKILL.md`,
+  `plugins/rails-stack/skills/rails-8/references/directory-structure.md`, `plugins/rails-stack/skills/code-review/SKILL.md`,
   `dist/rails-8.skill`, `dist/code-review.skill`** (#1124). The doctrine gains a **worked example**:
   one real domain whose files sit in seven unrelated places, the target layout, and the entire
   routing change — a single `scope module:` block that leaves every URL byte-identical — plus the
@@ -18270,8 +18270,8 @@ boot/validation path — with a bullet each so the promotion could close them se
   table now carries the `git ls-tree` command that re-takes it.
 
 - **A component could impose layout on content it cannot see, and the silent half was the expensive
-  one — `skills/design-system/references/components.md`,
-  `skills/design-system/references/component-implementations.md` (16 declarations),
+  one — `plugins/rails-stack/skills/design-system/references/components.md`,
+  `plugins/rails-stack/skills/design-system/references/component-implementations.md` (16 declarations),
   `dist/design-system.skill`** (#1117). The doctrine said layout is composed in the template; it
   never said what happens when a **component** arranges what it is handed, so there was nothing to
   drift from. A card wrapped its content in `stack` with a hardcoded `--space`. Measured before
@@ -18285,7 +18285,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   own reference implementations now carry that declaration**, so the code a consumer copies
   demonstrates the rule rather than contradicting it.
 - **Nothing said where a file should live, so nothing drifted —
-  `skills/rails-8/references/directory-structure.md` (new), `skills/rails-8/SKILL.md`,
+  `plugins/rails-stack/skills/rails-8/references/directory-structure.md` (new), `plugins/rails-stack/skills/rails-8/SKILL.md`,
   `dist/rails-8.skill`** (#1072). The toolchain gates what is *in* a file and was silent on
   structure: **a flat `app/controllers` root is not a violation, it is an absence**, which is why
   this is doctrine first. Measured on a mature app built with this toolchain, with
@@ -18306,7 +18306,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 ### 2026-09-21 (release v1.136.0)
 
 - **A lane was described as one resource when it is three, and the mechanism it recommended caused
-  a second failure — `skills/parallel-session-lane/SKILL.md`** (#1078). §1 said *"a private test
+  a second failure — `plugins/rails-stack/skills/parallel-session-lane/SKILL.md`** (#1078). §1 said *"a private test
   database"*. Correct and a third of the answer: six sessions on one repository in a day produced
   **three distinct cross-session corruptions**, and **every one first presented as a defect in the
   code under test**. A shared test database deadlocks (`PG::TRDeadlockDetected`, the blocking PID
@@ -18322,8 +18322,8 @@ boot/validation path — with a bullet each so the promotion could close them se
   stranger (#1080), and `crawl`, `walkthrough` and `/design-flow:audit` delegate to it.
 
 - **Five components a CRUD admin needs, that the catalogue had no row for —
-  `skills/design-system/references/components.md`,
-  `skills/design-system/references/component-shapes.json`,
+  `plugins/rails-stack/skills/design-system/references/components.md`,
+  `plugins/rails-stack/skills/design-system/references/component-shapes.json`,
   `scripts/check_component_states.py`, `dist/design-system.skill`** (#1069). From the systematic
   sweep against seven established libraries: **Search field, Multi-select / token input, Toolbar,
   Split button, Code block** — the five the issue ranks as most likely to produce hand-written HTML.
@@ -18355,7 +18355,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 ### 2026-09-21 (release v1.134.0)
 
 - **`error` and `empty` are two states, not one — `scripts/check_component_states.py`,
-  `scripts/mutations/check_component_states.py`, `skills/design-system/references/components.md`**
+  `scripts/mutations/check_component_states.py`, `plugins/rails-stack/skills/design-system/references/components.md`**
   (#1068). #978 wrote the rule with `error or empty` as a single slot and #1068 enforced it that
   way. **They are not two spellings of one state, they are two different absences with two
   different remedies**: *empty* is "the query returned nothing, and here is what you do next";
@@ -18380,7 +18380,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 - **The catalogue stated the six-state rule, predicted its own drift, and nothing enforced it —
   `scripts/check_component_states.py`, `scripts/mutations/check_component_states.py`,
-  `skills/design-system/references/components.md`, `scripts/maintainer_doctor.py`** (#1068).
+  `plugins/rails-stack/skills/design-system/references/components.md`, `scripts/maintainer_doctor.py`** (#1068).
   `components.md` opens with *"Every entry covers six states, or says which do not apply (#978) …
   the loading and empty states are the ones always missing."* **The prediction was correct.**
   Measured on `dev`: `loading` appeared as a state of the component being described in **1 of 44
@@ -18419,9 +18419,9 @@ boot/validation path — with a bullet each so the promotion could close them se
   they convert one PR at a time and the floor rises with them.
 
 - **17 of the 23 shipped components could not carry a caller's attribute, so the catalogue produced
-  the raw HTML it forbids — `skills/design-system/references/components.md`,
-  `skills/design-system/references/component-implementations.md`,
-  `skills/design-system/references/component-shapes.json`,
+  the raw HTML it forbids — `plugins/rails-stack/skills/design-system/references/components.md`,
+  `plugins/rails-stack/skills/design-system/references/component-implementations.md`,
+  `plugins/rails-stack/skills/design-system/references/component-shapes.json`,
   `scripts/check_component_passthrough.py`, `scripts/mutations/check_component_passthrough.py`,
   `scripts/maintainer_doctor.py`** (#1063). A consumer audit found 18 raw `<button>` tags and
   reported the cause as *"the component cannot express what I need"*. **For the button that was
@@ -18453,8 +18453,8 @@ boot/validation path — with a bullet each so the promotion could close them se
   only to its first line **under-counts in the direction that looks clean** — it is how an earlier
   tally reported 21 classes where there are 23.
 - **No doctrine on when raw HTML is allowed where a component is mandated, and the catalogue that
-  produced the question was itself under-built — `skills/design-system/references/components.md`,
-  `skills/design-system/references/component-shapes.json`** (#1063). Maintainer decision, recorded on
+  produced the question was itself under-built — `plugins/rails-stack/skills/design-system/references/components.md`,
+  `plugins/rails-stack/skills/design-system/references/component-shapes.json`** (#1063). Maintainer decision, recorded on
   the issue: **there is no escape hatch.** If a component does not exist you build one — a primitive
   if irreducible, a composite of existing components if not — and a composite is a component, with
   the same variant × size × state vocabulary and its own catalogue row.
@@ -18610,7 +18610,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   routes any screen-level request through it before writing markup.
 
 ### 1.12.0 — 2026-07-29
-- **New `skills/code-review`**, bundled into rails-stack and packaged as `dist/code-review.skill`.
+- **New `plugins/rails-stack/skills/code-review`**, bundled into rails-stack and packaged as `dist/code-review.skill`.
   Review doctrine for the defect class authors are structurally blind to: code that is correct on
   its own terms but does not do what its own documentation, config, comments or project rules
   claim. Names seven classes (`claims-vs-enforcement`, `dead-declaration`,
@@ -21695,7 +21695,7 @@ own repo with a label its setup never creates) and `undeclared-component-label` 
 - `scripts/build_coverage.py` enumerates the licensed reference corpora mechanically — **93** Tailwind
   UI leaf components across `application-ui` / `marketing` / `ecommerce`, plus Flowbite's **63**
   catalogue entries — and reconciles them against our own doctrine into **113 rows** in
-  `skills/design-system/references/coverage.md`.
+  `plugins/rails-stack/skills/design-system/references/coverage.md`.
 - **The guarantee is the totality guard, not the file.** Every corpus entry must be claimed by exactly
   one row or **the build fails and names the stragglers**, so a new upstream directory cannot be
   silently ignored and coverage cannot rot into a stale list. Double-claims are checked explicitly,
@@ -21946,7 +21946,7 @@ own repo with a label its setup never creates) and `undeclared-component-label` 
   correctly following our own doctrine**, and setup-flow propagated the wrong rule into the user's
   rules file for the gate to then enforce against them: self-reinforcing, and worse than a plain
   bug because it blames the user. Found by applying the new skill's `doctrine-contradiction` class
-  with one grep — that class travels in groups, because the wrong rule gets copied. `skills/rails-8`
+  with one grep — that class travels in groups, because the wrong rule gets copied. `plugins/rails-stack/skills/rails-8`
   is unchanged; the plugin text now defers to it rather than paraphrasing the mechanism.
 - **`claims-vs-enforcement` is now enforced, in both repos** (#162 maintainer, #164
   rails-flow → 1.9.0). It had bitten three times in three PRs — `--check || echo` making a release

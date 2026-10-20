@@ -11,6 +11,7 @@
 | `pipeline` | 1.5.2 | 2 | 9 | 2 |
 | `qa-flow` | 1.38.1 | 11 | 8 | 11 |
 | `rails-flow` | 1.64.0 | 13 | 25 | 13 |
+| `rails-stack` | 1.76.0 | — | — | — |
 
 ## Agents
 
@@ -262,6 +263,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | page pacing | `repo` | `python3 scripts/check_page_pacing.py` | live check |
 | page pacing selftest | `repo` | `python3 scripts/check_page_pacing.py --selftest` | selftest |
 | pid record selftest | `repo` | `python3 scripts/pid_record_selftest.py` | live check |
+| plugin install shape | `repo` | `python3 scripts/check_plugin_install_shape.py` | live check |
+| plugin install shape selftest | `repo` | `python3 scripts/check_plugin_install_shape.py --selftest` | selftest |
 | plugin validate selftest | `repo` | `python3 scripts/check_plugin_validate.py --selftest` | selftest |
 | published blocks | `repo` | `python3 scripts/check_published_blocks.py` | live check |
 | published blocks selftest | `repo` | `python3 scripts/check_published_blocks.py --selftest` | selftest |
@@ -355,4 +358,4 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `doc-updater` | mechanical | `architecture_graph.py` regenerates and its digest guard fails on drift |
 | `adversary` | adversarial | — |
 
-Manifest cross-check: the 5 plugin directories inventoried are exactly the ones marketplace.json installs.
+Manifest cross-check: the 6 plugin directories inventoried are exactly the ones marketplace.json installs.

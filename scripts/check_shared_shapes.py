@@ -48,7 +48,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-DOC = REPO / "skills" / "quality-pass" / "references" / "worked-example.md"
+DOC = REPO / "plugins" / "rails-stack" / "skills" / "quality-pass" / "references" / "worked-example.md"
 # What defines an install root. Read rather than assumed: `reach` groups copies by the directory a
 # plugin is installed FROM, so the manifest naming those directories is the arbiter, and a layout
 # change that this file's path grouping stopped matching would otherwise rot in silence.

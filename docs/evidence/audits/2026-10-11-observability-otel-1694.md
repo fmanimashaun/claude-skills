@@ -1,7 +1,7 @@
 # doctrine-verifier verdicts for #1694 (rails-8 observability.md), 2026-10-11
 
 Three read-only verifier runs (the `doctrine-verifier` protocol, run from a Retask session against that app's
-installed gems, Rails 8.1.4, Ruby 4.0.6), one per claim cluster. Edits in `skills/rails-8/references/observability.md`
+installed gems, Rails 8.1.4, Ruby 4.0.6), one per claim cluster. Edits in `plugins/rails-stack/skills/rails-8/references/observability.md`
 follow CONFIRMED rows only; PARTLY and INCONCLUSIVE rows were narrowed or labelled as measured / design, and the
 last column says what the doctrine does. Gem paths are under the installed `ruby/4.0.0/gems/`.
 

@@ -172,7 +172,7 @@
      "used_by": ["plugins/rails-flow/hooks/context-nudge.mjs"]},
     {"id": "session-id-env", "url": "https://code.claude.com/docs/en/env-vars",
      "quote": "hook command subprocesses, and stdio MCP server subprocesses",
-     "used_by": ["skills/parallel-session-lane/references/process-hygiene.md", "plugins/rails-flow/scripts/session_reaper.py"]},
+     "used_by": ["plugins/rails-stack/skills/parallel-session-lane/references/process-hygiene.md", "plugins/rails-flow/scripts/session_reaper.py"]},
     {"id": "statusline-rate-limits", "url": "https://code.claude.com/docs/en/statusline",
      "quote": "appears only for claude.ai Pro and Max subscribers",
      "used_by": ["docs/evidence/audits/2026-10-07-mods-tool-call-ratelimits-2.1.292.md", "plugins/rails-flow/reference/context-budget.md", "plugins/rails-flow/hooks/budget-guard.mjs"]},
@@ -229,15 +229,15 @@
      "used_by": ["docs/evidence/audits/2026-10-12-test-preflight-threat-model-1821.md"]},
     {"id": "mcp-output-token-limit", "url": "https://code.claude.com/docs/en/mcp",
      "quote": "limits output to 25,000 tokens by default",
-     "used_by": ["skills/rails-8/references/mcp-server.md"]},
+     "used_by": ["plugins/rails-stack/skills/rails-8/references/mcp-server.md"]},
     {"id": "mcp-output-over-limit-saved-to-file", "url": "https://code.claude.com/docs/en/mcp",
      "quote": "saves it to a file and replaces it in the conversation with a message that names the file path",
-     "used_by": ["skills/rails-8/references/mcp-server.md"]},
+     "used_by": ["plugins/rails-stack/skills/rails-8/references/mcp-server.md"]},
     {"id": "mcp-output-50000-characters", "url": "https://code.claude.com/docs/en/mcp",
      "quote": "once it's longer than 50,000 characters, whatever its token count",
-     "used_by": ["skills/rails-8/references/mcp-server.md"]},
+     "used_by": ["plugins/rails-stack/skills/rails-8/references/mcp-server.md"]},
     {"id": "mcp-error-text-truncated", "url": "https://code.claude.com/docs/en/mcp",
      "quote": "keeps only its first 5,000 and last 5,000 characters",
-     "used_by": ["skills/rails-8/references/mcp-server.md"]}
+     "used_by": ["plugins/rails-stack/skills/rails-8/references/mcp-server.md"]}
   ]
 }

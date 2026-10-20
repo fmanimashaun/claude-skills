@@ -51,7 +51,7 @@ INSTRUCTED_COPY = (
     re.compile(r"\bdrop\s+in\s+" + _ARTICLE + r"`([a-z0-9_]+\.py)`", re.I),
     re.compile(r"\bdrop(?:s|ped|ping)?\s+" + _ARTICLE + r"`([a-z0-9_]+\.py)`\s+in\b", re.I),
 )
-DOC_ROOTS = ("plugins", "skills")
+DOC_ROOTS = ("plugins",)  # rails-stack's skills live under plugins/rails-stack since #2182
 
 
 def discover(repo: Path) -> tuple[list[Path], list[str]]:

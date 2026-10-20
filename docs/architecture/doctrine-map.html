@@ -265,7 +265,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="guarantee">
 <h2>A guarantee stated in prose that nothing makes true is a defect, not a style issue.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/code-review/SKILL.md</code></span></div>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-stack/skills/code-review/SKILL.md</code></span></div>
 <ul class="enf">
 <li><code>script:scripts/lint_self_consistency.py</code></li>
 <li><code>gate:self-consistency</code></li>
@@ -274,7 +274,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="guarantee">
 <h2>A carve-out that silences a check needs a negative test proving the check still fires outside it.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/code-review/SKILL.md</code></span></div>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-stack/skills/code-review/SKILL.md</code></span></div>
 <ul class="enf">
 <li><code>script:scripts/maintainer_doctor_selftest.py</code></li>
 <li><code>mutation:maintainer_doctor</code></li>
@@ -283,7 +283,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="guarantee">
 <h2>Derived numbers are read from the generator&#x27;s structured source, never regex-parsed out of its generated prose, and are asserted against the source&#x27;s declared totals.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/derived-artifacts/SKILL.md</code></span></div>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-stack/skills/derived-artifacts/SKILL.md</code></span></div>
 <ul class="enf">
 <li><code>script:scripts/build_coverage_artifact.py</code></li>
 <li><code>gate:coverage artifact selftest</code></li>
@@ -291,7 +291,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="guarantee">
 <h2>Structure snaps to the 8px grid: every token in the structural block of the tokens file is a whole multiple of 8px, and every structural token a reference names is declared there.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/design-system/references/foundations-tokens.md</code> &middot; #976</span></div>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-stack/skills/design-system/references/foundations-tokens.md</code> &middot; #976</span></div>
 <ul class="enf">
 <li><code>script:scripts/check_structural_grid.py</code></li>
 <li><code>mutation:check_structural_grid</code></li>
@@ -300,7 +300,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="guarantee">
 <h2>A Stimulus keyboard filter is not a type check: the filter is consulted only inside `event instanceof KeyboardEvent`, so a bare `Event(&quot;keydown&quot;)` skips it and runs the handler. No shipped descriptor may guard a state-destroying handler with one.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/hotwire/references/stimulus.md</code> &middot; #949</span></div>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-stack/skills/hotwire/references/stimulus.md</code> &middot; #949</span></div>
 <ul class="enf">
 <li><code>rule:unguarded-key-filter</code></li>
 <li><code>script:scripts/lint_self_consistency.py</code></li>
@@ -311,7 +311,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="guarantee">
 <h2>The maintainer copy of a shipped skill cannot drift from the skill it is derived from.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/parallel-session-lane/SKILL.md</code> &middot; #1004</span></div>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-stack/skills/parallel-session-lane/SKILL.md</code> &middot; #1004</span></div>
 <ul class="enf">
 <li><code>gate:maintainer skill drift</code></li>
 </ul>
@@ -319,7 +319,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="guarantee">
 <h2>Working in the wrong worktree during a parallel session is refused, not merely advised against.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/parallel-session-lane/SKILL.md</code> &middot; #660</span></div>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-stack/skills/parallel-session-lane/SKILL.md</code> &middot; #660</span></div>
 <ul class="enf">
 <li><code>hook:plugins/rails-flow/hooks/scripts/guard-lane.sh</code></li>
 </ul>
@@ -327,7 +327,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="guarantee">
 <h2>Two concurrent sessions are never assigned overlapping lanes.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/parallel-session-lane/SKILL.md</code> &middot; #661</span></div>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-stack/skills/parallel-session-lane/SKILL.md</code> &middot; #661</span></div>
 <ul class="enf">
 <li><code>script:plugins/rails-flow/scripts/assign_lanes.py</code></li>
 <li><code>mutation:assign_lanes</code></li>
@@ -337,7 +337,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="guarantee">
 <h2>A session that holds an unmerged recorded lane, or that adds a worktree for a branch or issue which already has an unmerged one, is refused `git worktree add`.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/parallel-session-lane/SKILL.md</code> &middot; #1581</span></div>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-stack/skills/parallel-session-lane/SKILL.md</code> &middot; #1581</span></div>
 <ul class="enf">
 <li><code>hook:plugins/rails-flow/hooks/scripts/guard-worktree.sh</code></li>
 <li><code>gate:hook gates</code></li>
@@ -352,7 +352,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="guarantee">
 <h2>simple_form is mandatory in this stack — no form, and no form element, is built any other way.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/rails-8/references/ecosystem-gems.md</code> &middot; #778 &middot; #1383</span></div>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-stack/skills/rails-8/references/ecosystem-gems.md</code> &middot; #778 &middot; #1383</span></div>
 <ul class="enf">
 <li><code>script:plugins/rails-flow/scripts/check_mandated_gems.py</code></li>
 <li><code>mutation:check_mandated_gems</code></li>
@@ -363,7 +363,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="guarantee">
 <h2>The prescribed testing stack is not a menu — a project missing simplecov, webmock or vcr is incomplete, not merely different.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/rails-8/references/testing.md</code> &middot; #778 &middot; #797</span></div>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-stack/skills/rails-8/references/testing.md</code> &middot; #778 &middot; #797</span></div>
 <ul class="enf">
 <li><code>script:plugins/rails-flow/scripts/check_mandated_gems.py</code></li>
 <li><code>script:scripts/derive_mandated_gems.py</code></li>
@@ -374,7 +374,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="guarantee">
 <h2>`--skip-test` leaves `config/ci.rb` with no test step, so `bin/ci` reports green having run zero specs unless the step is added back.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/rails-8/references/testing.md</code> &middot; #391 &middot; #779</span></div>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-stack/skills/rails-8/references/testing.md</code> &middot; #391 &middot; #779</span></div>
 <ul class="enf">
 <li><code>script:plugins/rails-flow/scripts/check_ci_runs_tests.py</code></li>
 <li><code>mutation:check_ci_runs_tests</code></li>
@@ -383,7 +383,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="guarantee">
 <h2>`spec/support/**` is dead until the auto-loader Rails generates COMMENTED is uncommented — every support file, with no error and no output.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/rails-8/references/testing.md</code> &middot; #803</span></div>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-stack/skills/rails-8/references/testing.md</code> &middot; #803</span></div>
 <ul class="enf">
 <li><code>script:plugins/rails-flow/scripts/check_spec_support.py</code></li>
 <li><code>mutation:check_spec_support</code></li>
@@ -392,7 +392,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="guarantee">
 <h2>Coverage gates on the DROP, never an absolute number — a fixed `minimum_coverage` is inert below the repo and red above it.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/rails-8/references/testing.md</code> &middot; #800</span></div>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-stack/skills/rails-8/references/testing.md</code> &middot; #800</span></div>
 <ul class="enf">
 <li><code>script:plugins/rails-flow/scripts/check_coverage_ratchet.py</code></li>
 <li><code>mutation:check_coverage_ratchet</code></li>
@@ -459,19 +459,19 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="advice">
 <h2>The worktree guard protects against accident, not impersonation: a session&#x27;s identity is the session id it sends.</h2>
-<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>skills/parallel-session-lane/SKILL.md</code> &middot; #1581</span></div>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>plugins/rails-stack/skills/parallel-session-lane/SKILL.md</code> &middot; #1581</span></div>
 <p class="none">Nothing enforces this.</p>
 <p class="note">A stated limit, not a guarantee, and nothing enforces it away: anything that can send the coordinator&#x27;s session id can write the lane record, and a session nobody recorded passes the one-issue rule. Deliberately so: the guard exists to stop a resumed or over-eager session creating a second worktree, and a stronger identity would need a host mechanism this repo does not have.</p>
 </div>
 <div class="row" data-k="advice">
 <h2>A session ends its worktree with the teardown when its PR merges or its review finishes.</h2>
-<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>skills/parallel-session-lane/SKILL.md</code> &middot; #1581 &middot; #2058</span></div>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>plugins/rails-stack/skills/parallel-session-lane/SKILL.md</code> &middot; #1581 &middot; #2058</span></div>
 <p class="none">Nothing enforces this.</p>
 <p class="note">Advice with an advisory behind it: the session-start hook lists merged, clean worktrees and names `worktree_teardown.py`, but nothing makes a session run it. What IS enforced is the script (its selftest and mutation guard: it refuses a dirty, unmerged, locked or main worktree, drops only its own databases, stops only its own processes, never passes `--force`) and that the four places that tell a session how to end a worktree name it (`--check-wording`, a doctor gate). `--force` stays refused by doctrine because a session destroyed a finished fix that way.</p>
 </div>
 <div class="row" data-k="advice">
 <h2>The quality pass never blocks a merge -- a gate on taste gets switched off, and then nothing checks quality at all.</h2>
-<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>skills/quality-pass/SKILL.md</code></span></div>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>plugins/rails-stack/skills/quality-pass/SKILL.md</code></span></div>
 <ul class="enf">
 <li><code>gate:shared shapes</code></li>
 <li><code>script:scripts/check_shared_shapes.py</code></li>
@@ -480,29 +480,29 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="advice">
 <h2>A gate that needs a carve-out on its first real input is taste wearing a count.</h2>
-<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>skills/quality-pass/SKILL.md</code> &middot; #476</span></div>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>plugins/rails-stack/skills/quality-pass/SKILL.md</code> &middot; #476</span></div>
 <p class="none">Nothing enforces this.</p>
 <p class="note">#476: a monotony gate flagged our own worked example on first real input. Cited to keep later gates advisory; unenforceable by construction, since it is the rule for deciding whether to build a gate at all.</p>
 </div>
 <div class="row" data-k="advice">
 <h2>Before a project ships an MCP write tool it answers, in its own CLAUDE.md, five decisions: who may write, how a change is confirmed, what stops a retried call writing twice, how the audit tells agent writes from human ones, and how a wrong write is undone (mcp-server.md §6).</h2>
-<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>skills/rails-8/references/mcp-server.md</code> &middot; #2052 &middot; #2051 &middot; #2056</span></div>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>plugins/rails-stack/skills/rails-8/references/mcp-server.md</code> &middot; #2052 &middot; #2051 &middot; #2056</span></div>
 <p class="none">Nothing enforces this.</p>
 <p class="note">Owner ruling on #2056 (option 2: a checklist, not rules). Each spec-cited mechanism is doctrine-verifier CONFIRMED against MCP 2026-07-28 (#2051); items 3-5 are labelled our design because the spec defines none. Nothing can check a project&#x27;s CLAUDE.md answers, and a project with no write tools answers in one line, so this is advice by the harness-doctrine test.</p>
 </div>
 <div class="row" data-k="advice">
 <h2>Prefer expanded conditionals over guard clauses when writing new code (style.md §1).</h2>
-<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>skills/rails-8/references/style.md</code> &middot; #1363</span></div>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>plugins/rails-stack/skills/rails-8/references/style.md</code> &middot; #1363</span></div>
 <p class="none">Nothing enforces this.</p>
 <p class="note">#1363, verified on rubocop 1.91.0: no stock cop prefers expanded conditionals, and Style/GuardClause has no EnforcedStyle to invert. The rule&#x27;s two exceptions (a return at the start; a non-trivial body) are judgement, and it says to leave working code alone. A cop would contradict the section it enforced.</p>
 </div>
 <div class="row" data-k="advice">
 <h2>Indent under visibility modifiers, with no blank line after them; a private-only module is the exception (style.md §5).</h2>
-<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>skills/rails-8/references/style.md</code> &middot; #1363</span></div>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>plugins/rails-stack/skills/rails-8/references/style.md</code> &middot; #1363</span></div>
 <p class="none">Nothing enforces this.</p>
 <p class="note">#1363, verified on rubocop 1.91.0 / rubocop-rails-omakase 1.1.0: IndentationWidth + IndentationConsistency(indented_internal_methods) + EmptyLinesAroundAccessModifier(only_before) enforce the main shape exactly, but flag the private-only-module exception twice, and no option expresses that exception. Advice by default; a project may adopt the three with a per-file carve-out for private-only modules.</p>
 </div>
-<div class="floor"><strong>This map is a floor, not a ceiling.</strong> The audit can tell you a declared doctrine source has <em>no</em> rows; nothing here can tell you a source with four rows was not owed nine. A row count is evidence that someone looked, never proof the file is covered. Sources declared: <code>CLAUDE.md</code>, <code>AGENTS.md</code>, <code>docs/doctrine/harness-doctrine.md</code>, <code>skills/code-review/SKILL.md</code>, <code>skills/quality-pass/SKILL.md</code>, <code>skills/derived-artifacts/SKILL.md</code>, <code>skills/parallel-session-lane/SKILL.md</code>, <code>plugins/rails-flow/commands/feature.md</code>, <code>plugins/rails-flow/commands/handoff.md</code>, <code>plugins/rails-flow/commands/fix.md</code>, <code>plugins/design-flow/commands/generate.md</code>, <code>plugins/qa-flow/commands/certify.md</code>, <code>plugins/qa-flow/agents/perf-tester.md</code>.</div>
+<div class="floor"><strong>This map is a floor, not a ceiling.</strong> The audit can tell you a declared doctrine source has <em>no</em> rows; nothing here can tell you a source with four rows was not owed nine. A row count is evidence that someone looked, never proof the file is covered. Sources declared: <code>CLAUDE.md</code>, <code>AGENTS.md</code>, <code>docs/doctrine/harness-doctrine.md</code>, <code>plugins/rails-stack/skills/code-review/SKILL.md</code>, <code>plugins/rails-stack/skills/quality-pass/SKILL.md</code>, <code>plugins/rails-stack/skills/derived-artifacts/SKILL.md</code>, <code>plugins/rails-stack/skills/parallel-session-lane/SKILL.md</code>, <code>plugins/rails-flow/commands/feature.md</code>, <code>plugins/rails-flow/commands/handoff.md</code>, <code>plugins/rails-flow/commands/fix.md</code>, <code>plugins/design-flow/commands/generate.md</code>, <code>plugins/qa-flow/commands/certify.md</code>, <code>plugins/qa-flow/agents/perf-tester.md</code>.</div>
 </main>
 <script>var btns=document.querySelectorAll('button[data-k]');
 function apply(k){

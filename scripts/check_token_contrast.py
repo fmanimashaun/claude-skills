@@ -58,7 +58,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-TOKENS = REPO / "skills" / "design-system" / "references" / "foundations-tokens.md"
+TOKENS = REPO / "plugins" / "rails-stack" / "skills" / "design-system" / "references" / "foundations-tokens.md"
 # Every brand pack this repo ships. A pack is the file a user's app is actually built from, so it
 # is not a lesser input than the doctrine file -- it is the more consequential one.
 PACK_GLOB = "plugins/design-flow/brands/*/theme.css"

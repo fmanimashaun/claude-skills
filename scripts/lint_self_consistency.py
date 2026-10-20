@@ -442,7 +442,7 @@ def check_component_call_sites() -> tuple[list[Finding], int]:
     findings: list[Finding] = []
     for name in sorted(top - called):
         findings.append(Finding(
-            "component-without-call-site", "skills/**", 0,
+            "component-without-call-site", "plugins/rails-stack/skills/**", 0,
             f"{name} is documented but never called -- a reader must infer the invocation, which "
             "is how a wrong call site ships, and the doctrine-call-site rule silently skips a "
             "component it has no call site for",
@@ -452,7 +452,7 @@ def check_component_call_sites() -> tuple[list[Finding], int]:
     # so they count as declared here.
     for name in sorted(called - top - nested):
         findings.append(Finding(
-            "undeclared-component-call-site", "skills/**", 0,
+            "undeclared-component-call-site", "plugins/rails-stack/skills/**", 0,
             f"{name} is called but no skill declares it -- its keywords and slots cannot be "
             "checked, so a wrong signature here is invisible",
         ))
@@ -844,7 +844,7 @@ def check_cross_plugin_relative_path() -> tuple[list[Finding], int]:
     # `(?![\w-])` ends the name without needing a slash (`cd ../rails-flow`) and keeps `rails-flow-x` out.
     pattern = re.compile(r"(?<![\w.])(?:\.\./)+(?:plugins/)?(" + "|".join(map(re.escape, plugins)) + r")(?![\w-])")
     docs = [(p, p.relative_to(ROOT).as_posix().split("/")[1]) for p in sorted((ROOT / "plugins").glob("*/**/*.md"))]
-    docs += [(p, "rails-stack") for p in sorted((ROOT / "skills").glob("**/*.md"))]
+    docs += [(p, "rails-stack") for p in sorted((ROOT / "plugins" / "rails-stack" / "skills").glob("**/*.md"))]
     examined = 0
     for path, own in docs:
         rel = path.relative_to(ROOT).as_posix()
@@ -2173,7 +2173,7 @@ def check_flattened_conditional_role() -> tuple[list[Finding], int]:
     findings: list[Finding] = []
     branches: list[tuple[str, str]] = []
     for path in walk(".md"):
-        if not rel(path).startswith("skills/"):
+        if not rel(path).startswith("plugins/rails-stack/skills/"):  # #2182
             continue
         for match in _CONDITIONAL_ROLE.finditer(read(path)):
             branches.append((match.group("a"), match.group("b")))
@@ -2187,7 +2187,9 @@ def check_flattened_conditional_role() -> tuple[list[Finding], int]:
 
     examined = 0
     for path in walk(".md"):
-        if not rel(path).startswith("plugins/"):
+        # The doctrine itself (plugins/rails-stack/skills/, under plugins/ since #2182) is where the
+        # conditional is learned, not a place that can flatten it: the check covers the flows only.
+        if not rel(path).startswith("plugins/") or rel(path).startswith("plugins/rails-stack/skills/"):
             continue
         # Paragraphs, because that is the unit a reader takes the instruction from. Splitting on
         # lines would fire on any prose that wraps between the two branch names.
@@ -2430,7 +2432,9 @@ _SKILL_POINTER = re.compile(
     # is the user's project directory, not ours, and `/` before `skills` is what tells them apart.
     # It must NOT exclude a backtick: almost every real pointer is written `skills/x/y.md`, and
     # excluding it made this rule silently skip its main case until the selftest caught it.
-    r"(?<![\w./-])(skills/[A-Za-z0-9._-]+/[A-Za-z0-9._/-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+)(?::\d+)?"
+    # Since #2182 the shipped skills live in plugins/rails-stack/skills/; a bare `skills/…` pointer still
+    # matches, and is now a finding because nothing is there.
+    r"(?<![\w./-])((?:plugins/rails-stack/)?skills/[A-Za-z0-9._-]+/[A-Za-z0-9._/-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+)(?::\d+)?"
 )
 
 
@@ -2558,14 +2562,16 @@ def check_link_leaves_package() -> tuple[list[Finding], int]:
     broken even here (`../../skills/...` from `commands/`). Name the other package's file in prose
     (`` `plugins/rails-stack/skills/design-system/references/brand.md` ``, in rails-stack) instead.
 
-    A package is `plugins/<name>/` or `skills/<name>/`. Fences, inline code and comments only quote a
+    A package is `plugins/<name>/` or, for rails-stack, each `plugins/rails-stack/skills/<name>/`: a skill
+    ships alone as a `.skill`, so it may not link into a sibling skill (#2182). Fences, inline code and comments only quote a
     link; URLs and `#anchors` carry no path.
     """
     from urllib.parse import unquote
     findings: list[Finding] = []
     examined = 0
-    for base in ("plugins", "skills"):
-        for package in sorted(p for p in (ROOT / base).glob("*") if p.is_dir()):
+    for base in ("plugins", "plugins/rails-stack/skills"):
+        for package in sorted(p for p in (ROOT / base).glob("*") if p.is_dir()
+                              and p.relative_to(ROOT).as_posix() != "plugins/rails-stack"):
             root = package.resolve()
             for path in sorted(package.rglob("*.md")):
                 prose = _blank_markdown_code(read(path))
@@ -2626,7 +2632,7 @@ def check_dangling_conditional_floor() -> tuple[list[Finding], int]:
     structural -- does the file discuss the second factor at all -- not a judgement about whether the
     guidance is good. It cannot tell adequate doctrine from a stub, and does not pretend to.
     """
-    doc = ROOT / "skills" / "rails-8" / "references" / "auth-security.md"
+    doc = ROOT / "plugins" / "rails-stack" / "skills" / "rails-8" / "references" / "auth-security.md"
     if not doc.is_file():
         return [], 0
     body = read(doc)
@@ -2861,7 +2867,7 @@ def _changelog_owner(path: str, plugins: list[str]) -> str:
     parts = path.split("/")
     if parts[0] == "plugins" and len(parts) > 1 and parts[1] in plugins:
         return parts[1]
-    if parts[0] == "skills" or path.endswith(".skill"):
+    if parts[0] == "skills" or parts[:2] == ["plugins", "rails-stack"] or path.endswith(".skill"):
         return "rails-stack"
     return "repository"
 
@@ -3262,7 +3268,7 @@ def check_undocumented_skill() -> tuple[list[Finding], int]:
     body = read(doc)
     findings: list[Finding] = []
     examined = 0
-    for parent in ("skills", ".claude/skills"):
+    for parent in ("plugins/rails-stack/skills", ".claude/skills"):
         base = ROOT / parent
         if not base.is_dir():
             continue
@@ -3380,7 +3386,7 @@ def check_password_floor() -> tuple[list[Finding], int]:
     mention-versus-prescription false positive as #491. A number-to-number join has no such
     ambiguity, so that is what this checks and all it checks.
     """
-    doc = ROOT / "skills" / "rails-8" / "references" / "auth-security.md"
+    doc = ROOT / "plugins" / "rails-stack" / "skills" / "rails-8" / "references" / "auth-security.md"
     if not doc.is_file():
         return [], 0
     body = read(doc)
@@ -3569,7 +3575,7 @@ def check_orphaned_controller() -> tuple[list[Finding], int]:
     edit nobody makes is the bug this rule exists to catch.
     """
     findings: list[Finding] = []
-    impls = ROOT / "skills" / "design-system" / "references" / "component-implementations.md"
+    impls = ROOT / "plugins" / "rails-stack" / "skills" / "design-system" / "references" / "component-implementations.md"
     setup = ROOT / "plugins" / "design-flow" / "commands" / "setup.md"
     if not impls.is_file() or not setup.is_file():
         return findings, 0
@@ -3623,7 +3629,7 @@ def check_undeclared_component_label() -> tuple[list[Finding], int]:
     # cannot hide here -- an unknown extra is reported below.
     NON_DIRECTORY = {"packaging", "marketplace"}
     BUNDLE = {"rails-stack"}
-    shipped = {d.name for d in (ROOT / "skills").glob("*") if d.is_dir()} | \
+    shipped = {d.name for d in (ROOT / "plugins" / "rails-stack" / "skills").glob("*") if d.is_dir()} | \
               {d.name for d in (ROOT / "plugins").glob("*") if d.is_dir()}
     shipped -= BUNDLE
     examined = len(shipped) + len(declared)
@@ -4366,7 +4372,7 @@ def selftest() -> int:
             f"{SCRIPTS}/check_thing.py":
                 'from pathlib import Path\n'
                 f'REPO = {expr}\n'
-                'DOC = REPO / "skills" / "design-system" / "references" / "foundations-tokens.md"\n',
+                'DOC = REPO / "plugins" / "rails-stack" / "skills" / "design-system" / "references" / "foundations-tokens.md"\n',
         }, rule=CSD, expect_finding=True)
 
     # THE FIX is silent -- and the fixture must still CONTAIN the literal, or it proves silence
@@ -4572,7 +4578,7 @@ def selftest() -> int:
     scenario("...even when it resolves to nothing", rule=LLP, expect_finding=True,
              files={"plugins/design-flow/commands/setup.md": "See [b](../../skills/design-system/references/brand.md).\n"})
     scenario("...a skill linking to a sibling skill", rule=LLP, expect_finding=True,
-             files={"skills/a/SKILL.md": "[x](../b/SKILL.md)\n", "skills/b/SKILL.md": "x\n"})
+             files={"plugins/rails-stack/skills/a/SKILL.md": "[x](../b/SKILL.md)\n", "plugins/rails-stack/skills/b/SKILL.md": "x\n"})
     scenario("...silent on a link inside the same package, a prose path, a URL and an anchor", rule=LLP,
              expect_finding=False,
              files={"plugins/design-flow/commands/setup.md":
@@ -4771,7 +4777,7 @@ def selftest() -> int:
                     ".claude/skills/plugin-boundaries/SKILL.md": "---\nname: plugin-boundaries\n---\n"})
     # A directory without a SKILL.md is not a skill -- do not fire on stray folders.
     scenario("...silent on a directory that is not a skill", rule=UDS, expect_finding=False,
-             files={"CLAUDE.md": "# CLAUDE.md\n", "skills/notaskill/README.md": "hi\n"})
+             files={"CLAUDE.md": "# CLAUDE.md\n", "plugins/rails-stack/skills/notaskill/README.md": "hi\n"})
 
     # -- unimported-agent-instructions ------------------------------------
     UAI = "unimported-agent-instructions"
@@ -5040,28 +5046,28 @@ def selftest() -> int:
            '- name: "comp:packaging"\n  color: "1f6feb"\n  description: "x"\n'
            '- name: "comp:marketplace"\n  color: "1f6feb"\n  description: "x"\n')
     scenario("a skill with no comp label", rule=UCL, expect_finding=True,
-             files={".github/labels.yml": YML, "skills/alpha/SKILL.md": "x\n",
-                    "skills/beta/SKILL.md": "x\n"})
+             files={".github/labels.yml": YML, "plugins/rails-stack/skills/alpha/SKILL.md": "x\n",
+                    "plugins/rails-stack/skills/beta/SKILL.md": "x\n"})
     scenario("a plugin with no comp label", rule=UCL, expect_finding=True,
-             files={".github/labels.yml": YML, "skills/alpha/SKILL.md": "x\n",
+             files={".github/labels.yml": YML, "plugins/rails-stack/skills/alpha/SKILL.md": "x\n",
                     "plugins/gamma/commands/a.md": "x\n"})
     scenario("every shipped component declared is silent", rule=UCL, expect_finding=False,
-             files={".github/labels.yml": YML, "skills/alpha/SKILL.md": "x\n"})
+             files={".github/labels.yml": YML, "plugins/rails-stack/skills/alpha/SKILL.md": "x\n"})
     # THE OTHER DIRECTION: a label whose component is gone, or whose name is a typo.
     scenario("a declared label with no directory is reported", rule=UCL, expect_finding=True,
              files={".github/labels.yml": YML + '- name: "comp:ghost"\n  color: "x"\n',
-                    "skills/alpha/SKILL.md": "x\n"})
+                    "plugins/rails-stack/skills/alpha/SKILL.md": "x\n"})
     # The non-directory labels are legitimately directory-less and must NOT be reported...
     scenario("packaging and marketplace are exempt", rule=UCL, expect_finding=False,
-             files={".github/labels.yml": YML, "skills/alpha/SKILL.md": "x\n"})
+             files={".github/labels.yml": YML, "plugins/rails-stack/skills/alpha/SKILL.md": "x\n"})
     # ...and `rails-stack` is the bundle, not a component: each skill carries its own label.
     scenario("the rails-stack bundle needs no label of its own", rule=UCL, expect_finding=False,
-             files={".github/labels.yml": YML, "skills/alpha/SKILL.md": "x\n",
+             files={".github/labels.yml": YML, "plugins/rails-stack/skills/alpha/SKILL.md": "x\n",
                     "plugins/rails-stack/commands/a.md": "x\n"})
     # No labels.yml at all: report nothing rather than every component. A missing FILE is a
     # different problem from a missing entry, and conflating them would fire 11 findings at once.
     scenario("no labels.yml is silent", rule=UCL, expect_finding=False,
-             files={"skills/alpha/SKILL.md": "x\n"})
+             files={"plugins/rails-stack/skills/alpha/SKILL.md": "x\n"})
 
     # -- unprovisioned-label (#487, #490) ---------------------------------
     UPL = "unprovisioned-label"
@@ -5222,10 +5228,10 @@ def selftest() -> int:
     # ends up deleted along with the warning.
     scenario("...but naming it as unreliable is the doctrine, not the defect",
              rule=AMI, expect_finding=False, files={
-        "skills/y/SKILL.md": "`--author @me` is not identity: every session shares one git user.\n"})
+        "plugins/rails-stack/skills/y/SKILL.md": "`--author @me` is not identity: every session shares one git user.\n"})
     scenario("...including when the refusal is the sentence UNDER the fenced command",
              rule=AMI, expect_finding=False, files={
-        "skills/y/SKILL.md": "```bash\ngh pr list --author @me --limit 100\n```\n\n"
+        "plugins/rails-stack/skills/y/SKILL.md": "```bash\ngh pr list --author @me --limit 100\n```\n\n"
                              "Measured: five open PRs, one of them yours. This is not identity.\n"})
     # And the control that stops the carve-out swallowing everything: a refusal word about some
     # OTHER subject, far from the command, must not excuse it.
@@ -5273,7 +5279,7 @@ def selftest() -> int:
     # -- component-without-call-site / undeclared-component-call-site (#238) ----
     # Both directions, plus the nested-class exemption: a class reached only through a parent's slot
     # setter cannot have a standalone call site, so demanding one would demand the impossible.
-    DECL = ("skills/x/references/impl.md",
+    DECL = ("plugins/rails-stack/skills/x/references/impl.md",
             "```ruby\nmodule Ui\n  class ThingComponent < ViewComponent::Base\n"
             "    def initialize(a:)\n      @a = a\n    end\n  end\nend\n```\n")
     scenario("a documented component with no call site", rule="component-without-call-site",
@@ -5773,7 +5779,7 @@ def selftest() -> int:
     # -- doctrine-call-site-mismatch --------------------------------------
     R = "doctrine-call-site-mismatch"
     COMPONENT = (
-        "skills/x/references/impl.md",
+        "plugins/rails-stack/skills/x/references/impl.md",
         "```ruby\nmodule Ui\n  class CardComponent < ViewComponent::Base\n"
         "    renders_one :header\n    renders_one :body\n"
         "    def initialize(title:, size: :md)\n      @title, @size = title, size\n"
@@ -5816,7 +5822,7 @@ def selftest() -> int:
     # `with_option` against `renders_many :options` must stay silent. Found by writing the first
     # shipped call site that uses a renders_many slot (#95) and watching the linter flag it.
     MANY = (
-        "skills/x/references/impl.md",
+        "plugins/rails-stack/skills/x/references/impl.md",
         "```ruby\nmodule Ui\n  class ListComponent < ViewComponent::Base\n"
         "    renders_many :options\n    def initialize(id:)\n      @id = id\n    end\n  end\nend\n```\n",
     )
@@ -5843,7 +5849,7 @@ def selftest() -> int:
     # version of the cross-contamination fixture below VACUOUS (it passed with the fix reverted).
     # Found by reverting the fix and checking the fixture actually failed.
     TWO_CLASSES = (
-        "skills/x/references/impl.md",
+        "plugins/rails-stack/skills/x/references/impl.md",
         "```ruby\nmodule Ui\n  class OneComponent < ViewComponent::Base\n"
         "    renders_one :alpha\n    def initialize(a:)\n      @a = a\n    end\n  end\nend\n```\n"
         "```ruby\nmodule Ui\n  class TwoComponent < ViewComponent::Base\n"
@@ -5868,7 +5874,7 @@ def selftest() -> int:
     # The six false positives that the first version of this rule produced. `with_*` is
     # a common Ruby idiom outside ViewComponent, and flagging it made the rule useless.
     scenario("ActiveRecord and gem `with_*` idioms are not slots", rule=R, expect_finding=False,
-             files={"skills/x/references/models.md":
+             files={"plugins/rails-stack/skills/x/references/models.md":
                     "```ruby\nrecord.with_lock { record.save! }\n"
                     "ActiveRecord::Base.with_connection { |c| c.execute(sql) }\n"
                     "chat.with_instructions(\"be terse\").with_temperature(0.2)\n"
@@ -5998,7 +6004,7 @@ def selftest() -> int:
     CI_STEPS = ('  step "Setup", "bin/setup --skip-server"\n'
                 '  step "Style: Ruby", "bin/rubocop"\n')
     scenario("a CI.run example with no test step", rule=CIG, expect_finding=True,
-             files={"skills/x/references/testing.md":
+             files={"plugins/rails-stack/skills/x/references/testing.md":
                     "```ruby\nCI.run do\n" + CI_STEPS + "end\n```\n"})
     # Also the only PLUGIN-side positive. The scope test is one `or`, so a mutation dropping just
     # the `plugins/` half would survive against skills-only fixtures -- a coverage gap in the rule's
@@ -6008,23 +6014,23 @@ def selftest() -> int:
              files={"plugins/x/commands/setup.md":
                     "```ruby\nActiveSupport::ContinuousIntegration.run do\n" + CI_STEPS + "end\n```\n"})
     scenario("a CI.run example that runs the suite is silent", rule=CIG, expect_finding=False,
-             files={"skills/x/references/testing.md":
+             files={"plugins/rails-stack/skills/x/references/testing.md":
                     "```ruby\nCI.run do\n" + CI_STEPS +
                     '  step "Tests: RSpec", "bundle exec rspec"\nend\n```\n'})
     scenario("a Minitest project's suite counts too", rule=CIG, expect_finding=False,
-             files={"skills/x/references/testing.md":
+             files={"plugins/rails-stack/skills/x/references/testing.md":
                     "```ruby\nCI.run do\n" + CI_STEPS +
                     '  step "Tests: Rails", "bin/rails test"\nend\n```\n'})
     # NEAR MISS, and the one that keeps the rule usable: a single `step` line quoted to show ONE
     # check (api-documentation.md does this for the OpenAPI drift gate) is not a whole-file example.
     # If it fired there, the fix would be to paste an entire ci.rb into a section about swagger.
     scenario("a lone step line without CI.run is not a whole file", rule=CIG, expect_finding=False,
-             files={"skills/x/references/api-documentation.md":
+             files={"plugins/rails-stack/skills/x/references/api-documentation.md":
                     '```ruby\nstep "API docs: fresh", "bin/rails rswag:specs:swaggerize"\n```\n'})
     # NEAR MISS: the doctrine EXPLAINING this defect has to name `CI.run` in prose. Fencing is what
     # separates an example a user pastes from a sentence about one.
     scenario("prose naming CI.run outside a fence stays silent", rule=CIG, expect_finding=False,
-             files={"skills/x/references/testing.md":
+             files={"plugins/rails-stack/skills/x/references/testing.md":
                     "Under `--skip-test`, the `CI.run` block Rails generates has no test step.\n"})
     scenario("the CHANGELOG may quote a superseded example", rule=CIG, expect_finding=False,
              files={"CHANGELOG.md": "```ruby\nCI.run do\n" + CI_STEPS + "end\n```\n"})
@@ -6067,20 +6073,20 @@ def selftest() -> int:
     # shipped wrong because they were correct under v3 and untouched by the migration.
     ON = "v4-outline-none"
     scenario("a v4 recipe using outline-none", rule=ON, expect_finding=True,
-             files={"skills/x/references/t.md":
+             files={"plugins/rails-stack/skills/x/references/t.md":
                     'BASE = "focus-visible:outline-none focus-visible:ring-2"\n'})
     scenario("other variants are caught too, not just focus-visible", rule=ON, expect_finding=True,
-             files={"skills/x/references/t.md": '<a class="focus:outline-none ring-2">x</a>\n'})
+             files={"plugins/rails-stack/skills/x/references/t.md": '<a class="focus:outline-none ring-2">x</a>\n'})
     # NEAR MISS, and the one that decides whether this rule survives: the doctrine EXPLAINING the
     # defect has to name the bad utility repeatedly. If prose fires, the rule is unusable in the very
     # file that documents it -- components.md mentions `outline-none` five times on purpose.
     scenario("prose naming the utility must stay silent", rule=ON, expect_finding=False,
-             files={"skills/x/references/t.md":
+             files={"plugins/rails-stack/skills/x/references/t.md":
                     "Never write `outline-none` in v4: it sets `outline-style: none`. Tailwind v3's\n"
                     "outline-none was renamed to `outline-hidden`, so outline-none now means the\n"
                     "opposite. Use outline-hidden instead.\n"})
     scenario("the correct utility must stay silent", rule=ON, expect_finding=False,
-             files={"skills/x/references/t.md":
+             files={"plugins/rails-stack/skills/x/references/t.md":
                     'BASE = "focus-visible:outline-hidden focus-visible:ring-2"\n'})
     # Scope: this is Tailwind-v4 doctrine WE ship. A plugin or script mentioning it is not a recipe.
     scenario("outside skills/ is out of scope", rule=ON, expect_finding=False,
@@ -6320,30 +6326,30 @@ def selftest() -> int:
     # ---- unreachable-coercion-fallback --------------------------------------------
     UC = "unreachable-coercion-fallback"
     scenario("the #352 Logo expression verbatim", rule=UC, expect_finding=True,
-             files={"skills/x/references/t.md":
+             files={"plugins/rails-stack/skills/x/references/t.md":
                     "      @px = (SIZE[size.to_sym] || size.to_i).clamp(20, 200)\n"})
     scenario("to_f counts too -- same contradiction, different coercion", rule=UC, expect_finding=True,
-             files={"skills/x/references/t.md":
+             files={"plugins/rails-stack/skills/x/references/t.md":
                     "    @ratio = SCALE[ratio.to_sym] || ratio.to_f\n"})
     scenario("plugins/ is in scope as well as skills/", rule=UC, expect_finding=True,
              files={"plugins/x/commands/c.md": "  @px = MAP[size.to_sym] || size.to_i\n"})
     # The FIX must be silent, or the rule fails the file it was written for.
     scenario("the type-branching fix is silent", rule=UC, expect_finding=False,
-             files={"skills/x/references/t.md":
+             files={"plugins/rails-stack/skills/x/references/t.md":
                     "      @px = (size.is_a?(Integer) ? size : SIZE[size.to_sym] || "
                     "size.to_s.to_i).clamp(20, 200)\n"})
     # NEAR MISS, and the one that caught a real bug in this rule's first draft: the doctrine
     # explaining #352 has to quote the broken expression, and it sits two lines from the fix.
     scenario("a Ruby comment quoting the bad expression is silent", rule=UC, expect_finding=False,
-             files={"skills/x/references/t.md":
+             files={"plugins/rails-stack/skills/x/references/t.md":
                     "      # a bare `SIZE[size.to_sym] || size.to_i` raises on `size: 48`\n"})
     # NEAR MISS: different identifiers is the normal, correct shape -- look up by one, fall back
     # to another. Firing here would flag ordinary code and get the rule switched off.
     scenario("different identifiers are not a contradiction", rule=UC, expect_finding=False,
-             files={"skills/x/references/t.md": "    @px = SIZE[key.to_sym] || fallback.to_i\n"})
+             files={"plugins/rails-stack/skills/x/references/t.md": "    @px = SIZE[key.to_sym] || fallback.to_i\n"})
     # NEAR MISS: `to_sym` alone is the overwhelmingly common case and is perfectly correct.
     scenario("to_sym with no numeric fallback is silent", rule=UC, expect_finding=False,
-             files={"skills/x/references/t.md": "    @variant, @size = variant.to_sym, size.to_sym\n"})
+             files={"plugins/rails-stack/skills/x/references/t.md": "    @variant, @size = variant.to_sym, size.to_sym\n"})
     scenario("outside shipped docs is out of scope", rule=UC, expect_finding=False,
              files={"docs/x.md": "    @px = SIZE[size.to_sym] || size.to_i\n"})
 
@@ -6449,15 +6455,15 @@ def selftest() -> int:
     # ---- invisible-character -----------------------------------------------------
     IC = "invisible-character"
     scenario("a no-break space in shipped markdown", rule=IC, expect_finding=True,
-             files={"skills/x/references/t.md": "| Carousel | `role=region`\u00a0**or**\u00a0`group` |\n"})
+             files={"plugins/rails-stack/skills/x/references/t.md": "| Carousel | `role=region`\u00a0**or**\u00a0`group` |\n"})
     scenario("a zero-width space in a python module", rule=IC, expect_finding=True,
              files={"scripts/x.py": "VALUE = 1  # trailing\u200b comment\n"})
     scenario("a BOM inside the body of a file", rule=IC, expect_finding=True,
-             files={"skills/x/references/t.md": "# Title\n\ufeffbody\n"})
+             files={"plugins/rails-stack/skills/x/references/t.md": "# Title\n\ufeffbody\n"})
     # NEAR MISS: the characters we use ON PURPOSE must never fire, or the rule gets switched off on
     # its first run over real doctrine — em dash, en dash, ellipsis, arrows, check marks, box drawing.
     scenario("the punctuation our doctrine actually uses is fine", rule=IC, expect_finding=False,
-             files={"skills/x/references/t.md":
+             files={"plugins/rails-stack/skills/x/references/t.md":
                     # A THIN SPACE was in this fixture as "punctuation we use on purpose" and the
                     # rule fired. Checked: the corpus contains none, so the FIXTURE was wrong, not
                     # the rule -- a thin space breaks grep exactly like a no-break space does.
@@ -6477,54 +6483,54 @@ def selftest() -> int:
                 "    def initialize(variant: :primary)\n      @variant = variant\n"
                 "    end\n  end\n```\n")
     scenario("a **attrs initializer accepts arbitrary keywords", rule=R, expect_finding=False,
-             files={"skills/x/references/impl.md": SPLAT +
+             files={"plugins/rails-stack/skills/x/references/impl.md": SPLAT +
                     "```erb\n<%= render SplatComponent.new(variant: :primary, "
                     "data: { action: \"x#y\" }) %>\n```\n"})
     scenario("...but a component with NO splat still fires", rule=R, expect_finding=True,
-             files={"skills/x/references/impl.md": NO_SPLAT +
+             files={"plugins/rails-stack/skills/x/references/impl.md": NO_SPLAT +
                     "```erb\n<%= render StrictComponent.new(variant: :primary, "
                     "data: { action: \"x#y\" }) %>\n```\n"})
     scenario("...and a splat never excuses an undeclared SLOT", rule=R, expect_finding=True,
-             files={"skills/x/references/impl.md": SPLAT +
+             files={"plugins/rails-stack/skills/x/references/impl.md": SPLAT +
                     "```erb\n<%= render SplatComponent.new(variant: :primary) do |c| %>\n"
                     "  <% c.with_nope do %>x<% end %>\n<% end %>\n```\n"})
 
     scenario("icon call carrying a size class", rule=R, expect_finding=True,
-             files={"skills/x/references/i.md":
+             files={"plugins/rails-stack/skills/x/references/i.md":
                     "```erb\n<%= lucide_icon \"chevron-right\", class: \"size-4\" %>\n```\n"})
     scenario("bare icon call", rule=R, expect_finding=False,
-             files={"skills/x/references/i.md":
+             files={"plugins/rails-stack/skills/x/references/i.md":
                     "```erb\n<span class=\"with-icon\"><%= lucide_icon(\"x\") %></span>\n```\n"})
     # The prescribed shape passes `class:` to the WRAPPER, not the icon. Scanning
     # forward from `lucide_icon` flagged this — i.e. the rule flagged the doctrine's
     # own correct example, which is why the check matches parens.
     scenario("class: belongs to the wrapping tag, not the icon", rule=R, expect_finding=False,
-             files={"skills/x/references/i.md":
+             files={"plugins/rails-stack/skills/x/references/i.md":
                     "```ruby\ndef sep = tag.span(helpers.lucide_icon(\"chevron-right\"), "
                     "class: \"with-icon\", aria: { hidden: true })\n```\n"})
     scenario("paren-less icon call with a size class", rule=R, expect_finding=True,
-             files={"skills/x/references/i.md":
+             files={"plugins/rails-stack/skills/x/references/i.md":
                     "```erb\n<%= lucide_icon \"chevron-right\", class: \"size-4\" %>\n```\n"})
     # NEAR MISS: prose stating the rule contains the call name and the banned arg names, but no
     # arguments. It is the doctrine, not a violation of it. (Found by this rule firing on the very
     # comment added to warn readers off `size:` — components.md, #95.)
     scenario("prose naming the banned args is not a call", rule=R, expect_finding=False,
-             files={"skills/x/references/i.md":
+             files={"plugins/rails-stack/skills/x/references/i.md":
                     "```erb\n<%# lucide_icon takes no size:/class: — `with-icon` sizes it %>\n"
                     "<span class=\"with-icon\"><%= lucide_icon(\"x\") %></span>\n```\n"})
     # ...but the carve-out must not swallow a call whose first argument is a VARIABLE, which is a
     # real invocation and still wrong. This is the pair that stops the guard becoming a hole.
     scenario("paren-less call on a variable still flagged", rule=R, expect_finding=True,
-             files={"skills/x/references/i.md":
+             files={"plugins/rails-stack/skills/x/references/i.md":
                     "```erb\n<%= lucide_icon icon_name, class: \"size-4\" %>\n```\n"})
     scenario("paren-less call with a symbol name still flagged", rule=R, expect_finding=True,
-             files={"skills/x/references/i.md":
+             files={"plugins/rails-stack/skills/x/references/i.md":
                     "```erb\n<%= lucide_icon :chevron_right, size: 16 %>\n```\n"})
 
     # A component whose initializer is not documented is a coverage gap (#168), which is
     # a different finding — this rule must not guess at an undocumented signature.
     scenario("undocumented component is skipped, not guessed at", rule=R, expect_finding=False,
-             files={"skills/x/references/impl.md":
+             files={"plugins/rails-stack/skills/x/references/impl.md":
                     "```erb\n<%= render(Ui::MysteryComponent.new(whatever: 1)) %>\n```\n"})
 
     # -- broken-doc-pointer ------------------------------------------------

@@ -81,7 +81,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-SKILLS_DIR = REPO / "skills"
+SKILLS_DIR = REPO / "plugins" / "rails-stack" / "skills"
 
 # Claude Code's documented Level-2 budget. See the module docstring for the two quotes and why the
 # stricter (whole-file) reading is the one measured.

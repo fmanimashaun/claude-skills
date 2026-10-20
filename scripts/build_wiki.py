@@ -136,7 +136,7 @@ def first_sentence(text: str, limit: int = 200) -> str:
 
 def skill_description(name: str) -> str:
     """The skill's own frontmatter description, trimmed to its first sentence."""
-    return first_sentence(frontmatter_description(ROOT / "skills" / name / "SKILL.md"))
+    return first_sentence(frontmatter_description(ROOT / "plugins" / "rails-stack" / "skills" / name / "SKILL.md"))
 
 
 def command_line(plugin: str, name: str) -> str:
@@ -200,7 +200,7 @@ def page_skills() -> str:
            "standalone `.skill` for claude.ai.\n\n"]
     for name in names:
         desc = skill_description(name)
-        refs = sorted((ROOT / "skills" / name / "references").glob("*.md"))
+        refs = sorted((ROOT / "plugins" / "rails-stack" / "skills" / name / "references").glob("*.md"))
         out.append(f"## `{name}`\n")
         if desc:
             out.append(f"{desc}\n")

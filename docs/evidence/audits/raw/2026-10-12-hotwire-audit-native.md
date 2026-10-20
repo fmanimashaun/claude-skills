@@ -1,4 +1,4 @@
-# Audit: skills/hotwire/references/native.md (2026-10-12, doctrine-verifier, read-only)
+# Audit: plugins/rails-stack/skills/hotwire/references/native.md (2026-10-12, doctrine-verifier, read-only)
 Sources: source at tags hotwire-native-ios 1.3.1, hotwire-native-android 1.3.2, hotwire-native-bridge v1.2.2, turbo-rails main (shallow clones of github.com/hotwired/*).
 
 | # | Claim (native.md:line) | Verdict | Source + quote | Version boundary |

@@ -126,7 +126,7 @@ class Claim:
 SHIPPED_SOURCES: tuple[str, ...] = tuple(sorted(
     p.as_posix()
     for skill in ("rails-8", "hotwire", "design-system")
-    for p in (REPO / "skills" / skill).glob("**/*.md")
+    for p in (REPO / "plugins" / "rails-stack" / "skills" / skill).glob("**/*.md")
     if p.is_file()
     for p in [p.relative_to(REPO)]
 ))
