@@ -6,7 +6,7 @@ GUARD = Guard(
     name="component_classes",
     subject="scripts/component_classes.py",
     selftest="scripts/component_classes.py",   # --selftest lives in the module itself
-    needs=("scripts/rails_assumptions.py",),
+    needs=("scripts/rails_assumptions.py", "scripts/hermetic_git.py", "plugins/rails-flow/scripts/fixture_git.py"),   # rails_assumptions imports both at load
     mutations=(
         Mutation(
             "a component nothing declares is accepted",
