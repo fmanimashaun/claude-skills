@@ -20,7 +20,7 @@ Until #661 a human opened N terminals and assigned lanes by hand — this skill 
 nothing could put you in. `rails-flow` now ships an assigner:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assign_lanes.py" app/models app/controllers --budget-usd 6
+python3 plugins/rails-flow/scripts/assign_lanes.py app/models app/controllers --budget-usd 6
 ```
 
 It prints the `git worktree add` per lane and the session command with `RAILS_FLOW_LANE` set. It

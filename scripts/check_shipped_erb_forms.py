@@ -9,7 +9,7 @@ project. The independent pre-release review ran its scanner over our own doctrin
 ```erb blocks that fail it: a downstream app that copies our filter panel, billing radio group or
 checkbox exactly as the design-system shows would go red with no exemption on file. The gate had been
 measured against one downstream app and never against the text agents copy from us. This check runs
-the SAME `scan()` (imported, never a second copy) over every ```erb block under skills/ and plugins/.
+the SAME `scan()` (imported, never a second copy) over every ```erb block under plugins/ (the shipped skills are in plugins/rails-stack/skills/ since #2182).
 
 THE ONE EXCEPTION IS DECLARED IN THE BLOCK, AND NAMES WHAT IT EXCUSES (#1443). A design-system
 primitive that implements a control (the Checkbox, the Combobox, the Tabs picker) is the one place a raw
@@ -100,8 +100,8 @@ def selftest() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        (root / "skills/x").mkdir(parents=True)
-        doc = root / "skills/x/SKILL.md"
+        (root / "plugins/rails-stack/skills/x").mkdir(parents=True)
+        doc = root / "plugins/rails-stack/skills/x/SKILL.md"
         def run(body: str) -> list[str]:
             doc.write_text(body)
             return findings(shipped(root), root)
