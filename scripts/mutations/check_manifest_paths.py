@@ -61,5 +61,11 @@ GUARD = Guard(
             '    if False:\n        return []',
             "is no surface of the plugin",
         ),
+        Mutation(
+            "a setup section escaping its plugin is read, so a file outside vouches for a phantom path",
+            "            if path is None or not path.resolve().is_relative_to(manifest.parent.resolve()):",
+            "            if path is None:",
+            "a setup section that escapes its plugin vouches for nothing",
+        ),
     ),
 )
