@@ -5,7 +5,7 @@ description: How Next.js, Supabase and Vercel fit together in one project, and w
 
 # Next.js + Supabase + Vercel
 
-This skill is the seam between three platforms. It holds **only how they fit together**. Each platform's own knowledge belongs to its vendor, and this skill points there instead of copying it, so it never goes stale against the source (claude-skills EPIC #2162, decision 1).
+This skill is the seam between three platforms. It holds **only how they fit together**. Each platform's own knowledge belongs to its vendor, and this skill points there instead of copying it, so it never goes stale against the source.
 
 Every fact below was checked against the vendor's documentation on 2026-10-20, with the page cited beside it. Re-check the source before relying on it after a vendor release.
 
@@ -24,14 +24,13 @@ When one of those plugins answers a question, follow it. This skill only covers 
 The failure this stack invites is a server-only Supabase key reaching the browser bundle, because Next.js decides what reaches the browser by **name**:
 
 - Next.js exposes to the browser only variables prefixed `NEXT_PUBLIC_`, and inlines them at `next build` ([Next.js environment variables](https://nextjs.org/docs/app/guides/environment-variables)).
-- Supabase's **publishable** key (`sb_publishable_…`; the legacy name is `anon`) may reach the browser: "Anyone can read it, so it only reaches what Row Level Security allows." Enable Row Level Security on every table before you deploy ([Supabase API keys](https://supabase.com/docs/guides/api/api-keys)).
-- Supabase's **secret** key (`sb_secret_…`; the legacy name is `service_role`): "Never put one in a browser, a shipped application, or source control" ([Supabase API keys](https://supabase.com/docs/guides/api/api-keys)).
+- Supabase issues two kinds of API key, one meant for the browser and one only for servers. What each may reach, and how Row Level Security bounds the browser one, is Supabase's to say: read [Supabase API keys](https://supabase.com/docs/guides/api/api-keys) and [Row Level Security](https://supabase.com/docs/guides/database/postgres/row-level-security).
 
 So the rule for this stack: **the publishable key may carry `NEXT_PUBLIC_`; the secret key never does**, and it is read only in server code. A secret key under a `NEXT_PUBLIC_` name is a leak, whatever the code around it does.
 
 ## 3. The CLIs are driven, not reimplemented
 
-The flows drive both vendors' CLIs rather than rebuilding them (EPIC #2162, decision 2):
+The flows drive both vendors' CLIs rather than rebuilding them:
 
 | Step | Command | Source |
 |---|---|---|

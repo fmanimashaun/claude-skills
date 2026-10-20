@@ -12,6 +12,6 @@ Marketplace **1.157.6**.
 | `pipeline` | 1.5.2 | 9 | Lifecycle orchestrator over rails-flow and qa-flow |
 | `design-flow` | 1.46.2 | 12 | Agentic UI/design flow for Rails 8 + Hotwire + Tailwind v4 |
 | `flow-suite` | 1.0.0 | — | One install for rails-flow, qa-flow and pipeline: a bundle whose manifest declares the t |
-| `nextjs-stack` | 0.1.0 | — | Next.js + Supabase + Vercel stack, 0.1.0: conventions, stack markers and strict TypeScri |
+| `nextjs-stack` | 0.1.0 | — | Next.js + Supabase + Vercel stack, 0.1.0, an early release: conventions for how the thre |
 
 `rails-stack` ships **no commands** — it is doctrine only, which is why installing it changes what Claude writes without adding anything to type.
