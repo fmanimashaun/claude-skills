@@ -607,6 +607,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1881 (slice 1 of #1683): what each shipped plugin costs every session before anything is invoked, ratcheted.
     ("always-on cost", ("python3", "scripts/check_always_on_cost.py")),
     ("always-on cost selftest", ("python3", "scripts/check_always_on_cost.py", "--selftest")),
+    # #2165 (e6's review of #2198): the SHIPPED stack markers detect hand-written Next.js, Supabase and Vercel projects. `detect_stack.py --check`
+    # validates a manifest's shape; this catches a well-formed typo (`next` -> `nxt`) that matches no real project.
+    ("stack markers detect their projects", ("python3", "scripts/check_stack_markers.py")),
     ("hook output budget", ("python3", "scripts/check_hook_output_budget.py")),
     # #1887. Third-party SessionStart hooks are reported, not gated (we do not ship them); the report's own logic is a gate.
     ("third-party hooks report selftest", ("python3", "scripts/report_third_party_hooks.py", "--selftest")),

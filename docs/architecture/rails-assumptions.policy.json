@@ -777,6 +777,16 @@
     "seam": "stack-neutral doctrine whose examples name Rails; the Rails examples move out when core-skills is split (step 8)",
     "issue": 2186,
     "why": "measured: code-review and parallel-session-lane name Rails in examples; quality-pass and derived-artifacts do not"
+   },
+   {
+    "match": [
+     "plugins/nextjs-stack/.claude-plugin/*",
+     "plugins/nextjs-stack/skills/*",
+     "plugins/nextjs-stack/stacks.json"
+    ],
+    "class": "nextjs",
+    "issue": 2165,
+    "why": "the nextjs-stack plugin: Next.js + Supabase + Vercel conventions and the stack's markers; they name those platforms by design"
    }
   ]
  }
