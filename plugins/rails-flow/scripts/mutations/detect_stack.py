@@ -50,5 +50,41 @@ GUARD = Guard(
             "            pass",
             "discovery finds a stack plugin in the installed cache",
         ),
+        Mutation(
+            "a descriptor key two plugins declare is merged silently, so one stack's test command overwrites another's",
+            '            if key in owner and owner[key] != found["plugin"]:',
+            "            if False:",
+            "declared by two plugins is a conflict",
+        ),
+        Mutation(
+            "one plugin giving a leaf two values keeps the first in silence",
+            "            elif key in into and into[key] != item:",
+            "            elif False:",
+            "one plugin giving a leaf two values is a conflict",
+        ),
+        Mutation(
+            "three stacks of one plugin do not merge, so Supabase's migrations replace Next.js' source",
+            "                merge(into[key], item, label, here)",
+            "                into[key] = item",
+            "three stacks from one plugin merge",
+        ),
+        Mutation(
+            "an undeclared descriptor key is accepted, so a flow can read a key nobody declared",
+            '            found.append(f"{where}.{key} is not a declared descriptor key (descriptor-key-undeclared)")',
+            "            pass",
+            "an undeclared descriptor key is a problem",
+        ),
+        Mutation(
+            "a port given as text passes, so a flow boots on a string",
+            '        return [] if isinstance(value, int) and not isinstance(value, bool) else [f"{where} must be a whole number"]',
+            "        return []",
+            "a descriptor value of the wrong type is a problem",
+        ),
+        Mutation(
+            "descriptors are never validated on a detection run",
+            "        problems += descriptor_problems(manifest)\n    matched, more = detect(project, manifests)",
+            "        pass\n    matched, more = detect(project, manifests)",
+            "an undeclared key inside a block is a problem",
+        ),
     ),
 )
