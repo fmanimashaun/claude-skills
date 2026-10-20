@@ -64,7 +64,7 @@ In a git repository the list is `git ls-files` (tracked plus untracked and not i
 and ts-not-strict, ts-no-typecheck and ts-explicit-any read the app: every tsconfig outside the skipped directories (a
 tsconfig under `qa/` is the suite's), a CI step that runs `tsc` on the app (`-p` a path outside `qa/` and `node_modules`, or no
 `-p`, from a directory outside them) and can fail, and any in the app's source. A tsc on the suite does not satisfy the app, and
-the reverse. The qa scope is unchanged, and so is every finding it reports.
+the reverse. The qa scope is unchanged, except that a tsc which only prints or lists (`--version`, `--help`, `--showConfig`, `--listFilesOnly`, ...) no longer counts as the suite's type-check.
 
 KNOWN LIMITS.
 - Blanking is a scanner's, not a parser's. A regex literal is recognised by the character before its `/`
@@ -364,7 +364,7 @@ def _listed(root: Path) -> list[Path] | None:
 
 
 class Scope:
-    """WHAT THE CHECK IS ABOUT: the e2e suite under `qa/` (the Rails and qa-flow use, unchanged) or the Next.js APP (#2170).
+    """WHAT THE CHECK IS ABOUT: the e2e suite under `qa/` (the Rails and qa-flow use, unchanged but for the informational-tsc rule) or the Next.js APP (#2170).
     The three rules are the same; the scope decides which files they read, which tsconfigs must be strict, which
     `tsc` call counts as the type-check step, and whether the app's stricter profile and the `@ts-` ban apply."""
 
