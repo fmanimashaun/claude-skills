@@ -837,14 +837,14 @@ def check_findings_script_drift() -> tuple[list[Finding], int]:
 def check_cross_plugin_relative_path() -> tuple[list[Finding], int]:
     """No shipped markdown reaches into a sibling plugin by a relative `../<plugin>/` path."""
     findings: list[Finding] = []
-    # rails-stack ships the top-level skills/ (its marketplace source is the repo root), so it has no
-    # plugins/ directory but is still a plugin a doc could wrongly reach into.
+    # rails-stack is a plugin directory like the others since #2182 (it shipped the repo root before),
+    # so the general walk below finds its skills; the explicit name stays so a clone without it still
+    # recognises a reach into it.
     plugins = sorted({p.name for p in (ROOT / "plugins").glob("*") if p.is_dir()} | {"rails-stack"})
     # `(?:plugins/)?` catches the clone path a rails-stack skill would write (`../../plugins/rails-flow/`);
     # `(?![\w-])` ends the name without needing a slash (`cd ../rails-flow`) and keeps `rails-flow-x` out.
     pattern = re.compile(r"(?<![\w.])(?:\.\./)+(?:plugins/)?(" + "|".join(map(re.escape, plugins)) + r")(?![\w-])")
     docs = [(p, p.relative_to(ROOT).as_posix().split("/")[1]) for p in sorted((ROOT / "plugins").glob("*/**/*.md"))]
-    docs += [(p, "rails-stack") for p in sorted((ROOT / "plugins" / "rails-stack" / "skills").glob("**/*.md"))]
     examined = 0
     for path, own in docs:
         rel = path.relative_to(ROOT).as_posix()

@@ -1357,13 +1357,6 @@ GUARD = Guard(
         ),
         Mutation(
             # #1680
-            "cross-plugin-relative-path skips rails-stack's skills/, which the marketplace ships",
-            '    docs += [(p, "rails-stack") for p in sorted((ROOT / "plugins" / "rails-stack" / "skills").glob("**/*.md"))]\n',
-            '',
-            'cross-plugin-relative-path / a rails-stack skill reaching ../rails-flow/ is a finding',
-        ),
-        Mutation(
-            # #1680
             'cross-plugin-relative-path scans tests/ fixtures, which never ship',
             '        if "/tests/" in rel:\n            continue\n        examined += 1\n        text = path.read_text(encoding="utf-8", errors="replace")',
             '        examined += 1\n        text = path.read_text(encoding="utf-8", errors="replace")',
