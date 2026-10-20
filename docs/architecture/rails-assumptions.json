@@ -92,7 +92,8 @@
    "categories": {
     "concept": 3,
     "gem": 2,
-    "hotwire": 9
+    "hotwire": 9,
+    "tool": 1
    },
    "decision": "rails-stack",
    "how": "moves with its checks.json row",
@@ -100,7 +101,8 @@
     "erb": 2,
     "gem": 2,
     "hotwire": 9,
-    "rails-word": 1
+    "rails-word": 1,
+    "ruby": 1
    },
    "kind": "agent",
    "lines": [
@@ -121,7 +123,8 @@
    "categories": {
     "concept": 4,
     "hotwire": 2,
-    "path": 1
+    "path": 1,
+    "tool": 1
    },
    "decision": "rails-stack",
    "how": "moves with its checks.json row",
@@ -130,6 +133,7 @@
     "erb": 2,
     "hotwire": 2,
     "rails-word": 1,
+    "ruby": 1,
     "ruby-file": 1
    },
    "kind": "agent",
@@ -169,28 +173,31 @@
    "move": ""
   },
   "plugins/design-flow/commands/audit.md": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
+   "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
    "categories": {
-    "concept": 4,
+    "concept": 5,
     "hotwire": 1,
     "path": 2,
-    "tool": 1
+    "tool": 2
    },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
+   "decision": "detector",
+   "how": "the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction)",
    "ids": {
     "app-layers": 2,
     "binstub": 1,
-    "erb": 2,
+    "erb": 3,
     "hotwire": 1,
     "rails-word": 1,
+    "ruby": 1,
     "ruby-file": 1
    },
    "kind": "command",
    "lines": [
     57,
+    76,
     93,
     99,
+    163,
     171,
     276,
     314
@@ -201,19 +208,22 @@
    "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
    "categories": {
     "concept": 3,
-    "hotwire": 3
+    "hotwire": 3,
+    "tool": 1
    },
    "decision": "reword",
    "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
    "ids": {
     "erb": 2,
     "hotwire": 3,
+    "ruby": 1,
     "ruby-file": 1
    },
    "kind": "command",
    "lines": [
     41,
     59,
+    68,
     69,
     70,
     79
@@ -285,7 +295,7 @@
   "plugins/design-flow/commands/setup.md": {
    "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
    "categories": {
-    "concept": 11,
+    "concept": 12,
     "gem": 1,
     "hotwire": 8,
     "path": 5,
@@ -295,7 +305,7 @@
    "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
    "ids": {
     "app-layers": 2,
-    "erb": 4,
+    "erb": 5,
     "gem": 1,
     "hotwire": 8,
     "rails-config": 3,
@@ -312,6 +322,7 @@
     128,
     132,
     142,
+    152,
     153,
     159,
     163,
@@ -332,26 +343,29 @@
    "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
    "categories": {
     "concept": 3,
-    "path": 1
+    "path": 1,
+    "tool": 1
    },
    "decision": "reword",
    "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
    "ids": {
     "app-layers": 1,
-    "rails-word": 3
+    "rails-word": 3,
+    "ruby": 1
    },
    "kind": "command",
    "lines": [
     2,
     11,
-    23
+    23,
+    28
    ],
    "move": ""
   },
   "plugins/design-flow/commands/variants.md": {
    "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
    "categories": {
-    "concept": 18,
+    "concept": 19,
     "hotwire": 3,
     "path": 11,
     "tool": 2
@@ -360,7 +374,7 @@
    "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
    "ids": {
     "app-layers": 9,
-    "erb": 12,
+    "erb": 13,
     "hotwire": 3,
     "rails-word": 2,
     "routes": 2,
@@ -390,6 +404,7 @@
     145,
     150,
     151,
+    155,
     156,
     162,
     210,
@@ -402,40 +417,45 @@
    "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
    "categories": {
     "concept": 2,
-    "tool": 1
+    "tool": 2
    },
    "decision": "reword",
    "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
    "ids": {
     "erb": 1,
-    "ruby": 1,
+    "ruby": 2,
     "ruby-file": 1
    },
    "kind": "hook",
    "lines": [
     11,
+    20,
     23,
     24
    ],
    "move": ""
   },
   "plugins/design-flow/hooks/scripts/lib/trusted-env.sh": {
-   "assumes": "a Gemfile is one of two markers that locate the repository root; a .git alone also works",
+   "assumes": "a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others",
    "categories": {
-    "path": 5
+    "path": 5,
+    "tool": 2
    },
    "decision": "neutral",
    "how": "nothing to change: it already works for a repo with only .git",
    "ids": {
-    "gemfile": 5
+    "gemfile": 5,
+    "ruby": 2
    },
    "kind": "hook",
    "lines": [
+    13,
     18,
     29,
     37,
     45,
-    46
+    46,
+    86
    ],
    "move": ""
   },
@@ -469,7 +489,8 @@
    "categories": {
     "concept": 51,
     "hotwire": 1,
-    "path": 31
+    "path": 31,
+    "tool": 3
    },
    "decision": "rails-stack",
    "how": "moves with its checks.json row",
@@ -477,12 +498,14 @@
     "app-layers": 31,
     "erb": 32,
     "hotwire": 1,
+    "ruby": 3,
     "ruby-file": 19
    },
    "kind": "script",
    "lines": [
     4,
     28,
+    30,
     35,
     78,
     83,
@@ -491,6 +514,7 @@
     159,
     160,
     182,
+    212,
     231,
     232,
     252,
@@ -608,29 +632,38 @@
   "plugins/design-flow/scripts/check_modal_fit.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 22,
-    "path": 7
+    "concept": 26,
+    "path": 7,
+    "tool": 3
    },
    "decision": "rails-stack",
    "how": "moves with its checks.json row",
    "ids": {
     "app-layers": 7,
-    "erb": 11,
+    "erb": 15,
+    "ruby": 3,
     "ruby-file": 11
    },
    "kind": "script",
    "lines": [
     4,
     35,
+    36,
     109,
     110,
     111,
     112,
+    130,
+    134,
+    135,
+    136,
     235,
     236,
+    262,
     263,
     271,
     283,
+    315,
     323,
     363,
     364,
@@ -648,13 +681,15 @@
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
     "concept": 47,
-    "path": 22
+    "path": 22,
+    "tool": 6
    },
    "decision": "rails-stack",
    "how": "moves with its checks.json row",
    "ids": {
     "app-layers": 22,
     "erb": 30,
+    "ruby": 6,
     "ruby-file": 17
    },
    "kind": "script",
@@ -664,7 +699,10 @@
     46,
     85,
     125,
+    173,
+    178,
     194,
+    199,
     214,
     216,
     224,
@@ -693,8 +731,11 @@
     389,
     391,
     395,
+    403,
+    404,
     408,
     409,
+    413,
     421,
     422,
     424,
@@ -866,13 +907,13 @@
   "plugins/design-flow/scripts/llm_tell_detector.py": {
    "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
    "categories": {
-    "concept": 3,
+    "concept": 6,
     "tool": 1
    },
    "decision": "reword",
    "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
    "ids": {
-    "erb": 2,
+    "erb": 5,
     "ruby": 1,
     "ruby-file": 1
    },
@@ -880,7 +921,9 @@
    "lines": [
     447,
     477,
-    578
+    578,
+    775,
+    777
    ],
    "move": ""
   },
@@ -910,18 +953,21 @@
   "plugins/design-flow/scripts/mutations/check_modal_fit.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 4
+    "concept": 4,
+    "tool": 1
    },
    "decision": "rails-stack",
    "followed": "plugins/design-flow/scripts/check_modal_fit.py",
    "how": "moves with its checks.json row",
    "ids": {
     "erb": 1,
+    "ruby": 1,
     "ruby-file": 3
    },
    "kind": "mutation",
    "lines": [
     16,
+    62,
     97,
     98,
     101
@@ -931,19 +977,25 @@
   "plugins/design-flow/scripts/mutations/check_surface_layout.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 4
+    "concept": 4,
+    "tool": 4
    },
    "decision": "rails-stack",
    "followed": "plugins/design-flow/scripts/check_surface_layout.py",
    "how": "moves with its checks.json row",
    "ids": {
     "erb": 2,
+    "ruby": 4,
     "ruby-file": 2
    },
    "kind": "mutation",
    "lines": [
+    49,
+    51,
     80,
     82,
+    104,
+    106,
     113
    ],
    "move": "design-flow-erb"
@@ -968,13 +1020,15 @@
   "plugins/design-flow/scripts/mutations/source_text.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 8
+    "concept": 8,
+    "tool": 4
    },
    "decision": "rails-stack",
    "followed": "plugins/design-flow/scripts/source_text.py",
    "how": "moves with its checks.json row",
    "ids": {
-    "erb": 8
+    "erb": 8,
+    "ruby": 4
    },
    "kind": "mutation",
    "lines": [
@@ -984,8 +1038,12 @@
     65,
     68,
     71,
+    86,
     99,
-    102
+    102,
+    147,
+    165,
+    168
    ],
    "move": "design-flow-erb"
   },
@@ -1100,17 +1158,21 @@
   "plugins/design-flow/scripts/source_text.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 19
+    "concept": 21,
+    "tool": 9
    },
    "decision": "rails-stack",
    "how": "moves with its checks.json row",
    "ids": {
-    "erb": 17,
+    "erb": 19,
+    "ruby": 9,
     "ruby-file": 2
    },
    "kind": "script",
    "lines": [
     22,
+    24,
+    26,
     68,
     74,
     75,
@@ -1119,27 +1181,37 @@
     135,
     139,
     142,
+    158,
     221,
     239,
+    262,
     263,
     264,
     265,
     267,
+    286,
     287,
-    354
+    350,
+    352,
+    353,
+    354,
+    357,
+    378
    ],
    "move": "design-flow-erb"
   },
   "plugins/design-flow/scripts/variant_conformance.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 52
+    "concept": 52,
+    "tool": 1
    },
    "decision": "rails-stack",
    "how": "moves with its checks.json row",
    "ids": {
     "erb": 35,
     "rails-word": 13,
+    "ruby": 1,
     "ruby-file": 4
    },
    "kind": "script",
@@ -1149,6 +1221,7 @@
     122,
     240,
     326,
+    335,
     343,
     466,
     496,
@@ -1332,22 +1405,26 @@
    "move": ""
   },
   "plugins/pipeline/hooks/scripts/lib/trusted-env.sh": {
-   "assumes": "a Gemfile is one of two markers that locate the repository root; a .git alone also works",
+   "assumes": "a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others",
    "categories": {
-    "path": 5
+    "path": 5,
+    "tool": 2
    },
    "decision": "neutral",
    "how": "nothing to change: it already works for a repo with only .git",
    "ids": {
-    "gemfile": 5
+    "gemfile": 5,
+    "ruby": 2
    },
    "kind": "hook",
    "lines": [
+    13,
     18,
     29,
     37,
     45,
-    46
+    46,
+    86
    ],
    "move": ""
   },
@@ -1465,7 +1542,7 @@
    "categories": {
     "concept": 5,
     "path": 12,
-    "tool": 4
+    "tool": 5
    },
    "decision": "rails-stack",
    "how": "the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector",
@@ -1473,7 +1550,7 @@
     "binstub": 1,
     "rails-config": 12,
     "rails-word": 3,
-    "ruby": 3,
+    "ruby": 4,
     "ruby-file": 2
    },
    "kind": "script",
@@ -1481,6 +1558,7 @@
     13,
     23,
     24,
+    28,
     92,
     93,
     94,
@@ -1707,11 +1785,12 @@
   "plugins/qa-flow/agents/security-scanner.md": {
    "assumes": "prose or examples that name bin/rails, RSpec or Rails paths",
    "categories": {
-    "tool": 2
+    "tool": 4
    },
    "decision": "reword",
    "how": "reworded to reference the detector's commands",
    "ids": {
+    "brakeman": 2,
     "bundler-audit": 2
    },
    "kind": "agent",
@@ -1722,14 +1801,14 @@
    "move": ""
   },
   "plugins/qa-flow/commands/setup-qa.md": {
-   "assumes": "prose or examples that name bin/rails, RSpec or Rails paths",
+   "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
    "categories": {
     "concept": 6,
     "path": 2,
     "tool": 2
    },
-   "decision": "reword",
-   "how": "reworded to reference the detector's commands",
+   "decision": "detector",
+   "how": "the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction)",
    "ids": {
     "active-framework": 1,
     "app-layers": 1,
@@ -1753,18 +1832,19 @@
    "move": ""
   },
   "plugins/qa-flow/commands/smoke.md": {
-   "assumes": "prose or examples that name bin/rails, RSpec or Rails paths",
+   "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
    "categories": {
     "concept": 3,
-    "tool": 4
+    "tool": 5
    },
-   "decision": "reword",
-   "how": "reworded to reference the detector's commands",
+   "decision": "detector",
+   "how": "the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction)",
    "ids": {
     "bin-rails": 1,
     "binstub": 2,
     "bundler": 1,
-    "rails-word": 3
+    "rails-word": 3,
+    "ruby": 1
    },
    "kind": "command",
    "lines": [
@@ -1772,18 +1852,19 @@
     22,
     24,
     29,
+    77,
     104
    ],
    "move": ""
   },
   "plugins/qa-flow/commands/verify.md": {
-   "assumes": "prose or examples that name bin/rails, RSpec or Rails paths",
+   "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
    "categories": {
     "concept": 3,
     "tool": 1
    },
-   "decision": "reword",
-   "how": "reworded to reference the detector's commands",
+   "decision": "detector",
+   "how": "the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction)",
    "ids": {
     "bin-rails": 1,
     "rails-word": 3
@@ -1798,22 +1879,26 @@
    "move": ""
   },
   "plugins/qa-flow/hooks/scripts/lib/trusted-env.sh": {
-   "assumes": "a Gemfile is one of two markers that locate the repository root; a .git alone also works",
+   "assumes": "a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others",
    "categories": {
-    "path": 5
+    "path": 5,
+    "tool": 2
    },
    "decision": "neutral",
    "how": "nothing to change: it already works for a repo with only .git",
    "ids": {
-    "gemfile": 5
+    "gemfile": 5,
+    "ruby": 2
    },
    "kind": "hook",
    "lines": [
+    13,
     18,
     29,
     37,
     45,
-    46
+    46,
+    86
    ],
    "move": ""
   },
@@ -1864,7 +1949,7 @@
   "plugins/qa-flow/scripts/blast_radius.py": {
    "assumes": "maps .rb files, spec/ and app/ paths to routes and blast radius, reads bin/rails routes, or names Rails boot failures",
    "categories": {
-    "concept": 37,
+    "concept": 38,
     "gem": 1,
     "hotwire": 1,
     "path": 27
@@ -1874,7 +1959,7 @@
    "ids": {
     "app-layers": 9,
     "db": 3,
-    "erb": 1,
+    "erb": 2,
     "gem": 1,
     "gemfile": 1,
     "hotwire": 1,
@@ -2032,7 +2117,7 @@
    "categories": {
     "concept": 7,
     "path": 9,
-    "tool": 1
+    "tool": 2
    },
    "decision": "detector",
    "how": "reuse for a Next.js project (#2170) once its path filters come from the detector",
@@ -2040,11 +2125,13 @@
     "app-layers": 2,
     "rails-config": 7,
     "rspec": 1,
+    "ruby": 1,
     "ruby-file": 7
    },
    "kind": "script",
    "lines": [
     36,
+    288,
     435,
     438,
     603,
@@ -2060,16 +2147,17 @@
    "assumes": "maps .rb files, spec/ and app/ paths to routes and blast radius, reads bin/rails routes, or names Rails boot failures",
    "categories": {
     "path": 1,
-    "tool": 3
+    "tool": 4
    },
    "decision": "detector",
    "how": "reads source and route extraction from the detector; the Rails route command becomes the rails-stack answer",
    "ids": {
     "gemfile": 1,
-    "ruby": 3
+    "ruby": 4
    },
    "kind": "script",
    "lines": [
+    64,
     140,
     143,
     145
@@ -2218,17 +2306,20 @@
    "assumes": "names Rails paths or the Rails app as the host project in its messages and path filters",
    "categories": {
     "concept": 2,
-    "path": 2
+    "path": 2,
+    "tool": 1
    },
    "decision": "detector",
    "followed": "plugins/qa-flow/scripts/check_ts_strict.py",
    "how": "reuse for a Next.js project (#2170) once its path filters come from the detector",
    "ids": {
     "rails-config": 2,
+    "ruby": 1,
     "ruby-file": 2
    },
    "kind": "mutation",
    "lines": [
+    124,
     127,
     130
    ],
@@ -2560,6 +2651,7 @@
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
     "concept": 4,
+    "gem": 1,
     "hotwire": 2,
     "path": 2
    },
@@ -2567,6 +2659,7 @@
    "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
    "ids": {
     "app-layers": 2,
+    "gem": 1,
     "hotwire": 2,
     "rails-word": 2,
     "ruby-file": 2
@@ -2576,6 +2669,7 @@
     4,
     5,
     11,
+    22,
     27,
     79,
     80
@@ -2719,13 +2813,13 @@
    "categories": {
     "concept": 3,
     "path": 1,
-    "tool": 5
+    "tool": 6
    },
    "decision": "rails-stack",
    "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
    "ids": {
     "app-layers": 1,
-    "brakeman": 2,
+    "brakeman": 3,
     "bundler": 2,
     "bundler-audit": 1,
     "rails-word": 1,
@@ -2733,6 +2827,7 @@
    },
    "kind": "agent",
    "lines": [
+    5,
     11,
     14,
     15,
@@ -2765,6 +2860,7 @@
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
     "concept": 1,
+    "gem": 1,
     "path": 1,
     "tool": 10
    },
@@ -2773,6 +2869,7 @@
    "ids": {
     "bin-rails": 2,
     "bundler": 3,
+    "gem": 1,
     "rspec": 5,
     "ruby-file": 1,
     "spec-dir": 1
@@ -2786,6 +2883,7 @@
     17,
     30,
     31,
+    32,
     44
    ],
    "move": "rails-agents"
@@ -2793,10 +2891,10 @@
   "plugins/rails-flow/checks.json": {
    "assumes": "registers the Rails gates and names Rails paths in applies_when",
    "categories": {
-    "concept": 12,
+    "concept": 14,
     "gem": 2,
     "path": 21,
-    "tool": 5
+    "tool": 6
    },
    "decision": "detector",
    "how": "the Rails rows leave with their gates (rails-gates, rails-mandated-gems); what remains is stack-neutral",
@@ -2804,12 +2902,13 @@
     "app-layers": 7,
     "binstub": 1,
     "db": 4,
-    "erb": 1,
+    "erb": 3,
     "erb-lint": 3,
     "gem": 2,
     "gemfile": 5,
     "rails-config": 3,
     "rails-word": 1,
+    "rubocop": 1,
     "ruby": 1,
     "ruby-file": 10,
     "spec-dir": 2
@@ -2818,6 +2917,7 @@
    "lines": [
     19,
     147,
+    154,
     155,
     159,
     161,
@@ -2830,6 +2930,7 @@
     217,
     225,
     245,
+    267,
     277,
     328,
     359,
@@ -2884,14 +2985,14 @@
    "move": ""
   },
   "plugins/rails-flow/commands/explain.md": {
-   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
    "categories": {
     "concept": 2,
     "path": 1,
     "tool": 1
    },
-   "decision": "reword",
-   "how": "reworded in the slice that touches the file; no code changes",
+   "decision": "detector",
+   "how": "the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction)",
    "ids": {
     "app-layers": 1,
     "bin-rails": 1,
@@ -2907,13 +3008,13 @@
    "move": ""
   },
   "plugins/rails-flow/commands/feature.md": {
-   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
    "categories": {
     "hotwire": 1,
     "tool": 1
    },
-   "decision": "reword",
-   "how": "reworded in the slice that touches the file; no code changes",
+   "decision": "detector",
+   "how": "the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction)",
    "ids": {
     "bundler": 1,
     "hotwire": 1
@@ -2926,19 +3027,21 @@
    "move": ""
   },
   "plugins/rails-flow/commands/fix.md": {
-   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
    "categories": {
     "concept": 1,
-    "tool": 1
+    "tool": 2
    },
-   "decision": "reword",
-   "how": "reworded in the slice that touches the file; no code changes",
+   "decision": "detector",
+   "how": "the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction)",
    "ids": {
     "binstub": 1,
-    "rails-word": 1
+    "rails-word": 1,
+    "ruby": 1
    },
    "kind": "command",
    "lines": [
+    51,
     79,
     86
    ],
@@ -2949,7 +3052,8 @@
    "categories": {
     "concept": 2,
     "hotwire": 1,
-    "path": 1
+    "path": 1,
+    "tool": 1
    },
    "decision": "rails-stack",
    "how": "moves with /rails-flow:graph (commands/graph.md names it)",
@@ -2957,6 +3061,7 @@
     "db": 1,
     "erb": 1,
     "hotwire": 1,
+    "ruby": 1,
     "ruby-file": 1
    },
    "kind": "command",
@@ -2968,14 +3073,14 @@
    "move": "rails-docs-generators"
   },
   "plugins/rails-flow/commands/handoff.md": {
-   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
    "categories": {
     "concept": 4,
     "path": 5,
     "tool": 4
    },
-   "decision": "reword",
-   "how": "reworded in the slice that touches the file; no code changes",
+   "decision": "detector",
+   "how": "the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction)",
    "ids": {
     "app-layers": 2,
     "bundler": 2,
@@ -2992,6 +3097,22 @@
     58,
     76,
     78
+   ],
+   "move": ""
+  },
+  "plugins/rails-flow/commands/issues.md": {
+   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "categories": {
+    "tool": 1
+   },
+   "decision": "reword",
+   "how": "reworded in the slice that touches the file; no code changes",
+   "ids": {
+    "ruby": 1
+   },
+   "kind": "command",
+   "lines": [
+    145
    ],
    "move": ""
   },
@@ -3038,10 +3159,10 @@
    "assumes": "the scaffold, Gemfile, Rails config and gem doctrine it writes into CLAUDE.md",
    "categories": {
     "concept": 49,
-    "gem": 16,
+    "gem": 18,
     "hotwire": 3,
     "path": 46,
-    "tool": 54
+    "tool": 64
    },
    "decision": "detector",
    "how": "asks the detector which stack descriptor to scaffold; the Rails sections move with the rails-stack scaffold",
@@ -3049,12 +3170,12 @@
     "app-layers": 9,
     "bin-rails": 6,
     "binstub": 5,
-    "brakeman": 2,
+    "brakeman": 3,
     "bundler": 9,
     "bundler-audit": 2,
     "db": 7,
     "erb-lint": 1,
-    "gem": 16,
+    "gem": 18,
     "gemfile": 9,
     "hotwire": 3,
     "rails-config": 11,
@@ -3062,15 +3183,16 @@
     "rake": 2,
     "routes": 1,
     "rspec": 8,
-    "rubocop": 10,
+    "rubocop": 13,
     "rubocop-yml": 1,
-    "ruby": 9,
+    "ruby": 15,
     "ruby-file": 34,
     "spec-dir": 8
    },
    "kind": "command",
    "lines": [
     41,
+    42,
     43,
     50,
     54,
@@ -3085,6 +3207,7 @@
     177,
     195,
     212,
+    252,
     259,
     269,
     315,
@@ -3094,6 +3217,7 @@
     359,
     362,
     524,
+    615,
     616,
     633,
     636,
@@ -3138,13 +3262,17 @@
     881,
     885,
     962,
+    967,
     974,
     975,
     978,
     981,
+    982,
     983,
+    984,
     985,
     1006,
+    1008,
     1010,
     1035,
     1036,
@@ -3176,7 +3304,9 @@
     1134,
     1139,
     1142,
-    1144
+    1144,
+    1152,
+    1244
    ],
    "move": ""
   },
@@ -3221,7 +3351,7 @@
    "categories": {
     "concept": 5,
     "path": 3,
-    "tool": 26
+    "tool": 27
    },
    "decision": "detector",
    "how": "reads source globs, risky paths and commands from the detector's stack descriptor",
@@ -3230,7 +3360,7 @@
     "binstub": 2,
     "bundler": 3,
     "rails-config": 3,
-    "rake": 8,
+    "rake": 9,
     "ruby": 3,
     "ruby-file": 5
    },
@@ -3343,22 +3473,26 @@
    "move": ""
   },
   "plugins/rails-flow/hooks/scripts/lib/trusted-env.sh": {
-   "assumes": "a Gemfile is one of two markers that locate the repository root; a .git alone also works",
+   "assumes": "a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others",
    "categories": {
-    "path": 5
+    "path": 5,
+    "tool": 2
    },
    "decision": "neutral",
    "how": "nothing to change: it already works for a repo with only .git",
    "ids": {
-    "gemfile": 5
+    "gemfile": 5,
+    "ruby": 2
    },
    "kind": "hook",
    "lines": [
+    13,
     18,
     29,
     37,
     45,
-    46
+    46,
+    86
    ],
    "move": ""
   },
@@ -3366,19 +3500,21 @@
    "assumes": "fires on db/migrate files and .rb edits; runs bin/rails and rubocop",
    "categories": {
     "concept": 1,
-    "tool": 8
+    "tool": 11
    },
    "decision": "rails-stack",
    "how": "its hooks.json entry moves to the stack plugin",
    "ids": {
     "bundler": 1,
     "rubocop": 4,
-    "ruby": 3,
+    "ruby": 6,
     "ruby-file": 1
    },
    "kind": "hook",
    "lines": [
+    2,
     9,
+    14,
     16,
     17,
     19,
@@ -3413,14 +3549,15 @@
    "categories": {
     "concept": 3,
     "path": 2,
-    "tool": 7
+    "tool": 17
    },
    "decision": "detector",
    "how": "asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer",
    "ids": {
     "app-layers": 1,
+    "bundler": 3,
     "rspec": 4,
-    "ruby": 3,
+    "ruby": 10,
     "ruby-file": 3,
     "spec-dir": 1
    },
@@ -3429,13 +3566,20 @@
     26,
     31,
     32,
+    44,
+    178,
+    180,
+    181,
     188,
     192,
     199,
     200,
     213,
+    219,
+    222,
     226,
-    228
+    228,
+    241
    ],
    "move": ""
   },
@@ -3493,13 +3637,16 @@
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
    "categories": {
     "concept": 7,
-    "tool": 2
+    "gem": 1,
+    "tool": 4
    },
    "decision": "reword",
    "how": "reworded in the slice that touches the file; no code changes",
    "ids": {
+    "gem": 1,
     "rails-word": 6,
     "rspec": 2,
+    "ruby": 2,
     "ruby-file": 1
    },
    "kind": "reference",
@@ -3508,7 +3655,9 @@
     6,
     8,
     104,
+    139,
     142,
+    145,
     178,
     225,
     267,
@@ -3609,7 +3758,7 @@
    "categories": {
     "concept": 5,
     "path": 2,
-    "tool": 1
+    "tool": 3
    },
    "decision": "rails-stack",
    "how": "moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin",
@@ -3617,16 +3766,18 @@
     "active-framework": 1,
     "app-layers": 2,
     "rails-word": 2,
-    "rubocop": 1,
+    "rubocop": 3,
     "ruby-file": 2
    },
    "kind": "scaffold",
    "lines": [
+    3,
     13,
     14,
     15,
     25,
     26,
+    27,
     28
    ],
    "move": "rails-gates"
@@ -3637,7 +3788,7 @@
     "concept": 59,
     "hotwire": 9,
     "path": 26,
-    "tool": 1
+    "tool": 2
    },
    "decision": "rails-stack",
    "how": "moves with /rails-flow:graph (commands/graph.md names it)",
@@ -3650,6 +3801,7 @@
     "hotwire": 9,
     "rails-word": 17,
     "routes": 3,
+    "ruby": 1,
     "ruby-file": 37
    },
    "kind": "script",
@@ -3939,18 +4091,21 @@
   "plugins/rails-flow/scripts/check_case_in_diff.py": {
    "assumes": "hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test",
    "categories": {
-    "concept": 19,
+    "concept": 21,
     "path": 5
    },
    "decision": "detector",
    "how": "reads source globs, risky paths and commands from the detector's stack descriptor",
    "ids": {
+    "erb": 2,
     "ruby-file": 19,
     "spec-dir": 5
    },
    "kind": "script",
    "lines": [
     17,
+    19,
+    49,
     138,
     188,
     189,
@@ -3981,7 +4136,7 @@
     "concept": 12,
     "gem": 1,
     "path": 6,
-    "tool": 47
+    "tool": 48
    },
    "decision": "rails-stack",
    "how": "moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin",
@@ -3997,6 +4152,7 @@
     "rake": 2,
     "rspec": 12,
     "rubocop": 8,
+    "ruby": 1,
     "ruby-file": 9
    },
    "kind": "script",
@@ -4054,13 +4210,13 @@
    "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
    "categories": {
     "concept": 2,
-    "gem": 5,
+    "gem": 10,
     "path": 2
    },
    "decision": "rails-stack",
    "how": "moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin",
    "ids": {
-    "gem": 5,
+    "gem": 10,
     "gemfile": 2,
     "ruby-file": 2
    },
@@ -4068,12 +4224,17 @@
    "lines": [
     25,
     36,
+    67,
     92,
     94,
     97,
     115,
     119,
     122,
+    127,
+    130,
+    131,
+    136,
     166
    ],
    "move": "rails-gates"
@@ -4081,15 +4242,19 @@
   "plugins/rails-flow/scripts/check_criteria.py": {
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
    "categories": {
-    "concept": 1
+    "concept": 1,
+    "tool": 2
    },
    "decision": "reword",
    "how": "reworded in the slice that touches the file; no code changes",
    "ids": {
+    "ruby": 2,
     "ruby-file": 1
    },
    "kind": "script",
    "lines": [
+    88,
+    103,
     273
    ],
    "move": ""
@@ -4098,7 +4263,7 @@
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
    "categories": {
     "concept": 4,
-    "tool": 2
+    "tool": 3
    },
    "decision": "reword",
    "followed": "plugins/rails-flow/scripts/check_criteria.py",
@@ -4108,11 +4273,13 @@
     "bundler": 1,
     "rails-word": 1,
     "rspec": 1,
+    "ruby": 1,
     "ruby-file": 1
    },
    "kind": "selftest",
    "lines": [
     15,
+    173,
     189,
     191,
     288,
@@ -4202,7 +4369,7 @@
   "plugins/rails-flow/scripts/check_handoff_selftest.py": {
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
    "categories": {
-    "concept": 14,
+    "concept": 15,
     "hotwire": 4,
     "path": 15,
     "tool": 7
@@ -4214,7 +4381,7 @@
     "app-layers": 10,
     "bundler": 4,
     "db": 3,
-    "erb": 1,
+    "erb": 2,
     "hotwire": 4,
     "rails-word": 1,
     "rspec": 3,
@@ -4252,9 +4419,9 @@
   "plugins/rails-flow/scripts/check_hook_gates.py": {
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
    "categories": {
-    "concept": 106,
+    "concept": 108,
     "path": 58,
-    "tool": 107
+    "tool": 109
    },
    "decision": "reword",
    "how": "reworded in the slice that touches the file; no code changes",
@@ -4267,12 +4434,12 @@
     "db": 17,
     "gemfile": 14,
     "rails-config": 3,
-    "rails-word": 1,
+    "rails-word": 3,
     "rake": 12,
     "routes": 3,
     "rspec": 20,
-    "rubocop": 1,
-    "ruby": 17,
+    "rubocop": 2,
+    "ruby": 18,
     "ruby-file": 104,
     "spec-dir": 6
    },
@@ -4332,6 +4499,7 @@
     816,
     822,
     827,
+    830,
     833,
     840,
     841,
@@ -4548,16 +4716,18 @@
   "plugins/rails-flow/scripts/check_issue_ready.py": {
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
    "categories": {
-    "tool": 1
+    "tool": 3
    },
    "decision": "reword",
    "how": "reworded in the slice that touches the file; no code changes",
    "ids": {
-    "ruby": 1
+    "ruby": 3
    },
    "kind": "script",
    "lines": [
-    297
+    27,
+    297,
+    298
    ],
    "move": ""
   },
@@ -4626,7 +4796,7 @@
   "plugins/rails-flow/scripts/check_mandated_gems.py": {
    "assumes": "a list of Ruby gems and the Gemfile reader for it",
    "categories": {
-    "concept": 6,
+    "concept": 7,
     "gem": 30,
     "path": 18,
     "tool": 10
@@ -4636,6 +4806,7 @@
    "ids": {
     "bin-rails": 3,
     "bundler": 5,
+    "erb": 1,
     "erb-lint": 2,
     "gem": 30,
     "gemfile": 15,
@@ -4703,7 +4874,7 @@
    "categories": {
     "concept": 86,
     "path": 6,
-    "tool": 17
+    "tool": 23
    },
    "decision": "rails-stack",
    "how": "moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin",
@@ -4713,13 +4884,14 @@
     "gemfile": 1,
     "rails-config": 2,
     "rake": 7,
-    "ruby": 9,
+    "ruby": 15,
     "ruby-file": 86,
     "spec-dir": 2
    },
    "kind": "script",
    "lines": [
     10,
+    11,
     13,
     16,
     17,
@@ -4732,9 +4904,11 @@
     48,
     176,
     177,
+    296,
     374,
     375,
     380,
+    386,
     387,
     395,
     403,
@@ -4785,7 +4959,9 @@
     545,
     546,
     547,
+    548,
     549,
+    550,
     551,
     552,
     554,
@@ -4820,13 +4996,14 @@
    "categories": {
     "concept": 18,
     "path": 39,
-    "tool": 11
+    "tool": 12
    },
    "decision": "rails-stack",
    "how": "moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin",
    "ids": {
     "gemfile": 15,
     "rspec": 11,
+    "ruby": 1,
     "ruby-file": 18,
     "spec-dir": 24
    },
@@ -4842,6 +5019,7 @@
     40,
     44,
     50,
+    54,
     89,
     91,
     107,
@@ -4889,19 +5067,22 @@
    "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
    "categories": {
     "concept": 10,
-    "path": 15
+    "path": 15,
+    "tool": 1
    },
    "decision": "rails-stack",
    "how": "moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin",
    "ids": {
     "app-layers": 9,
     "gemfile": 6,
+    "ruby": 1,
     "ruby-file": 10
    },
    "kind": "script",
    "lines": [
     10,
     29,
+    59,
     145,
     148,
     222,
@@ -5062,7 +5243,8 @@
    "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
    "categories": {
     "concept": 76,
-    "path": 7
+    "path": 7,
+    "tool": 3
    },
    "decision": "rails-stack",
    "how": "moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin",
@@ -5070,6 +5252,7 @@
     "rails-config": 5,
     "rails-word": 36,
     "routes": 2,
+    "ruby": 3,
     "ruby-file": 40
    },
    "kind": "script",
@@ -5078,6 +5261,8 @@
     9,
     10,
     11,
+    12,
+    32,
     45,
     55,
     56,
@@ -5086,6 +5271,7 @@
     65,
     66,
     67,
+    87,
     287,
     448,
     450,
@@ -5374,7 +5560,7 @@
    "categories": {
     "concept": 28,
     "path": 26,
-    "tool": 38
+    "tool": 65
    },
    "decision": "rails-stack",
    "how": "moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin",
@@ -5383,27 +5569,41 @@
     "app-layers": 21,
     "bin-rails": 3,
     "db": 3,
-    "rubocop": 29,
+    "rubocop": 49,
     "rubocop-yml": 2,
-    "ruby": 6,
+    "ruby": 13,
     "ruby-file": 27
    },
    "kind": "script",
    "lines": [
     12,
+    16,
+    17,
     19,
     20,
     21,
     22,
+    24,
     27,
+    29,
     30,
+    31,
     32,
+    33,
+    34,
+    37,
     38,
+    42,
     44,
+    45,
     66,
     68,
     70,
+    74,
+    75,
+    92,
     105,
+    113,
     114,
     116,
     119,
@@ -5412,27 +5612,35 @@
     149,
     161,
     184,
+    185,
+    186,
     188,
     190,
     195,
     196,
     202,
+    208,
     225,
     230,
     231,
     280,
+    284,
+    294,
     315,
     330,
     331,
     339,
+    383,
     408,
     451,
     455,
     495,
+    506,
     510,
     515,
     518,
     521,
+    526,
     528,
     529,
     536,
@@ -5446,6 +5654,7 @@
     549,
     551,
     552,
+    556,
     561,
     562,
     563,
@@ -5455,6 +5664,9 @@
     572,
     575,
     592,
+    593,
+    596,
+    622,
     625
    ],
    "move": "rails-gates"
@@ -5671,13 +5883,14 @@
   "plugins/rails-flow/scripts/docs_layout.py": {
    "assumes": "hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test",
    "categories": {
-    "concept": 28,
+    "concept": 29,
     "path": 3,
     "tool": 20
    },
    "decision": "detector",
    "how": "reads source globs, risky paths and commands from the detector's stack descriptor",
    "ids": {
+    "erb": 1,
     "routes": 3,
     "ruby": 20,
     "ruby-file": 28
@@ -5687,6 +5900,7 @@
     54,
     76,
     84,
+    460,
     465,
     706,
     708,
@@ -5712,6 +5926,22 @@
     740,
     809,
     810
+   ],
+   "move": ""
+  },
+  "plugins/rails-flow/scripts/extract_claims.py": {
+   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "categories": {
+    "tool": 1
+   },
+   "decision": "reword",
+   "how": "reworded in the slice that touches the file; no code changes",
+   "ids": {
+    "ruby": 1
+   },
+   "kind": "script",
+   "lines": [
+    232
    ],
    "move": ""
   },
@@ -5773,7 +6003,7 @@
   "plugins/rails-flow/scripts/herb_lint.py": {
    "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
    "categories": {
-    "concept": 4,
+    "concept": 7,
     "path": 34,
     "tool": 51
    },
@@ -5783,7 +6013,7 @@
     "app-layers": 18,
     "binstub": 1,
     "bundler": 1,
-    "erb": 3,
+    "erb": 6,
     "erb-lint": 49,
     "gemfile": 16,
     "ruby-file": 1
@@ -5859,7 +6089,9 @@
     243,
     246,
     249,
+    250,
     251,
+    252,
     254,
     261,
     262,
@@ -5964,21 +6196,40 @@
   "plugins/rails-flow/scripts/mutations/check_coverage_ratchet.py": {
    "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
    "categories": {
-    "gem": 3
+    "gem": 4
    },
    "decision": "rails-stack",
    "followed": "plugins/rails-flow/scripts/check_coverage_ratchet.py",
    "how": "moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin",
    "ids": {
-    "gem": 3
+    "gem": 4
    },
    "kind": "mutation",
    "lines": [
+    24,
     50,
     51,
     53
    ],
    "move": "rails-gates"
+  },
+  "plugins/rails-flow/scripts/mutations/check_criteria.py": {
+   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "categories": {
+    "tool": 2
+   },
+   "decision": "reword",
+   "followed": "plugins/rails-flow/scripts/check_criteria.py",
+   "how": "reworded in the slice that touches the file; no code changes",
+   "ids": {
+    "ruby": 2
+   },
+   "kind": "mutation",
+   "lines": [
+    42,
+    44
+   ],
+   "move": ""
   },
   "plugins/rails-flow/scripts/mutations/check_handoff.py": {
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
@@ -6039,12 +6290,30 @@
    ],
    "move": ""
   },
+  "plugins/rails-flow/scripts/mutations/check_issue_ready.py": {
+   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "categories": {
+    "tool": 1
+   },
+   "decision": "reword",
+   "followed": "plugins/rails-flow/scripts/check_issue_ready.py",
+   "how": "reworded in the slice that touches the file; no code changes",
+   "ids": {
+    "ruby": 1
+   },
+   "kind": "mutation",
+   "lines": [
+    75
+   ],
+   "move": ""
+  },
   "plugins/rails-flow/scripts/mutations/check_layer_structure.py": {
    "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
    "categories": {
     "concept": 6,
     "hotwire": 3,
-    "path": 3
+    "path": 3,
+    "tool": 2
    },
    "decision": "rails-stack",
    "followed": "plugins/rails-flow/scripts/check_layer_structure.py",
@@ -6054,6 +6323,7 @@
     "erb": 3,
     "hotwire": 3,
     "rails-word": 1,
+    "ruby": 2,
     "ruby-file": 2
    },
    "kind": "mutation",
@@ -6108,14 +6378,14 @@
    "categories": {
     "concept": 1,
     "path": 2,
-    "tool": 8
+    "tool": 10
    },
    "decision": "rails-stack",
    "followed": "plugins/rails-flow/scripts/check_mcp_annotations.py",
    "how": "moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin",
    "ids": {
     "rake": 5,
-    "ruby": 3,
+    "ruby": 5,
     "ruby-file": 1,
     "spec-dir": 2
    },
@@ -6128,7 +6398,9 @@
     256,
     260,
     261,
+    266,
     267,
+    269,
     272,
     284,
     287
@@ -6321,19 +6593,29 @@
    "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
    "categories": {
     "concept": 1,
-    "tool": 1
+    "tool": 10
    },
    "decision": "rails-stack",
    "followed": "plugins/rails-flow/scripts/check_tenancy_cop.py",
    "how": "moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin",
    "ids": {
-    "rubocop": 1,
+    "rubocop": 7,
+    "ruby": 3,
     "ruby-file": 1
    },
    "kind": "mutation",
    "lines": [
+    5,
+    6,
+    7,
     12,
-    132
+    81,
+    84,
+    87,
+    88,
+    90,
+    132,
+    153
    ],
    "move": "rails-gates"
   },
@@ -6579,28 +6861,31 @@
   "plugins/rails-flow/scripts/project_gates.py": {
    "assumes": "hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test",
    "categories": {
-    "concept": 9,
+    "concept": 11,
     "gem": 1,
     "path": 2,
-    "tool": 10
+    "tool": 12
    },
    "decision": "detector",
    "how": "reads source globs, risky paths and commands from the detector's stack descriptor",
    "ids": {
     "app-layers": 2,
     "bundler": 4,
-    "erb": 7,
-    "erb-lint": 6,
+    "erb": 9,
+    "erb-lint": 8,
     "gem": 1,
     "ruby-file": 2
    },
    "kind": "script",
    "lines": [
+    360,
     361,
     391,
     424,
+    425,
     427,
     542,
+    1071,
     1075,
     1076,
     1086,
@@ -6737,7 +7022,7 @@
    "categories": {
     "concept": 8,
     "path": 2,
-    "tool": 8
+    "tool": 9
    },
    "decision": "detector",
    "how": "reads source globs, risky paths and commands from the detector's stack descriptor",
@@ -6752,6 +7037,7 @@
     "rake": 3,
     "rspec": 1,
     "rubocop": 1,
+    "ruby": 1,
     "ruby-file": 5
    },
    "kind": "script",
@@ -6762,6 +7048,7 @@
     63,
     138,
     224,
+    271,
     275,
     276,
     278,
@@ -6774,7 +7061,7 @@
    "categories": {
     "concept": 24,
     "path": 20,
-    "tool": 22
+    "tool": 25
    },
    "decision": "detector",
    "followed": "plugins/rails-flow/scripts/self_consistency.py",
@@ -6787,6 +7074,7 @@
     "rails-word": 2,
     "rspec": 14,
     "rubocop": 3,
+    "ruby": 3,
     "ruby-file": 22,
     "spec-dir": 10
    },
@@ -6817,6 +7105,7 @@
     156,
     162,
     163,
+    166,
     168,
     176,
     177,
@@ -6829,6 +7118,7 @@
     226,
     231,
     234,
+    239,
     243,
     252,
     259
@@ -6936,7 +7226,7 @@
    "categories": {
     "concept": 25,
     "path": 31,
-    "tool": 89
+    "tool": 92
    },
    "decision": "detector",
    "how": "asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer",
@@ -6948,7 +7238,7 @@
     "rails-config": 1,
     "rake": 5,
     "rspec": 50,
-    "ruby": 7,
+    "ruby": 10,
     "ruby-file": 25,
     "spec-dir": 21
    },
@@ -6962,6 +7252,7 @@
     20,
     21,
     22,
+    23,
     27,
     79,
     115,
@@ -7281,59 +7572,59 @@
  "policy": "docs/architecture/rails-assumptions.policy.json",
  "summary": {
   "by_category": {
-   "concept": 1909,
-   "gem": 145,
+   "concept": 1936,
+   "gem": 156,
    "hotwire": 107,
    "path": 1267,
-   "tool": 777
+   "tool": 935
   },
   "by_decision": {
    "detector": {
-    "files": 70,
-    "lines": 979
+    "files": 78,
+    "lines": 1050
    },
    "neutral": {
     "files": 11,
-    "lines": 44
+    "lines": 52
    },
    "rails-stack": {
     "files": 68,
-    "lines": 1534
+    "lines": 1632
    },
    "reword": {
-    "files": 73,
-    "lines": 503
+    "files": 69,
+    "lines": 487
    }
   },
   "by_flow": {
    "design-flow": {
-    "detector": 0,
+    "detector": 1,
     "files": 38,
-    "lines": 501,
+    "lines": 547,
     "neutral": 1,
     "rails-stack": 18,
-    "reword": 19
+    "reword": 18
    },
    "pipeline": {
     "detector": 6,
     "files": 19,
-    "lines": 86,
+    "lines": 89,
     "neutral": 4,
     "rails-stack": 3,
     "reword": 6
    },
    "qa-flow": {
-    "detector": 23,
+    "detector": 26,
     "files": 36,
-    "lines": 266,
+    "lines": 272,
     "neutral": 2,
     "rails-stack": 0,
-    "reword": 11
+    "reword": 8
    },
    "rails-flow": {
-    "detector": 41,
-    "files": 129,
-    "lines": 2207,
+    "detector": 45,
+    "files": 133,
+    "lines": 2313,
     "neutral": 4,
     "rails-stack": 47,
     "reword": 37
@@ -7342,15 +7633,15 @@
   "by_kind": {
    "agent": {
     "files": 21,
-    "lines": 95
+    "lines": 98
    },
    "command": {
-    "files": 26,
-    "lines": 233
+    "files": 27,
+    "lines": 251
    },
    "data": {
     "files": 3,
-    "lines": 44
+    "lines": 46
    },
    "doc": {
     "files": 1,
@@ -7358,31 +7649,31 @@
    },
    "hook": {
     "files": 15,
-    "lines": 98
+    "lines": 116
    },
    "manifest": {
     "files": 2,
     "lines": 2
    },
    "mutation": {
-    "files": 41,
-    "lines": 225
+    "files": 43,
+    "lines": 250
    },
    "reference": {
     "files": 8,
-    "lines": 27
+    "lines": 29
    },
    "scaffold": {
     "files": 2,
-    "lines": 7
+    "lines": 9
    },
    "script": {
-    "files": 86,
-    "lines": 2109
+    "files": 87,
+    "lines": 2197
    },
    "selftest": {
     "files": 16,
-    "lines": 207
+    "lines": 210
    },
    "template": {
     "files": 1,
@@ -7394,27 +7685,27 @@
    "app-layers": 609,
    "bin-rails": 129,
    "binstub": 54,
-   "brakeman": 6,
-   "bundler": 91,
+   "brakeman": 10,
+   "bundler": 94,
    "bundler-audit": 7,
    "db": 142,
-   "erb": 335,
-   "erb-lint": 72,
-   "gem": 145,
+   "erb": 360,
+   "erb-lint": 74,
+   "gem": 156,
    "gemfile": 173,
    "hotwire": 107,
    "rails-config": 113,
-   "rails-word": 311,
-   "rake": 55,
+   "rails-word": 313,
+   "rake": 56,
    "routes": 37,
    "rspec": 194,
-   "rubocop": 63,
+   "rubocop": 96,
    "rubocop-yml": 3,
-   "ruby": 106,
+   "ruby": 221,
    "ruby-file": 1243,
    "spec-dir": 190
   },
-  "files": 222,
-  "lines": 3060
+  "files": 226,
+  "lines": 3221
  }
 }

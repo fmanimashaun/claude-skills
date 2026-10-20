@@ -240,6 +240,28 @@
   },
   {
    "match": [
+    "plugins/rails-flow/commands/feature.md",
+    "plugins/rails-flow/commands/fix.md",
+    "plugins/rails-flow/commands/explain.md",
+    "plugins/rails-flow/commands/handoff.md",
+    "plugins/qa-flow/commands/smoke.md",
+    "plugins/qa-flow/commands/verify.md",
+    "plugins/qa-flow/commands/setup-qa.md",
+    "plugins/design-flow/commands/audit.md"
+   ],
+   "decision": "detector",
+   "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
+   "how": "the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction)",
+   "seam": "asks the stack detector (#2163) for the stack's commands instead of naming Rails ones",
+   "issues": {
+    "rails-flow": 2183,
+    "qa-flow": 2184,
+    "pipeline": 2184,
+    "design-flow": 2185
+   }
+  },
+  {
+   "match": [
     "plugins/rails-flow/.claude-plugin/plugin.json",
     "plugins/design-flow/.claude-plugin/plugin.json",
     "plugins/design-flow/README.md",
@@ -297,15 +319,30 @@
    ],
    "decision": "neutral",
    "assumes": "fixture repositories use Rails-shaped sample paths (app/models/user.rb) to exercise a stack-neutral guard, board or hook",
-   "how": "nothing to change: the guard under test is neutral and the sample path is arbitrary"
+   "how": "nothing to change: the guard under test is neutral and the sample path is arbitrary",
+   "lines": {
+    "plugins/pipeline/scripts/git_guard_selftest.py": 6,
+    "plugins/pipeline/scripts/mutations/git_guard_pre_commit.py": 3,
+    "plugins/pipeline/scripts/status_board_selftest.py": 1,
+    "plugins/qa-flow/scripts/qa_status_selftest.py": 4,
+    "plugins/rails-flow/tests/lane-band.test.ts": 3,
+    "plugins/rails-flow/tests/lane-band.unit.mjs": 4,
+    "plugins/rails-flow/tests/session-reset.unit.mjs": 3
+   }
   },
   {
    "match": [
     "plugins/*/hooks/scripts/lib/trusted-env.sh"
    ],
    "decision": "neutral",
-   "assumes": "a Gemfile is one of two markers that locate the repository root; a .git alone also works",
-   "how": "nothing to change: it already works for a repo with only .git"
+   "assumes": "a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others",
+   "how": "nothing to change: it already works for a repo with only .git",
+   "lines": {
+    "plugins/design-flow/hooks/scripts/lib/trusted-env.sh": 7,
+    "plugins/pipeline/hooks/scripts/lib/trusted-env.sh": 7,
+    "plugins/qa-flow/hooks/scripts/lib/trusted-env.sh": 7,
+    "plugins/rails-flow/hooks/scripts/lib/trusted-env.sh": 7
+   }
   }
  ],
  "setup_flow": {
@@ -325,9 +362,9 @@
    {
     "lines": [
      144,
-     212
+     258
     ],
-    "assumes": "the CLAUDE.md template: a Rails/Hotwire/Solid Queue/Kamal stack line, the Rails command list (rspec, rubocop, brakeman, bundler-audit), the simple_form forms rule, the bundler.lock preflight line",
+    "assumes": "the CLAUDE.md template: a Rails/Hotwire/Solid Queue/Kamal stack line, the Rails command list (rspec, rubocop, brakeman, bundler-audit), the simple_form forms rule, the bundler.lock preflight line; reads the rails-8 skill's style reference before writing Ruby",
     "disposition": "detector",
     "how": "the stack line, command list and forms rule are filled from the stack descriptor; the Rails text becomes the rails-stack template"
    },
@@ -352,7 +389,7 @@
    {
     "lines": [
      731,
-     1144
+     1353
     ],
     "assumes": "Rails-only repairs proposed as approved diffs: the config/ci.rb Tests steps, RSpec generators and factory_bot_rails, i18n and launch initializers, the privacy inventory over db/schema.rb, the tenancy cop, simplecov, spec/support wiring, simple_form, Archspec.rb and herb",
     "disposition": "rails-stack",
