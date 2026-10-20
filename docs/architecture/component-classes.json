@@ -4760,7 +4760,7 @@
   {
    "class": "mixed",
    "issue": 2183,
-   "nextjs_lines": 10,
+   "nextjs_lines": 11,
    "path": "plugins/rails-flow/scripts/detect_stack.py",
    "plugin": "rails-flow",
    "rails_lines": 14,
