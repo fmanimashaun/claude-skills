@@ -154,8 +154,8 @@ GUARD = Guard(
         ),
         Mutation(
             "descriptors are never validated on a detection run",
-            "        problems += descriptor_problems(manifest)\n    matched, more = detect(project, manifests)",
-            "        pass\n    matched, more = detect(project, manifests)",
+            "        problems += descriptor_problems(manifest)\n    if not project.is_dir():",
+            "        pass\n    if not project.is_dir():",
             "an undeclared key inside a block is a problem",
         ),
         Mutation(
@@ -175,6 +175,18 @@ GUARD = Guard(
             "    if not isinstance(data, dict):\n        return CORRUPT",
             "    if False:\n        return CORRUPT",
             "valid JSON but not an object is a problem",
+        ),
+        Mutation(
+            "a project path that is not a directory reads as 'no stack', so a typo exits 1",
+            "    if not project.is_dir():",
+            "    if False:",
+            "a missing project path is a problem",
+        ),
+        Mutation(
+            "a `dependencies` list reads as no dependencies",
+            "        if not isinstance(section, dict):\n            return CORRUPT",
+            "        if not isinstance(section, dict):\n            continue",
+            "a `dependencies` that is not a map is a problem",
         ),
     ),
 )
