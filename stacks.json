@@ -1,0 +1,13 @@
+{
+  "plugin": "rails-stack",
+  "stacks": [
+    {
+      "id": "rails",
+      "name": "Rails",
+      "all": [
+        { "file": "Gemfile" },
+        { "file": "config/application.rb" }
+      ]
+    }
+  ]
+}
