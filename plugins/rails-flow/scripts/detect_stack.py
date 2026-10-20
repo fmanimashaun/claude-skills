@@ -15,17 +15,24 @@ THE MANIFEST, `stacks.json` at a plugin's root:
                  "all": [{"file": "Gemfile"}, {"file": "config/application.rb"}]}]}
 
 A stack matches when every marker in `all` holds and, if it lists `any`, at least one of those does.
-Marker kinds: `{"file": path}`, `{"dir": path}`, `{"package_dependency": name}` (in `package.json`'s
-dependencies or devDependencies). A marker kind this script does not know is a PROBLEM, never a
-silent no-match: a stack that cannot be judged must not read as absent.
+Marker kinds: `{"file": path}`, `{"dir": path}` (a path inside the project: never absolute, never `..`),
+`{"package_dependency": name}` (in `package.json`'s dependencies or devDependencies).
 
-WHERE MANIFESTS ARE FOUND. The same two shapes `project_gates.plugin_roots` handles -- sibling
-`plugins/*` in a source checkout, `<plugin>/<version>/` in the installed cache -- plus the repo root
-itself, because `rails-stack`'s marketplace source is `./`. Several versions of one plugin collapse to
-the highest, by the manifest's own `plugin` and `version`, not by directory names (a cache dir is a
-version number, a checkout dir is a plugin name).
+"CANNOT JUDGE" IS NEVER "NO STACK" (#2188 review). Every way a stack could be misread is a PROBLEM,
+exit 2, never the "none detected" code: an unreadable or nameless manifest, a manifest or stack of the
+wrong shape, an unknown marker kind, a marker value that is not a contained path or a name, a stack
+with no markers (it would match every project), two manifests for one plugin at the same version, and a
+`package.json` that exists but does not parse when a stack needs its dependencies. A missing
+`package.json` is simply no dependency.
 
-Exit 0 one or more stacks detected · 1 none detected · 2 a manifest could not be read or judged.
+WHERE MANIFESTS ARE FOUND. Only at PLUGIN ROOTS -- a directory carrying `.claude-plugin/plugin.json`,
+or `.claude-plugin/marketplace.json` for a marketplace whose plugin is its own root (`rails-stack`'s
+source is `./`) -- so a stray `stacks.json` in any other directory is never read. The same two shapes
+`project_gates.plugin_roots` handles (sibling `plugins/*` in a checkout, `<plugin>/<version>/` in the
+installed cache) plus the repo root. Several versions of one plugin collapse to the highest, by the
+manifest's own `plugin` and `version`, not by directory names.
+
+Exit 0 one or more stacks detected · 1 none detected · 2 a manifest or the project could not be judged.
 
 Run:  python3 detect_stack.py [project-dir] [--json]
       python3 detect_stack.py --selftest
@@ -35,13 +42,17 @@ Stdlib only, no network.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 MANIFEST = "stacks.json"
 KINDS = ("file", "dir", "package_dependency")
+PLUGIN_MARKERS = (".claude-plugin/plugin.json", ".claude-plugin/marketplace.json")
+CORRUPT = object()   # package.json exists and does not parse
 
 
 def version_tuple(raw: object) -> tuple[int, ...]:
@@ -52,13 +63,17 @@ def version_tuple(raw: object) -> tuple[int, ...]:
     return tuple(parts) or (0,)
 
 
+def is_plugin_root(directory: Path) -> bool:
+    return any((directory / marker).is_file() for marker in PLUGIN_MARKERS)
+
+
 def manifest_dirs(start: Path) -> list[Path]:
-    """Every directory that ships a `stacks.json`, in either layout. Duplicates are collapsed later."""
+    """Every plugin root that ships a `stacks.json`, in either layout. Duplicates are collapsed later."""
     own = start.resolve().parents[1]          # <plugin>/scripts/x.py -> <plugin>, or <plugin>/<ver>
     found: set[Path] = set()
 
     def take(directory: Path) -> None:
-        if (directory / MANIFEST).is_file():
+        if (directory / MANIFEST).is_file() and is_plugin_root(directory):
             found.add(directory)
 
     def scan(directory: Path) -> None:
@@ -96,22 +111,35 @@ def load_manifests(dirs: list[Path]) -> tuple[list[dict], list[str]]:
             problems.append(f"{path}: unreadable manifest ({exc})")
             continue
         plugin = data.get("plugin") if isinstance(data, dict) else None
-        if not plugin:
+        if not isinstance(plugin, str) or not plugin:
             problems.append(f"{path}: names no `plugin`")
+            continue
+        if not isinstance(data.get("stacks"), list):
+            problems.append(f"{path}: `stacks` must be a list of stacks")
             continue
         data["_path"] = str(path)
         version = version_tuple(data.get("version"))
+        if plugin in best and best[plugin][0] == version:
+            problems.append(f"{path}: a second manifest for {plugin} at the same version as {best[plugin][1]['_path']}; "
+                            "give each a `version` so the newer can win")
+            continue
         if plugin not in best or best[plugin][0] < version:
             best[plugin] = (version, data)
     return [data for _, data in sorted(best.values(), key=lambda v: v[1]["plugin"])], problems
 
 
-def package_dependencies(project: Path) -> set[str] | None:
-    """The names in package.json's dependencies and devDependencies; None when there is no readable package.json."""
-    try:
-        data = json.loads((project / "package.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+def package_dependencies(project: Path) -> set[str] | object | None:
+    """The names in package.json's dependencies and devDependencies; None when there is no package.json,
+    CORRUPT when there is one that does not parse."""
+    path = project / "package.json"
+    if not path.is_file():
         return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return CORRUPT
+    if not isinstance(data, dict):
+        return CORRUPT                     # valid JSON that is not an object is no package.json a dependency can be read from
     names: set[str] = set()
     for key in ("dependencies", "devDependencies"):
         section = data.get(key) if isinstance(data, dict) else None
@@ -120,16 +148,24 @@ def package_dependencies(project: Path) -> set[str] | None:
     return names
 
 
-def holds(marker: object, project: Path, deps: set[str] | None) -> bool:
+def holds(marker: object, project: Path, deps: set[str] | object | None) -> bool:
     """Whether one marker holds. Raises ValueError for a marker this script cannot judge."""
     if not isinstance(marker, dict) or len(marker) != 1 or next(iter(marker)) not in KINDS:
         raise ValueError(f"unknown marker {marker!r} (kinds: {', '.join(KINDS)})")
     kind, value = next(iter(marker.items()))
-    if kind == "file":
-        return (project / value).is_file()
-    if kind == "dir":
-        return (project / value).is_dir()
-    return deps is not None and value in deps
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"marker {marker!r}: the value must be a non-empty string")
+    if kind == "package_dependency":
+        if deps is CORRUPT:
+            raise ValueError("package.json exists but does not parse, so its dependencies cannot be read")
+        return deps is not None and value in deps
+    if value.strip().rstrip("/") in ("", "."):
+        # THE PROJECT ROOT IS NOT A MARKER (#2188 review): every project has one, so a stack keyed on it would match them all.
+        raise ValueError(f"marker {marker!r}: names the project root, which every project has")
+    parts = PurePosixPath(value)
+    if parts.is_absolute() or ".." in parts.parts or value.startswith("\\") or (parts.parts and ":" in parts.parts[0]):
+        raise ValueError(f"marker {marker!r}: a path must stay inside the project (no absolute path, no `..`)")
+    return (project / value).is_file() if kind == "file" else (project / value).is_dir()
 
 
 def detect(project: Path, manifests: list[dict]) -> tuple[list[dict], list[str]]:
@@ -138,17 +174,32 @@ def detect(project: Path, manifests: list[dict]) -> tuple[list[dict], list[str]]
     matched: list[dict] = []
     problems: list[str] = []
     for manifest in manifests:
-        for stack in manifest.get("stacks") or []:
+        for index, stack in enumerate(manifest["stacks"]):
+            if not isinstance(stack, dict):
+                problems.append(f"{manifest['_path']}: stacks[{index}] must be a stack object, got {stack!r}")
+                continue
             label = f"{manifest['_path']}: stack {stack.get('id')!r}"
-            all_of, any_of = stack.get("all") or [], stack.get("any") or []
+            if not isinstance(stack.get("id"), str) or not stack.get("id"):
+                problems.append(f"{label}: needs an `id`, a non-empty string, to be reported by")
+                continue
+            all_of, any_of = stack.get("all", []), stack.get("any", [])
+            if not isinstance(all_of, list) or not isinstance(any_of, list):
+                problems.append(f"{label}: `all` and `any` must be lists of markers")
+                continue
             if not all_of and not any_of:
                 problems.append(f"{label} declares no markers, so it would match every project")
                 continue
             try:
-                if all(holds(m, project, deps) for m in all_of) and (not any_of or any(holds(m, project, deps) for m in any_of)):
-                    matched.append({"id": stack.get("id"), "name": stack.get("name", stack.get("id")), "plugin": manifest["plugin"]})
+                every = [holds(m, project, deps) for m in all_of]       # judged in full, so a bad marker anywhere is reported
+                some = [holds(m, project, deps) for m in any_of]
             except ValueError as exc:
                 problems.append(f"{label}: {exc}")
+                continue
+            except Exception as exc:   # noqa: BLE001 -- a shape no check above foresaw: still "cannot judge", never a crash with the "none" code
+                problems.append(f"{label}: cannot judge this stack ({type(exc).__name__}: {exc})")
+                continue
+            if all(every) and (not any_of or any(some)):
+                matched.append({"id": stack.get("id"), "name": stack.get("name", stack.get("id")), "plugin": manifest["plugin"]})
     return matched, problems
 
 
@@ -171,21 +222,34 @@ def render(code: int, report: dict) -> str:
 
 
 def selftest() -> int:
-    """A fixture per stack, a combined one, an empty project, and the ways a manifest can be wrong."""
+    """A fixture per stack, a combined one, an empty project, and every way a manifest or project can be misread."""
     failures: list[str] = []
+    count = 0
+
+    def case(ok: bool, message: str) -> None:
+        nonlocal count
+        count += 1
+        if not ok:
+            failures.append(message)
+
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
 
+        def plugin_dir(path: Path, marker: str = ".claude-plugin/plugin.json") -> Path:
+            path.mkdir(parents=True, exist_ok=True)
+            (path / marker).parent.mkdir(parents=True, exist_ok=True)
+            (path / marker).write_text("{}", encoding="utf-8")
+            return path
+
         def manifest(name: str, data: object) -> Path:
-            d = root / "plugins" / name
-            d.mkdir(parents=True, exist_ok=True)
+            d = plugin_dir(root / "plugins" / name)
             (d / MANIFEST).write_text(data if isinstance(data, str) else json.dumps(data), encoding="utf-8")
             return d
 
-        def project(name: str, files: dict[str, str] = {}, dirs: tuple[str, ...] = ()) -> Path:  # noqa: B006
+        def project(name: str, files: dict[str, str] | None = None, dirs: tuple[str, ...] = ()) -> Path:
             p = root / "projects" / name
             p.mkdir(parents=True)
-            for rel, body in files.items():
+            for rel, body in (files or {}).items():
                 (p / rel).parent.mkdir(parents=True, exist_ok=True)
                 (p / rel).write_text(body, encoding="utf-8")
             for rel in dirs:
@@ -204,90 +268,115 @@ def selftest() -> int:
             code, report = run(p, use if use is not None else dirs)
             return code, sorted(s["id"] for s in report["stacks"])
 
+        def code_of(p: Path, extra: Path) -> int:
+            return run(p, dirs + [extra])[0]
+
         rails_app = project("rails-app", {"Gemfile": "", "config/application.rb": ""})
-        if ids(rails_app) != (0, ["rails"]):
-            failures.append(f"a Rails project is Rails: {ids(rails_app)}")
-        half_rails = project("half-rails", {"Gemfile": ""})
-        if ids(half_rails) != (1, []):
-            failures.append(f"every `all` marker must hold (a Gemfile alone is not Rails): {ids(half_rails)}")
-        next_app = project("next-app", {"package.json": json.dumps({"dependencies": {"next": "15.0.0", "react": "19"}})})
-        if ids(next_app) != (0, ["nextjs"]):
-            failures.append(f"a next dependency is Next.js: {ids(next_app)}")
-        dev_next = project("dev-next", {"package.json": json.dumps({"devDependencies": {"next": "15"}})})
-        if ids(dev_next) != (0, ["nextjs"]):
-            failures.append(f"a next devDependency is Next.js too: {ids(dev_next)}")
-        combined = project("combined", {"package.json": json.dumps({"dependencies": {"next": "15"}}),
-                                        "supabase/config.toml": ""}, dirs=(".vercel",))
-        if ids(combined) != (0, ["nextjs", "supabase", "vercel"]):
-            failures.append(f"a combined project reports every stack it matches: {ids(combined)}")
-        vercel_json = project("vercel-json", {"vercel.json": "{}"})
-        if ids(vercel_json) != (0, ["vercel"]):
-            failures.append(f"any one of an `any` list is enough: {ids(vercel_json)}")
+        case(ids(rails_app) == (0, ["rails"]), f"a Rails project is Rails: {ids(rails_app)}")
+        code, report = run(rails_app, dirs)
+        case(report["stacks"][0].get("name") == "Rails" if report["stacks"] else False,
+             f"a detected stack carries its declared name: {report['stacks']}")
+        case(ids(project("half-rails", {"Gemfile": ""})) == (1, []), "every `all` marker must hold (a Gemfile alone is not Rails)")
+        case(ids(project("next-app", {"package.json": json.dumps({"dependencies": {"next": "15", "react": "19"}})})) == (0, ["nextjs"]),
+             "a next dependency is Next.js")
+        case(ids(project("dev-next", {"package.json": json.dumps({"devDependencies": {"next": "15"}})})) == (0, ["nextjs"]),
+             "a next devDependency is Next.js too")
+        combined = project("combined", {"package.json": json.dumps({"dependencies": {"next": "15"}}), "supabase/config.toml": ""}, dirs=(".vercel",))
+        case(ids(combined) == (0, ["nextjs", "supabase", "vercel"]), f"a combined project reports every stack it matches: {ids(combined)}")
+        case(ids(project("vercel-json", {"vercel.json": "{}"})) == (0, ["vercel"]), "any one of an `any` list is enough (a file)")
+        case(ids(project("vercel-dir", dirs=(".vercel",))) == (0, ["vercel"]), "any one of an `any` list is enough (a `dir` marker)")
         empty = project("empty")
-        if ids(empty) != (1, []):
-            failures.append(f"an empty project matches nothing and says so: {ids(empty)}")
+        case(ids(empty) == (1, []), f"an empty project matches nothing and says so (exit 1): {ids(empty)}")
+        case(ids(project("no-vercel", {"vercel.txt": ""})) == (1, []), "a stack whose `any` list holds nothing is not matched")
+
+        # A CORRUPT package.json is "cannot judge", not "no dependency" (#2188 review); a missing one is no dependency.
         bad_pkg = project("bad-package", {"package.json": "{not json"})
-        if ids(bad_pkg) != (1, []):
-            failures.append(f"an unreadable package.json is no dependency, not a crash: {ids(bad_pkg)}")
+        case(ids(bad_pkg)[0] == 2, f"a package.json that does not parse is a problem when a stack reads it: {ids(bad_pkg)}")
+        case(ids(bad_pkg, [rails]) == (1, []), "a corrupt package.json is no problem when no stack reads dependencies")
+        list_pkg = project("list-package", {"package.json": "[1, 2]"})
+        case(ids(list_pkg)[0] == 2, f"a package.json that is valid JSON but not an object is a problem when a stack reads it: {ids(list_pkg)}")
 
         # ADDING A STACK IS A MANIFEST: a stack no plugin ships is detected the moment its manifest exists.
         go = manifest("go-stack", {"plugin": "go-stack", "stacks": [{"id": "go", "name": "Go", "all": [{"file": "go.mod"}]}]})
-        go_app = project("go-app", {"go.mod": "module x"})
-        if ids(go_app, dirs + [go]) != (0, ["go"]):
-            failures.append(f"a new stack plugin's manifest is enough to detect it: {ids(go_app, dirs + [go])}")
+        case(ids(project("go-app", {"go.mod": "module x"}), dirs + [go]) == (0, ["go"]), "a new stack plugin's manifest is enough to detect it")
 
-        unknown = manifest("odd-stack", {"plugin": "odd-stack", "stacks": [{"id": "odd", "all": [{"glob": "*.odd"}]}]})
-        if run(empty, dirs + [unknown])[0] != 2:
-            failures.append("an unknown marker kind is a problem, never a silent no-match")
-        markerless = manifest("blank-stack", {"plugin": "blank-stack", "stacks": [{"id": "blank"}]})
-        if run(empty, dirs + [markerless])[0] != 2:
-            failures.append("a stack with no markers is a problem: it would match every project")
-        broken = manifest("broken-stack", "{nope")
-        if run(rails_app, dirs + [broken])[0] != 2:
-            failures.append("an unreadable manifest is a problem, not a skipped plugin")
-        nameless = manifest("nameless-stack", {"stacks": []})
-        if run(rails_app, dirs + [nameless])[0] != 2:
-            failures.append("a manifest that names no plugin is a problem")
+        # EVERY WAY A MANIFEST CAN BE MISREAD IS EXIT 2, never the "none detected" code (#2188 review).
+        for label, data in (
+            ("an unknown marker kind is a problem", {"plugin": "p1", "stacks": [{"id": "x", "all": [{"glob": "*.x"}]}]}),
+            ("a stack with no markers is a problem", {"plugin": "p2", "stacks": [{"id": "x"}]}),
+            ("`stacks` naming a string is a problem", {"plugin": "p3", "stacks": ["rails"]}),
+            ("`stacks` as an object is a problem", {"plugin": "p4", "stacks": {"id": "x"}}),
+            ("a non-string marker value is a problem", {"plugin": "p5", "stacks": [{"id": "x", "all": [{"file": 5}]}]}),
+            ("an absolute marker path is a problem", {"plugin": "p6", "stacks": [{"id": "x", "all": [{"file": "/etc/hosts"}]}]}),
+            ("a marker path with `..` is a problem", {"plugin": "p7", "stacks": [{"id": "x", "all": [{"file": "../x"}]}]}),
+            ("`all` that is not a list is a problem", {"plugin": "p8", "stacks": [{"id": "x", "all": {"file": "x"}}]}),
+            ("a manifest that names no plugin is a problem", {"stacks": []}),
+            ("an unreadable manifest is a problem, not a skipped plugin", "{nope"),
+            ("a `dir` marker naming the project root (.) is a problem", {"plugin": "p9", "stacks": [{"id": "x", "all": [{"dir": "."}]}]}),
+            ("a `file` marker naming the project root (./) is a problem", {"plugin": "p10", "stacks": [{"id": "x", "all": [{"file": "./"}]}]}),
+            ("a stack with no id is a problem", {"plugin": "p11", "stacks": [{"all": [{"file": "Gemfile"}]}]}),
+            ("a stack whose id is a list is a problem", {"plugin": "p12", "stacks": [{"id": ["x"], "all": [{"file": "Gemfile"}]}]}),
+        ):
+            bad = manifest("bad-" + str(len(failures)) + "-" + str(count), data)
+            case(code_of(rails_app, bad) == 2, f"{label} (exit 2): got {code_of(rails_app, bad)}")
 
-        # TWO VERSIONS OF ONE PLUGIN COLLAPSE TO THE HIGHER, by the manifest's own version.
-        old = root / "cache" / "rails-stack" / "1.2.0"
-        new = root / "cache" / "rails-stack" / "1.10.0"
+        # TWO VERSIONS OF ONE PLUGIN COLLAPSE TO THE HIGHER; two at the SAME version are a problem, never a silent first-wins.
+        old, new = root / "cache" / "rails-stack" / "1.2.0", root / "cache" / "rails-stack" / "1.10.0"
         for d, marker in ((old, "Gemfile.lock"), (new, "Gemfile")):
-            d.mkdir(parents=True)
+            plugin_dir(d)
             (d / MANIFEST).write_text(json.dumps({"plugin": "rails-stack", "version": d.name,
                                                   "stacks": [{"id": "rails", "all": [{"file": marker}]}]}), encoding="utf-8")
-        loaded, _ = load_manifests([old, new])
-        if len(loaded) != 1 or loaded[0]["version"] != "1.10.0":
-            failures.append(f"two versions of a plugin collapse to the higher one (1.10.0 over 1.2.0): {[m.get('version') for m in loaded]}")
+        loaded, problems = load_manifests([old, new])
+        case(len(loaded) == 1 and loaded[0]["version"] == "1.10.0" and not problems,
+             f"two versions of a plugin collapse to the higher one (1.10.0 over 1.2.0): {[m.get('version') for m in loaded]}")
+        twin_a, twin_b = root / "twins" / "a", root / "twins" / "b"
+        for d in (twin_a, twin_b):
+            plugin_dir(d)
+            (d / MANIFEST).write_text(json.dumps({"plugin": "twin-stack", "stacks": []}), encoding="utf-8")
+        case(bool(load_manifests([twin_a, twin_b])[1]), "two manifests for one plugin at the same version are a problem")
 
-        # DISCOVERY, in the checkout shape: a sibling plugin and the repo root are both found from rails-flow's scripts dir.
+        # DISCOVERY, in the checkout shape: a sibling plugin and the repo root are found; a stray stacks.json is not.
         repo = root / "repo"
         (repo / "plugins" / "rails-flow" / "scripts").mkdir(parents=True)
-        (repo / "plugins" / "nextjs-stack").mkdir(parents=True)
-        (repo / MANIFEST).write_text(json.dumps({"plugin": "rails-stack", "stacks": []}), encoding="utf-8")
-        (repo / "plugins" / "nextjs-stack" / MANIFEST).write_text(json.dumps({"plugin": "nextjs-stack", "stacks": []}), encoding="utf-8")
+        plugin_dir(repo, ".claude-plugin/marketplace.json")
+        plugin_dir(repo / "plugins" / "nextjs-stack")
+        (repo / "docs" / "notes").mkdir(parents=True)
+        for d in (repo, repo / "plugins" / "nextjs-stack", repo / "docs" / "notes"):
+            (d / MANIFEST).write_text(json.dumps({"plugin": d.name, "stacks": []}), encoding="utf-8")
+        (repo / "plugins" / "loose").mkdir()
+        (repo / "plugins" / "loose" / MANIFEST).write_text("{}", encoding="utf-8")
         seen = {p.name for p in manifest_dirs(repo / "plugins" / "rails-flow" / "scripts" / "detect_stack.py")}
-        if seen != {"repo", "nextjs-stack"}:
-            failures.append(f"discovery finds the repo root (rails-stack) and a sibling plugin: {sorted(seen)}")
+        case(seen == {"repo", "nextjs-stack"}, f"discovery reads plugin roots only (the repo root and a sibling, not a stray stacks.json): {sorted(seen)}")
 
         # AND IN THE CACHE SHAPE: <plugin>/<version>/ under one marketplace directory.
         cache = root / "installed" / "claude-skills"
         (cache / "rails-flow" / "1.64.0" / "scripts").mkdir(parents=True)
-        (cache / "rails-stack" / "1.76.0").mkdir(parents=True)
+        plugin_dir(cache / "rails-stack" / "1.76.0", ".claude-plugin/marketplace.json")
         (cache / "rails-stack" / "1.76.0" / MANIFEST).write_text(json.dumps({"plugin": "rails-stack", "stacks": []}), encoding="utf-8")
-        seen = [p.parent.name for p in manifest_dirs(cache / "rails-flow" / "1.64.0" / "scripts" / "detect_stack.py")]
-        if seen != ["rails-stack"]:
-            failures.append(f"discovery finds a stack plugin in the installed cache: {seen}")
+        seen_cache = [p.parent.name for p in manifest_dirs(cache / "rails-flow" / "1.64.0" / "scripts" / "detect_stack.py")]
+        case(seen_cache == ["rails-stack"], f"discovery finds a stack plugin in the installed cache: {seen_cache}")
+
+        # THE COMMAND LINE: --json is the report, and the exit code is the run's.
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = main([str(combined), "--json"], dirs=dirs)
+        try:
+            printed = json.loads(out.getvalue())
+        except ValueError:
+            printed = {}
+        case(rc == 0 and sorted(s["id"] for s in printed.get("stacks", [])) == ["nextjs", "supabase", "vercel"] and printed.get("problems") == [],
+             f"--json prints the report and exits with the run's code: rc={rc} {out.getvalue()[:120]!r}")
 
     for f in failures:
         print(f"FAIL {f}")
     if failures:
+        print(f"detect_stack selftest: {len(failures)} of {count} cases failed")
         return 1
-    print("detect_stack selftest: 15 cases pass")
+    print(f"detect_stack selftest: {count} cases pass")
     return 0
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str], dirs: list[Path] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("project", nargs="?", default=".", type=Path)
     ap.add_argument("--json", action="store_true")
@@ -295,7 +384,7 @@ def main(argv: list[str]) -> int:
     args = ap.parse_args(argv)
     if args.selftest:
         return selftest()
-    code, report = run(args.project.resolve(), manifest_dirs(Path(__file__)))
+    code, report = run(args.project.resolve(), dirs if dirs is not None else manifest_dirs(Path(__file__)))
     print(json.dumps(report, indent=2) if args.json else render(code, report))
     return code
 
