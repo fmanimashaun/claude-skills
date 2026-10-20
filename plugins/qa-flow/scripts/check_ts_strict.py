@@ -47,8 +47,10 @@ THREE RULES, on the suite under `qa/`:
 NOT APPLICABLE (exit 3) when the project has no TypeScript under `qa/` -- reported, never a pass.
 
 THE APP SCOPE (`--scope app`, #2162 decision 6, #2170). The same three rules on the app's own source, which is every
-`.ts/.tsx/.mts/.cts` in the project outside `qa/`, `node_modules`, `.next`, `out`, `dist`, `build`, `coverage`, `.vercel`,
-`.turbo` and `.git`, and two more:
+`.ts/.tsx/.mts/.cts` in the project except the skipped directories: dependency and cache directories (`node_modules`, `.next`, `.vercel`, `.turbo`, `.git`) at any depth,
+`build`, `dist`, `out`, `coverage` and `qa` only at the project root (`src/build/` and `lib/coverage/` are ordinary folders).
+In a git repository the list is `git ls-files` (tracked plus untracked and not ignored), so a monorepo package's ignored
+`dist/` is skipped as well; without git a nested `packages/*/dist/` is read. And two more rules:
 
   ts-missing-option the app's stricter profile is not all set in some tsconfig (merged through `extends`, as above):
                     `strict` plus `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`,
@@ -71,7 +73,8 @@ KNOWN LIMITS.
   quote in it opens a string to the end of the line -- either can hide a real `any` on that line. (Without
   the rule, downstream's `path.replace(/\\//g, "-")` inside a template put the scanner out of phase.)
 - JSX text in a `.tsx` is read as code, and so are `{ any }` shorthand and `let any = 1`: the word is a
-  false finding there (declare it).
+  false finding there (declare it). The commonest case is prose in a component ("Do you have any questions?"); the escape is a
+  comment on the line or directly above it: `{/* ts-strict: allow-any -- prose */}` in JSX, `// ts-strict: allow-any -- <why>` elsewhere.
 - The workflow reader is not a YAML parser: flow-style steps (`steps: [{...}]`), anchors and multi-line
   plain scalars are not read, and a matrix `-p ${{ matrix.p }}` is not resolved (so is not a step). A
   `set +e` before the call is not seen. A package script is followed one level: a script that calls
@@ -91,9 +94,11 @@ Stdlib only, no network. Exit 0 clean, 1 findings, 3 not applicable.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import posixpath
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -138,8 +143,15 @@ APP_REQUIRED_FALSE = ("allowUnreachableCode", "allowUnusedLabels")
 # work in `.ts` files). Banned by the maintainer's decision 6 on #2162 and #2170, with or without a description: a policy, not a compiler
 # fact. `@ts-check` is not one (it asks for MORE checking in JavaScript).
 TS_DIRECTIVE = re.compile(r"@ts-(?:ignore|expect-error|nocheck)\b")
-# Directories that are not the app's own source: dependencies, build output, the e2e suite (its own scope), tooling caches.
-APP_SKIP = frozenset({"node_modules", ".next", "out", "dist", "build", "coverage", ".vercel", ".turbo", ".git", "qa"})
+# Directories that are not the app's own source. Dependencies and tooling caches are skipped at ANY depth; `build`, `dist`, `out`, `coverage`
+# and `qa` only AT THE ROOT, because `src/build/`, `lib/coverage/` and `app/out/` are ordinary feature folders (a finding there is real) and
+# `qa/` is the suite's own scope. In a git repository the file list is `git ls-files` (tracked, plus untracked and not ignored), so a
+# monorepo package's ignored `dist/` is skipped too; without git the root-only rule is all there is.
+APP_SKIP_ANYWHERE = frozenset({"node_modules", ".next", ".vercel", ".turbo", ".git"})
+APP_SKIP_AT_ROOT = frozenset({"build", "dist", "out", "coverage", "qa"})
+# A `tsc` that prints or writes something and checks nothing: the compiler's version or help, its option listing, a config dump or a file
+# list without a compile, `--init`, and a build-mode `--clean` or `--dry`. None of these makes the app type-checked.
+INFORMATIONAL = re.compile(r"(?:^|\s)(?:-v|--version|-h|--help|--all|--showConfig|--listFilesOnly|--init|--clean|--dry)(?=\s|=|$)")
 
 
 def _scan(text: str) -> tuple[str, str]:
@@ -323,10 +335,32 @@ def _under_qa(cwd: str, path: str) -> bool:
     return rel == "qa" or rel.startswith("qa/")
 
 
+def _skipped(parts: tuple[str, ...]) -> bool:
+    """A path (its parts, the file name last) the app scope does not read: a dependency or cache directory anywhere, or a build-output
+    or suite directory at the root."""
+    return bool(APP_SKIP_ANYWHERE.intersection(parts[:-1])) or (len(parts) > 1 and parts[0] in APP_SKIP_AT_ROOT)
+
+
 def _under_app(cwd: str, path: str) -> bool:
     """`path`, from `cwd`, is inside the project and is not the e2e suite or a dependency: the app's own."""
     rel = posixpath.normpath(posixpath.join(cwd, path))
-    return not (rel == ".." or rel.startswith("../") or rel.split("/")[0] in APP_SKIP)
+    parts = tuple(rel.split("/"))
+    return not (rel == ".." or rel.startswith("../") or APP_SKIP_ANYWHERE.intersection(parts) or parts[0] in APP_SKIP_AT_ROOT)
+
+
+def _listed(root: Path) -> list[Path] | None:
+    """The project's files by `git ls-files` (tracked, plus untracked and not ignored), or None when it is not a git repository or git
+    cannot say, in which case the caller walks the tree."""
+    if not (root / ".git").exists():
+        return None
+    try:
+        done = subprocess.run(["git", "-C", str(root), "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    return [root / rel for rel in done.stdout.split("\0") if rel]
 
 
 class Scope:
@@ -347,8 +381,10 @@ class Scope:
         if not self.app:
             qa = root / "qa"
             return sorted({p for ext in patterns for p in qa.glob(f"**/{ext}") if "node_modules" not in p.parts}) if qa.is_dir() else []
-        return sorted({p for ext in patterns for p in root.glob(f"**/{ext}")
-                       if not APP_SKIP.intersection(p.relative_to(root).parts[:-1])})
+        listed = _listed(root)
+        found = ([p for p in listed if p.is_file() and any(fnmatch.fnmatch(p.name, ext) for ext in patterns)] if listed is not None
+                 else [p for ext in patterns for p in root.glob(f"**/{ext}")])
+        return sorted({p for p in found if not _skipped(p.relative_to(root).parts)})
 
 
 QA = Scope("qa")
@@ -382,6 +418,8 @@ def _checks_suite(cmd: str, cwd: str, later: str = "", scope: Scope = QA) -> boo
     """`cmd`, run from `cwd` (relative to the root), invokes tsc on a project in `scope` (under qa/, or the app's
     own: with `-p`, or with none, which reads the tsconfig in `cwd`) and can fail."""
     for m in TSC.finditer(cmd):
+        if INFORMATIONAL.search(m.group("args")):
+            continue
         here = posixpath.join(cwd, *[c.group("dir") for c in CD.finditer(cmd[:m.start()])])
         p = PROJECT.search(m.group("args"))
         path = p.group("path") if p else scope.default_project
@@ -898,6 +936,41 @@ def _selftest() -> int:
                    ".github/workflows/ci.yml": "jobs:\n  c:\n    steps:\n      - run: npm run typecheck\n"}) == ["ts-no-typecheck"])
     expect("APP: config/ci.rb and bin/* are read as in the suite scope",
            arules({**no_ci, "config/ci.rb": 'step "Types", "npx tsc --noEmit"\n'}) == [])
+    # an informational tsc is not a type-check (60's review of #2197)
+    def ci(cmd: str) -> dict[str, str]:
+        return {**no_ci, ".github/workflows/ci.yml": f"jobs:\n  c:\n    steps:\n      - run: {cmd}\n"}
+
+    for flag in ("--version", "-v", "--help", "-h", "--all", "--showConfig", "--listFilesOnly", "--init", "-b --clean", "-b --dry"):
+        expect(f"APP: `tsc {flag}` is not a type-check", arules(ci(f"npx tsc {flag}")) == ["ts-no-typecheck"])
+        expect(f"APP: `tsc --noEmit {flag}` is not a type-check", arules(ci(f"npx tsc --noEmit {flag}")) == ["ts-no-typecheck"])
+    expect("QA: `tsc --version -p qa/e2e/tsconfig.json` is not a suite type-check",
+           rules({**{k: v for k, v in base.items() if not k.startswith(".github")},
+                  ".github/workflows/ci.yml": "jobs:\n  c:\n    steps:\n      - run: npx tsc --version -p qa/e2e/tsconfig.json\n"}) == ["ts-no-typecheck"])
+    expect("APP CONTROL: `tsc --noEmit --listFiles` still compiles, so it counts", arules(ci("npx tsc --noEmit --listFiles")) == [])
+    expect("APP CONTROL: `tsc -p tsconfig.json --noEmit --pretty false` counts", arules(ci("npx tsc -p tsconfig.json --noEmit --pretty false")) == [])
+    expect("APP: a package script that only prints the version is not a type-check",
+           arules({**no_ci, "package.json": '{"scripts": {"typecheck": "tsc --version"}}',
+                   ".github/workflows/ci.yml": "jobs:\n  c:\n    steps:\n      - run: npm run typecheck\n"}) == ["ts-no-typecheck"])
+    expect("APP: JSX prose containing the word any is a (known) false finding", arules({**abase, "src/p.tsx": "export const P = () => <p>Do you have any questions?</p>;\n"}) == ["ts-explicit-any"])
+    expect("APP: ...and the documented JSX comment escape clears it",
+           arules({**abase, "src/p.tsx": "export const P = () => (\n  <div>\n    {/* ts-strict: allow-any -- prose */}\n    <p>Do you have any questions?</p>\n  </div>\n);\n"}) == [])
+    # which directories the app scope reads (60's review of #2197)
+    boom = "const z: any = 1;\n"
+    for d in ("build", "dist", "out", "coverage", "qa"):
+        expect(f"APP: a src/{d}/ feature folder is read", arules({**abase, f"src/{d}/x.ts": boom}) == ["ts-explicit-any"])
+        expect(f"APP: a root {d}/ directory is not the app's", arules({**abase, f"{d}/x.ts": boom}) == [])
+    for d in ("node_modules", ".next", ".vercel", ".turbo"):
+        expect(f"APP: a nested {d}/ is skipped at any depth", arules({**abase, f"packages/ui/{d}/x.ts": boom}) == [])
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for rel, body in {**abase, "packages/ui/dist/x.d.ts": "export const z: any = 1;\n", "src/y.ts": boom, ".gitignore": "dist/\n"}.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(body)
+        walked = [f.split(":")[0] for f in (run(root, APP) or ([], 0))[0] if "ts-explicit-any" in f]
+        subprocess.run(["git", "-C", d, "init", "-q"], capture_output=True)
+        listed = [f.split(":")[0] for f in (run(root, APP) or ([], 0))[0] if "ts-explicit-any" in f]
+    expect("APP: with no git a monorepo package's dist/ is read (the stated limit)", sorted(walked) == ["packages/ui/dist/x.d.ts", "src/y.ts"])
+    expect("APP: in a git repository an ignored dist/ is skipped, and an untracked source file is read", listed == ["src/y.ts"])
     # ts-explicit-any, app reading
     expect("APP: an explicit any in the app's source is caught", arules({**abase, "src/b.tsx": "const x = y as any;\n"}) == ["ts-explicit-any"])
     expect("APP: an allowed any with a reason is not a finding",
@@ -914,7 +987,6 @@ def _selftest() -> int:
            arules({**abase, "qa/e2e/b.spec.ts": "// @ts-ignore\nexport {};\n"}) == [])
 
     # #1873: the EXIT CODE the runner grades, driven end to end: no TypeScript under qa/ is n/a.
-    import subprocess
     with tempfile.TemporaryDirectory() as d:
         done = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--root", d], capture_output=True, text=True)
     expect(f"no TypeScript under qa/ is not applicable (exit 3), never a pass: got {done.returncode}",
