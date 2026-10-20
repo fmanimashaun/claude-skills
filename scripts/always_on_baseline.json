@@ -22,6 +22,10 @@
       "chars": 0,
       "est_tokens": 0
     },
+    "nextjs-stack": {
+      "chars": 545,
+      "est_tokens": 182
+    },
     "pipeline": {
       "chars": 1538,
       "est_tokens": 513
