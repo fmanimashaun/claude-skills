@@ -117,7 +117,7 @@ def selftest() -> int:
         repo = Path(td)
         scripts = repo / "plugins" / "p" / "scripts"
         scripts.mkdir(parents=True)
-        (repo / "skills").mkdir()
+        (repo / "plugins" / "rails-stack" / "skills").mkdir(parents=True)
         (scripts / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
         # Needs its sibling unconditionally: passes in the plugin dir, fails alone.
         (scripts / "needy.py").write_text(
@@ -129,7 +129,7 @@ def selftest() -> int:
         (scripts / "unrelated.py").write_text("import sys\nsys.exit(1)\n", encoding="utf-8")
         (repo / "plugins" / "p" / "setup.md").write_text(
             "Copy it to `.claude/scripts/needy.py`.\n", encoding="utf-8")
-        (repo / "skills" / "s.md").write_text("Vendor `.claude/scripts/ghost.py`.\n", encoding="utf-8")
+        (repo / "plugins" / "rails-stack" / "skills" / "s.md").write_text("Vendor `.claude/scripts/ghost.py`.\n", encoding="utf-8")
         # #1767: THREE MORE SHAPES THE FIRST TWO MISSED. `barely.py` is named by a doc by its BARE name next to a vendoring verb;
         # `wording.py` says of itself that a project vendors it, in words other than "vendored ALONE". Both need `helper.py`, so only
         # isolation can catch them. `ignored.py` sits beside the vendor DIRECTORY and `mentioned.py` beside no vendoring verb: neither is run.
