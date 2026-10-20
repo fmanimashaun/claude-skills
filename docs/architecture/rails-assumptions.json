@@ -12,6 +12,7 @@
     "hotwire": 1,
     "rails-word": 1
    },
+   "invokes": [],
    "kind": "manifest",
    "lines": [
     3
@@ -36,6 +37,7 @@
     "rails-word": 2,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "doc",
    "lines": [
     18,
@@ -61,6 +63,7 @@
     "erb": 1,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "agent",
    "lines": [
     49,
@@ -80,6 +83,7 @@
     "app-layers": 2,
     "erb": 2
    },
+   "invokes": [],
    "kind": "agent",
    "lines": [
     83,
@@ -104,6 +108,7 @@
     "rails-word": 1,
     "ruby": 1
    },
+   "invokes": [],
    "kind": "agent",
    "lines": [
     5,
@@ -136,6 +141,7 @@
     "ruby": 1,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "agent",
    "lines": [
     4,
@@ -157,6 +163,7 @@
     "app-layers": 9,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "data",
    "lines": [
     10,
@@ -191,6 +198,9 @@
     "ruby": 1,
     "ruby-file": 1
    },
+   "invokes": [
+    171
+   ],
    "kind": "command",
    "lines": [
     57,
@@ -219,6 +229,7 @@
     "ruby": 1,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     41,
@@ -240,6 +251,7 @@
    "ids": {
     "erb": 2
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     77,
@@ -261,6 +273,7 @@
     "hotwire": 5,
     "rails-word": 3
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     2,
@@ -284,6 +297,7 @@
     "hotwire": 3,
     "rails-word": 1
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     2,
@@ -313,6 +327,7 @@
     "ruby": 1,
     "ruby-file": 3
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     2,
@@ -353,6 +368,7 @@
     "rails-word": 3,
     "ruby": 1
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     2,
@@ -381,6 +397,7 @@
     "ruby": 2,
     "ruby-file": 4
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     21,
@@ -426,6 +443,7 @@
     "ruby": 2,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "hook",
    "lines": [
     11,
@@ -447,6 +465,7 @@
     "gemfile": 5,
     "ruby": 2
    },
+   "invokes": [],
    "kind": "hook",
    "lines": [
     13,
@@ -472,6 +491,7 @@
     "erb": 6,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     240,
@@ -501,6 +521,7 @@
     "ruby": 3,
     "ruby-file": 19
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     4,
@@ -579,6 +600,7 @@
     "erb": 35,
     "rails-word": 2
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     4,
@@ -644,6 +666,7 @@
     "ruby": 3,
     "ruby-file": 11
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     4,
@@ -692,6 +715,7 @@
     "ruby": 6,
     "ruby-file": 17
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     4,
@@ -765,6 +789,7 @@
     "rails-word": 2,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     4,
@@ -825,6 +850,7 @@
     "rails-word": 2,
     "ruby-file": 7
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     4,
@@ -851,6 +877,7 @@
    "ids": {
     "erb": 2
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     142,
@@ -872,6 +899,7 @@
     "rails-word": 1,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     47,
@@ -896,6 +924,7 @@
     "hotwire": 1,
     "rails-word": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     5,
@@ -917,6 +946,7 @@
     "ruby": 1,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     447,
@@ -940,6 +970,7 @@
     "app-layers": 3,
     "erb": 4
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     40,
@@ -964,6 +995,7 @@
     "ruby": 1,
     "ruby-file": 3
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     16,
@@ -988,6 +1020,7 @@
     "ruby": 4,
     "ruby-file": 2
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     49,
@@ -1011,6 +1044,7 @@
    "ids": {
     "gem": 1
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     33
@@ -1030,6 +1064,7 @@
     "erb": 8,
     "ruby": 4
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     12,
@@ -1058,6 +1093,7 @@
    "ids": {
     "erb": 3
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     7,
@@ -1078,6 +1114,7 @@
     "app-layers": 1,
     "erb": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     574
@@ -1099,6 +1136,7 @@
     "rails-word": 27,
     "ruby-file": 22
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     8,
@@ -1168,6 +1206,7 @@
     "ruby": 9,
     "ruby-file": 2
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     22,
@@ -1214,6 +1253,7 @@
     "ruby": 1,
     "ruby-file": 4
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     23,
@@ -1288,6 +1328,9 @@
     "ruby": 2,
     "ruby-file": 3
    },
+   "invokes": [
+    38
+   ],
    "kind": "agent",
    "lines": [
     15,
@@ -1319,6 +1362,7 @@
     "rails-word": 5,
     "ruby-file": 3
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     10,
@@ -1343,6 +1387,7 @@
     "gemfile": 1,
     "rails-word": 2
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     26,
@@ -1352,17 +1397,20 @@
    "move": ""
   },
   "plugins/pipeline/commands/setup-cloud.md": {
-   "assumes": "prose or examples that name Rails, the Gemfile or Rails binstubs",
+   "assumes": "text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec)",
    "categories": {
     "path": 1,
     "tool": 1
    },
-   "decision": "reword",
-   "how": "reworded to reference the detector's commands",
+   "decision": "detector",
+   "how": "the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example",
    "ids": {
     "binstub": 1,
     "gemfile": 1
    },
+   "invokes": [
+    37
+   ],
    "kind": "command",
    "lines": [
     25,
@@ -1380,6 +1428,7 @@
    "ids": {
     "rails-word": 1
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     45
@@ -1398,6 +1447,7 @@
     "app-layers": 1,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "hook",
    "lines": [
     76
@@ -1416,6 +1466,7 @@
     "gemfile": 5,
     "ruby": 2
    },
+   "invokes": [],
    "kind": "hook",
    "lines": [
     13,
@@ -1442,6 +1493,7 @@
     "ruby-file": 1,
     "spec-dir": 1
    },
+   "invokes": [],
    "kind": "reference",
    "lines": [
     109
@@ -1461,6 +1513,7 @@
     "gemfile": 5,
     "ruby": 2
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     4,
@@ -1484,6 +1537,7 @@
    "ids": {
     "rspec": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     6
@@ -1505,6 +1559,7 @@
     "ruby-file": 1,
     "spec-dir": 1
    },
+   "invokes": [],
    "kind": "selftest",
    "lines": [
     146,
@@ -1526,6 +1581,7 @@
     "app-layers": 3,
     "ruby-file": 6
    },
+   "invokes": [],
    "kind": "selftest",
    "lines": [
     308,
@@ -1553,6 +1609,9 @@
     "ruby": 4,
     "ruby-file": 2
    },
+   "invokes": [
+    257
+   ],
    "kind": "script",
    "lines": [
     13,
@@ -1591,6 +1650,7 @@
     "app-layers": 3,
     "ruby-file": 3
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     134,
@@ -1610,6 +1670,7 @@
    "ids": {
     "ruby": 2
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     58,
@@ -1627,6 +1688,7 @@
    "ids": {
     "ruby": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     307
@@ -1643,6 +1705,7 @@
    "ids": {
     "rails-word": 2
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     13,
@@ -1660,6 +1723,7 @@
    "ids": {
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "selftest",
    "lines": [
     376
@@ -1667,19 +1731,22 @@
    "move": ""
   },
   "plugins/pipeline/templates/deploy.env.example": {
-   "assumes": "prose or examples that name Rails, the Gemfile or Rails binstubs",
+   "assumes": "text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec)",
    "categories": {
     "concept": 4,
     "path": 1,
     "tool": 1
    },
-   "decision": "reword",
-   "how": "reworded to reference the detector's commands",
+   "decision": "detector",
+   "how": "the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example",
    "ids": {
     "binstub": 1,
     "rails-config": 1,
     "rails-word": 4
    },
+   "invokes": [
+    5
+   ],
    "kind": "template",
    "lines": [
     5,
@@ -1701,6 +1768,7 @@
    "ids": {
     "hotwire": 1
    },
+   "invokes": [],
    "kind": "agent",
    "lines": [
     234
@@ -1717,6 +1785,7 @@
    "ids": {
     "spec-dir": 1
    },
+   "invokes": [],
    "kind": "agent",
    "lines": [
     13
@@ -1724,17 +1793,21 @@
    "move": ""
   },
   "plugins/qa-flow/agents/functional-tester.md": {
-   "assumes": "prose or examples that name bin/rails, RSpec or Rails paths",
+   "assumes": "text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec)",
    "categories": {
     "concept": 1,
     "tool": 2
    },
-   "decision": "reword",
-   "how": "reworded to reference the detector's commands",
+   "decision": "detector",
+   "how": "the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example",
    "ids": {
     "bin-rails": 2,
     "ruby-file": 1
    },
+   "invokes": [
+    308,
+    311
+   ],
    "kind": "agent",
    "lines": [
     295,
@@ -1756,6 +1829,7 @@
     "ruby-file": 1,
     "spec-dir": 1
    },
+   "invokes": [],
    "kind": "agent",
    "lines": [
     12,
@@ -1776,6 +1850,7 @@
     "app-layers": 1,
     "erb": 1
    },
+   "invokes": [],
    "kind": "agent",
    "lines": [
     35
@@ -1793,6 +1868,7 @@
     "brakeman": 2,
     "bundler-audit": 2
    },
+   "invokes": [],
    "kind": "agent",
    "lines": [
     5,
@@ -1818,6 +1894,9 @@
     "ruby-file": 3,
     "spec-dir": 1
    },
+   "invokes": [
+    61
+   ],
    "kind": "command",
    "lines": [
     7,
@@ -1846,6 +1925,10 @@
     "rails-word": 3,
     "ruby": 1
    },
+   "invokes": [
+    22,
+    29
+   ],
    "kind": "command",
    "lines": [
     19,
@@ -1869,6 +1952,9 @@
     "bin-rails": 1,
     "rails-word": 3
    },
+   "invokes": [
+    46
+   ],
    "kind": "command",
    "lines": [
     46,
@@ -1890,6 +1976,7 @@
     "gemfile": 5,
     "ruby": 2
    },
+   "invokes": [],
    "kind": "hook",
    "lines": [
     13,
@@ -1903,20 +1990,27 @@
    "move": ""
   },
   "plugins/qa-flow/reference/stand-ins.md": {
-   "assumes": "prose or examples that name bin/rails, RSpec or Rails paths",
+   "assumes": "text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec)",
    "categories": {
     "concept": 3,
     "path": 1,
     "tool": 5
    },
-   "decision": "reword",
-   "how": "reworded to reference the detector's commands",
+   "decision": "detector",
+   "how": "the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example",
    "ids": {
     "bin-rails": 4,
     "binstub": 1,
     "gemfile": 1,
     "rails-word": 3
    },
+   "invokes": [
+    24,
+    35,
+    36,
+    42,
+    47
+   ],
    "kind": "reference",
    "lines": [
     24,
@@ -1940,6 +2034,7 @@
    "ids": {
     "rails-word": 1
    },
+   "invokes": [],
    "kind": "scaffold",
    "lines": [
     2
@@ -1967,6 +2062,7 @@
     "ruby-file": 25,
     "spec-dir": 14
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     69,
@@ -2036,6 +2132,7 @@
     "ruby-file": 49,
     "spec-dir": 6
    },
+   "invokes": [],
    "kind": "selftest",
    "lines": [
     13,
@@ -2106,6 +2203,7 @@
    "ids": {
     "rspec": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     6
@@ -2128,6 +2226,9 @@
     "ruby": 1,
     "ruby-file": 7
    },
+   "invokes": [
+    646
+   ],
    "kind": "script",
    "lines": [
     36,
@@ -2155,6 +2256,7 @@
     "gemfile": 1,
     "ruby": 4
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     64,
@@ -2175,6 +2277,7 @@
     "active-framework": 1,
     "rails-word": 4
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     13,
@@ -2198,6 +2301,9 @@
     "rails-word": 5,
     "ruby-file": 12
    },
+   "invokes": [
+    401
+   ],
    "kind": "script",
    "lines": [
     23,
@@ -2235,6 +2341,7 @@
    "ids": {
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     354
@@ -2251,6 +2358,7 @@
    "ids": {
     "hotwire": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     14
@@ -2270,6 +2378,9 @@
     "rails-word": 2,
     "ruby-file": 2
    },
+   "invokes": [
+    274
+   ],
    "kind": "script",
    "lines": [
     57,
@@ -2294,6 +2405,7 @@
     "db": 1,
     "ruby-file": 2
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     50,
@@ -2317,6 +2429,7 @@
     "ruby": 1,
     "ruby-file": 2
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     124,
@@ -2336,6 +2449,7 @@
    "ids": {
     "rails-word": 1
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     89
@@ -2357,6 +2471,10 @@
     "routes": 1,
     "ruby-file": 2
    },
+   "invokes": [
+    364,
+    368
+   ],
    "kind": "mutation",
    "lines": [
     359,
@@ -2376,6 +2494,7 @@
    "ids": {
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     2375
@@ -2394,6 +2513,7 @@
     "app-layers": 3,
     "ruby-file": 5
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     35,
@@ -2416,6 +2536,7 @@
     "app-layers": 2,
     "ruby-file": 4
    },
+   "invokes": [],
    "kind": "selftest",
    "lines": [
     29,
@@ -2439,6 +2560,7 @@
     "ruby-file": 14,
     "spec-dir": 2
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     633,
@@ -2469,6 +2591,9 @@
    "ids": {
     "bin-rails": 1
    },
+   "invokes": [
+    169
+   ],
    "kind": "script",
    "lines": [
     169
@@ -2491,6 +2616,17 @@
     "routes": 1,
     "ruby-file": 3
    },
+   "invokes": [
+    163,
+    194,
+    323,
+    356,
+    530,
+    586,
+    622,
+    788,
+    1070
+   ],
    "kind": "script",
    "lines": [
     6,
@@ -2531,6 +2667,10 @@
     "routes": 3,
     "ruby-file": 9
    },
+   "invokes": [
+    532,
+    543
+   ],
    "kind": "selftest",
    "lines": [
     93,
@@ -2564,6 +2704,10 @@
     "hotwire": 2,
     "ruby-file": 1
    },
+   "invokes": [
+    1857,
+    1865
+   ],
    "kind": "script",
    "lines": [
     881,
@@ -2587,6 +2731,9 @@
     "bin-rails": 1,
     "hotwire": 1
    },
+   "invokes": [
+    1787
+   ],
    "kind": "selftest",
    "lines": [
     915,
@@ -2604,6 +2751,10 @@
    "ids": {
     "bin-rails": 2
    },
+   "invokes": [
+    152,
+    186
+   ],
    "kind": "script",
    "lines": [
     152,
@@ -2621,6 +2772,7 @@
    "ids": {
     "rails-word": 1
    },
+   "invokes": [],
    "kind": "manifest",
    "lines": [
     3
@@ -2640,6 +2792,7 @@
     "hotwire": 1,
     "rails-word": 1
    },
+   "invokes": [],
    "kind": "agent",
    "lines": [
     23,
@@ -2664,6 +2817,7 @@
     "rails-word": 2,
     "ruby-file": 2
    },
+   "invokes": [],
    "kind": "agent",
    "lines": [
     4,
@@ -2694,6 +2848,7 @@
     "rails-config": 1,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "agent",
    "lines": [
     5,
@@ -2721,6 +2876,7 @@
    "ids": {
     "hotwire": 1
    },
+   "invokes": [],
    "kind": "agent",
    "lines": [
     27
@@ -2743,6 +2899,11 @@
     "rails-word": 2,
     "ruby-file": 1
    },
+   "invokes": [
+    34,
+    35,
+    38
+   ],
    "kind": "agent",
    "lines": [
     4,
@@ -2769,6 +2930,7 @@
     "db": 1,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "agent",
    "lines": [
     152
@@ -2795,6 +2957,7 @@
     "ruby-file": 1,
     "spec-dir": 1
    },
+   "invokes": [],
    "kind": "agent",
    "lines": [
     4,
@@ -2825,6 +2988,10 @@
     "rails-word": 1,
     "ruby-file": 2
    },
+   "invokes": [
+    14,
+    15
+   ],
    "kind": "agent",
    "lines": [
     5,
@@ -2849,6 +3016,7 @@
     "app-layers": 2,
     "ruby-file": 2
    },
+   "invokes": [],
    "kind": "agent",
    "lines": [
     99,
@@ -2874,6 +3042,13 @@
     "ruby-file": 1,
     "spec-dir": 1
    },
+   "invokes": [
+    10,
+    16,
+    17,
+    30,
+    31
+   ],
    "kind": "agent",
    "lines": [
     4,
@@ -2913,6 +3088,9 @@
     "ruby-file": 10,
     "spec-dir": 2
    },
+   "invokes": [
+    186
+   ],
    "kind": "data",
    "lines": [
     19,
@@ -2961,6 +3139,7 @@
     "routes": 1,
     "ruby-file": 2
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     62,
@@ -2978,6 +3157,7 @@
    "ids": {
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     51
@@ -2999,6 +3179,9 @@
     "rails-word": 1,
     "ruby-file": 1
    },
+   "invokes": [
+    71
+   ],
    "kind": "command",
    "lines": [
     34,
@@ -3019,6 +3202,9 @@
     "bundler": 1,
     "hotwire": 1
    },
+   "invokes": [
+    237
+   ],
    "kind": "command",
    "lines": [
     225,
@@ -3039,6 +3225,9 @@
     "rails-word": 1,
     "ruby": 1
    },
+   "invokes": [
+    79
+   ],
    "kind": "command",
    "lines": [
     51,
@@ -3064,6 +3253,7 @@
     "ruby": 1,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     2,
@@ -3089,6 +3279,10 @@
     "ruby-file": 4,
     "spec-dir": 2
    },
+   "invokes": [
+    76,
+    78
+   ],
    "kind": "command",
    "lines": [
     54,
@@ -3110,6 +3304,7 @@
    "ids": {
     "ruby": 1
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     145
@@ -3126,6 +3321,7 @@
    "ids": {
     "rubocop": 1
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     54
@@ -3147,6 +3343,7 @@
     "rails-word": 1,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     12,
@@ -3189,6 +3386,28 @@
     "ruby-file": 34,
     "spec-dir": 8
    },
+   "invokes": [
+    195,
+    359,
+    362,
+    633,
+    637,
+    638,
+    694,
+    733,
+    747,
+    752,
+    759,
+    785,
+    786,
+    787,
+    803,
+    983,
+    1089,
+    1090,
+    1100,
+    1101
+   ],
    "kind": "command",
    "lines": [
     41,
@@ -3323,6 +3542,7 @@
     "db": 1,
     "ruby-file": 2
    },
+   "invokes": [],
    "kind": "command",
    "lines": [
     29,
@@ -3340,6 +3560,7 @@
    "ids": {
     "ruby": 1
    },
+   "invokes": [],
    "kind": "hook",
    "lines": [
     73
@@ -3364,6 +3585,23 @@
     "ruby": 3,
     "ruby-file": 5
    },
+   "invokes": [
+    100,
+    103,
+    104,
+    105,
+    107,
+    108,
+    111,
+    112,
+    116,
+    117,
+    160,
+    169,
+    172,
+    173,
+    177
+   ],
    "kind": "hook",
    "lines": [
     93,
@@ -3406,6 +3644,7 @@
     "routes": 1,
     "ruby-file": 2
    },
+   "invokes": [],
    "kind": "hook",
    "lines": [
     33,
@@ -3428,6 +3667,14 @@
     "rails-word": 4,
     "ruby-file": 8
    },
+   "invokes": [
+    8,
+    14,
+    38,
+    46,
+    48,
+    66
+   ],
    "kind": "hook",
    "lines": [
     2,
@@ -3465,6 +3712,7 @@
    "ids": {
     "app-layers": 2
    },
+   "invokes": [],
    "kind": "hook",
    "lines": [
     1300,
@@ -3484,6 +3732,7 @@
     "gemfile": 5,
     "ruby": 2
    },
+   "invokes": [],
    "kind": "hook",
    "lines": [
     13,
@@ -3510,6 +3759,10 @@
     "ruby": 6,
     "ruby-file": 1
    },
+   "invokes": [
+    16,
+    27
+   ],
    "kind": "hook",
    "lines": [
     2,
@@ -3538,6 +3791,7 @@
     "rake": 1,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "hook",
    "lines": [
     21
@@ -3561,6 +3815,7 @@
     "ruby-file": 3,
     "spec-dir": 1
    },
+   "invokes": [],
    "kind": "hook",
    "lines": [
     26,
@@ -3597,6 +3852,9 @@
     "gemfile": 2,
     "rspec": 1
    },
+   "invokes": [
+    4
+   ],
    "kind": "hook",
    "lines": [
     4,
@@ -3621,6 +3879,7 @@
     "rspec": 1,
     "rubocop": 1
    },
+   "invokes": [],
    "kind": "data",
    "lines": [
     5,
@@ -3634,14 +3893,14 @@
    "move": "rails-mandated-gems"
   },
   "plugins/rails-flow/reference/agent-instruction-conventions.md": {
-   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "assumes": "text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec)",
    "categories": {
     "concept": 7,
     "gem": 1,
     "tool": 4
    },
-   "decision": "reword",
-   "how": "reworded in the slice that touches the file; no code changes",
+   "decision": "detector",
+   "how": "the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example",
    "ids": {
     "gem": 1,
     "rails-word": 6,
@@ -3649,6 +3908,9 @@
     "ruby": 2,
     "ruby-file": 1
    },
+   "invokes": [
+    178
+   ],
    "kind": "reference",
    "lines": [
     5,
@@ -3675,6 +3937,7 @@
    "ids": {
     "spec-dir": 1
    },
+   "invokes": [],
    "kind": "reference",
    "lines": [
     31
@@ -3682,15 +3945,18 @@
    "move": ""
   },
   "plugins/rails-flow/reference/context-budget.md": {
-   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "assumes": "text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec)",
    "categories": {
     "tool": 1
    },
-   "decision": "reword",
-   "how": "reworded in the slice that touches the file; no code changes",
+   "decision": "detector",
+   "how": "the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example",
    "ids": {
     "binstub": 1
    },
+   "invokes": [
+    274
+   ],
    "kind": "reference",
    "lines": [
     274
@@ -3707,6 +3973,7 @@
    "ids": {
     "ruby": 1
    },
+   "invokes": [],
    "kind": "reference",
    "lines": [
     11
@@ -3726,6 +3993,7 @@
     "rake": 2,
     "ruby": 1
    },
+   "invokes": [],
    "kind": "reference",
    "lines": [
     34,
@@ -3737,16 +4005,19 @@
    "move": ""
   },
   "plugins/rails-flow/reference/model-tiers.md": {
-   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "assumes": "text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec)",
    "categories": {
     "tool": 2
    },
-   "decision": "reword",
-   "how": "reworded in the slice that touches the file; no code changes",
+   "decision": "detector",
+   "how": "the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example",
    "ids": {
     "bundler": 1,
     "rspec": 1
    },
+   "invokes": [
+    116
+   ],
    "kind": "reference",
    "lines": [
     116
@@ -3769,6 +4040,9 @@
     "rubocop": 3,
     "ruby-file": 2
    },
+   "invokes": [
+    13
+   ],
    "kind": "scaffold",
    "lines": [
     3,
@@ -3804,6 +4078,9 @@
     "ruby": 1,
     "ruby-file": 37
    },
+   "invokes": [
+    391
+   ],
    "kind": "script",
    "lines": [
     2,
@@ -3898,6 +4175,7 @@
    "ids": {
     "app-layers": 9
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     146,
@@ -3924,6 +4202,7 @@
     "rails-word": 1,
     "rake": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     2,
@@ -3956,6 +4235,9 @@
     "ruby": 1,
     "ruby-file": 62
    },
+   "invokes": [
+    287
+   ],
    "kind": "script",
    "lines": [
     2,
@@ -4058,6 +4340,7 @@
     "app-layers": 1,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     41
@@ -4080,6 +4363,7 @@
     "routes": 1,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "selftest",
    "lines": [
     27,
@@ -4101,6 +4385,7 @@
     "ruby-file": 19,
     "spec-dir": 5
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     17,
@@ -4155,6 +4440,32 @@
     "ruby": 1,
     "ruby-file": 9
    },
+   "invokes": [
+    6,
+    21,
+    33,
+    37,
+    39,
+    66,
+    99,
+    112,
+    118,
+    144,
+    145,
+    148,
+    154,
+    164,
+    165,
+    171,
+    179,
+    188,
+    206,
+    213,
+    218,
+    228,
+    236,
+    241
+   ],
    "kind": "script",
    "lines": [
     2,
@@ -4220,6 +4531,7 @@
     "gemfile": 2,
     "ruby-file": 2
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     25,
@@ -4251,6 +4563,7 @@
     "ruby": 2,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     88,
@@ -4276,6 +4589,7 @@
     "ruby": 1,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "selftest",
    "lines": [
     15,
@@ -4303,6 +4617,14 @@
     "ruby": 1,
     "ruby-file": 28
    },
+   "invokes": [
+    79,
+    229,
+    238,
+    256,
+    302,
+    464
+   ],
    "kind": "selftest",
    "lines": [
     23,
@@ -4358,6 +4680,7 @@
     "hotwire": 2,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     99,
@@ -4388,6 +4711,11 @@
     "ruby-file": 12,
     "spec-dir": 2
    },
+   "invokes": [
+    85,
+    87,
+    617
+   ],
    "kind": "selftest",
    "lines": [
     11,
@@ -4417,14 +4745,14 @@
    "move": ""
   },
   "plugins/rails-flow/scripts/check_hook_gates.py": {
-   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "assumes": "the harness that drives every hook, including the Rails ones, with Rails command fixtures (bin/rails, rspec)",
    "categories": {
     "concept": 108,
     "path": 58,
     "tool": 109
    },
-   "decision": "reword",
-   "how": "reworded in the slice that touches the file; no code changes",
+   "decision": "detector",
+   "how": "learns the sibling stack plugin's hooks directory (step 3d of the plan) and drives each stack's hooks with that stack's fixtures",
    "ids": {
     "active-framework": 1,
     "app-layers": 15,
@@ -4443,6 +4771,56 @@
     "ruby-file": 104,
     "spec-dir": 6
    },
+   "invokes": [
+    690,
+    738,
+    827,
+    882,
+    1013,
+    1017,
+    1674,
+    1675,
+    1676,
+    1678,
+    1680,
+    1681,
+    1682,
+    1684,
+    1685,
+    1686,
+    1687,
+    1688,
+    1689,
+    1690,
+    1691,
+    1692,
+    1693,
+    1694,
+    1697,
+    1698,
+    1700,
+    1701,
+    1733,
+    1734,
+    1738,
+    1739,
+    1740,
+    1744,
+    1757,
+    1758,
+    1759,
+    1760,
+    1761,
+    1762,
+    1787,
+    1797,
+    1803,
+    1810,
+    1812,
+    1816,
+    4434,
+    4453
+   ],
    "kind": "script",
    "lines": [
     12,
@@ -4670,6 +5048,9 @@
     "rails-word": 6,
     "ruby-file": 4
    },
+   "invokes": [
+    100
+   ],
    "kind": "script",
    "lines": [
     15,
@@ -4705,6 +5086,7 @@
     "app-layers": 1,
     "erb": 3
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     47,
@@ -4723,6 +5105,7 @@
    "ids": {
     "ruby": 3
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     27,
@@ -4748,6 +5131,7 @@
     "routes": 6,
     "ruby-file": 18
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     10,
@@ -4815,6 +5199,15 @@
     "ruby-file": 4,
     "spec-dir": 1
    },
+   "invokes": [
+    16,
+    87,
+    92,
+    99,
+    100,
+    147,
+    195
+   ],
    "kind": "script",
    "lines": [
     2,
@@ -4888,6 +5281,9 @@
     "ruby-file": 86,
     "spec-dir": 2
    },
+   "invokes": [
+    549
+   ],
    "kind": "script",
    "lines": [
     10,
@@ -5007,6 +5403,7 @@
     "ruby-file": 18,
     "spec-dir": 24
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     5,
@@ -5078,6 +5475,7 @@
     "ruby": 1,
     "ruby-file": 10
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     10,
@@ -5113,6 +5511,7 @@
     "rails-word": 1,
     "ruby-file": 12
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     4,
@@ -5153,6 +5552,9 @@
     "ruby-file": 5,
     "spec-dir": 1
    },
+   "invokes": [
+    622
+   ],
    "kind": "script",
    "lines": [
     5,
@@ -5194,6 +5596,7 @@
     "rails-word": 3,
     "ruby-file": 35
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     2,
@@ -5255,6 +5658,7 @@
     "ruby": 3,
     "ruby-file": 40
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     5,
@@ -5349,6 +5753,7 @@
     "gemfile": 7,
     "rails-word": 3
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     2,
@@ -5437,6 +5842,7 @@
     "ruby-file": 8,
     "spec-dir": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     126,
@@ -5465,6 +5871,7 @@
     "app-layers": 12,
     "ruby-file": 11
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     134,
@@ -5500,6 +5907,7 @@
     "ruby-file": 19,
     "spec-dir": 13
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     2,
@@ -5574,6 +5982,13 @@
     "ruby": 13,
     "ruby-file": 27
    },
+   "invokes": [
+    20,
+    38,
+    105,
+    225,
+    315
+   ],
    "kind": "script",
    "lines": [
     12,
@@ -5681,6 +6096,7 @@
    "ids": {
     "rails-word": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     14
@@ -5701,6 +6117,7 @@
     "rails-word": 1,
     "ruby-file": 9
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     20,
@@ -5727,6 +6144,9 @@
     "bundler": 1,
     "rspec": 2
    },
+   "invokes": [
+    195
+   ],
    "kind": "script",
    "lines": [
     193,
@@ -5753,6 +6173,7 @@
     "ruby-file": 27,
     "spec-dir": 2
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     15,
@@ -5808,6 +6229,7 @@
     "rails-word": 2,
     "ruby-file": 2
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     115,
@@ -5845,6 +6267,15 @@
     "ruby-file": 21,
     "spec-dir": 18
    },
+   "invokes": [
+    4,
+    10,
+    53,
+    242,
+    253,
+    265,
+    289
+   ],
    "kind": "script",
    "lines": [
     4,
@@ -5895,6 +6326,7 @@
     "ruby": 20,
     "ruby-file": 28
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     54,
@@ -5939,6 +6371,7 @@
    "ids": {
     "ruby": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     232
@@ -5955,6 +6388,7 @@
    "ids": {
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     354
@@ -5971,6 +6405,7 @@
    "ids": {
     "ruby-file": 2
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     177,
@@ -5991,6 +6426,7 @@
     "ruby-file": 4,
     "spec-dir": 1
    },
+   "invokes": [],
    "kind": "selftest",
    "lines": [
     934,
@@ -6018,6 +6454,10 @@
     "gemfile": 16,
     "ruby-file": 1
    },
+   "invokes": [
+    4,
+    9
+   ],
    "kind": "script",
    "lines": [
     2,
@@ -6113,6 +6553,7 @@
     "db": 1,
     "ruby-file": 3
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     111,
@@ -6132,6 +6573,7 @@
    "ids": {
     "app-layers": 1
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     16
@@ -6152,6 +6594,7 @@
     "gemfile": 1,
     "ruby-file": 8
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     19,
@@ -6182,6 +6625,9 @@
     "rubocop": 1,
     "ruby-file": 4
    },
+   "invokes": [
+    8
+   ],
    "kind": "mutation",
    "lines": [
     8,
@@ -6204,6 +6650,7 @@
    "ids": {
     "gem": 4
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     24,
@@ -6224,6 +6671,7 @@
    "ids": {
     "ruby": 2
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     42,
@@ -6242,6 +6690,7 @@
    "ids": {
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     142
@@ -6260,6 +6709,7 @@
     "rails-word": 2,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     13,
@@ -6279,6 +6729,7 @@
    "ids": {
     "erb": 6
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     61,
@@ -6301,6 +6752,7 @@
    "ids": {
     "ruby": 1
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     75
@@ -6326,6 +6778,7 @@
     "ruby": 2,
     "ruby-file": 2
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     20,
@@ -6353,6 +6806,7 @@
     "gem": 13,
     "gemfile": 4
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     5,
@@ -6389,6 +6843,7 @@
     "ruby-file": 1,
     "spec-dir": 2
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     248,
@@ -6421,6 +6876,7 @@
     "ruby-file": 1,
     "spec-dir": 1
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     14,
@@ -6448,6 +6904,7 @@
     "db": 3,
     "ruby-file": 3
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     19,
@@ -6467,6 +6924,7 @@
    "ids": {
     "app-layers": 1
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     22
@@ -6486,6 +6944,7 @@
     "db": 2,
     "ruby-file": 4
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     12,
@@ -6506,6 +6965,7 @@
    "ids": {
     "ruby-file": 6
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     109,
@@ -6534,6 +6994,7 @@
     "gemfile": 3,
     "rails-word": 2
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     3,
@@ -6574,6 +7035,7 @@
     "rails-word": 5,
     "spec-dir": 4
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     5,
@@ -6603,6 +7065,7 @@
     "ruby": 3,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     5,
@@ -6630,6 +7093,7 @@
    "ids": {
     "rspec": 1
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     28
@@ -6650,6 +7114,7 @@
     "ruby-file": 2,
     "spec-dir": 1
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     27,
@@ -6671,6 +7136,7 @@
    "ids": {
     "app-layers": 1
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     50
@@ -6688,6 +7154,7 @@
    "ids": {
     "rspec": 4
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     27,
@@ -6710,6 +7177,7 @@
     "app-layers": 4,
     "erb-lint": 10
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     13,
@@ -6743,6 +7211,7 @@
     "gem": 2,
     "spec-dir": 2
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     16,
@@ -6764,6 +7233,7 @@
    "ids": {
     "rspec": 1
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     23
@@ -6781,6 +7251,7 @@
    "ids": {
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     138
@@ -6805,6 +7276,17 @@
     "rspec": 12,
     "ruby-file": 1
    },
+   "invokes": [
+    107,
+    128,
+    134,
+    143,
+    144,
+    146,
+    149,
+    150,
+    151
+   ],
    "kind": "mutation",
    "lines": [
     17,
@@ -6852,6 +7334,7 @@
    "ids": {
     "app-layers": 1
    },
+   "invokes": [],
    "kind": "mutation",
    "lines": [
     95
@@ -6876,6 +7359,12 @@
     "gem": 1,
     "ruby-file": 2
    },
+   "invokes": [
+    1086,
+    1091,
+    1102,
+    1109
+   ],
    "kind": "script",
    "lines": [
     360,
@@ -6917,6 +7406,7 @@
     "rubocop": 2,
     "ruby-file": 17
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     149,
@@ -6958,6 +7448,7 @@
     "ruby-file": 42,
     "spec-dir": 7
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     16,
@@ -7040,6 +7531,7 @@
     "ruby": 1,
     "ruby-file": 5
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     30,
@@ -7078,6 +7570,12 @@
     "ruby-file": 22,
     "spec-dir": 10
    },
+   "invokes": [
+    95,
+    100,
+    104,
+    109
+   ],
    "kind": "selftest",
    "lines": [
     11,
@@ -7142,6 +7640,9 @@
     "rails-word": 3,
     "ruby-file": 21
    },
+   "invokes": [
+    184
+   ],
    "kind": "script",
    "lines": [
     184,
@@ -7184,6 +7685,7 @@
    "ids": {
     "rspec": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     18
@@ -7202,6 +7704,7 @@
     "app-layers": 12,
     "ruby-file": 7
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     14,
@@ -7242,6 +7745,32 @@
     "ruby-file": 25,
     "spec-dir": 21
    },
+   "invokes": [
+    5,
+    16,
+    21,
+    22,
+    142,
+    440,
+    595,
+    597,
+    598,
+    599,
+    601,
+    602,
+    604,
+    605,
+    606,
+    609,
+    614,
+    615,
+    616,
+    617,
+    620,
+    621,
+    622,
+    623
+   ],
    "kind": "script",
    "lines": [
     5,
@@ -7355,6 +7884,10 @@
     "ruby-file": 23,
     "spec-dir": 23
    },
+   "invokes": [
+    5,
+    63
+   ],
    "kind": "script",
    "lines": [
     5,
@@ -7404,6 +7937,7 @@
     "rails-config": 1,
     "ruby-file": 8
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     124,
@@ -7442,6 +7976,14 @@
     "rails-config": 2,
     "rails-word": 1
    },
+   "invokes": [
+    9,
+    25,
+    120,
+    265,
+    399,
+    625
+   ],
    "kind": "script",
    "lines": [
     9,
@@ -7465,6 +8007,7 @@
    "ids": {
     "rspec": 1
    },
+   "invokes": [],
    "kind": "script",
    "lines": [
     252
@@ -7483,6 +8026,7 @@
     "app-layers": 2,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "selftest",
    "lines": [
     32,
@@ -7503,6 +8047,7 @@
     "app-layers": 3,
     "ruby-file": 1
    },
+   "invokes": [],
    "kind": "selftest",
    "lines": [
     91,
@@ -7522,6 +8067,11 @@
    "ids": {
     "binstub": 3
    },
+   "invokes": [
+    359,
+    881,
+    887
+   ],
    "kind": "selftest",
    "lines": [
     359,
@@ -7580,8 +8130,8 @@
   },
   "by_decision": {
    "detector": {
-    "files": 78,
-    "lines": 1050
+    "files": 86,
+    "lines": 1287
    },
    "neutral": {
     "files": 11,
@@ -7592,8 +8142,8 @@
     "lines": 1632
    },
    "reword": {
-    "files": 69,
-    "lines": 487
+    "files": 61,
+    "lines": 250
    }
   },
   "by_flow": {
@@ -7606,28 +8156,28 @@
     "reword": 18
    },
    "pipeline": {
-    "detector": 6,
+    "detector": 8,
     "files": 19,
     "lines": 89,
     "neutral": 4,
     "rails-stack": 3,
-    "reword": 6
+    "reword": 4
    },
    "qa-flow": {
-    "detector": 26,
+    "detector": 28,
     "files": 36,
     "lines": 272,
     "neutral": 2,
     "rails-stack": 0,
-    "reword": 8
+    "reword": 6
    },
    "rails-flow": {
-    "detector": 45,
+    "detector": 49,
     "files": 133,
     "lines": 2313,
     "neutral": 4,
     "rails-stack": 47,
-    "reword": 37
+    "reword": 33
    }
   },
   "by_kind": {

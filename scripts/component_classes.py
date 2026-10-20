@@ -35,6 +35,7 @@ Exit codes: 0 clean · 1 findings · 2 not this repo.
 from __future__ import annotations
 
 import argparse
+import io
 import fnmatch
 import html
 import json
@@ -46,6 +47,8 @@ from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugins" / "rails-flow" / "scripts"))
+import fixture_git  # noqa: E402  (#1588: a selftest fixture's git touches only its own temp repo)
 import rails_assumptions as ra  # noqa: E402  (the scanner, the policy loader, the subject rule: one home each)
 
 REPO = ra.REPO
@@ -293,7 +296,7 @@ th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);vertic
 code{font:.85em ui-monospace,monospace;word-break:break-all}.num{text-align:right;font-variant-numeric:tabular-nums}
 .tag{display:inline-block;padding:0 .5em;border-radius:1em;border:1px solid currentColor;font-size:.8rem;font-weight:600}
 .neutral{color:var(--neutral)}.rails{color:var(--rails)}.nextjs{color:var(--nextjs)}.mixed{color:var(--mixed)}
-.box{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 16px;margin:12px 0}
+.gloss{margin:.4em 0 1em}.gloss dt{font-weight:600;float:left;clear:left;width:9.5em}.gloss dd{margin:0 0 .35em 9.5em;max-width:62ch}.box{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 16px;margin:12px 0}
 details{margin:.4em 0}summary{cursor:pointer}.wrap{overflow-x:auto}
 """
 
@@ -319,6 +322,16 @@ def build_html(comps: list[dict]) -> str:
     w(f'<li>{_tag("nextjs")} exists only for Next.js projects.</li>')
     w(f'<li>{_tag("mixed")} stays where it is but still assumes a stack somewhere. The <b>seam</b> says where it will ask the stack detector instead '
       "(or that it is only wording), and the issue is the plan step that fixes it.</li></ul>")
+    w('<dl class="gloss"><dt>hook</dt><dd>a script the assistant runs automatically at a moment in a session (before a command, when it stops) to block or warn.</dd>'
+      "<dt>command</dt><dd>a <code>/name</code> a person types to start a workflow.</dd>"
+      "<dt>agent</dt><dd>a specialist the assistant hands one job to, with its own instructions.</dd>"
+      "<dt>skill</dt><dd>a folder of written guidance the assistant loads when a task matches.</dd>"
+      "<dt>script</dt><dd>a program that does the checking or generating work behind the rest.</dd>"
+      "<dt>gate</dt><dd>one check that must pass before work moves on; each is a row in a plugin's <code>checks.json</code>.</dd>"
+      "<dt>seam</dt><dd>the place a stack-specific step will be swapped for one the stack provides.</dd>"
+      "<dt>stack detector</dt><dd>the shared code (#2163) that looks at a project and answers which stack it uses and which commands and paths to run.</dd>"
+      "<dt>policy file</dt><dd><code>docs/architecture/rails-assumptions.policy.json</code>: where each decision and class is written down.</dd>"
+      "<dt>scan</dt><dd>a search of every file's text for Rails and Next.js names, run by <code>component_classes.py</code>.</dd></dl>")
     w("<p>The class is written down once, in the policy file, and the scan checks it: a component marked neutral that names a Rails or Next.js thing fails the check, "
       "and so does a component nobody classified. <b>Limit:</b> the scan finds references by name. A component that assumes Rails without ever naming it still reads as "
       "neutral, so neutral means &ldquo;nothing found&rdquo;, not &ldquo;proven on every stack&rdquo;. The per-file reasons are in "
@@ -426,6 +439,31 @@ def _selftest() -> int:
         {"type": "command", "command": '/bin/bash -p "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/g.sh"'}]}]}}), "plugins/p/hooks/scripts/g.sh": "echo\n"}
     comps, f = run(reg, pol(decl=[{"match": ["plugins/p/hooks/*"], "class": "neutral", "why": "w"}]))
     check("a hook shows the event and matcher it is registered on", any(c["registered"] == ["PreToolUse Bash"] for c in comps))
+    # --check, end to end, in a temp repository: a stale or never-committed page is a finding, a matching one is clean
+    def repo(page_ok: bool = True, committed: bool = True) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            policy = pol()
+            for rel, text in {".claude-plugin/marketplace.json": "{}\n", "plugins/p/commands/a.md": "do the thing\n", ra.POLICY: json.dumps(policy)}.items():
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).write_text(text, encoding="utf-8")
+            fixture_git.init(root)
+            fixture_git.run(root, "add", "--", ".claude-plugin/marketplace.json", "plugins/p/commands/a.md", ra.POLICY)
+            built, _ = classify(root, policy)
+            (root / HTML_OUT).write_text(build_html(built) + ("" if page_ok else "<!-- stale -->\n"), encoding="utf-8")
+            (root / JSON_OUT).write_text(build_json(built), encoding="utf-8")
+            if committed:
+                fixture_git.run(root, "add", "--", HTML_OUT, JSON_OUT)
+            fixture_git.run(root, "commit", "-qm", "fixture", "--allow-empty")
+            sink = io.StringIO()
+            sys.stdout, sys.stderr, old = sink, sink, (sys.stdout, sys.stderr)
+            try:
+                return main(["--check"], root), sink.getvalue()
+            finally:
+                sys.stdout, sys.stderr = old
+    check("--check on a repository whose committed page matches is clean", repo()[0] == 0)
+    check("--check on a stale committed page is a finding", repo(page_ok=False)[0] == 1 and "does not match a clean build" in repo(page_ok=False)[1])
+    check("--check on a page that was built but never committed is a finding", repo(committed=False)[0] == 1 and "is not committed" in repo(committed=False)[1])
     check("the page renders the same bytes twice", build_html(comps) == build_html(comps) and build_json(comps) == build_json(comps))
     check("the page carries the how-to-read header", "How to read this" in build_html(comps))
     print(f"component_classes selftest: {ok} checks passed, {len(bad)} failed")
@@ -434,7 +472,7 @@ def _selftest() -> int:
     return 1 if bad else 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, root: Path = REPO) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--check", action="store_true", help="every component classified and verified, and the committed page matches a clean build")
     ap.add_argument("--status", action="store_true", help="print the counts from a fresh scan")
@@ -442,11 +480,11 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     if a.selftest:  # fixtures only: runs from a staged copy that has no marketplace.json
         return _selftest()
-    if not (REPO / ".claude-plugin" / "marketplace.json").is_file():
+    if not (root / ".claude-plugin" / "marketplace.json").is_file():
         print("not the claude-skills repo", file=sys.stderr)
         return 2
-    policy = ra.load_policy(REPO)
-    comps, findings = classify(REPO, policy)
+    policy = ra.load_policy(root)
+    comps, findings = classify(root, policy)
     s = summarise(comps)
     if a.status:
         print(f"{s['components']} components: " + ", ".join(f"{s['by_class'][k]} {k}" for k in CLASSES))
@@ -455,14 +493,14 @@ def main(argv: list[str] | None = None) -> int:
     built_html, built_json = build_html(comps), build_json(comps)
     if a.check:
         for rel, built in ((HTML_OUT, built_html), (JSON_OUT, built_json)):
-            blob = ra.committed_blob(rel)
+            blob = ra.committed_blob(rel, root)
             if blob is None:
                 findings.append(f"{rel} is not committed: build it, `git add docs/` and COMMIT")
             elif blob != built:
                 findings.append(f"{rel} does not match a clean build: rebuild it, `git add docs/` and COMMIT; this check reads the blob at HEAD, so staging alone leaves it red")
     elif not a.status and not findings:
-        (REPO / HTML_OUT).write_text(built_html, encoding="utf-8")
-        (REPO / JSON_OUT).write_text(built_json, encoding="utf-8")
+        (root / HTML_OUT).write_text(built_html, encoding="utf-8")
+        (root / JSON_OUT).write_text(built_json, encoding="utf-8")
         print(f"wrote {HTML_OUT} and {JSON_OUT}: {s['components']} components. `git add docs/` AND COMMIT; the drift gate compares the blob at HEAD.")
     if findings:
         print(f"\n{len(findings)} finding(s):", file=sys.stderr)

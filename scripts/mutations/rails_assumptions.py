@@ -9,6 +9,18 @@ GUARD = Guard(
     needs=("scripts/hermetic_git.py", "plugins/rails-flow/scripts/fixture_git.py"),   # imported by the module: git for the real read and for the temp-repo fixtures
     mutations=(
         Mutation(
+            "a Rails invocation in a reword-classed file passes as wording only",
+            '        if rule["decision"] == "reword" and row.get("invokes") and row["kind"] not in ("selftest", "mutation"):',
+            "        if False:",
+            "a Rails invocation in a reword file does not pass as wording only",
+        ),
+        Mutation(
+            "bundle exec stops counting as an invocation",
+            '    r"|\\bbundle (?:exec|install|add|update)\\b"\n',
+            "",
+            "bundle exec is an invocation",
+        ),
+        Mutation(
             "the scan is narrowed to one flow, so a Rails reference in the other three is never read",
             '    SCOPE = tuple(f"plugins/{flow}" for flow in FLOWS)'.lstrip(),
             'SCOPE = ("plugins/rails-flow",)',

@@ -306,6 +306,39 @@
   },
   {
    "match": [
+    "plugins/pipeline/commands/setup-cloud.md",
+    "plugins/pipeline/templates/deploy.env.example",
+    "plugins/qa-flow/agents/functional-tester.md",
+    "plugins/qa-flow/reference/stand-ins.md",
+    "plugins/rails-flow/reference/agent-instruction-conventions.md",
+    "plugins/rails-flow/reference/context-budget.md",
+    "plugins/rails-flow/reference/model-tiers.md"
+   ],
+   "decision": "detector",
+   "assumes": "text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec)",
+   "how": "the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example",
+   "seam": "asks the stack detector (#2163) for the stack's commands instead of naming Rails ones",
+   "issues": {
+    "rails-flow": 2183,
+    "qa-flow": 2184,
+    "pipeline": 2184,
+    "design-flow": 2185
+   }
+  },
+  {
+   "match": [
+    "plugins/rails-flow/scripts/check_hook_gates.py"
+   ],
+   "decision": "detector",
+   "assumes": "the harness that drives every hook, including the Rails ones, with Rails command fixtures (bin/rails, rspec)",
+   "how": "learns the sibling stack plugin's hooks directory (step 3d of the plan) and drives each stack's hooks with that stack's fixtures",
+   "seam": "discovers the hooks of every installed stack plugin instead of a fixed Rails list",
+   "issues": {
+    "rails-flow": 2183
+   }
+  },
+  {
+   "match": [
     "plugins/rails-flow/.claude-plugin/plugin.json",
     "plugins/design-flow/.claude-plugin/plugin.json",
     "plugins/design-flow/README.md",

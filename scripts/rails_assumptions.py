@@ -104,6 +104,16 @@ PATTERNS: tuple[Pattern, ...] = (
 )
 PATTERN_IDS = tuple(p.id for p in PATTERNS)
 
+# A line that RUNS a Rails thing, as opposed to naming it: what an agent copies and executes. A file decided `reword` (wording only) must hold none:
+# a new `bin/rails db:migrate` in a command directory cannot pass as prose. Deliberately narrow (the Rails binstubs, `bundle exec`/`install`, a rake
+# task, `rails <subcommand>`, a rubocop/brakeman/rspec run with an argument): naming a tool in a sentence is wording, running it is behaviour.
+INVOCATION = re.compile(
+    r"\bbin/(?:rails|rake|rspec|dev|ci|setup|brakeman|rubocop|jobs|thrust)\b"
+    r"|\bbundle (?:exec|install|add|update)\b"
+    r"|\brails (?:db:\w+|runner|console|server|generate|routes|credentials|new)\b"
+    r"|\brake [a-z_]+:[\w:]+"
+    r"|\b(?:rspec|rubocop|brakeman) +(?:-\w|[\w./-]*(?:spec|app)/|\S+\.rb\b)", re.I)
+
 
 # ---------------------------------------------------------------------------------------------
 # The scan
@@ -144,9 +154,12 @@ def scan(root: Path, files: list[str] | None = None, patterns: tuple[Pattern, ..
         if b"\0" in raw[:8000]:
             continue  # binary
         lines: set[int] = set()
+        invokes: list[int] = []
         ids: Counter[str] = Counter()
         cats: Counter[str] = Counter()
         for number, line in enumerate(raw.decode("utf-8", errors="replace").splitlines(), 1):
+            if patterns is None and INVOCATION.search(line):
+                invokes.append(number)
             for pat in patterns or PATTERNS:
                 if pat.rx.search(line):
                     lines.add(number)
@@ -154,7 +167,7 @@ def scan(root: Path, files: list[str] | None = None, patterns: tuple[Pattern, ..
                     cats[pat.category] += 1
         if lines:
             result[rel] = {"kind": kind_of(rel), "lines": sorted(lines), "ids": dict(sorted(ids.items())),
-                           "categories": dict(sorted(cats.items()))}
+                           "categories": dict(sorted(cats.items())), "invokes": invokes}
     return result
 
 
@@ -229,6 +242,9 @@ def decide(hits: dict[str, dict], policy: dict) -> tuple[dict[str, dict], list[s
             continue
         index, rule = found
         used[index] += 1
+        if rule["decision"] == "reword" and row.get("invokes") and row["kind"] not in ("selftest", "mutation"):  # a fixture's text is data, not an instruction
+            findings.append(f"{path}: decided reword (wording only) but line(s) {', '.join(map(str, row['invokes'][:5]))} RUN a Rails command: an instruction an agent acts on is "
+                            f"behaviour, so decide this file detector (and name the seam), or reword the line to name no command")
         if rule["decision"] == "neutral":
             recorded = rule.get("lines", {}).get(path)
             if recorded != len(row["lines"]):
@@ -381,6 +397,16 @@ def committed_blob(rel: str, root: Path = REPO) -> str | None:
 # Selftest: every rule must FIRE on a broken fixture and stay SILENT on a good one
 # ---------------------------------------------------------------------------------------------
 
+def scan_text(files: dict[str, str]) -> dict[str, dict]:
+    """The scan of files that exist only for a selftest."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for rel, text in files.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding="utf-8")
+        return scan(root, sorted(files))
+
+
 def _selftest() -> int:
     ok, bad = 0, []
 
@@ -480,6 +506,20 @@ def _selftest() -> int:
     check("the framework in lowercase before a Rails noun is a hit", "rails-word" in ids("this is a rails app"))
     check("`off-rails` and `the rails` are not the framework", not ids("goes off-rails; the run inside the rails"))
     check("rails-flow, rails_flow and rails: stay plugin names, not hits", not ids("rails-flow rails_flow RAILS_FLOW_LANE rails:begin"))
+    # an invocation is not wording
+    inv = lambda s: bool(INVOCATION.search(s))  # noqa: E731
+    check("bin/rails db:migrate is an invocation", inv("run bin/rails db:migrate"))
+    check("bundle exec is an invocation", inv("bundle exec mutant run --since HEAD~1"))
+    check("a rake task is an invocation", inv("then rake db:seed"))
+    check("the word rake in a sentence is not an invocation", not inv("a rake task in the project writes it"))
+    check("rubocop run on a path is an invocation", inv("rubocop app/models/user.rb"))
+    check("naming tools in a sentence is not an invocation", not inv("static analysis (Brakeman, bundler-audit) is the dev flow's job; a Rails app uses RSpec"))
+    check("a plugin name is not an invocation", not inv("/rails-flow:feature and rails-stack and the brake pad"))
+    wording = {"moves": {}, "rules": [{"match": ["plugins/rails-flow/commands/*"], "decision": "reword", "assumes": "a", "how": "h", "seam": "s", "issues": {"rails-flow": 1}}]}
+    prose = scan_text({"plugins/rails-flow/commands/new.md": "this is a Rails app\n"})
+    run = scan_text({"plugins/rails-flow/commands/new.md": "this is a Rails app\nrun bin/rails db:migrate\n"})
+    check("prose naming Rails passes as wording only", decide(prose, wording)[1] == [])
+    check("a Rails invocation in a reword file does not pass as wording only", any("RUN a Rails command" in f for f in decide(run, wording)[1]))
     # the scope is all four flows
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)

@@ -1222,7 +1222,7 @@
    "plugin": "pipeline",
    "rails_lines": 2,
    "registered": [],
-   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "seam": "asks the stack detector (#2163) for the stack's commands instead of naming Rails ones",
    "type": "command",
    "via": "decision"
   },
@@ -1754,7 +1754,7 @@
    "plugin": "pipeline",
    "rails_lines": 6,
    "registered": [],
-   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "seam": "asks the stack detector (#2163) for the stack's commands instead of naming Rails ones",
    "type": "support",
    "via": "decision"
   },
@@ -1922,7 +1922,7 @@
    "plugin": "qa-flow",
    "rails_lines": 3,
    "registered": [],
-   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "seam": "asks the stack detector (#2163) for the stack's commands instead of naming Rails ones",
    "type": "agent",
    "via": "decision"
   },
@@ -3162,7 +3162,7 @@
    "plugin": "qa-flow",
    "rails_lines": 8,
    "registered": [],
-   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "seam": "asks the stack detector (#2163) for the stack's commands instead of naming Rails ones",
    "type": "support",
    "via": "decision"
   },
@@ -4369,7 +4369,7 @@
    "plugin": "rails-flow",
    "rails_lines": 205,
    "registered": [],
-   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "seam": "discovers the hooks of every installed stack plugin instead of a fixed Rails list",
    "type": "script",
    "via": "decision"
   },
@@ -6697,7 +6697,7 @@
    "plugin": "rails-flow",
    "rails_lines": 11,
    "registered": [],
-   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "seam": "asks the stack detector (#2163) for the stack's commands instead of naming Rails ones",
    "type": "support",
    "via": "decision"
   },
@@ -6733,7 +6733,7 @@
    "plugin": "rails-flow",
    "rails_lines": 1,
    "registered": [],
-   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "seam": "asks the stack detector (#2163) for the stack's commands instead of naming Rails ones",
    "type": "support",
    "via": "decision"
   },
@@ -6769,7 +6769,7 @@
    "plugin": "rails-flow",
    "rails_lines": 1,
    "registered": [],
-   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "seam": "asks the stack detector (#2163) for the stack's commands instead of naming Rails ones",
    "type": "support",
    "via": "decision"
   },

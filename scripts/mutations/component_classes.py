@@ -9,6 +9,18 @@ GUARD = Guard(
     needs=("scripts/rails_assumptions.py", "scripts/hermetic_git.py", "plugins/rails-flow/scripts/fixture_git.py"),   # rails_assumptions imports both at load
     mutations=(
         Mutation(
+            "a committed page that differs from a clean build passes --check",
+            "            elif blob != built:",
+            "            elif False:",
+            "--check on a stale committed page is a finding",
+        ),
+        Mutation(
+            "a page that was never committed passes --check",
+            "            if blob is None:",
+            "            if False:",
+            "--check on a page that was built but never committed is a finding",
+        ),
+        Mutation(
             "a component nothing declares is accepted",
             "        if info is None:\n            findings.append(",
             "        if info is None:\n            continue\n            findings.append(",
