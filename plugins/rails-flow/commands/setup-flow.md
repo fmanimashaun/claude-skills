@@ -38,20 +38,20 @@ Classify every finding into exactly one bucket; act only on the first two:
    block; not a "defect").
 2. **Defective** — present but demonstrably broken against ground truth. Repair scope
    is deliberately limited to two objective classes:
-   - **Contradicts fact**: the App Identity/stack table disagrees with the Gemfile or
-     config (says Postgres when the adapter is sqlite3; names Devise when the app uses
-     the Rails 8 generator; wrong Ruby/Rails version); a pointer references a path that
+   - **Contradicts fact**: the App Identity/stack table disagrees with the files the stack's CLAUDE.md facts
+     name (says Postgres when the configured adapter is sqlite3; names an auth library the app does not use;
+     a wrong framework or language version); a pointer references a path that
      doesn't exist (`docs/brain/` absent; a "Before you change an area" line naming a doc
      that is not there); AGENTS.md routing names an agent the plugin
      doesn't provide.
    - **Broken safety rule**: a Delegation Rules block missing the anti-recursion role
      check (executors that can spawn executors → runaway subagents); a rule that
      bypasses a documented gate; guidance that contradicts GUARDRAILS.md.
-   For each: state WHAT is wrong, WHY it breaks (cite the Gemfile line / the missing
+   For each: state WHAT is wrong, WHY it breaks (cite the manifest or config line / the missing
    path / the recursion path), and propose the corrected text as a diff. Wait for
    approval per fix — batch related ones, but never apply silently.
 3. **Divergent but valid** — differs from rails-flow's vanilla defaults but isn't
-   wrong: a documented Project Override (simple_form, a custom `app/services` layout,
+   wrong: a documented Project Override (a mandated form builder, a custom services layout,
    a bespoke branching model), custom prose, domain-specific rules. **Leave it
    untouched. Never "repair" a deliberate choice into vanilla.** When unsure whether
    something is defective or a deliberate override, treat it as an override and ask,
@@ -73,7 +73,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/detect_stack.py" . --descriptor
 ```
 
 - **An existing project** (exit 0): the detector has read the stack from the repository's markers. **Do not ask.**
-  Activate every stack it reports, one or several: markers of two stacks (a Rails API beside a Next.js front end)
+  Activate every stack it reports, one or several: markers of two stacks (an API stack beside a front-end stack)
   activate both. **Show which stacks you activated**, by id and plugin, before writing anything. Their descriptor
   (commands, layout, gates, agents) fills the scaffold, and every file under `setup_sections` is a stack's own
   repairs, worked in §8.
@@ -98,7 +98,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/detect_stack.py" . --descriptor
   not offer a partial list.** `--available` still prints the stacks it could read beside the problems, and offering
   those alone is a silent fallback.
 - **It cannot tell** (exit 2): a manifest, the project or a descriptor could not be judged. **Ask**, quoting the
-  printed `problems`, and never fall back to Rails. **Ignore `stacks` in the output whenever `problems` is
+  printed `problems`, and never fall back to a default stack. **Ignore `stacks` in the output whenever `problems` is
   non-empty**: they are what the detector could read, not a verdict.
 
 A project can be several stacks at once (Next.js + Supabase + Vercel). Then every reported stack is active, with no
@@ -113,7 +113,7 @@ existing docs. Every place the project deviates from its stack's vanilla doctrin
 stack whose section has no facts part gives nothing here; say so rather than filling it from memory.
 
 Also detect **existing agent-instruction files** — `AGENTS.md`, `.claude/CLAUDE.md`,
-`.claude/rules/` — before writing anything. An `AGENTS.md` is increasingly present in Rails 8
+`.claude/rules/` — before writing anything. An `AGENTS.md` is increasingly present in new
 apps and anything derived from a 37signals template, and scaffolding a second orientation file
 beside it creates two entry points that can contradict each other. Handle it per §1b.
 
@@ -286,10 +286,8 @@ execution to subagents; keep judgment here.
 - Defects reported mid-session get **FILED as issues first**, then worked one at a time via
   `/rails-flow:fix` (own branch → PR → spec). Never hot-fix inline, and never stack several
   unrelated fixes on the checked-out branch.
-- Before writing or reviewing Ruby, read the **rails-8 skill's `skills/rails-8/references/style.md`** — how
-  code should read here (conditional returns, method + invocation ordering, bang methods,
-  visibility modifiers, `_later`/`_now` job naming). Project Overrides above win where they
-  conflict; everything else follows the skill.
+- Before writing or reviewing code, read the **style reference** each stack's CLAUDE.md facts names: how code
+  should read here. Project Overrides above win where they conflict; everything else follows the skill.
 
 ## Structural map (read before grepping)
 `docs/architecture/graph.json` — `{nodes, edges, flows}` for this app: every controller,

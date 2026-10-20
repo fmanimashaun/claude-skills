@@ -9,16 +9,16 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 | decision | what it means | files | lines |
 |---|---|---:|---:|
 | `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 68 | 1632 |
-| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 90 | 1246 |
+| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 90 | 1222 |
 | `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 63 | 274 |
 | `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change | 7 | 24 |
-| **all** | | **228** | **3176** |
+| **all** | | **228** | **3152** |
 
 ## By flow
 
 | flow | files | lines | `rails-stack` | `detector` | `reword` | `neutral` |
 |---|---:|---:|---:|---:|---:|---:|
-| `rails-flow` | 135 | 2268 | 47 | 50 | 35 | 3 |
+| `rails-flow` | 135 | 2244 | 47 | 50 | 35 | 3 |
 | `qa-flow` | 36 | 272 | 0 | 29 | 6 | 1 |
 | `pipeline` | 19 | 89 | 3 | 9 | 4 | 3 |
 | `design-flow` | 38 | 547 | 18 | 2 | 18 | 0 |
@@ -27,11 +27,11 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 
 | category | lines naming it |
 |---|---:|
-| tool | 905 |
-| gem | 141 |
-| path | 1253 |
-| concept | 1919 |
-| hotwire | 107 |
+| tool | 889 |
+| gem | 138 |
+| path | 1243 |
+| concept | 1910 |
+| hotwire | 105 |
 
 A line that names two things counts once per category it names in this table and once overall in the totals above.
 
@@ -85,11 +85,10 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 
 | lines | Rails hit lines | what it assumes | decision | how |
 |---|---:|---|---|---|
-| 29-176 | 11 | diagnoses a CLAUDE.md against the Gemfile, the Rails generator and the Ruby/Rails version; inspects Gemfile, config/application.rb, db/schema.rb and app/ shape; §0 names Rails once, as the example of a stack plugin's project-setup doc, and once to say it is never a fallback | `detector` | reads the facts from the detector's descriptor (stack names, versions, directory shape) instead of opening a Gemfile |
-| 177-316 | 10 | the CLAUDE.md template: a Rails/Hotwire/Solid Queue/Kamal stack line, the Rails command list (rspec, rubocop, brakeman, bundler-audit), the simple_form forms rule, the bundler.lock preflight line; reads the rails-8 skill's style reference before writing Ruby | `detector` | the stack line, command list and forms rule are filled from the stack descriptor; the Rails text becomes the rails-stack template |
-| 317-540 | 6 | path-scoped rules over app/models/**/*.rb and **/*.rb, config/database.yml as the database marker, config/ci.rb and bin/ci, and the one RAILS_ENV=test bin/rails command guard-bash allows | `detector` | globs, database marker and the allowed test-prep command come from the descriptor |
-| 541-770 | 13 | companion workflows: bundle exec rspec, rubocop, bundler-audit, brakeman, the architecture graph over routes/app/db, derived docs over db/schema.rb and Gemfile.lock, the help registry rake task | `detector` | suite, lint and security commands come from the descriptor; the graph and help registry are the rails-docs-generators move |
-| 771-1011 | 7 | what stays of §8 after the Rails-only repairs moved: the CI economy section's 'the Rails 8 default' ci.yml and `bin/ci`, the doctrine gate's Brakeman and 'no Ruby' wording | `reword` | the Rails-only repairs moved to rails-stack's setup/rails.md, which §0 runs as Rails' setup_section (#2180); what is left names Rails in wording only |
+| 177-309 | 1 | what the template still names after #2196 moved its fact lines into each stack's CLAUDE.md facts: the structural-map line lists the Rails graph's node kinds (controller, model, job, Stimulus controller) | `detector` | the node kinds come from the graph the stack's generator writes (the rails-docs-generators move); the stack line, commands, overrides, preflight and loop checks now come from setup/rails.md's CLAUDE.md facts (#2196) |
+| 310-533 | 6 | path-scoped rules over app/models/**/*.rb and **/*.rb, config/database.yml as the database marker, config/ci.rb and bin/ci, and the one RAILS_ENV=test bin/rails command guard-bash allows | `detector` | globs, database marker and the allowed test-prep command come from the descriptor |
+| 534-762 | 9 | companion workflows: bundle exec rspec, rubocop, bundler-audit, brakeman, the architecture graph over routes/app/db, derived docs over db/schema.rb and Gemfile.lock, the help registry rake task | `detector` | suite, lint and security commands come from the descriptor; the graph and help registry are the rails-docs-generators move |
+| 763-1003 | 7 | what stays of §8 after the Rails-only repairs moved: the CI economy section's 'the Rails 8 default' ci.yml and `bin/ci`, the doctrine gate's Brakeman and 'no Ruby' wording | `reword` | the Rails-only repairs moved to rails-stack's setup/rails.md, which §0 runs as Rails' setup_section (#2180); what is left names Rails in wording only |
 
 **Proposal for a `nextjs-stack` repo.**
 
@@ -128,7 +127,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `commands/issues.md:145`<br>L145 | command | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `commands/retro.md:54`<br>L54 | command | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `commands/review.md:12`<br>L12, 32, 66 | command | 3 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `commands/setup-flow.md:41`<br>L41, 42, 43, 50, 54 +42 more | command | 47 | the scaffold, Gemfile, Rails config and gem doctrine it writes into CLAUDE.md | `detector` | asks the detector which stack descriptor to scaffold; the Rails sections move with the rails-stack scaffold |
+| `commands/setup-flow.md:294`<br>L294, 350, 368, 369, 384 +18 more | command | 23 | the scaffold, Gemfile, Rails config and gem doctrine it writes into CLAUDE.md | `detector` | asks the detector which stack descriptor to scaffold; the Rails sections move with the rails-stack scaffold |
 | `commands/spec.md:29`<br>L29, 73 | command | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `hooks/hooks.json:73`<br>L73 | hook | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `hooks/scripts/guard-bash.sh:93`<br>L93, 96, 100, 103, 104 +19 more | hook | 24 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |

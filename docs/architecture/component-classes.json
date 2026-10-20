@@ -3541,10 +3541,10 @@
   {
    "class": "mixed",
    "issue": 2180,
-   "nextjs_lines": 2,
+   "nextjs_lines": 1,
    "path": "plugins/rails-flow/commands/setup-flow.md",
    "plugin": "rails-flow",
-   "rails_lines": 47,
+   "rails_lines": 23,
    "registered": [],
    "seam": "setup-flow asks the stack detector for stack facts and runs each stack's own scaffold section",
    "type": "command",
