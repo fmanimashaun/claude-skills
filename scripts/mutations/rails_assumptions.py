@@ -6,7 +6,50 @@ GUARD = Guard(
     name="rails_assumptions",
     subject="scripts/rails_assumptions.py",
     selftest="scripts/rails_assumptions.py",   # --selftest lives in the module itself
+    needs=("scripts/hermetic_git.py", "plugins/rails-flow/scripts/fixture_git.py"),   # imported by the module: git for the real read and for the temp-repo fixtures
     mutations=(
+        Mutation(
+            "the scan is narrowed to one flow, so a Rails reference in the other three is never read",
+            '    SCOPE = tuple(f"plugins/{flow}" for flow in FLOWS)'.lstrip(),
+            'SCOPE = ("plugins/rails-flow",)',
+            "every flow is scanned",
+        ),
+        Mutation(
+            "a committed page that differs from a clean build passes --check",
+            "            elif blob != built:",
+            "            elif False:",
+            "--check on a stale committed page is a finding",
+        ),
+        Mutation(
+            "a page that was never committed passes --check",
+            "            if blob is None:",
+            "            if False:",
+            "--check on a page that was built but never committed is a finding",
+        ),
+        Mutation(
+            "a file with hits and no rule is no longer reported",
+            "            findings.append(f\"{path}: {len(row['lines'])} line(s) name Rails and no rule in {POLICY} decides this file\")",
+            "            pass",
+            "an unresolved file is a finding",
+        ),
+        Mutation(
+            "a neutral file may gain a Rails line without a new decision",
+            '            if recorded != len(row["lines"]):',
+            "            if False:",
+            "a neutral file that gains a Rails line is a finding",
+        ),
+        Mutation(
+            "the tool patterns go back to lowercase only",
+            '"RuboCop", re.I),',
+            '"RuboCop"),',
+            "RuboCop in any case is a tool hit",
+        ),
+        Mutation(
+            "the gem pattern goes back to lowercase only",
+            '"a named Ruby gem", re.I),',
+            '"a named Ruby gem"),',
+            "Brakeman, Capybara and Bundler in any case are hits",
+        ),
         Mutation(
             "a rule left behind after its file moved is accepted",
             "        if not used[index]:",

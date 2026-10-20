@@ -18,7 +18,10 @@ THE COUNTS COME FROM THIS SCRIPT. A number in the page, an issue or a PR is `--s
 patterns (`PATTERNS`) over every tracked text file of the four flows; the DECISIONS are the committed policy
 (`docs/architecture/rails-assumptions.policy.json`), a table of path globs with the reason each decision was made, and the script refuses:
 
-  * a file with hits that no rule resolves (a new Rails reference cannot arrive undecided);
+  * a file with hits that no rule resolves (a new Rails FILE cannot arrive undecided);
+  * a file decided `neutral` whose hit-line count differs from the count the policy records for it (`lines`): a neutral file must STAY at its
+    recorded references, so a new Rails line in it needs a decision. This is the only line-level ratchet: a new Rails line in a `rails-stack`,
+    `detector` or `reword` file passes once the page is rebuilt, because those already say the file assumes Rails;
   * a rule that matches no file with hits (a rule left behind after the file moved or was cleaned);
   * a decision outside the four, or a `rails-stack` rule with no move group, or a move group with no issue filed under #2162;
   * a mutation or selftest file whose script has no decision (those files follow the script they test).
@@ -32,6 +35,7 @@ Stdlib only. Exit codes: 0 clean · 1 findings · 2 not this repo.
 from __future__ import annotations
 
 import argparse
+import io
 import fnmatch
 import json
 import re
@@ -42,6 +46,10 @@ from collections import Counter
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "plugins" / "rails-flow" / "scripts"))
+import fixture_git  # noqa: E402  (#1588: a selftest fixture's git touches only its own temp repo)
+import hermetic_git  # noqa: E402  (git that starts nothing in the background, for the real repository read)
 FLOWS = ("rails-flow", "qa-flow", "pipeline", "design-flow")
 POLICY = "docs/architecture/rails-assumptions.policy.json"
 JSON_OUT = "docs/architecture/rails-assumptions.json"
@@ -65,18 +73,18 @@ class Pattern:
 PATTERNS: tuple[Pattern, ...] = (
     Pattern("bin-rails", "tool", r"\bbin/rails\b|\brails (?:db:\w+|runner|console|server|generate|routes|credentials|assets:\w+|tailwindcss:\w+|new)\b",
             "the Rails CLI"),
-    Pattern("bundler", "tool", r"\bbundle (?:exec|install|add|update|check|lock|show|config)\b|\bbundler\b(?!-audit)", "Bundler and the Ruby toolchain"),
-    Pattern("rspec", "tool", r"\brspec\b(?!-)|\bRSpec\b", "the RSpec runner"),
-    Pattern("rubocop", "tool", r"\brubocop\b", "RuboCop"),
-    Pattern("brakeman", "tool", r"\bbrakeman\b", "Brakeman"),
-    Pattern("bundler-audit", "tool", r"\bbundler-audit\b", "bundler-audit"),
-    Pattern("erb-lint", "tool", r"\bherb\b|\berb[_-]lint\b", "the ERB linters"),
-    Pattern("rake", "tool", r"\brake\b", "Rake"),
-    Pattern("ruby", "tool", r"\bruby\b(?! on)|\.ruby-version", "the Ruby interpreter"),
+    Pattern("bundler", "tool", r"\bbundle (?:exec|install|add|update|check|lock|show|config)\b|\bbundler\b(?!-audit)", "Bundler and the Ruby toolchain", re.I),
+    Pattern("rspec", "tool", r"\brspec\b(?!-)", "the RSpec runner", re.I),
+    Pattern("rubocop", "tool", r"\brubocop\b", "RuboCop", re.I),
+    Pattern("brakeman", "tool", r"\bbrakeman\b", "Brakeman", re.I),
+    Pattern("bundler-audit", "tool", r"\bbundler-audit\b", "bundler-audit", re.I),
+    Pattern("erb-lint", "tool", r"\bherb\b|\berb[_-]lint\b", "the ERB linters", re.I),
+    Pattern("rake", "tool", r"\brake\b", "Rake", re.I),
+    Pattern("ruby", "tool", r"\bruby\b(?! on)|\.ruby-version", "the Ruby interpreter", re.I),
     Pattern("binstub", "tool", r"\bbin/(?:ci|setup|dev|brakeman|rubocop|jobs|thrust)\b", "a Rails binstub"),
     Pattern("gem", "gem", r"\b(?:simple_form|factory_bot(?:_rails)?|capybara|simplecov|rspec-rails|shoulda-matchers|pundit|devise|solid_queue|solid_cache|"
                           r"solid_cable|turbo-rails|stimulus-rails|importmap-rails|view_component|propshaft|tailwindcss-rails|rack-attack|webmock)\b",
-            "a named Ruby gem"),
+            "a named Ruby gem", re.I),
     Pattern("gemfile", "path", r"\bGemfile(?:\.lock)?\b", "the Gemfile"),
     Pattern("routes", "path", r"\bconfig/routes\.rb\b", "config/routes.rb"),
     Pattern("rails-config", "path", r"\bconfig/(?:application\.rb|environments/|initializers/|credentials|database\.yml|ci\.rb|puma\.rb|storage\.yml)",
@@ -86,10 +94,11 @@ PATTERNS: tuple[Pattern, ...] = (
             "Rails' app/ layout"),
     Pattern("spec-dir", "path", r"(?<![\w.-])spec/|\.rspec\b", "the spec/ directory"),
     Pattern("rubocop-yml", "path", r"\.rubocop(?:\.yml|_todo\.yml)", "the RuboCop config"),
-    Pattern("rails-word", "concept", r"\bRails\b(?!-)", "the framework by name"),
+    Pattern("rails-word", "concept", r"\bRails\b(?![-_:])|(?<![-\w])rails (?:apps?|applications?|projects?|gems?|models?|migrations?|controllers?|engines?|generators?)\b",
+            "the framework by name (capitalised, or lowercase before a Rails noun: `off-rails` and `the rails` are not hits)"),
     Pattern("active-framework", "concept",
             r"\bActive(?:Record|Storage|Job|Model)\b|\bAction(?:Mailer|Cable|Controller|View)\b", "a Rails framework component"),
-    Pattern("erb", "concept", r"\.erb\b|\bERB\b|\bViewComponent\b", "ERB or ViewComponent templates"),
+    Pattern("erb", "concept", r"\.erb\b|\bERB\b|\bViewComponent\b", "ERB or ViewComponent templates", re.I),
     Pattern("ruby-file", "concept", r"\.rb\b", "a Ruby source file"),
     Pattern("hotwire", "hotwire", r"\bHotwire\b|\bTurbo\b|\bStimulus\b|\bturbo[_-]frame\b|\bturbo[_-]stream\b", "Hotwire (Turbo, Stimulus)"),
 )
@@ -220,6 +229,11 @@ def decide(hits: dict[str, dict], policy: dict) -> tuple[dict[str, dict], list[s
             continue
         index, rule = found
         used[index] += 1
+        if rule["decision"] == "neutral":
+            recorded = rule.get("lines", {}).get(path)
+            if recorded != len(row["lines"]):
+                findings.append(f"{path}: decided neutral with {len(row['lines'])} hit line(s) but the policy records {recorded}: a neutral file must not gain a Rails "
+                                f"reference without a new decision (reclassify it or remove the line); lower the recorded count when a reference goes away")
         row.update({"decision": rule["decision"], "move": rule.get("move", ""), "assumes": rule.get("assumes", ""), "how": rule.get("how", ""),
                     "followed": followed or ""})
         out[path] = row
@@ -355,9 +369,9 @@ def build_md(decided: dict[str, dict], policy: dict) -> str:
     return "\n".join(out) + "\n"
 
 
-def committed_blob(rel: str) -> str | None:
+def committed_blob(rel: str, root: Path = REPO) -> str | None:
     try:
-        r = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=REPO, capture_output=True, text=True, check=False)
+        r = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=root, env=hermetic_git.env(), capture_output=True, text=True, check=False)
     except OSError:
         return None
     return r.stdout if r.returncode == 0 else None
@@ -460,13 +474,65 @@ def _selftest() -> int:
         check("the page renders the same text twice", build_md(decided, policy) == build_md(decided, policy))
         check("the page names the file and its decision", "gate.py:1" in build_md(decided, policy) and "`rails-stack` (M1)" in build_md(decided, policy))
         check("the JSON carries every line number", json.loads(build_json(decided, policy))["files"]["plugins/rails-flow/scripts/gate.py"]["lines"] == [1, 3])
+    # the patterns match a tool or gem named in any case (a lowercase-only pattern let "Run RuboCop and Brakeman and Capybara" pass clean)
+    check("RuboCop in any case is a tool hit", "rubocop" in ids("Run RuboCop on changed files") and "rubocop" in ids("run rubocop"))
+    check("Brakeman, Capybara and Bundler in any case are hits", {"brakeman", "gem", "bundler"} <= ids("Brakeman and Capybara via Bundler"))
+    check("the framework in lowercase before a Rails noun is a hit", "rails-word" in ids("this is a rails app"))
+    check("`off-rails` and `the rails` are not the framework", not ids("goes off-rails; the run inside the rails"))
+    check("rails-flow, rails_flow and rails: stay plugin names, not hits", not ids("rails-flow rails_flow RAILS_FLOW_LANE rails:begin"))
+    # the scope is all four flows
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for flow in FLOWS:
+            (root / "plugins" / flow).mkdir(parents=True)
+            (root / "plugins" / flow / "x.md").write_text("a Rails app\n", encoding="utf-8")
+        (root / "plugins" / "elsewhere").mkdir()
+        (root / "plugins" / "elsewhere" / "x.md").write_text("a Rails app\n", encoding="utf-8")
+        fixture_git.init(root)
+        fixture_git.run(root, "add", "--", *[f"plugins/{f}/x.md" for f in (*FLOWS, "elsewhere")])
+        found = tracked_files(root)
+        check("every flow is scanned", all(f"plugins/{flow}/x.md" in found for flow in FLOWS))
+        check("a plugin that is not a flow is not scanned", "plugins/elsewhere/x.md" not in found)
+    # --check, end to end, in a temp repository: a stale or missing committed page is a finding, a matching one is clean
+    def repo(policy: dict, page_ok: bool = True, committed: bool = True, extra: str = "") -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".claude-plugin").mkdir()
+            (root / ".claude-plugin" / "marketplace.json").write_text("{}\n", encoding="utf-8")
+            (root / "docs" / "architecture").mkdir(parents=True)
+            (root / "plugins" / "rails-flow" / "scripts").mkdir(parents=True)
+            (root / "plugins" / "rails-flow" / "scripts" / "gate.py").write_text("x = 'bin/rails db:migrate'\n" + extra, encoding="utf-8")
+            (root / POLICY).write_text(json.dumps(policy), encoding="utf-8")
+            fixture_git.init(root)
+            fixture_git.run(root, "add", "--", "plugins/rails-flow/scripts/gate.py", POLICY, ".claude-plugin/marketplace.json")
+            decided, _ = decide(scan(root), policy)
+            (root / MD_OUT).write_text(build_md(decided, policy) + ("" if page_ok else "stale\n"), encoding="utf-8")
+            (root / JSON_OUT).write_text(build_json(decided, policy), encoding="utf-8")
+            if committed:
+                fixture_git.run(root, "add", "--", MD_OUT, JSON_OUT)
+            fixture_git.run(root, "commit", "-qm", "fixture", "--allow-empty")
+            sink = io.StringIO()
+            sys.stdout, sys.stderr, old = sink, sink, (sys.stdout, sys.stderr)
+            try:
+                return main(["--check"], root), sink.getvalue()
+            finally:
+                sys.stdout, sys.stderr = old
+    good = {"moves": {"M1": {"title": "t", "summary": "s", "issue": 1}},
+            "rules": [{"match": ["plugins/rails-flow/scripts/gate.py"], "decision": "rails-stack", "move": "M1", "assumes": "a", "how": "h"}]}
+    check("--check on a repository whose committed page matches is clean", repo(good)[0] == 0)
+    check("--check on a stale committed page is a finding", repo(good, page_ok=False)[0] == 1 and "does not match a clean build" in repo(good, page_ok=False)[1])
+    check("--check on a page that was built but never committed is a finding", repo(good, committed=False)[0] == 1 and "is not committed" in repo(good, committed=False)[1])
+    nlint = {"moves": {}, "rules": [{"match": ["plugins/rails-flow/scripts/gate.py"], "decision": "neutral", "assumes": "a", "how": "h",
+                                      "lines": {"plugins/rails-flow/scripts/gate.py": 1}}]}
+    check("a neutral file at its recorded hit-line count is clean", repo(nlint)[0] == 0)
+    check("a neutral file that gains a Rails line is a finding", repo(nlint, extra="y = 'a Rails thing'\n")[0] == 1)
     print(f"rails_assumptions selftest: {ok} checks passed, {len(bad)} failed")
     for label in bad:
         print(f"  FAIL: {label}", file=sys.stderr)
     return 1 if bad else 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, root: Path = REPO) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--check", action="store_true", help="the policy resolves every file and the committed page matches a clean build")
     ap.add_argument("--status", action="store_true", help="print the counts from a fresh scan")
@@ -474,11 +540,11 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     if a.selftest:  # fixtures only: runs from a staged copy that has no marketplace.json
         return _selftest()
-    if not (REPO / ".claude-plugin" / "marketplace.json").is_file():
+    if not (root / ".claude-plugin" / "marketplace.json").is_file():
         print("not the claude-skills repo", file=sys.stderr)
         return 2
-    policy = load_policy(REPO)
-    decided, findings = decide(scan(REPO), policy)
+    policy = load_policy(root)
+    decided, findings = decide(scan(root), policy)
     summary = summarise(decided)
     if a.status:
         print(f"{summary['files']} files, {summary['lines']} lines name Rails in {', '.join(FLOWS)}")
@@ -489,14 +555,14 @@ def main(argv: list[str] | None = None) -> int:
     built_md, built_json = build_md(decided, policy), build_json(decided, policy)
     if a.check:
         for rel, built in ((MD_OUT, built_md), (JSON_OUT, built_json)):
-            blob = committed_blob(rel)
+            blob = committed_blob(rel, root)
             if blob is None:
                 findings.append(f"{rel} is not committed: build it, `git add docs/` and COMMIT")
             elif blob != built:
                 findings.append(f"{rel} does not match a clean build: rebuild it, `git add docs/` and COMMIT; this check reads the blob at HEAD, so staging alone leaves it red")
     elif not a.status and not findings:
-        (REPO / MD_OUT).write_text(built_md, encoding="utf-8")
-        (REPO / JSON_OUT).write_text(built_json, encoding="utf-8")
+        (root / MD_OUT).write_text(built_md, encoding="utf-8")
+        (root / JSON_OUT).write_text(built_json, encoding="utf-8")
         print(f"wrote {MD_OUT} and {JSON_OUT}: {summary['files']} files, {summary['lines']} lines. `git add docs/` AND COMMIT; the drift gate compares the blob at HEAD.")
     if findings:
         print(f"\n{len(findings)} finding(s):", file=sys.stderr)
