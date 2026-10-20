@@ -6,7 +6,7 @@ GUARD = Guard(
     name="rails_assumptions",
     subject="scripts/rails_assumptions.py",
     selftest="scripts/rails_assumptions.py",   # --selftest lives in the module itself
-    needs=("scripts/hermetic_git.py",),         # imported by the module: one git environment for the temp-repo fixtures
+    needs=("scripts/hermetic_git.py", "plugins/rails-flow/scripts/fixture_git.py"),   # imported by the module: git for the real read and for the temp-repo fixtures
     mutations=(
         Mutation(
             "the scan is narrowed to one flow, so a Rails reference in the other three is never read",

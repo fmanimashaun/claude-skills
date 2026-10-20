@@ -47,7 +47,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
-import hermetic_git  # noqa: E402  (one git environment for every subprocess, selftest fixtures included)
+sys.path.insert(0, str(REPO / "plugins" / "rails-flow" / "scripts"))
+import fixture_git  # noqa: E402  (#1588: a selftest fixture's git touches only its own temp repo)
+import hermetic_git  # noqa: E402  (git that starts nothing in the background, for the real repository read)
 FLOWS = ("rails-flow", "qa-flow", "pipeline", "design-flow")
 POLICY = "docs/architecture/rails-assumptions.policy.json"
 JSON_OUT = "docs/architecture/rails-assumptions.json"
@@ -367,10 +369,6 @@ def build_md(decided: dict[str, dict], policy: dict) -> str:
     return "\n".join(out) + "\n"
 
 
-def _git(root: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=root, env=hermetic_git.env(), check=True, capture_output=True)
-
-
 def committed_blob(rel: str, root: Path = REPO) -> str | None:
     try:
         r = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=root, env=hermetic_git.env(), capture_output=True, text=True, check=False)
@@ -490,8 +488,8 @@ def _selftest() -> int:
             (root / "plugins" / flow / "x.md").write_text("a Rails app\n", encoding="utf-8")
         (root / "plugins" / "elsewhere").mkdir()
         (root / "plugins" / "elsewhere" / "x.md").write_text("a Rails app\n", encoding="utf-8")
-        _git(root, "init", "-q")
-        _git(root, "add", "--", *[f"plugins/{f}/x.md" for f in (*FLOWS, "elsewhere")])
+        fixture_git.init(root)
+        fixture_git.run(root, "add", "--", *[f"plugins/{f}/x.md" for f in (*FLOWS, "elsewhere")])
         found = tracked_files(root)
         check("every flow is scanned", all(f"plugins/{flow}/x.md" in found for flow in FLOWS))
         check("a plugin that is not a flow is not scanned", "plugins/elsewhere/x.md" not in found)
@@ -505,14 +503,14 @@ def _selftest() -> int:
             (root / "plugins" / "rails-flow" / "scripts").mkdir(parents=True)
             (root / "plugins" / "rails-flow" / "scripts" / "gate.py").write_text("x = 'bin/rails db:migrate'\n" + extra, encoding="utf-8")
             (root / POLICY).write_text(json.dumps(policy), encoding="utf-8")
-            _git(root, "init", "-q")
-            _git(root, "add", "--", "plugins/rails-flow/scripts/gate.py", POLICY, ".claude-plugin/marketplace.json")
+            fixture_git.init(root)
+            fixture_git.run(root, "add", "--", "plugins/rails-flow/scripts/gate.py", POLICY, ".claude-plugin/marketplace.json")
             decided, _ = decide(scan(root), policy)
             (root / MD_OUT).write_text(build_md(decided, policy) + ("" if page_ok else "stale\n"), encoding="utf-8")
             (root / JSON_OUT).write_text(build_json(decided, policy), encoding="utf-8")
             if committed:
-                _git(root, "add", "--", MD_OUT, JSON_OUT)
-            _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "fixture", "--allow-empty")
+                fixture_git.run(root, "add", "--", MD_OUT, JSON_OUT)
+            fixture_git.run(root, "commit", "-qm", "fixture", "--allow-empty")
             sink = io.StringIO()
             sys.stdout, sys.stderr, old = sink, sink, (sys.stdout, sys.stderr)
             try:
