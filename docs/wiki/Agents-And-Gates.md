@@ -8,6 +8,7 @@
 |---|---|---|---|---|
 | `design-flow` | 1.46.2 | 5 | 12 | 5 |
 | `flow-suite` | 1.0.0 | — | — | — |
+| `nextjs-stack` | 0.1.0 | — | — | — |
 | `pipeline` | 1.5.2 | 2 | 9 | 2 |
 | `qa-flow` | 1.38.1 | 11 | 8 | 11 |
 | `rails-flow` | 1.64.0 | 13 | 25 | 13 |
@@ -190,6 +191,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | rails-flow where-stopped helper | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/where_stopped.py --selftest` | selftest |
 | rails-flow work order | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --selftest` | selftest |
 | rails-flow worktree guard helper | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/worktree_guard.py --selftest` | selftest |
+| stack detector selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/detect_stack.py --selftest` | selftest |
 | status line | `rails-flow` | `python3 plugins/rails-flow/scripts/statusline.py --selftest` | selftest |
 | worktree teardown wording | `rails-flow` | `python3 plugins/rails-flow/scripts/worktree_teardown.py --check-wording` | live check |
 | agent output contract | `repo` | `python3 scripts/check_agent_output_contract.py` | live check |
@@ -355,4 +357,4 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `doc-updater` | mechanical | `architecture_graph.py` regenerates and its digest guard fails on drift |
 | `adversary` | adversarial | — |
 
-Manifest cross-check: the 5 plugin directories inventoried are exactly the ones marketplace.json installs.
+Manifest cross-check: the 6 plugin directories inventoried are exactly the ones marketplace.json installs.
