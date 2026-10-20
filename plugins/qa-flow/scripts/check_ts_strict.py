@@ -829,8 +829,13 @@ def _selftest() -> int:
                 return None
             return [re.search(r"(ts-[a-z-]+)", f).group(1) for f in got[0]]
 
+    # LITERAL, not the constants under test: a profile built from `APP_REQUIRED_TRUE` would drop an option together with the check for it.
+    want_true = ("noUncheckedIndexedAccess", "exactOptionalPropertyTypes", "noImplicitOverride", "noPropertyAccessFromIndexSignature",
+                 "noImplicitReturns", "noFallthroughCasesInSwitch", "noUnusedLocals", "noUnusedParameters")
+    want_false = ("allowUnreachableCode", "allowUnusedLabels")
+
     def tsconfig(**over: object) -> str:
-        opts: dict[str, object] = {"strict": True, **{k: True for k in APP_REQUIRED_TRUE}, **{k: False for k in APP_REQUIRED_FALSE}}
+        opts: dict[str, object] = {"strict": True, **{k: True for k in want_true}, **{k: False for k in want_false}}
         for k, v in over.items():
             if v is None:
                 opts.pop(k, None)
@@ -848,10 +853,10 @@ def _selftest() -> int:
     expect("APP: a tsconfig without strict is caught", arules({**abase, "tsconfig.json": tsconfig(strict=None)}) == ["ts-not-strict"])
     expect("APP: strict true with a family member off is caught", arules({**abase, "tsconfig.json": tsconfig(noImplicitAny=False)}) == ["ts-not-strict"])
     expect("APP: no tsconfig at all is caught", arules({k: v for k, v in abase.items() if k != "tsconfig.json"}) == ["ts-not-strict"])
-    for opt in APP_REQUIRED_TRUE:
+    for opt in want_true:
         expect(f"APP: {opt} missing is caught", arules({**abase, "tsconfig.json": tsconfig(**{opt: None})}) == ["ts-missing-option"])
         expect(f"APP: {opt} set false is caught", arules({**abase, "tsconfig.json": tsconfig(**{opt: False})}) == ["ts-missing-option"])
-    for opt in APP_REQUIRED_FALSE:
+    for opt in want_false:
         expect(f"APP: {opt} unset (an editor hint only) is caught", arules({**abase, "tsconfig.json": tsconfig(**{opt: None})}) == ["ts-missing-option"])
         expect(f"APP: {opt} set true is caught", arules({**abase, "tsconfig.json": tsconfig(**{opt: True})}) == ["ts-missing-option"])
     expect("APP: the profile inherited through a relative extends counts",
