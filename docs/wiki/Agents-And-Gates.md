@@ -284,6 +284,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | skill routing | `repo` | `python3 scripts/check_skill_routing.py` | live check |
 | skill routing selftest | `repo` | `python3 scripts/check_skill_routing.py --selftest` | selftest |
 | skill version tag selftest | `repo` | `python3 scripts/skill_version_tag.py --selftest` | selftest |
+| stack markers detect their projects | `repo` | `python3 scripts/check_stack_markers.py` | live check |
 | status board record readers | `repo` | `python3 scripts/check_coordination_readers.py` | live check |
 | status board record readers selftest | `repo` | `python3 scripts/check_coordination_readers.py --selftest` | selftest |
 | structural grid | `repo` | `python3 scripts/check_structural_grid.py` | live check |
