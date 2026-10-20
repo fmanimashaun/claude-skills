@@ -4796,10 +4796,10 @@
   {
    "class": "mixed",
    "issue": 2183,
-   "nextjs_lines": 7,
+   "nextjs_lines": 11,
    "path": "plugins/rails-flow/scripts/detect_stack.py",
    "plugin": "rails-flow",
-   "rails_lines": 11,
+   "rails_lines": 14,
    "registered": [],
    "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
    "type": "script",
@@ -6176,7 +6176,7 @@
   {
    "class": "mixed",
    "issue": 2183,
-   "nextjs_lines": 2,
+   "nextjs_lines": 3,
    "path": "plugins/rails-flow/scripts/mutations/detect_stack.py",
    "plugin": "rails-flow",
    "rails_lines": 1,

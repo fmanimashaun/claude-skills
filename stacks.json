@@ -7,7 +7,48 @@
       "all": [
         { "file": "Gemfile" },
         { "file": "config/application.rb" }
-      ]
+      ],
+      "descriptor": {
+        "runner_prefix": ["bundle", "exec"],
+        "tests": {
+          "command": ["rspec", "--fail-fast", "--no-color"],
+          "glob": "spec/**/*_spec.rb",
+          "preflight": ["pg_isready"]
+        },
+        "layout": {
+          "migrations": "db/migrate/",
+          "schema": "db/schema.rb",
+          "views": "app/views",
+          "components": "app/components"
+        },
+        "boot": {
+          "command": "bin/dev",
+          "port": 3000,
+          "health": "/up",
+          "routes": ["/", "/up"]
+        },
+        "agents": {
+          "developer": "rails-flow:rails-developer",
+          "migrations": "rails-flow:migration-writer",
+          "test_runner": "rails-flow:test-runner",
+          "security": "rails-flow:security-auditor",
+          "reviewer": "rails-flow:code-reviewer",
+          "design_auditor": "rails-flow:design-auditor"
+        },
+        "deploy": {
+          "target": "kamal",
+          "artifact": "docker-image",
+          "agent": "pipeline:kamal-configurator"
+        },
+        "ui": {
+          "implementation": "viewcomponent-erb",
+          "porter": "design-flow:design-porter",
+          "composer": "design-flow:ui-composer"
+        },
+        "dangerous_commands": [
+          { "pattern": "db:reset", "allowed": "RAILS_ENV=test bin/rails db:reset" }
+        ]
+      }
     }
   ]
 }

@@ -32,9 +32,19 @@ source is `./`) -- so a stray `stacks.json` in any other directory is never read
 installed cache) plus the repo root. Several versions of one plugin collapse to the highest, by the
 manifest's own `plugin` and `version`, not by directory names.
 
+THE DESCRIPTOR (#2181, plan step 2 of #2162). Each stack may carry a `descriptor`: how that stack tests,
+lints, boots, deploys and draws its UI, and which agent plays each role. `--descriptor` prints the merged
+descriptor of the stacks the project matches, so a flow asks the stack instead of naming Rails. Stacks
+from ONE plugin merge (Next.js + Supabase + Vercel is three stacks in one plugin); a key declared by TWO
+plugins, or one leaf given two values, is a conflict reported with both sources, never a silent pick. Every
+key is from `DESCRIPTOR_SCHEMA`, with its declared shape: an unknown key or a wrong type is a problem
+(`descriptor-key-undeclared`), so a flow can never read a key nobody declared.
+
 Exit 0 one or more stacks detected · 1 none detected · 2 a manifest or the project could not be judged.
 
 Run:  python3 detect_stack.py [project-dir] [--json]
+      python3 detect_stack.py [project-dir] --descriptor
+      python3 detect_stack.py --check          (every discovered manifest is valid, whatever the project)
       python3 detect_stack.py --selftest
 
 Stdlib only, no network.
@@ -45,6 +55,7 @@ import argparse
 import contextlib
 import io
 import json
+import re
 import sys
 import tempfile
 from pathlib import Path, PurePosixPath
@@ -206,8 +217,161 @@ def detect(project: Path, manifests: list[dict]) -> tuple[list[dict], list[str]]
     return matched, problems
 
 
-def run(project: Path, dirs: list[Path]) -> tuple[int, dict]:
+STR, INT, STRS = "str", "int", "list[str]"
+# EVERY KEY A FLOW MAY READ, and its shape (#2181). A dict is a block whose keys are the only ones allowed; `{"*": STR}` is a
+# block of free names (scripts) each holding a string. Adding a key a flow needs is an edit HERE, reviewed once, never a key a
+# manifest invents.
+DESCRIPTOR_SCHEMA: dict = {
+    "runner_prefix": STRS,
+    "tests": {"command": STRS, "glob": STR, "preflight": STRS},
+    "lint": {"command": STRS, "extensions": STRS},
+    "layout": {"source": STRS, "migrations": STR, "schema": STR, "views": STR, "components": STR},
+    "boot": {"command": STR, "port": INT, "health": STR, "routes": STRS},
+    "agents": {"developer": STR, "migrations": STR, "test_runner": STR, "security": STR, "reviewer": STR, "design_auditor": STR},
+    "deploy": {"target": STR, "artifact": STR, "agent": STR},
+    "ui": {"implementation": STR, "tokens_file": STR, "porter": STR, "composer": STR},
+    "dangerous_commands": [{"pattern": STR, "allowed": STR}],
+    "setup_section": STR,
+    "scripts": {"*": STR},
+    "review_checklist": STRS,
+}
+# WHAT A FLOW CANNOT DO WITHOUT (#2189 review). A plugin whose stacks declare any descriptor must, across them, carry these:
+# a flow told "run the tests" or "hand it to the developer" has no fallback, so an absent key is a problem, never a default.
+# Per plugin, not per stack, because an add-on stack (Supabase beside Next.js) adds a key or two and owns no test runner.
+REQUIRED = ("tests.command", "tests.glob", "agents.developer", "agents.test_runner", "agents.reviewer")
+# The values that name an agent, `<plugin>:<agent>`, resolved to `<plugin>/agents/<agent>.md` in the discovered tree.
+AGENT_VALUES = ("agents.*", "deploy.agent", "ui.porter", "ui.composer")
+PORTS = range(1, 65536)
+
+
+def shape_problems(value: object, shape: object, where: str) -> list[str]:
+    """Why `value` does not have `shape`; empty when it does."""
+    if shape == STR:
+        return [] if isinstance(value, str) and value else [f"{where} must be a non-empty string"]
+    if shape == INT:
+        if not isinstance(value, int) or isinstance(value, bool):
+            return [f"{where} must be a whole number"]
+        return [] if not where.endswith(".port") or value in PORTS else [f"{where} must be a port, 1-65535 (got {value})"]
+    if shape == STRS:
+        ok = isinstance(value, list) and value and all(isinstance(v, str) and v for v in value)
+        return [] if ok else [f"{where} must be a non-empty list of strings"]
+    if isinstance(shape, list):
+        if not isinstance(value, list) or not value:
+            return [f"{where} must be a non-empty list"]
+        found = [p for i, item in enumerate(value) for p in shape_problems(item, shape[0], f"{where}[{i}]")]
+        if isinstance(shape[0], dict):
+            # A LIST ITEM IS A RECORD (#2189 review): a reader takes every key of it (`.allowed`), so each one is required.
+            found += [f"{where}[{i}] needs `{key}`" for i, item in enumerate(value) if isinstance(item, dict)
+                      for key in shape[0] if key != "*" and key not in item]
+        return found
+    if not isinstance(value, dict) or not value:
+        return [f"{where} must be a non-empty block"]
+    found = []
+    for key, item in value.items():
+        sub = shape.get(key, shape.get("*"))
+        if sub is None:
+            found.append(f"{where}.{key} is not a declared descriptor key (descriptor-key-undeclared)")
+        else:
+            found.extend(shape_problems(item, sub, f"{where}.{key}"))
+    return found
+
+
+def leaves(value: object, path: str = "") -> dict[str, object]:
+    """`{"tests.command": [...], ...}`: every leaf of a descriptor by its dotted path."""
+    if not isinstance(value, dict):
+        return {path: value}
+    out: dict[str, object] = {}
+    for key, item in value.items():
+        out.update(leaves(item, f"{path}.{key}" if path else key))
+    return out
+
+
+def agent_file(name: str, roots: list[Path]) -> Path | None:
+    """`plugin:agent` as a file, in a checkout (`<root>/<plugin>/agents/`) or the cache (`<root>/<plugin>/<ver>/agents/`)."""
+    if ":" not in name:
+        return None
+    plugin, agent = name.split(":", 1)
+    for root in roots:
+        for candidate in [root / plugin / "agents" / f"{agent}.md", *sorted((root / plugin).glob(f"*/agents/{agent}.md"))]:
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def agent_problems(found: dict[str, object], where: str, roots: list[Path] | None) -> list[str]:
+    """Every agent-naming value is `<plugin>:<agent>`, and, when the tree is known, names an agent file that exists."""
+    out = []
+    for path, value in found.items():
+        if not any(path == pattern or (pattern.endswith(".*") and path.startswith(pattern[:-1])) for pattern in AGENT_VALUES):
+            continue
+        if not isinstance(value, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]*:[a-z0-9][a-z0-9-]*", value):
+            out.append(f"{where}.{path} {value!r} must name an agent as `<plugin>:<agent>`")
+        elif roots is not None and agent_file(value, roots) is None:
+            out.append(f"{where}.{path} {value!r} names no agent: no {value.partition(':')[0]}/agents/{value.partition(':')[2]}.md in the plugins found")
+    return out
+
+
+def descriptor_problems(manifest: dict, roots: list[Path] | None = None) -> list[str]:
+    """Every descriptor in a manifest checked against `DESCRIPTOR_SCHEMA`, its agents resolved, and the plugin complete."""
+    found = []
+    declared: set[str] = set()
+    for stack in manifest.get("stacks") or []:
+        if isinstance(stack, dict) and "descriptor" in stack:
+            where = f"{manifest['_path']}: stack {stack.get('id')!r} descriptor"
+            found.extend(shape_problems(stack["descriptor"], DESCRIPTOR_SCHEMA, where))
+            values = leaves(stack["descriptor"]) if isinstance(stack["descriptor"], dict) else {}
+            found.extend(agent_problems(values, where, roots))
+            declared |= set(values)
+    if declared:
+        missing = [key for key in REQUIRED if key not in declared]
+        if missing:
+            found.append(f"{manifest['_path']}: {manifest['plugin']}'s descriptors declare no {', '.join(missing)}: a flow has no fallback for them")
+    return found
+
+
+def merged_descriptor(manifests: list[dict], matched: list[dict]) -> tuple[dict, dict, list[str]]:
+    """The detected stacks' descriptors as one, the source of every top-level key, and the conflicts."""
+    by_plugin = {m["plugin"]: m for m in manifests}
+    merged: dict = {}
+    sources: dict[str, set[str]] = {}
+    owner: dict[str, str] = {}
+    conflicts: list[str] = []
+
+    def merge(into: dict, value: dict, label: str, path: str) -> None:
+        for key, item in value.items():
+            here = f"{path}.{key}" if path else key
+            if isinstance(item, dict) and isinstance(into.get(key), dict):
+                merge(into[key], item, label, here)
+            elif key in into and into[key] != item:
+                conflicts.append(f"descriptor {here}: {into[key]!r} and {item!r} ({', '.join(sorted(sources.get(here.split('.')[0], set())))} and {label})")
+            elif key not in into:
+                into[key] = json.loads(json.dumps(item))
+
+    for found in matched:
+        manifest = by_plugin[found["plugin"]]
+        stack = next(s for s in manifest["stacks"] if isinstance(s, dict) and s.get("id") == found["id"])
+        label = f"{found['plugin']}:{found['id']}"
+        for key, value in (stack.get("descriptor") or {}).items():
+            if key in owner and owner[key] != found["plugin"]:
+                conflicts.append(f"descriptor {key} is declared by two plugins: {owner[key]} and {found['plugin']}")
+                continue
+            owner[key] = found["plugin"]
+            merge(merged, {key: value}, label, "")
+            sources.setdefault(key, set()).add(label)
+    return merged, {k: sorted(v) for k, v in sources.items()}, conflicts
+
+
+def agent_roots(start: Path) -> list[Path]:
+    """Where `plugin:agent` names resolve: the sibling plugins of a checkout, and the cache's per-plugin version directories."""
+    own = start.resolve().parents[1]
+    return [own.parent, own.parent.parent]
+
+
+def run(project: Path, dirs: list[Path], roots: list[Path] | None = None) -> tuple[int, dict]:
+    """Detect the project's stacks. `roots`, when given, is where agent names must resolve; None checks their shape only."""
     manifests, problems = load_manifests(dirs)
+    for manifest in manifests:
+        problems += descriptor_problems(manifest, roots)
     if not project.is_dir():
         # A missing path, or a file, has no markers to read: "cannot judge", never "no stack" (#2188 review).
         problems.append(f"{project}: not a directory, so no stack can be judged")
@@ -215,7 +379,10 @@ def run(project: Path, dirs: list[Path]) -> tuple[int, dict]:
     else:
         matched, more = detect(project, manifests)
         problems += more
-    report = {"project": str(project), "stacks": matched, "manifests": [m["_path"] for m in manifests], "problems": problems}
+    descriptor, sources, conflicts = merged_descriptor(manifests, matched)
+    problems += conflicts
+    report = {"project": str(project), "stacks": matched, "manifests": [m["_path"] for m in manifests], "problems": problems,
+              "descriptor": descriptor, "descriptor_sources": sources}
     if problems:
         return 2, report
     return (0 if matched else 1), report
@@ -381,6 +548,132 @@ def selftest() -> int:
         case(rc == 0 and sorted(s["id"] for s in printed.get("stacks", [])) == ["nextjs", "supabase", "vercel"] and printed.get("problems") == [],
              f"--json prints the report and exits with the run's code: rc={rc} {out.getvalue()[:120]!r}")
 
+    # THE DESCRIPTOR (#2181). A fixture stack no Rails value fits, a three-stack merge, and every way a descriptor can be wrong.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+
+        def plug(name: str, stacks: list) -> Path:
+            d = root / "plugins" / name
+            (d / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+            (d / ".claude-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
+            (d / MANIFEST).write_text(json.dumps({"plugin": name, "stacks": stacks}), encoding="utf-8")
+            return d
+
+        def proj(name: str, files: dict) -> Path:
+            p = root / "projects" / name
+            p.mkdir(parents=True, exist_ok=True)
+            for rel, body in files.items():
+                (p / rel).parent.mkdir(parents=True, exist_ok=True)
+                (p / rel).write_text(body, encoding="utf-8")
+            return p
+
+        AGENTS = {"developer": "dev-flow:developer", "test_runner": "dev-flow:test-runner", "reviewer": "dev-flow:reviewer"}
+        go = plug("go-stack", [{"id": "go", "name": "Go", "all": [{"file": "go.mod"}],
+                                "descriptor": {"tests": {"command": ["go", "test", "./..."], "glob": "**/*_test.go"},
+                                               "boot": {"command": "go run .", "port": 8080, "health": "/healthz"},
+                                               "agents": AGENTS}}])
+        go_app = proj("go-app", {"go.mod": "module x"})
+        code, report = run(go_app, [go])
+        case(code == 0 and report["descriptor"].get("tests", {}).get("command") == ["go", "test", "./..."] and report["descriptor"]["boot"]["port"] == 8080,
+             f"a go stack's descriptor is go's own, not Rails': {code} {report['descriptor']}")
+
+        nextjs = plug("nextjs-stack", [
+            {"id": "nextjs", "all": [{"package_dependency": "next"}],
+             "descriptor": {"tests": {"command": ["npx", "vitest", "run"], "glob": "**/*.test.ts"}, "layout": {"source": ["app/**/*.tsx"]},
+                            "agents": AGENTS}},
+            {"id": "supabase", "all": [{"file": "supabase/config.toml"}], "descriptor": {"layout": {"migrations": "supabase/migrations/"}}},
+            {"id": "vercel", "any": [{"file": "vercel.json"}], "descriptor": {"deploy": {"target": "vercel"}}}])
+        trio = proj("trio", {"package.json": json.dumps({"dependencies": {"next": "15"}}), "supabase/config.toml": "", "vercel.json": "{}"})
+        code, report = run(trio, [nextjs])
+        want = {"tests": {"command": ["npx", "vitest", "run"], "glob": "**/*.test.ts"}, "layout": {"source": ["app/**/*.tsx"], "migrations": "supabase/migrations/"},
+                "deploy": {"target": "vercel"}, "agents": AGENTS}
+        case(code == 0 and report["descriptor"] == want and report["descriptor_sources"].get("layout") == ["nextjs-stack:nextjs", "nextjs-stack:supabase"],
+             f"three stacks from one plugin merge into one descriptor, each key naming its source: {code} {report['descriptor']} {report['descriptor_sources']}")
+
+        rival = plug("rival-stack", [{"id": "rival", "all": [{"file": "supabase/config.toml"}], "descriptor": {"tests": {"glob": "*.spec.ts"}}}])
+        code, report = run(trio, [nextjs, rival])
+        case(code == 2 and any("declared by two plugins" in p for p in report["problems"]),
+             f"a descriptor key declared by two plugins is a conflict, never a silent pick: {code} {report['problems']}")
+
+        clash = plug("clash-stack", [{"id": "a", "all": [{"file": "a"}], "descriptor": {"deploy": {"target": "kamal"}}},
+                                     {"id": "b", "all": [{"file": "b"}], "descriptor": {"deploy": {"target": "vercel"}}}])
+        code, report = run(proj("ab", {"a": "", "b": ""}), [clash])
+        case(code == 2 and any("deploy.target" in p for p in report["problems"]), f"one plugin giving a leaf two values is a conflict too: {code} {report['problems']}")
+
+        for n, (label, descriptor, needle) in enumerate((
+            ("an undeclared descriptor key is a problem", {"testz": {"command": ["x"]}}, "testz is not a declared descriptor key"),
+            ("an undeclared key inside a block is a problem", {"tests": {"cmd": ["x"]}}, "tests.cmd is not a declared descriptor key"),
+            ("a descriptor value of the wrong type is a problem", {"boot": {"port": "3000"}}, "boot.port must be a whole number"),
+        )):
+            odd = plug(f"odd-{n}", [{"id": "odd", "all": [{"file": "go.mod"}], "descriptor": descriptor}])
+            code, report = run(go_app, [odd])
+            case(code == 2 and any(needle in p for p in report["problems"]), f"{label}: {code} {report['problems']}")
+
+        code, report = run(proj("nothing", {}), [go, nextjs])
+        case(code == 1 and report["descriptor"] == {}, f"with no stack detected the descriptor is empty: {code} {report['descriptor']}")
+
+        # #2189 REVIEW. Completeness, agent names, value ranges, nested shapes, the copy, and `--check` itself.
+        for n, key in enumerate(("tests", "agents")):
+            short = {k: v for k, v in {"tests": {"command": ["go", "test"], "glob": "*_test.go"}, "agents": AGENTS}.items() if k != key}
+            code, report = run(go_app, [plug(f"short-{n}", [{"id": "go", "all": [{"file": "go.mod"}], "descriptor": short}])])
+            case(code == 2 and any("declare no" in p for p in report["problems"]), f"a plugin whose descriptors lack `{key}` is a problem: {code} {report['problems']}")
+        markers_only = plug("markers-only", [{"id": "go", "all": [{"file": "go.mod"}]}])
+        case(run(go_app, [markers_only], roots=[root / "tree"])[0] == 0,
+             "a manifest with markers and no descriptor passes: REQUIRED applies only to one that declares a descriptor")
+        addon = plug("addon-stack", [{"id": "core", "all": [{"file": "go.mod"}], "descriptor": {"tests": {"command": ["go", "test"], "glob": "*_test.go"}, "agents": AGENTS}},
+                                     {"id": "extra", "all": [{"file": "go.mod"}], "descriptor": {"deploy": {"target": "fly"}}}])
+        case(run(go_app, [addon])[0] == 0, f"an add-on stack need not repeat the required keys its plugin's main stack declares: {run(go_app, [addon])[1]['problems']}")
+        agents_root = root / "tree"
+        (agents_root / "dev-flow" / "agents").mkdir(parents=True)
+        for a in ("developer", "test-runner", "reviewer"):
+            (agents_root / "dev-flow" / "agents" / f"{a}.md").write_text("x", encoding="utf-8")
+        (agents_root / "ops" / "2.0.0" / "agents").mkdir(parents=True)
+        (agents_root / "ops" / "2.0.0" / "agents" / "deployer.md").write_text("x", encoding="utf-8")
+        case(run(go_app, [go], [agents_root])[0] == 0, "agent names that resolve to agent files pass (checkout layout)")
+        cached = plug("cached-stack", [{"id": "go", "all": [{"file": "go.mod"}],
+                                        "descriptor": {"tests": {"command": ["go"], "glob": "*_test.go"}, "agents": AGENTS, "deploy": {"agent": "ops:deployer"}}}])
+        case(run(go_app, [cached], [agents_root])[0] == 0, "an agent in a cached version directory resolves (cache layout)")
+        for n, (label, agents, needle) in enumerate((
+            ("a misspelt agent is a problem", {**AGENTS, "developer": "dev-flow:developr"}, "names no agent"),
+            ("an agent of a plugin that is not there is a problem", {**AGENTS, "reviewer": "ghost:reviewer"}, "names no agent"),
+            ("a sentence is not an agent name", {**AGENTS, "developer": "just a sentence"}, "`<plugin>:<agent>`"),
+        )):
+            bad = plug(f"agent-{n}", [{"id": "go", "all": [{"file": "go.mod"}], "descriptor": {"tests": {"command": ["go"], "glob": "*_test.go"}, "agents": agents}}])
+            code, report = run(go_app, [bad], [agents_root])
+            case(code == 2 and any(needle in p for p in report["problems"]), f"{label}: {code} {report['problems']}")
+        for n, (label, extra, needle) in enumerate((
+            ("a deploy agent that names no agent is a problem", {"deploy": {"agent": "ghost:deployer"}}, "deploy.agent 'ghost:deployer' names no agent"),
+            ("a ui composer that names no agent is a problem", {"ui": {"composer": "ghost:composer"}}, "ui.composer 'ghost:composer' names no agent"),
+        )):
+            bad = plug(f"agent-extra-{n}", [{"id": "go", "all": [{"file": "go.mod"}], "descriptor": {"tests": {"command": ["go"], "glob": "*_test.go"}, "agents": AGENTS, **extra}}])
+            code, report = run(go_app, [bad], [agents_root])
+            case(code == 2 and any(needle in p for p in report["problems"]), f"{label}: {code} {report['problems']}")
+        for n, (label, extra, needle) in enumerate((
+            ("a bool is not a port", {"boot": {"port": True}}, "boot.port must be a whole number"),
+            ("a port above 65535 is a problem", {"boot": {"port": 99999999}}, "must be a port"),
+            ("a negative port is a problem", {"boot": {"port": -1}}, "must be a port"),
+            ("an empty list is a problem", {"runner_prefix": []}, "runner_prefix must be a non-empty list of strings"),
+            ("an empty string in a list is a problem", {"runner_prefix": ["bundle", ""]}, "runner_prefix must be a non-empty list of strings"),
+            ("an empty string is a problem", {"tests": {"command": ["go"], "glob": ""}}, "tests.glob must be a non-empty string"),
+            ("a nested list item of the wrong shape is a problem", {"dangerous_commands": [{"pattern": "x", "allowd": "y"}]}, "dangerous_commands[0].allowd is not a declared"),
+            ("a list item missing a key a reader takes is a problem", {"dangerous_commands": [{"pattern": "x"}]}, "dangerous_commands[0] needs `allowed`"),
+        )):
+            descriptor = {"tests": {"command": ["go"], "glob": "*_test.go"}, "agents": AGENTS, **extra}
+            code, report = run(go_app, [plug(f"value-{n}", [{"id": "go", "all": [{"file": "go.mod"}], "descriptor": descriptor}])])
+            case(code == 2 and any(needle in p for p in report["problems"]), f"{label}: {code} {report['problems']}")
+        held = {"plugin": "p", "_path": "p/stacks.json", "stacks": [{"id": "s", "descriptor": {"tests": {"command": ["go", "test"]}}}]}
+        merged, _, _ = merged_descriptor([held], [{"id": "s", "plugin": "p"}])
+        merged["tests"]["command"].append("MUTATED")
+        case(held["stacks"][0]["descriptor"]["tests"]["command"] == ["go", "test"],
+             f"the merged descriptor is a copy, not the manifest's own lists: {held['stacks'][0]['descriptor']}")
+        broken = plug("broken-stack", [{"id": "go", "all": [{"file": "go.mod"}], "descriptor": {"testz": {}}}])
+        for label, plugs, want_rc, want_text in (("--check on valid manifests exits 0 and says so", [go], 0, "valid"),
+                                                 ("--check on a broken manifest exits 2 and prints the problem", [go, broken], 2, "testz")):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = main(["--check"], dirs=plugs, roots=[agents_root])
+            case(rc == want_rc and want_text in out.getvalue(), f"{label}: rc={rc} {out.getvalue()[:160]!r}")
+
     for f in failures:
         print(f"FAIL {f}")
     if failures:
@@ -390,16 +683,31 @@ def selftest() -> int:
     return 0
 
 
-def main(argv: list[str], dirs: list[Path] | None = None) -> int:
+def main(argv: list[str], dirs: list[Path] | None = None, roots: list[Path] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("project", nargs="?", default=".", type=Path)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--descriptor", action="store_true", help="print the detected stacks' merged descriptor as JSON")
+    ap.add_argument("--check", action="store_true", help="validate every discovered manifest, whatever the project")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
     if args.selftest:
         return selftest()
-    code, report = run(args.project.resolve(), dirs if dirs is not None else manifest_dirs(Path(__file__)))
-    print(json.dumps(report, indent=2) if args.json else render(code, report))
+    if roots is None and dirs is None:
+        roots = agent_roots(Path(__file__))
+    dirs = dirs if dirs is not None else manifest_dirs(Path(__file__))
+    if args.check:
+        # Judge every stack against an empty project: shape, marker and descriptor problems surface, and nothing is matched.
+        with tempfile.TemporaryDirectory() as empty:
+            code, report = run(Path(empty), dirs, roots)
+        print("\n".join(report["problems"]) if report["problems"] else f"{len(report['manifests'])} stack manifest(s) valid")
+        return 2 if report["problems"] else 0
+    code, report = run(args.project.resolve(), dirs, roots)
+    if args.descriptor:
+        print(json.dumps({"stacks": [s["id"] for s in report["stacks"]], "descriptor": report["descriptor"],
+                          "sources": report["descriptor_sources"], "problems": report["problems"]}, indent=2))
+    else:
+        print(json.dumps(report, indent=2) if args.json else render(code, report))
     return code
 
 

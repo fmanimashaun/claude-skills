@@ -6255,7 +6255,7 @@
   "plugins/rails-flow/scripts/detect_stack.py": {
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
    "categories": {
-    "concept": 8,
+    "concept": 11,
     "path": 10
    },
    "decision": "reword",
@@ -6263,7 +6263,7 @@
    "ids": {
     "gemfile": 7,
     "rails-config": 3,
-    "rails-word": 5,
+    "rails-word": 8,
     "ruby-file": 3
    },
    "invokes": [],
@@ -6271,15 +6271,18 @@
    "lines": [
     14,
     15,
-    267,
-    268,
-    282,
-    283,
-    285,
-    287,
-    331,
-    332,
-    339
+    37,
+    434,
+    435,
+    449,
+    450,
+    452,
+    454,
+    498,
+    499,
+    506,
+    551,
+    578
    ],
    "move": ""
   },
@@ -8173,7 +8176,7 @@
  "policy": "docs/architecture/rails-assumptions.policy.json",
  "summary": {
   "by_category": {
-   "concept": 1945,
+   "concept": 1948,
    "gem": 156,
    "hotwire": 107,
    "path": 1278,
@@ -8194,7 +8197,7 @@
    },
    "reword": {
     "files": 63,
-    "lines": 262
+    "lines": 265
    }
   },
   "by_flow": {
@@ -8225,7 +8228,7 @@
    "rails-flow": {
     "detector": 50,
     "files": 135,
-    "lines": 2325,
+    "lines": 2328,
     "neutral": 3,
     "rails-stack": 47,
     "reword": 35
@@ -8270,7 +8273,7 @@
    },
    "script": {
     "files": 88,
-    "lines": 2208
+    "lines": 2211
    },
    "selftest": {
     "files": 16,
@@ -8296,7 +8299,7 @@
    "gemfile": 181,
    "hotwire": 107,
    "rails-config": 116,
-   "rails-word": 319,
+   "rails-word": 322,
    "rake": 56,
    "routes": 37,
    "rspec": 194,
@@ -8307,6 +8310,6 @@
    "spec-dir": 190
   },
   "files": 228,
-  "lines": 3233
+  "lines": 3236
  }
 }
