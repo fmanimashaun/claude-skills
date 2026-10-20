@@ -46,7 +46,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a marker path is not contained, so `/etc/hosts` is judged on the host",
-            '    if parts.is_absolute() or ".." in parts.parts or value.startswith("\\\\") or ":" in parts.parts[0]:',
+            '    if parts.is_absolute() or ".." in parts.parts or value.startswith("\\\\") or (parts.parts and ":" in parts.parts[0]):',
             "    if False:",
             "an absolute marker path is a problem",
         ),
@@ -157,6 +157,24 @@ GUARD = Guard(
             "        problems += descriptor_problems(manifest)\n    matched, more = detect(project, manifests)",
             "        pass\n    matched, more = detect(project, manifests)",
             "an undeclared key inside a block is a problem",
+        ),
+        Mutation(
+            "a marker naming the project root is accepted, so a stack keyed on `.` matches every project",
+            '    if value.strip().rstrip("/") in ("", "."):',
+            "    if False:",
+            "naming the project root (.) is a problem",
+        ),
+        Mutation(
+            "a stack with no usable id is reported as None",
+            '            if not isinstance(stack.get("id"), str) or not stack.get("id"):',
+            "            if False:",
+            "a stack with no id is a problem",
+        ),
+        Mutation(
+            "a package.json that is valid JSON but not an object reads as no dependency",
+            "    if not isinstance(data, dict):\n        return CORRUPT",
+            "    if False:\n        return CORRUPT",
+            "valid JSON but not an object is a problem",
         ),
     ),
 )
