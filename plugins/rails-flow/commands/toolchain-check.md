@@ -73,13 +73,13 @@ toolchain as current.
    1.19.0 and 1.18.2, same scope, separable only by `lastUpdated`. Reading `[0]` or `[-1]`
    picks arbitrarily and can report the stale one as installed.
 
-3. **Most plugin entries in `marketplace.json` carry no `version`.** Four of five have none.
+3. **Plugin entries in `marketplace.json` carry no `version`.** Every plugin, `rails-stack`
+   included since #2182, is versioned in its own `plugins/<name>/.claude-plugin/plugin.json`.
 
-4. **Because the two version sources are disjoint, not redundant.** `rails-stack` is a
-   skills bundle with no plugin directory, so it is versioned *only* in `marketplace.json`;
-   the four code plugins are versioned *only* in their own
-   `plugins/<name>/.claude-plugin/plugin.json`. Read either source alone and you miss the
-   other set entirely — and miss it as "up to date".
+4. **But an older published manifest still puts `rails-stack`'s version in `marketplace.json`.**
+   Before #2182 `rails-stack` was a skills bundle with no plugin directory, versioned *only* there.
+   A resolver comparing against such a release must read both sources, or it misses that
+   version entirely — and misses it as "up to date".
 
 5. **The drift is real.** While this was written the installed marketplace was 1.72.0
    against a published 1.73.0.

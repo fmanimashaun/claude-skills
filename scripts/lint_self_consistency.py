@@ -2046,8 +2046,8 @@ def check_marketplace_version_duplicate() -> tuple[list[Finding], int]:
     `plugins/rails-flow/scripts/toolchain_version.py` already records this as finding 4, the
     load-bearing one for its resolver: *"the two version sources are DISJOINT, not redundant"* --
 
-        rails-stack   -> marketplace.json plugins[].version   (a skills bundle, no plugin dir)
-        every other   -> plugins/<name>/.claude-plugin/plugin.json
+        rails-stack   -> marketplace.json plugins[].version   (before #2182: a skills bundle, no plugin dir)
+        every plugin  -> plugins/<name>/.claude-plugin/plugin.json (rails-stack too, since #2182)
 
     A resolver reading either source alone reports a stale toolchain as current, which is why that
     script reads both. But nothing asserted the split, so the tree drifted away from it: `rails-flow`
@@ -5956,9 +5956,9 @@ def selftest() -> int:
                                  "To get the other one, plugin install design-flow@claude-skills\n"})
 
     # ---- marketplace-version-duplicate (#1042) --------------------------------------
-    # The split this enforces is already recorded in toolchain_version.py's finding 4: rails-stack
-    # is versioned ONLY in marketplace.json (no plugin dir), every other plugin ONLY in its own
-    # plugin.json. Nothing asserted it, so the tree drifted -- rails-flow and design-flow each grew
+    # The split this enforces is already recorded in toolchain_version.py's finding 4: a plugin with
+    # a plugin.json is versioned ONLY there (every plugin, rails-stack too since #2182), and only a
+    # skills bundle with no plugin dir (rails-stack before #2182) is versioned in marketplace.json. Nothing asserted it, so the tree drifted -- rails-flow and design-flow each grew
     # a second, inert copy. `claude plugin validate --strict` calls the copy "silently ignored".
     MVD = "marketplace-version-duplicate"
     PJ = '{"name": "rails-flow", "version": "1.41.1"}'
@@ -5973,9 +5973,9 @@ def selftest() -> int:
              files={".claude-plugin/marketplace.json":
                     '{"plugins": [{"name": "rails-flow", "source": "./plugins/rails-flow"}]}',
                     "plugins/rails-flow/.claude-plugin/plugin.json": PJ})
-    # THE CARVE-OUT, and it needs its own case or the rule would fire on rails-stack forever. A
-    # skills bundle has no plugin directory, so marketplace.json is its ONLY home and carrying the
-    # key there is correct rather than duplicated.
+    # THE CARVE-OUT, and it needs its own case or the rule would fire on a bundle forever. A skills
+    # bundle with no plugin directory (rails-stack until #2182) has marketplace.json as its ONLY home,
+    # so carrying the key there is correct rather than duplicated.
     scenario("a skills bundle with no plugin.json keeps its marketplace version",
              rule=MVD, expect_finding=False,
              files={".claude-plugin/marketplace.json":

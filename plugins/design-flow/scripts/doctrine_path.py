@@ -14,9 +14,9 @@ clone — the cache interposes `<plugin>/<version>/`:
     actual:                                       cache/claude-skills/rails-stack/1.45.0/skills/…
 
 **The two shapes differ in DEPTH, not in offset**, so no amount of parent-counting reconciles them.
-That is substrate fact #4 from `/rails-flow:toolchain-check` wearing different clothes: `rails-stack`
-is a skills bundle with **no plugin directory**, so a code plugin and the skills bundle have
-genuinely disjoint cache shapes. A resolver assuming one shape covers both is the same mistake as
+That is substrate fact #4 from `/rails-flow:toolchain-check` wearing different clothes: an installed
+`rails-stack` holds `skills/` at its root, while in the clone it sits under `plugins/rails-stack/`
+(#2182), so the clone and the cache have genuinely disjoint shapes. A resolver assuming one shape covers both is the same mistake as
 reading one version source and calling it the version.
 
 WHY IT IS SHARED. One question — *where is the doctrine* — answered in three files is three chances
