@@ -753,8 +753,16 @@
    },
    {
     "match": [
-     "skills/rails-8",
-     "skills/hotwire"
+     "plugins/rails-stack/.claude-plugin/*"
+    ],
+    "class": "rails",
+    "issue": 2182,
+    "why": "the rails-stack manifest, new in step 1: its description names the Rails doctrine the plugin bundles"
+   },
+   {
+    "match": [
+     "plugins/rails-stack/skills/rails-8",
+     "plugins/rails-stack/skills/hotwire"
     ],
     "class": "rails",
     "issue": 2182,
@@ -762,7 +770,7 @@
    },
    {
     "match": [
-     "skills/design-system"
+     "plugins/rails-stack/skills/design-system"
     ],
     "class": "mixed",
     "seam": "neutral catalog plus Rails implementation references; the Rails half moves to a rails-stack skill",
@@ -771,16 +779,16 @@
    },
    {
     "match": [
-     "skills/quality-pass",
-     "skills/derived-artifacts"
+     "plugins/rails-stack/skills/quality-pass",
+     "plugins/rails-stack/skills/derived-artifacts"
     ],
     "class": "neutral",
     "why": "stack-neutral doctrine, bundled under the rails-stack name today; step 8 gives them a plugin of their own (#2186)"
    },
    {
     "match": [
-     "skills/code-review",
-     "skills/parallel-session-lane"
+     "plugins/rails-stack/skills/code-review",
+     "plugins/rails-stack/skills/parallel-session-lane"
     ],
     "class": "mixed",
     "seam": "stack-neutral doctrine whose examples name Rails; the Rails examples move out when core-skills is split (step 8)",
