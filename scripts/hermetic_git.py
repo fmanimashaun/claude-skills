@@ -10,6 +10,7 @@ config (`GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`), instead of in each of them.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 
 SETTINGS: tuple[tuple[str, str], ...] = (("maintenance.auto", "false"), ("gc.auto", "0"))
@@ -24,11 +25,28 @@ REPO_LOCATORS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE", "GIT_INDE
                 "GIT_PREFIX", "GIT_NO_REPLACE_OBJECTS", "GIT_REPLACE_REF_BASE")
 
 
+# #2190. OUR OWN SHIM, OFF THE FIXTURES' PATH. Every agent session runs with rails-flow's `git-shim` first on PATH, and the shim
+# rightly refuses `git add .`, `git add -A` and a `git config filter.*` in a real worktree. A fixture's temp repository is not one,
+# but its commands look the same, so four gates were red in every agent shell (`check_upstream_docs`, `check_vendored_alone`'s
+# wiki and generated-docs selftests, `where_stopped`, this doctor's selftest) and green only with PATH stripped by hand. The runners
+# build every subprocess's environment here, so the shim leaves it here, once. The pattern is the session hook's own
+# (`rails-flow(/<version>)?/git-shim`), so another tool's directory named git-shim stays. A gate that tests the shim puts it back
+# on PATH itself, inside its own process.
+SHIM_ON_PATH = re.compile(r"(^|/)rails-flow(/[^/]+)?/git-shim/?$")
+
+
+def without_shim(path: str) -> str:
+    """`path` with every rails-flow git-shim entry removed; the rest kept in order."""
+    return os.pathsep.join(p for p in path.split(os.pathsep) if not SHIM_ON_PATH.search(p))
+
+
 def env(base: Mapping[str, str] | None = None) -> dict[str, str]:
     """`base` (default: this process's environment) with SETTINGS appended to any GIT_CONFIG_* pairs
     already there -- appended, never renumbered, so a caller's own pairs keep their meaning. A count git
     would reject is left untouched."""
     out = {k: v for k, v in (os.environ if base is None else base).items() if k not in REPO_LOCATORS}
+    if "PATH" in out:
+        out["PATH"] = without_shim(out["PATH"])
     count = out.get("GIT_CONFIG_COUNT", "")
     # git's rules, not Python's int(): empty means none, ASCII digits are a count, and anything else
     # (`-1`, `abc`, ` 2 `) git itself rejects -- so leave such an environment exactly as it is rather
