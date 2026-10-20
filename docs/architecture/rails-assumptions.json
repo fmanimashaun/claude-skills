@@ -2945,14 +2945,14 @@
    "move": ""
   },
   "plugins/rails-flow/commands/graph.md": {
-   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "assumes": "reads routes, app/**, db/schema.rb to draw the architecture, wiki and help",
    "categories": {
     "concept": 2,
     "hotwire": 1,
     "path": 1
    },
-   "decision": "reword",
-   "how": "reworded in the slice that touches the file; no code changes",
+   "decision": "rails-stack",
+   "how": "moves with /rails-flow:graph (commands/graph.md names it)",
    "ids": {
     "db": 1,
     "erb": 1,
@@ -2965,7 +2965,7 @@
     44,
     63
    ],
-   "move": ""
+   "move": "rails-docs-generators"
   },
   "plugins/rails-flow/commands/handoff.md": {
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
@@ -7297,12 +7297,12 @@
     "lines": 44
    },
    "rails-stack": {
-    "files": 67,
-    "lines": 1531
+    "files": 68,
+    "lines": 1534
    },
    "reword": {
-    "files": 74,
-    "lines": 506
+    "files": 73,
+    "lines": 503
    }
   },
   "by_flow": {
@@ -7335,8 +7335,8 @@
     "files": 129,
     "lines": 2207,
     "neutral": 4,
-    "rails-stack": 46,
-    "reword": 38
+    "rails-stack": 47,
+    "reword": 37
    }
   },
   "by_kind": {

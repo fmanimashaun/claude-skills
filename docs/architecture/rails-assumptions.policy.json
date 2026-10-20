@@ -102,7 +102,8 @@
    "match": [
     "plugins/rails-flow/scripts/architecture_graph.py",
     "plugins/rails-flow/scripts/build_project_wiki.py",
-    "plugins/rails-flow/scripts/build_help.py"
+    "plugins/rails-flow/scripts/build_help.py",
+    "plugins/rails-flow/commands/graph.md"
    ],
    "decision": "rails-stack",
    "assumes": "reads routes, app/**, db/schema.rb to draw the architecture, wiki and help",
