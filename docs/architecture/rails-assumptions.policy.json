@@ -840,6 +840,7 @@
      "plugins/nextjs-stack/.claude-plugin/*",
      "plugins/nextjs-stack/skills/*",
      "plugins/nextjs-stack/stacks.json",
+     "plugins/nextjs-stack/ui-scope-cases.json",
      "plugins/nextjs-stack/checks.json",
      "plugins/nextjs-stack/scripts/*",
      "plugins/nextjs-stack/scripts/mutations/*",
@@ -904,6 +905,14 @@
     "class": "rails",
     "issue": 2175,
     "why": "the Rails project gates' registrations: the plugin that holds the gates declares them (#2175); project_gates.py discovers this file from the sibling plugin"
+   },
+   {
+    "match": [
+     "plugins/rails-stack/ui-scope-cases.json"
+    ],
+    "class": "rails",
+    "issue": 2219,
+    "why": "the cases that prove rails-stack's `ui_scope` (which Rails paths a person sees); the gate's selftest runs them"
    },
    {
     "match": [
