@@ -7,7 +7,8 @@ GUARD = Guard(
     name='git_shim',
     subject='git-shim/git',
     selftest="scripts/git_shim_selftest.py",
-    needs=("scripts/fixture_git.py", "git-shim/git", "hooks/scripts/session-start.sh", "hooks/scripts/lib"),
+    needs=("scripts/fixture_git.py", "git-shim/git", "hooks/scripts/session-start.sh", "hooks/scripts/lib",
+           "scripts/fixtures/claude_code_git_config.json"),  # the #2129 case reads Claude Code's recorded git calls
     narrow_with="--match",
     mutations=(
         Mutation('add --all is not refused', 'if seen all; then RULE="git add --all', 'if false; then RULE="git add --all', 'add --all and every prefix'),
