@@ -30,14 +30,19 @@ GUARD = Guard(
         Mutation('an indented continuation line of a multi-line alias is ignored', '      case "$line" in " "*|"\t"*) value="$value |" ;; *) break ;; esac\n', '      break\n', 'alias flags'),
         Mutation('the judge is the first python3 on PATH, not the lib\'s', 'py="$(trusted_python)"\nif [ -z "$py" ]', 'py="$(command -v python3)"\nif [ -z "$py" ]', 'interpreter'),
         # #2258: the body of a claim-carrying command.
-        Mutation('a claim-carrying body is never judged', 'if verb="$(claims_verb "${ORIG[@]}")"; then\n  judge_body "$verb" "${ORIG[@]}" || exit 1\nfi', 'if false; then\n  judge_body "$verb" "${ORIG[@]}" || exit 1\nfi', 'claim bodies'),
         Mutation('pr edit is not a claim-carrying verb', '"pr create"|"pr edit"|"issue comment")', '"pr create"|"issue comment")', 'claim bodies'),
         Mutation('an inline --body is not read', '      -b|--body) next=body ;; --body=*) body="${a#--body=}" ;;', '      -b|--body) ;; --body=*) ;;', 'claim bodies'),
         Mutation('a short flag joined to its value is not read', '      -F?*) file="${a#-F}"; file="${file#=}" ;;', '      -F?*) ;;', 'claim bodies'),
         Mutation('the hook is not run strict, so an unreadable body passes', 'RAILS_FLOW_CLAIMS_STRICT=1 /bin/bash -p "$hook"', '/bin/bash -p "$hook"', 'claim bodies'),
-        Mutation('a --body-file that cannot be read passes', '    cat -- "$file" > "$tmp" 2>/dev/null || { rm -f "$tmp"; echo', '    cat -- "$file" > "$tmp" 2>/dev/null || { return 0; echo', 'claim bodies'),
-        Mutation('a stdin body is refused instead of passed through loudly', '  if [ "$file" = - ]; then\n    echo "gh-shim (rails-flow): the body of', '  if [ "$file" = - ]; then\n    return 1\n    echo "gh-shim (rails-flow): the body of', 'claim bodies'),
-        Mutation('an alias that expands to pr create skips the body check', '  if verb="$(claims_verb "${argv[@]}")"; then judge_body "$verb" "${argv[@]}" || exit 1; fi', '  :', 'claim bodies'),
         Mutation('the hook refusing is ignored', '  [ "$rc" = 0 ] && return 0\n  echo "gh-shim (rails-flow): refused', '  return 0\n  echo "gh-shim (rails-flow): refused', 'claim bodies'),
+        # #2268 review.
+        Mutation('a body gh composes passes silently', '    echo "gh-shim (rails-flow): the body of \\`gh $verb\\` is composed by gh', '    return 0\n    echo "gh-shim (rails-flow): the body of \\`gh $verb\\` is composed by gh', 'claim bodies'),
+        Mutation('a non-regular body file is read by the shim (a fifo hangs, a stream is starved)', '[ -n "$file" ] && [ -e "$file" ] && [ ! -f "$file" ]; }; then', '[ -n "$file" ] && false; }; then', 'claim bodies'),
+        Mutation('GH_REPO is not read, so another repository is judged against this template', '  repo="${repo:-${GH_REPO:-}}"', '  :', 'claim bodies'),
+        Mutation('gh is handed the original body, not the judged copy', '  "$real" "${out[@]}" --body-file "$JUDGED_TMP"', '  "$real" "$@"', 'claim bodies'),
+        Mutation('a claim-carrying body is never judged', 'if verb="$(claims_verb "${ORIG[@]}")"; then\n  judge_body "$verb" "${ORIG[@]}" || exit 1', 'if false; then\n  judge_body "$verb" "${ORIG[@]}" || exit 1', 'claim bodies'),
+        Mutation('a --body-file that cannot be read passes', '    cat -- "$file" > "$JUDGED_TMP" 2>/dev/null || { echo', '    cat -- "$file" > "$JUDGED_TMP" 2>/dev/null || { return 0; echo', 'claim bodies'),
+        Mutation('a stdin body is refused instead of passed through loudly', '    echo "gh-shim (rails-flow): the body of \\`gh $verb\\` comes from stdin or a stream', '    return 1\n    echo "gh-shim (rails-flow): the body of \\`gh $verb\\` comes from stdin or a stream', 'claim bodies'),
+        Mutation('an alias that expands to pr create skips the body check', '  if verb="$(claims_verb "${argv[@]}")"; then judge_body "$verb" "${argv[@]}" || exit 1; [ -n "$JUDGED_TMP" ] && run_judged "${argv[@]}"; fi', '  :', 'claim bodies'),
     ),
 )

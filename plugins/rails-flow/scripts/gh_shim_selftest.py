@@ -119,6 +119,7 @@ def _claim_bodies(base: Path) -> None:
     # could not tell the directory for a heredoc, a VAR or a `cd` chain (88% of 3,211 real calls), and read nothing of an inline --body or a `--body-file "$F"`. Each shape is run
     # with a body the repository's PR template refuses AND with one it accepts, so a shim that refuses every body fails here too.
     fx = Fixture(base, in_force=False)
+    fx.started = time.time() - 1
     (fx.repo / ".github").mkdir(exist_ok=True)
     (fx.repo / ".github" / "pull_request_template.md").write_text("## Summary\n\n## Notes\n")
     bad, good = base / "bad.md", base / "good.md"
@@ -159,6 +160,34 @@ def _claim_bodies(base: Path) -> None:
           r.returncode == 0 and len(fx.ran()) == 1 and "stdin" in r.stderr and "NOT checked" in r.stderr, f"rc {r.returncode}, {r.stderr.strip()[-160:]!r}")
     ok, why = allowed(fx, "gh pr list")
     check("a gh command that carries no body is untouched", ok, why)
+    # #2268 review: what the shim does not judge is passed through and SAID, never silent; what it judges is what gh posts.
+    for flag in ("--fill", "--fill-first", "--template x.md", "--editor"):
+        fx.reset()
+        r = fx.sh(f"gh pr create --title t {flag}")
+        check(f"`pr create {flag}`: gh composes the body, so it is NOT checked, said, and runs",
+              r.returncode == 0 and len(fx.ran()) == 1 and "NOT checked" in r.stderr, f"rc {r.returncode}, {r.stderr.strip()[-160:]!r}")
+    for stream in ("/dev/stdin",):
+        fx.reset()
+        r = fx.sh(f"cat {bad} | gh pr create --title t --body-file {stream}")
+        check(f"a body read from {stream} is gh's: NOT checked, said, and gh gets the stream (not an empty copy)",
+              r.returncode == 0 and len(fx.ran()) == 1 and "NOT checked" in r.stderr and stream in fx.ran()[0], f"rc {r.returncode}, ran {fx.ran()}, {r.stderr.strip()[-160:]!r}")
+    fifo = base / "body.fifo"
+    os.mkfifo(fifo)
+    fx.reset()
+    r = fx.sh(f"gh pr create --title t --body-file {fifo}")       # no writer: a shim that reads it would hang (sh() times out at 60 s)
+    check("a fifo body is not read by the shim (no hang): NOT checked, said, and it runs", r.returncode == 0 and len(fx.ran()) == 1 and "NOT checked" in r.stderr,
+          f"rc {r.returncode}, {r.stderr.strip()[-160:]!r}")
+    fx.reset()
+    r = fx.sh(f"gh pr create --title t --body-file {bad}", env={"GH_REPO": "someone/else"})
+    check("GH_REPO names another repository as -R does: its template is NOT checked, said", r.returncode == 0 and "NOT checked" in r.stderr and "-R" in r.stderr,
+          f"rc {r.returncode}, {r.stderr.strip()[-200:]!r}")
+    fx.reset()
+    r = fx.sh(f'gh pr create --title t --body "$(cat {good})"')
+    posted = fx.ran()[0] if fx.ran() else ""
+    check("gh is handed the judged copy (--body-file <temp>), not the original flag", r.returncode == 0 and "--body-file" in posted and "--body ##" not in posted,
+          f"ran {fx.ran()}")
+    leftovers = sorted(Path(os.environ.get("TMPDIR", "/tmp")).glob("rf-gh-body.*"))
+    check("the judged copy is removed after gh runs", not [p for p in leftovers if p.stat().st_mtime > fx.started], f"{leftovers[-3:]}")
     ok, why = refused(fx, f"gh pc --title t --body-file {bad}", env={"STUB_ALIASES": "pc: pr create"})
     check("an alias that expands to pr create has its body judged", ok, why)
     ok, why = allowed(fx, f"gh pc --title t --body-file {good}", env={"STUB_ALIASES": "pc: pr create"})

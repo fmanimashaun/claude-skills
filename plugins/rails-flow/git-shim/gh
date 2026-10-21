@@ -154,9 +154,15 @@ claims_verb() {
   return 1
 }
 
+# SCOPE, stated (#2268 review): `gh pr create`, `gh pr edit` and `gh issue comment`, with the body in a flag. NOT covered: `gh pr comment`, `gh issue create`, a `gh api` call carrying a
+# body (`-f body=`), and a body gh composes itself (--fill, --fill-first, --fill-verbose, --template, --editor, --web, or none given, so gh asks); each of those that this file sees
+# is passed through with a NOT checked line on stderr.
+JUDGED_TMP=""
+trap '[ -n "$JUDGED_TMP" ] && rm -f "$JUDGED_TMP"' EXIT INT TERM HUP
+
 judge_body() {
   local verb="$1"; shift
-  local body="" file="" repo="" stdin=0 next="" a
+  local body="" file="" repo="" next="" a composed=""
   for a in "$@"; do
     case "$next" in
       body) body="$a"; next=""; continue ;; file) file="$a"; next=""; continue ;; repo) repo="$a"; next=""; continue ;;
@@ -169,40 +175,63 @@ judge_body() {
       -b?*) body="${a#-b}"; body="${body#=}" ;;
       -F?*) file="${a#-F}"; file="${file#=}" ;;
       -R?*) repo="${a#-R}"; repo="${repo#=}" ;;
+      --fill|--fill-first|--fill-verbose|--template|--template=*|-T|--editor|-e|--web|-w) composed="$composed ${a%%=*}" ;;
     esac
   done
-  [ -n "$body$file" ] || return 0
-  if [ "$file" = - ]; then
-    echo "gh-shim (rails-flow): the body of \`gh $verb\` comes from stdin, which only gh may read, so it is NOT checked (template, change type, claims)." >&2
+  # GH_REPO names the repository as -R does (#2268 review): the same notice, through the hook, for another repository's template.
+  repo="${repo:-${GH_REPO:-}}"
+  if [ -z "$body$file" ]; then
+    case "$verb" in "pr edit") return 0 ;; esac          # an edit without a body flag leaves the body as it was
+    echo "gh-shim (rails-flow): the body of \`gh $verb\` is composed by gh (${composed# }${composed:+, }no --body/--body-file given), so it is NOT checked (template, change type, claims)." >&2
+    return 0
+  fi
+  # A body gh reads from a stream (`-`, /dev/stdin, /dev/fd/N, a fifo, any file that is not a regular file) is gh's to consume: reading it here would starve gh, and a fifo with no
+  # writer would hang (#2268 review). NOT checked, said.
+  if [ "$file" = - ] || case "$file" in /dev/stdin|/dev/fd/*) true ;; *) false ;; esac || { [ -n "$file" ] && [ -e "$file" ] && [ ! -f "$file" ]; }; then
+    echo "gh-shim (rails-flow): the body of \`gh $verb\` comes from stdin or a stream ($file), which only gh may read, so it is NOT checked (template, change type, claims)." >&2
     return 0
   fi
   # THE HOOK READS A PATH THIS SHIM CHOSE (the security review of the first draft): a body path the caller chose, with a space or a `;`, would be cut short by the hook's text parse
-  # and fail open. So every body, file or inline, is copied to a mktemp name of plain characters first, and the hook runs in STRICT mode (an unreadable body is a refusal).
-  local tmp
-  tmp="$(mktemp "${TMPDIR:-/tmp}/rf-gh-body.XXXXXX")" || { echo "gh-shim (rails-flow): refused \`gh $verb\`: no temp file to judge its body in." >&2; return 1; }
+  # and fail open. So every body, file or inline, is copied to a mktemp name of plain characters first, the hook runs in STRICT mode (an unreadable body is a refusal), and gh is
+  # handed THAT copy (#2268 review): what was judged is what is posted.
+  JUDGED_TMP="$(mktemp "${TMPDIR:-/tmp}/rf-gh-body.XXXXXX")" || { JUDGED_TMP=""; echo "gh-shim (rails-flow): refused \`gh $verb\`: no temp file to judge its body in." >&2; return 1; }
   if [ -n "$file" ]; then
-    cat -- "$file" > "$tmp" 2>/dev/null || { rm -f "$tmp"; echo "gh-shim (rails-flow): refused \`gh $verb\`: its --body-file $file cannot be read." >&2; return 1; }
+    cat -- "$file" > "$JUDGED_TMP" 2>/dev/null || { echo "gh-shim (rails-flow): refused \`gh $verb\`: its --body-file $file cannot be read." >&2; return 1; }
   else
-    printf '%s' "$body" > "$tmp"
+    printf '%s' "$body" > "$JUDGED_TMP"
   fi
-  local path="$tmp"
   local hook="$self_dir/../hooks/scripts/guard-claims.sh" cmd payload rc
-  cmd="gh $verb${repo:+ -R $repo} --body-file $path"
+  cmd="gh $verb${repo:+ -R $repo} --body-file $JUDGED_TMP"
   payload="$(cmd="$cmd" cwd="$(pwd -P)" "$(trusted_python)" -I -c 'import json,os;print(json.dumps({"tool_name":"Bash","tool_input":{"command":os.environ["cmd"]},"cwd":os.environ["cwd"]}))' 2>/dev/null)"
   if [ -z "$payload" ] || [ ! -f "$hook" ]; then
-    rm -f "$tmp"
     echo "gh-shim (rails-flow): refused \`gh $verb\`: the claim guard or python3 is missing, so the body cannot be checked (RAILS_FLOW_CLAIMS_OK=1 to ship it unchecked, audited)." >&2
     return 1
   fi
   printf '%s' "$payload" | CLAUDE_PLUGIN_ROOT="$self_dir/.." RAILS_FLOW_CLAIMS_STRICT=1 /bin/bash -p "$hook"; rc=$?
-  rm -f "$tmp"
   [ "$rc" = 0 ] && return 0
   echo "gh-shim (rails-flow): refused \`gh $verb\` (the claim guard exited $rc on its body)." >&2
   return 1
 }
 
+# Run gh with the judged copy in place of the body flags, then remove the copy: no `exec`, so the trap still runs. It runs the argv that was JUDGED (an alias already expanded),
+# so a body flag inside an alias's expansion is replaced too.
+run_judged() {
+  local out=() next="" a
+  for a in "$@"; do
+    if [ -n "$next" ]; then next=""; continue; fi
+    case "$a" in
+      -b|--body|-F|--body-file) next=1; continue ;;
+      --body=*|--body-file=*|-b?*|-F?*) continue ;;
+    esac
+    out+=("$a")
+  done
+  "$real" "${out[@]}" --body-file "$JUDGED_TMP"
+  exit $?
+}
+
 if verb="$(claims_verb "${ORIG[@]}")"; then
   judge_body "$verb" "${ORIG[@]}" || exit 1
+  [ -n "$JUDGED_TMP" ] && run_judged "${ORIG[@]}"
 fi
 
 judge=0
@@ -241,7 +270,7 @@ elif name="$(alias_word "${ORIG[@]}")" && exp="$(alias_expansion "$name")" && [ 
   done
   argv=("${fresh_before[@]}" "${expanded[@]}" "${rest[@]:$used}")
   # An alias can hide `pr create` as well as `pr ready` (the security review of the first draft): the body is judged on what gh will RUN.
-  if verb="$(claims_verb "${argv[@]}")"; then judge_body "$verb" "${argv[@]}" || exit 1; fi
+  if verb="$(claims_verb "${argv[@]}")"; then judge_body "$verb" "${argv[@]}" || exit 1; [ -n "$JUDGED_TMP" ] && run_judged "${argv[@]}"; fi
   if has_pr_ready "${argv[@]}" || has_api_ready "${argv[@]}"; then judge=1; fi
 fi
 [ "$judge" = 1 ] || exec "$real" "${ORIG[@]}"
