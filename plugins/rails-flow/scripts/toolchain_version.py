@@ -19,14 +19,13 @@ the real files rather than the issue body. They are why this script is longer th
      `lastUpdated`. Reading `[0]` or `[-1]` picks arbitrarily and can report the stale one
      as installed, which is the exact failure this gate exists to prevent.
 
-  3. The manifest's per-plugin versions are NOT all present. Four of the five plugin
-     entries in `marketplace.json` have no `version` key at all.
+  3. The manifest's plugin entries carry no `version` key: every plugin, rails-stack included
+     since #2182, is versioned in its own `plugins/<name>/.claude-plugin/plugin.json`.
 
-  4. ...because the two version sources are DISJOINT, not redundant. `rails-stack` is a
-     skills bundle with no plugin directory, so it is versioned only in `marketplace.json`;
-     the other four are code plugins versioned only in their own
-     `plugins/<name>/.claude-plugin/plugin.json`. A resolver reading either source alone
-     silently misses the other set — and misses it as "up to date", the worst direction.
+  4. ...but the two version sources stay DISJOINT across releases. Before #2182 `rails-stack`
+     was a skills bundle with no plugin directory, versioned only in `marketplace.json`, and a
+     published release from then still says so. A resolver reading either source alone silently
+     misses the other set — and misses it as "up to date", the worst direction.
 
   5. The drift is real and was live while this was written: installed 1.72.0 against a
      published 1.73.0.
@@ -218,8 +217,8 @@ def read_manifest_pair(root: Path) -> tuple[Toolchain, list[str]]:
 
     Finding 4, the load-bearing one. The two version sources are DISJOINT:
 
-        rails-stack   -> marketplace.json plugins[].version   (skills bundle, no plugin dir)
-        every other   -> plugins/<name>/.claude-plugin/plugin.json
+        rails-stack   -> marketplace.json plugins[].version   (manifests published before #2182 only)
+        every plugin  -> plugins/<name>/.claude-plugin/plugin.json (rails-stack too, since #2182)
 
     So both are read and unioned. A plugin listed in the manifest that resolves from
     neither source is a finding, not a silent omission — otherwise a plugin whose version
@@ -240,8 +239,8 @@ def read_manifest_pair(root: Path) -> tuple[Toolchain, list[str]]:
         name = entry.get("name")
         if not name:
             continue
-        version = entry.get("version")          # source A — rails-stack only
-        if not version:                         # source B — the four code plugins
+        version = entry.get("version")          # source A — rails-stack in a pre-#2182 manifest
+        if not version:                         # source B — every plugin directory
             pj = read_json(root / "plugins" / name / ".claude-plugin" / "plugin.json")
             version = (pj or {}).get("version")
         if version:

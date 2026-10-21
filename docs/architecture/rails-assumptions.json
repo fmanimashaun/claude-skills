@@ -2218,34 +2218,38 @@
   "plugins/qa-flow/scripts/check_ts_strict.py": {
    "assumes": "names Rails paths or the Rails app as the host project in its messages and path filters",
    "categories": {
-    "concept": 7,
-    "path": 9,
+    "concept": 10,
+    "path": 11,
     "tool": 2
    },
    "decision": "detector",
    "how": "reuse for a Next.js project (#2170) once its path filters come from the detector",
    "ids": {
     "app-layers": 2,
-    "rails-config": 7,
+    "rails-config": 9,
+    "rails-word": 1,
     "rspec": 1,
     "ruby": 1,
-    "ruby-file": 7
+    "ruby-file": 9
    },
    "invokes": [
-    646
+    796
    ],
    "kind": "script",
    "lines": [
-    36,
-    288,
-    435,
-    438,
-    603,
-    612,
-    621,
-    622,
-    645,
-    646
+    37,
+    367,
+    395,
+    548,
+    551,
+    753,
+    762,
+    771,
+    772,
+    795,
+    796,
+    937,
+    938
    ],
    "move": ""
   },
@@ -6213,26 +6217,26 @@
     14,
     15,
     37,
-    291,
+    290,
+    519,
     520,
-    521,
+    534,
     535,
-    536,
-    538,
-    540,
+    537,
+    539,
+    583,
     584,
-    585,
-    592,
-    637,
-    664,
-    702,
-    704,
-    708,
-    711,
-    715,
-    717,
-    733,
-    747
+    591,
+    638,
+    665,
+    703,
+    705,
+    709,
+    712,
+    716,
+    718,
+    734,
+    748
    ],
    "move": ""
   },
@@ -7155,7 +7159,7 @@
    "kind": "mutation",
    "lines": [
     12,
-    192
+    193
    ],
    "move": ""
   },
@@ -8140,16 +8144,16 @@
  "policy": "docs/architecture/rails-assumptions.policy.json",
  "summary": {
   "by_category": {
-   "concept": 1963,
+   "concept": 1966,
    "gem": 138,
    "hotwire": 104,
-   "path": 1243,
+   "path": 1245,
    "tool": 890
   },
   "by_decision": {
    "detector": {
     "files": 90,
-    "lines": 1225
+    "lines": 1228
    },
    "neutral": {
     "files": 7,
@@ -8184,7 +8188,7 @@
    "qa-flow": {
     "detector": 29,
     "files": 36,
-    "lines": 272,
+    "lines": 275,
     "neutral": 1,
     "rails-stack": 0,
     "reword": 6
@@ -8237,7 +8241,7 @@
    },
    "script": {
     "files": 88,
-    "lines": 2244
+    "lines": 2247
    },
    "selftest": {
     "files": 16,
@@ -8262,19 +8266,19 @@
    "gem": 138,
    "gemfile": 176,
    "hotwire": 104,
-   "rails-config": 107,
+   "rails-config": 109,
    "rails-idiom": 53,
-   "rails-word": 312,
+   "rails-word": 313,
    "rake": 56,
    "routes": 37,
    "rspec": 186,
    "rubocop": 84,
    "rubocop-yml": 2,
    "ruby": 215,
-   "ruby-file": 1218,
+   "ruby-file": 1220,
    "spec-dir": 182
   },
   "files": 228,
-  "lines": 3200
+  "lines": 3203
  }
 }

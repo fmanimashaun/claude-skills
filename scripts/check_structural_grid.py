@@ -47,7 +47,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-REFS = REPO / "skills" / "design-system" / "references"
+REFS = REPO / "plugins" / "rails-stack" / "skills" / "design-system" / "references"
 TOKENS = REFS / "foundations-tokens.md"
 
 BEGIN = "<!-- structural-grid:begin -->"

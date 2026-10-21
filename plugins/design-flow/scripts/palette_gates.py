@@ -7,7 +7,7 @@ reliance on lightness, chroma and normal-vision separation; fidara on colour-vis
 (`#22C55E` next to `#FF6B35`, dE 4.8 for deuteranopia). A flag nothing checks is a claim, so the
 lint now COMPUTES the verdict with these gates.
 
-THE METHOD, and where each number comes from (`skills/design-system/references/data-viz.md`
+THE METHOD, and where each number comes from (`plugins/rails-stack/skills/design-system/references/data-viz.md`
 #Validation names the data-viz method these follow):
 
   lightness band   OKLCH L within the mode's band -- light 0.43-0.77, dark 0.48-0.67

@@ -51,7 +51,7 @@ Settings → Capabilities → Skills. Each is self-contained.
 
 ```bash
 git clone https://github.com/fmanimashaun/claude-skills.git /tmp/cs
-mkdir -p .claude/skills && cp -R /tmp/cs/skills/* .claude/skills/
+mkdir -p .claude/skills && cp -R /tmp/cs/plugins/rails-stack/skills/* .claude/skills/
 ```
 
 **For every project.** Same copy, into `~/.claude/skills/` instead.
@@ -177,8 +177,8 @@ maintainer would otherwise have to ask for.
 ## Repository layout
 
 ```
-skills/              the seven skills — the doctrine that ships
-plugins/             rails-flow · qa-flow · pipeline · design-flow
+plugins/             rails-stack (the seven skills — the doctrine that ships) · rails-flow · qa-flow ·
+                     pipeline · design-flow · flow-suite
 dist/                packaged .skill files for claude.ai
 docs/                architecture, coverage and wiki pages
 scripts/             the gates that keep all of the above honest

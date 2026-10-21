@@ -63,9 +63,17 @@ GUARD = Guard(
         # the writer dies of SIGPIPE. The names are matched with a shell pattern instead; this puts the pipe back.
         Mutation(
             "the diff's name list is matched through a pipe again, so a large diff reads as no skills/ change",
-            """  case $'\\n'"$names" in *$'\\n'skills/*) return 0 ;; esac""",
-            """  printf '%s\\n' "$names" | grep -q '^skills/' && return 0""",
+            """  case $'\\n'"$names" in *$'\\n'plugins/rails-stack/skills/*|*$'\\n'skills/*) return 0 ;; esac""",
+            """  printf '%s\\n' "$names" | grep -qE '^(plugins/rails-stack/)?skills/' && return 0""",
             "no SIGPIPE fail-open",
+        ),
+        # #2182: the shipped skills moved to plugins/rails-stack/skills/; matching only the old skills/ prefix
+        # would let every doctrine PR through with no change type.
+        Mutation(
+            "a PR touching plugins/rails-stack/skills/ is no longer recognised as a skills PR",
+            """*$'\\n'plugins/rails-stack/skills/*|*$'\\n'skills/*) return 0 ;; esac""",
+            """*$'\\n'skills/*) return 0 ;; esac""",
+            "guard-claims: a skills/** PR naming no change type is blocked",
         ),
         # #1435: the checker failing is a BLOCK, not a warning (owner decision).
         Mutation(

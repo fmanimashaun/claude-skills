@@ -20,7 +20,7 @@ when shaping the proposal, not after.
   forever, with nothing checking that they agree.
 - Design the neutral core so that **adding a stack is a new plugin, not an edit to existing
   ones** — a Go + templ or Rust + Askama stack should be additive. Keep shared reference
-  files (e.g. `skills/design-system/references/coverage.md`) free of per-stack columns;
+  files (e.g. `plugins/rails-stack/skills/design-system/references/coverage.md`) free of per-stack columns;
   per-stack columns are what force a new stack to touch existing gates.
 - Follow the registration pattern that already works: `plugins/rails-flow/scripts/project_gates.py`
   discovers `checks.json` from sibling plugin directories, so a new stack ships a manifest

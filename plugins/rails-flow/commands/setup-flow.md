@@ -788,7 +788,7 @@ main-only release/build workflows.)
 
 Each detected (or chosen) stack's plugin ships its own repairs: the gems, initializers, test wiring and boundaries only that
 stack has. §0 printed them as `setup_sections`. **Read each file and work it in turn, here**, as approved diffs, the same way
-as everything above. Rails' (`rails-stack`) is `setup/rails.md`. A stack whose plugin declares no section has nothing to add.
+as everything above. Rails' (`rails-stack`) is `plugins/rails-stack/setup/rails.md`. A stack whose plugin declares no section has nothing to add.
 
 ### Declare the issue labels, so an issue filed from the shell is labelled (#1311)
 

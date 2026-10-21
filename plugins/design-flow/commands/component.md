@@ -28,7 +28,7 @@ changes how many outputs there are, never what the doctrine is. Without the flag
 
 ## Order of operations (follow every time)
 
-1. **Locate it in the catalog** (`skills/design-system/references/components.md` /
+1. **Locate it in the catalog** (`plugins/rails-stack/skills/design-system/references/components.md` /
    `forms.md`). If it's a catalog component, use that recipe + variant/size/state axes.
    **If it's a screen — a page, a dashboard, a settings area, anything above component
    scale — start from `page-anatomies.md`, not from a blank template.** Pick a shell
@@ -44,16 +44,16 @@ changes how many outputs there are, never what the doctrine is. Without the flag
    **If the surface is MARKETING** — a landing page, pricing, a feature section, a hero: anything a
    prospect rather than a logged-in user reads — three more references are mandatory before writing
    markup, each answering a question the component catalog does not.
-   - `skills/design-system/references/marketing-copy.md` (#131) — the copy contract for that section archetype: who the one reader
+   - `plugins/rails-stack/skills/design-system/references/marketing-copy.md` (#131) — the copy contract for that section archetype: who the one reader
      is, the claim and its proof, specific over generic. **Draft against the contract; never invent
      positioning** — that is the human's decision. A confident placeholder is worse than an obvious
      one, so no `Lorem ipsum` and no `Your headline here`: if you do not know the claim, say so in
      the output instead of filling the slot.
-   - `skills/design-system/references/visual-assets.md` (#135) — the asset tier, preferring specific over decorative: a product
+   - `plugins/rails-stack/skills/design-system/references/visual-assets.md` (#135) — the asset tier, preferring specific over decorative: a product
      screenshot beats brand geometry, which beats stock illustration. Geometry derives from the
      prism facets and accent bar using **role tokens**, is `aria-hidden`, and never carries meaning.
      Never mix illustration styles on one surface.
-   - `skills/design-system/references/motion.md` (#136) — named patterns only, tokenised durations, a defined static end-state.
+   - `plugins/rails-stack/skills/design-system/references/motion.md` (#136) — named patterns only, tokenised durations, a defined static end-state.
      Motion never carries information, and every pattern has a reduced-motion fallback.
    **If it's a CRUD screen** (list + create/edit/delete), follow `crud-modal-pattern.md`:
    mutations open in the shared `turbo-frame` modal and update the list via Turbo Stream —

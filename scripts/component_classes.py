@@ -57,7 +57,7 @@ JSON_OUT = "docs/architecture/component-classes.json"
 CLASSES = ("neutral", "rails", "nextjs", "mixed")
 TYPES = ("command", "agent", "hook", "skill", "script", "gate", "test", "support")
 FROM_DECISION = {"rails-stack": "rails", "detector": "mixed", "reword": "mixed", "neutral": "neutral"}
-SKILLS_PLUGIN = "rails-stack (skills)"
+SKILLS_PLUGIN = "rails-stack"  # one plugin on the page, its skills and its manifest together (#2182)
 
 # A Next.js reference is a hit the way a Rails one is. These name Next.js itself or its two vendors; plain Node, TypeScript, React or npm do not
 # (the neutral qa-flow scaffold is TypeScript), so none of those is a hit.
@@ -79,13 +79,24 @@ def components_scope(root: Path) -> list[str]:
     return sorted(p for p in out.split("\0") if p)
 
 
+# The shipped skills: plugins/rails-stack/skills/<name>/ since #2182 (skills/<name>/ before).
+SKILLS_PREFIX = "plugins/rails-stack/skills/"
+
+
+def _skill_parts(path: str) -> int:
+    """How many leading path parts name a skill directory, or 0 when the path is not in a skill."""
+    if path.startswith(SKILLS_PREFIX):
+        return 4
+    return 2 if path.startswith("skills/") else 0
+
+
 def plugin_of(path: str) -> str:
-    return SKILLS_PLUGIN if path.startswith("skills/") else path.split("/")[1]
+    return SKILLS_PLUGIN if _skill_parts(path) else path.split("/")[1]
 
 
 def type_of(path: str) -> str:
     """command, agent, hook, skill, script, test or support, from the path alone."""
-    if path.startswith("skills/"):
+    if _skill_parts(path):
         return "skill"
     rest = path.split("/", 2)[2] if path.count("/") >= 2 else path
     kind = ra.kind_of(path)
@@ -104,8 +115,8 @@ def type_of(path: str) -> str:
 
 def component_id(path: str) -> str:
     """A skill is one component, its directory; everything else is one file."""
-    if path.startswith("skills/"):
-        return "/".join(path.split("/")[:2])
+    if (n := _skill_parts(path)):
+        return "/".join(path.split("/")[:n])
     return path
 
 
@@ -431,10 +442,10 @@ def _selftest() -> int:
     gate = {"plugins/p/scripts/g.py": "x\n", "plugins/p/checks.json": json.dumps({"checks": [{"id": "g", "command": ["python3", "{plugin}/scripts/g.py"]}]})}
     comps, f = run(gate, pol(decl=[{"match": ["plugins/p/scripts/*", "plugins/p/checks.json"], "class": "neutral", "why": "w"}]))
     check("a gate row takes the class of the script it runs", f == [] and [c["info"]["class"] for c in comps if c["type"] == "gate"] == ["neutral"])
-    comps, f = run({"skills/s/SKILL.md": "x\n", "skills/s/ref.md": "a Rails thing\n"}, pol(decl=[{"match": ["skills/s"], "class": "rails", "issue": 1, "why": "w"}]))
+    comps, f = run({"plugins/rails-stack/skills/s/SKILL.md": "x\n", "plugins/rails-stack/skills/s/ref.md": "a Rails thing\n"}, pol(decl=[{"match": ["plugins/rails-stack/skills/s"], "class": "rails", "issue": 1, "why": "w"}]))
     check("a skill is one component, its directory", len(comps) == 1 and comps[0]["type"] == "skill" and f == [])
-    _, f = run({"skills/s/SKILL.md": "x\n", "skills/s/ref.md": "a Rails thing\n"}, pol(decl=[{"match": ["skills/s"], "class": "neutral", "why": "w"}]))
-    check("a neutral skill naming Rails in any of its files is a finding", any("skills/s" in x and "declared neutral" in x for x in f))
+    _, f = run({"plugins/rails-stack/skills/s/SKILL.md": "x\n", "plugins/rails-stack/skills/s/ref.md": "a Rails thing\n"}, pol(decl=[{"match": ["plugins/rails-stack/skills/s"], "class": "neutral", "why": "w"}]))
+    check("a neutral skill naming Rails in any of its files is a finding", any("plugins/rails-stack/skills/s" in x and "declared neutral" in x for x in f))
     reg = {"plugins/p/hooks/hooks.json": json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [
         {"type": "command", "command": '/bin/bash -p "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/g.sh"'}]}]}}), "plugins/p/hooks/scripts/g.sh": "echo\n"}
     comps, f = run(reg, pol(decl=[{"match": ["plugins/p/hooks/*"], "class": "neutral", "why": "w"}]))

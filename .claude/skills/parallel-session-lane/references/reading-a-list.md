@@ -1,4 +1,4 @@
-<!-- GENERATED from skills/parallel-session-lane/references/reading-a-list.md by scripts/build_maintainer_skills.py — do not edit.
+<!-- GENERATED from plugins/rails-stack/skills/parallel-session-lane/references/reading-a-list.md by scripts/build_maintainer_skills.py — do not edit.
      The shipped skill is the source of truth; this copy exists because this repository's
      own sessions do not load `rails-stack`, so the doctrine would otherwise reach every
      consumer except its maintainers. Edit the source and re-run the script. -->
@@ -23,7 +23,10 @@ Every one produced a confident, reproducible, wrong claim.
 A sixth, later the same week and inside the tooling: a PR-check poller waited on
 `PENDING|IN_PROGRESS` and exited early, because `gh pr checks` also returns **`QUEUED`**. Enumerating
 the states you are waiting for is the same defect as reading a prefix — poll on the **terminal**
-states instead, and let anything unrecognised keep you waiting.
+states instead, and let anything unrecognised keep you waiting. And when a check ends in `failure`,
+count its steps before believing it: a run that executed zero steps never started (no runner: billing,
+a spending limit, a quota), so its red says nothing about your diff. `plugins/rails-flow/scripts/ci_verdict.py`
+makes that count (#1077).
 
 ## Why a lint on `| head` / `| tail` was rejected
 

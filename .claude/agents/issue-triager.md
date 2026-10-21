@@ -67,7 +67,7 @@ ahead of a project on it, so its tag would show rules the agent never had (#1407
 version to the first release tag that carried it:
 
 ```bash
-skill="skills/<skill>"
+name="<skill>"
 rc=0
 ref="$(python3 scripts/skill_version_tag.py rails-stack "<reported rails-stack version>")" || rc=$?
 if [ "$rc" -eq 2 ]; then
@@ -76,8 +76,10 @@ if [ "$rc" -eq 2 ]; then
 elif [ -z "$ref" ]; then
   echo "no release carries that rails-stack version: search origin/dev and say so" >&2
   (exit 2)
-elif ! git cat-file -e "$ref:$skill" 2>/dev/null; then
-  echo "no $skill at $ref: fix the skill name first" >&2
+# The skills moved into plugins/rails-stack/ in #2182; a tag from before that has them at skills/.
+elif skill="plugins/rails-stack/skills/$name"; ! git cat-file -e "$ref:$skill" 2>/dev/null \
+     && skill="skills/$name" && ! git cat-file -e "$ref:$skill" 2>/dev/null; then
+  echo "no $name skill at $ref (neither path): fix the skill name first" >&2
   (exit 2)
 else
   git grep -n -i -F -e "<key phrase>" "$ref" -- "$skill/"
@@ -97,7 +99,7 @@ resolve: an empty search of a tree that does not exist is not evidence of a gap.
 pins only the marketplace version predates this rule; say which version you searched and why.
 
 - **No hit**: a real gap. Queue it as `type:skill-gap`, and say what you searched for in your
-  triage comment ("searched `skills/rails-8/` at v1.148.0 for X and Y: no hit").
+  triage comment ("searched `plugins/rails-stack/skills/rails-8/` at v1.148.0 for X and Y: no hit").
 - **No hit at the pinned version, but a hit at `origin/dev`**: fixed since. Comment with the
   version it landed in, apply `needs-info`, and ask the reporter to update and re-check.
 - **A hit that covers the case**: a **lapse**. Comment with the `file:line` and the quoted

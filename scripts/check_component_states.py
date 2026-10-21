@@ -56,7 +56,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-CATALOGUE = REPO / "skills/design-system/references/components.md"
+CATALOGUE = REPO / "plugins/rails-stack/skills/design-system/references/components.md"
 
 # SEVEN SLOTS, AND #978 NAMED SIX. `error or empty` was one slot until #1068's follow-up, and
 # splitting it is a widening of the rule rather than a tidy-up: they are not two spellings of one

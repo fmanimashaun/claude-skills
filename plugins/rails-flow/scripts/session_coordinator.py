@@ -180,7 +180,7 @@ GENERATED: tuple[tuple[str, str], ...] = (
     # `plugins/`, so a rule of thumb like "everything under plugins/ is authored" sends someone to
     # hand-resolve a file they should regenerate.
     ("plugins/rails-flow/mandated_gems.json", "python3 scripts/derive_mandated_gems.py"),
-    ("skills/design-system/references/coverage.md", "python3 scripts/build_coverage.py"),
+    ("plugins/rails-stack/skills/design-system/references/coverage.md", "python3 scripts/build_coverage.py"),
     ("db/schema.rb", "bin/rails db:migrate"),
     ("docs/architecture/*.svg", "the architecture graph builder"),
 )
