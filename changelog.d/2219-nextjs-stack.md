@@ -1,0 +1,2 @@
+section: nextjs-stack
+- **nextjs-stack declares which paths a person sees, so the mock-up gate classifies a Next.js UI change as one — `plugins/nextjs-stack/stacks.json`, `plugins/nextjs-stack/ui-scope-cases.json`** (#2219). Its `ui_scope` covers `app/` and `src/app/` pages and layouts, `pages/`, `components/`, `styles/`, `public/` assets, message and locale files and stories; `app/api/` route handlers and test files are not seen. 30 cases prove it, including the paths the issue named (`app/page.tsx`, `components/Nav.tsx`, `styles/globals.css`, `public/logo.svg`).

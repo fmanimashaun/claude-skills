@@ -153,6 +153,18 @@
   },
   {
    "match": [
+    "plugins/rails-flow/scripts/check_mockup_gate.py"
+   ],
+   "decision": "detector",
+   "assumes": "keeps a built-in Rails-shaped list of user-visible paths (app/views, app/components, config/locales, ...) as the FALLBACK when no installed stack declares ui_scope",
+   "how": "reads each detected stack's `ui_scope` from the descriptor (#2219); the fallback prints a loud line whenever it is used, and is deleted when rails-stack is in the install path (#2274)",
+   "seam": "asks the stack detector (#2163) which paths a person sees: `ui_scope.paths`, `not_paths`, `seen_anyway`",
+   "issues": {
+    "rails-flow": 2274
+   }
+  },
+  {
+   "match": [
     "plugins/rails-flow/scripts/project_gates.py",
     "plugins/rails-flow/scripts/check_case_in_diff.py",
     "plugins/rails-flow/scripts/risky_diff.py",
@@ -166,7 +178,6 @@
     "plugins/rails-flow/scripts/claude_md_structure.py",
     "plugins/rails-flow/scripts/check_spec.py",
     "plugins/rails-flow/scripts/check_spec_review.py",
-    "plugins/rails-flow/scripts/check_mockup_gate.py",
     "plugins/rails-flow/scripts/check_issue_mockup.py",
     "plugins/rails-flow/hooks/scripts/guard-bash.sh",
     "plugins/rails-flow/hooks/scripts/guard-lane.sh",
