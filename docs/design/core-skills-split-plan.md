@@ -13,7 +13,7 @@ Measured 2026-10-22 on `origin/dev` 565b72d6 (after #2253). Counts are files out
 
 ## Dependencies, marketplace and flow-suite
 - `marketplace.json` gets a `core-skills` entry (source `./plugins/core-skills`).
-- `plugin.json` `dependencies`: `rails-stack`, `nextjs-stack` and `rails-flow` each declare `core-skills` (rails-flow's `pr-reviewer` and `coordinate` name `code-review` and `parallel-session-lane`). `rails-stack` also needs `design-flow` for the design agents it already carries (`design-auditor`, `rails-ui-*` call `design-system`).
+- `plugin.json` `dependencies`: `rails-stack`, `nextjs-stack` and `rails-flow` each declare `core-skills` (rails-flow's `pr-reviewer` and `coordinate` name `code-review` and `parallel-session-lane`). `rails-stack` also needs `design-flow` once `design-system` moves, because two of its agents name that skill (`code-reviewer` once, `design-auditor` twice; measured).
 - `flow-suite` lists `rails-flow`, `qa-flow`, `pipeline` and gets `core-skills` only if dependencies are not transitive (Open 1).
 - `lint_self_consistency` `undocumented-plugin` and the README plugin list get the new plugin; CLAUDE.md's distributed-plugins list is edited by the coordinator, not by me.
 
@@ -37,5 +37,5 @@ Plus the keyed tables, each of which needs its path or home changed with a negat
 1. **Do `dependencies` install, and are they transitive?** Only `flow-suite` uses the field. A framework claim: verify against the official plugin reference with `doctrine-verifier` plus the raw-page phrase check, for the version in scope. INCONCLUSIVE means the plan lists the plugins to install explicitly in each README instead of relying on it.
 2. **Do bare skill names resolve across plugins?** Same verification. If they do not, every bare name above needs the qualified `plugin:skill` form.
 3. **The vendored `agent-output-contract.md` and `findings.py` copies cannot be deleted by the move**: the stack agents read them through `${CLAUDE_PLUGIN_ROOT}` and no cross-plugin root exists. core-skills becomes their canonical home and the byte-identical copies in rails-stack (and qa-flow) stay, held by the existing drift rules, unless an agent can load them through a skill. Coordinator to confirm.
-4. **The name `core-skills`** and whether `design-flow` should depend on `core-skills` (it carries `design-auditor`, which uses `code-review` style review) are the owner's call.
+4. **The name `core-skills`** is the owner's call. `design-flow` does not need `core-skills`: nothing in it loads those skills (one code comment names `code-review`).
 5. **Retask and flo-it-ui** install by plugin name; the stubs cover them for two releases. Which projects pin `rails-stack:<skill>` is measured by grep of their repos before the stubs are removed.
