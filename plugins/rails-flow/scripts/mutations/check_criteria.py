@@ -102,7 +102,7 @@ GUARD = Guard(
             "html comments and code spans stop being hidden, so a tag or citation inside one counts",
             "    return HIDDEN_RE.sub(\" \", text)",
             "    return text",
-            "a trailing html comment does not break the citation slot",
+            "a tag inside a code span is not a tag",
         ),
         Mutation(
             "a citation counts anywhere in the sentence, not only at its end",
@@ -125,9 +125,40 @@ GUARD = Guard(
         ),
         Mutation(
             "a skipped security check is silent again",
-            "        print(f\"security check skipped: {why or f'no threat model at {model}'}; pass --threat-model FILE if the unit has one\", file=sys.stderr)",
+            "        print(f\"security check skipped: {why or f'no threat model at {model}'}{hint}; pass --threat-model FILE if the unit has one\", file=sys.stderr)",
             "        pass",
             "no model found says the security check was skipped",
+        ),
+        Mutation(
+            # #2213 adversary: threat_rows skipped a malformed row, so `**TM-3**` or `Mitigated` dropped its requirement.
+            "a model row the reader cannot parse is dropped silently again",
+            "        if rows and table_findings:",
+            "        if False:",
+            "a model row with a bolded ID is refused, not dropped",
+        ),
+        Mutation(
+            "a multi-line comment hides nothing from the parser again",
+            '    text = re.sub(r"<!--.*?(?:-->|\\Z)", lambda m: "\\n" * m.group(0).count("\\n"), text, flags=re.S)',
+            '    pass',
+            "a criterion inside a multi-line comment does not cite",
+        ),
+        Mutation(
+            "a fenced block hides nothing from the parser again",
+            "        elif mark:\n            fence = mark.group(1)",
+            "        elif False:\n            fence = mark.group(1)",
+            "a criterion inside a backtick fence does not cite",
+        ),
+        Mutation(
+            "a fence never closes, so everything after it is hidden",
+            "                fence = \"\"\n",
+            "                pass\n",
+            "a criterion after a closed fence still cites",
+        ),
+        Mutation(
+            "the skip note stops naming the other models in the directory",
+            '        hint = f" ({len(others)} other model(s) there: {\', \'.join(others[:5])}; is one this unit\'s?)" if others else ""',
+            '        hint = ""',
+            "a skip names the other models in the directory",
         ),
     ),
 )
