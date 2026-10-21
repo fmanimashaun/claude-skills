@@ -105,7 +105,7 @@ Each goes to `doctrine-verifier` before any skill edit; INCONCLUSIVE stays out. 
 
 ## Decided and open
 
-Decided by a2 on 2026-10-21 (technical calls, recorded for the owner): the state list lives in the mock-up record as a `States:` line beside #2211's `Shell:` line; performance budgets default to the Core Web Vitals "good" thresholds (C33) with a per-project override; modal-driven CRUD leaves the neutral page for Hotwire (#2223, 7e has it as H25/H26); the six templates are a maintainer decision and the set is being revised (above).
+Decided by a2 on 2026-10-21 (technical calls, recorded for the owner): the state list lives in the mock-up record as a `States:` line beside #2211's `Shell:` line; performance budgets default to the Core Web Vitals "good" thresholds (C33) with a per-project override; modal-driven CRUD leaves the neutral page for Hotwire (#2223, 7e has it as H25/H26); the template set is a maintainer decision, final list above.
 
 Settled since: the final template list, the nav depth cap (3), the record location (#2211's record, vocabulary file above, validation #2226), and the home for reviewer verdicts (#2225).
 
