@@ -26,7 +26,7 @@ lines fill it.
   CanCanCan with hash conditions only; every query scoped through `Current.<scope>`, public ids in URLs; prosopite
   raising in test. **Verification** greps: no raw `form_with` in views, no unguarded `.unscoped`.
 - **Framework APIs to label `[Recall]`** until verified: Rails, Hotwire, a gem.
-- **Style reference**: the rails-8 skill's rails-stack's `skills/rails-8/references/style.md`, read before writing or reviewing Ruby
+- **Style reference**: rails-stack's `skills/rails-8/references/style.md` (the rails-8 skill), read before writing or reviewing Ruby
   (conditional returns, method and invocation ordering, bang methods, visibility modifiers, `_later`/`_now` job naming).
 
 - **Scope idiom** (the Architecture Overview): how scope is set per request, by middleware or `Current.*`.

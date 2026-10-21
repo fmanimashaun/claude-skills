@@ -2476,6 +2476,43 @@ _SKILL_POINTER = re.compile(
 )
 
 
+# Rule: clone-path-in-shipped-file (#2182 release blocker, 32's review)
+# An installed rails-stack has skills/ at its plugin root, so the clone path `plugins/rails-stack/skills/` names
+# nothing for a user. Every file type under plugins/ is scanned (a printed hint, a json "source of truth", a
+# docstring, a README), not only markdown pointers. Code that knows the clone layout ON PURPOSE is allowed, by name.
+CLONE_PATH_ALLOWED = {
+    "plugins/design-flow/scripts/doctrine_path.py": "resolves BOTH layouts; the clone half needs the clone path",
+    "plugins/rails-flow/hooks/scripts/guard-claims.sh": "matches this repo's own diff names, which are clone paths",
+    "plugins/rails-flow/hooks/scripts/lib/pr_template.py": "mirrors this repo's .github/pull_request_template.md heading",
+    "plugins/rails-flow/scripts/check_hook_gates.py": "fixtures for guard-claims, which reads clone paths",
+    "plugins/rails-flow/scripts/worktree_teardown.py": "checks this repo's own skill docs in a clone for the teardown step",
+    "plugins/rails-flow/scripts/session_coordinator.py": "maps this repo's generated files to their builders",
+}
+
+
+def check_clone_path_in_shipped_files() -> tuple[list[Finding], int]:
+    findings: list[Finding] = []
+    examined = 0
+    base = ROOT / "plugins"
+    for path in sorted(p for p in base.rglob("*") if p.is_file()) if base.is_dir() else []:
+        if "/mutations/" in "/" + rel(path) + "/" or rel(path) in CLONE_PATH_ALLOWED:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        examined += 1
+        for number, line in enumerate(text.split("\n"), 1):
+            if CLONE_SKILLS in line:
+                findings.append(Finding(
+                    "clone-path-in-shipped-file", rel(path), number,
+                    f"names `{CLONE_SKILLS}`, which an installed rails-stack does not have (its skills/ is at the "
+                    "plugin root): write rails-stack's `skills/…`, or add the file to CLONE_PATH_ALLOWED with the "
+                    "reason it must know the clone layout",
+                ))
+    return findings, examined
+
+
 def check_doc_pointers() -> tuple[list[Finding], int]:
     """A documented path to one of our own files must resolve.
 
@@ -4300,6 +4337,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     uncontained, uncontained_examined = check_uncontained_process_fixtures()
     nonhermetic, nonhermetic_examined = check_non_hermetic_fixture_git()
     pointers, pointers_examined = check_doc_pointers()
+    clone_paths, clone_paths_examined = check_clone_path_in_shipped_files()
     rel_links, rel_links_examined = check_broken_relative_link()
     leaving, leaving_examined = check_link_leaves_package()
     uninstallable, plugins_installable = check_uninstallable_plugins()
@@ -4365,6 +4403,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "process_spawning_selftests_examined": uncontained_examined,
         "git_committing_fixtures_examined": nonhermetic_examined,
         "doc_pointers_examined": pointers_examined,
+        "shipped_files_scanned_for_clone_paths": clone_paths_examined,
         "docs_relative_links_examined": rel_links_examined,
         "package_relative_links_examined": leaving_examined,
         "plugins_checked_for_install_lines": plugins_installable,
@@ -4407,7 +4446,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         **call_coverage,
     }
     return (dead + unenforced + undocumented + undoc_cmds + docs_paths + growth + hook_lib + hook_start + gate_onfail + fixture_git + schema_drift + fixture_bypass + submod + bare + misdesc + unbounded + author_me + components + call_sites + invisible
-            + markers + uncontained + nonhermetic + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
+            + markers + uncontained + nonhermetic + pointers + clone_paths + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
@@ -6670,6 +6709,15 @@ def selftest() -> int:
     scenario("...and with no declaration it resolves against the file's own plugin", rule=P, expect_finding=True,
              files={"plugins/rails-stack/setup/rails.md": "Run `${CLAUDE_PLUGIN_ROOT}/scripts/x.py`.\n",
                     "plugins/rails-flow/scripts/x.py": "pass\n"})
+    C = "clone-path-in-shipped-file"
+    scenario("a shipped script printing the clone-only skills path is a finding", rule=C, expect_finding=True,
+             files={"plugins/rails-flow/scripts/hint.py": 'print("see plugins/rails-stack/skills/rails-8/references/testing.md")\n'})
+    scenario("...and in a shipped json or README too", rule=C, expect_finding=True,
+             files={"plugins/design-flow/README.md": "Follows `plugins/rails-stack/skills/design-system/`.\n"})
+    scenario("...but an allow-listed clone-aware file is silent", rule=C, expect_finding=False,
+             files={"plugins/design-flow/scripts/doctrine_path.py": 'CLONE = "plugins/rails-stack/skills/design-system"\n'})
+    scenario("...and rails-stack's install-relative path is silent", rule=C, expect_finding=False,
+             files={"plugins/rails-flow/scripts/hint.py": 'print("see rails-stack\'s skills/rails-8/references/testing.md")\n'})
     # Shipped text names rails-stack's install-relative path (#2182 release blocker): skills/ sits at an
     # installed rails-stack's root, so the pointer resolves against plugins/rails-stack/.
     scenario("command points at a skill doc that was renamed away", rule=P, expect_finding=True,
@@ -7089,6 +7137,7 @@ def main(argv: list[str]) -> int:
         "author_me_filters_examined": "`--author @me` filter(s)",
         "documented_components": "documented component(s)",
         "doc_pointers_examined": "doc pointer(s) to our own files",
+        "shipped_files_scanned_for_clone_paths": "shipped file(s) scanned for the clone-only skills path",
         "skill_docs": "skill doc(s)",
         "declared_components": "declared component(s)",
     }

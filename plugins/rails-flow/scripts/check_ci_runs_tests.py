@@ -110,7 +110,7 @@ def run(root: Path = Path(".")) -> tuple[int, str]:
                 "  `db:test:prepare` does — it invokes db:test:load_schema, which depends on "
                 "db:test:purge and drops the database.\n"
                 '  Add `step "Tests: DB reset", "bin/rails db:test:prepare"` BEFORE the suite step. '
-                "The block is in plugins/rails-stack/skills/rails-8/references/testing.md.")
+                "The block is in rails-stack's skills/rails-8/references/testing.md.")
         return 0, f"{CI_RB} runs the suite — {len(running)} step(s): {names} — after a test-database reset"
     labels = ", ".join(f"{label!r}" for label, _ in declared)
     return 1, (
@@ -118,7 +118,7 @@ def run(root: Path = Path(".")) -> tuple[int, str]:
         "`bin/ci` reports green having run zero specs.\n"
         "  This is the `--skip-test` consequence project-setup.md predicts: Rails gates its own test\n"
         "  steps on that flag, so the generated file has no `Tests:` step and one must be ADDED.\n"
-        "  The block to add is in plugins/rails-stack/skills/rails-8/references/testing.md (`Tests:` and `Tests: Seeds`).")
+        "  The block to add is in rails-stack's skills/rails-8/references/testing.md (`Tests:` and `Tests: Seeds`).")
 
 
 def selftest() -> int:

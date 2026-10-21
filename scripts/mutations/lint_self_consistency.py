@@ -7,6 +7,19 @@ GUARD = Guard(
     selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
     mutations=(
         Mutation(
+            # #2182 release blocker: every shipped file type is scanned for the clone-only skills path.
+            "the clone-only skills path in a shipped script, json or README is no longer reported",
+            "            if CLONE_SKILLS in line:\n",
+            "            if False:\n",
+            "clone-path-in-shipped-file / a shipped script printing the clone-only skills path is a finding",
+        ),
+        Mutation(
+            "the clone-aware allow-list is ignored, so doctrine_path.py's own clone half is reported",
+            '        if "/mutations/" in "/" + rel(path) + "/" or rel(path) in CLONE_PATH_ALLOWED:\n',
+            '        if "/mutations/" in "/" + rel(path) + "/":\n',
+            "clone-path-in-shipped-file / ...but an allow-listed clone-aware file is silent",
+        ),
+        Mutation(
             # #2182 release blocker: shipped text must name rails-stack's install-relative skills/ path.
             "a clone-only plugins/rails-stack/skills/ path in shipped text is accepted again",
             "            if shipped and target.startswith(CLONE_SKILLS):\n",
