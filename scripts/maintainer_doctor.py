@@ -48,6 +48,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -798,6 +799,25 @@ class Result:
     findings: tuple[str, ...] = ()
 
 
+def gate_time_lines(timings: dict[str, float], under: float = 1.0) -> list[str]:
+    """The wall time of each gate that ran, slowest first, as plain log lines (#2246). Gates under `under` seconds are summed on one line, so the
+    block accounts for every gate without printing a couple of hundred. Empty when nothing ran. The CI log had no per-gate time before this: every
+    `[  ok  ]` line carried the end-of-run timestamp, so a gate near its budget could not be seen."""
+    if not timings:
+        return []
+    total = sum(timings.values())
+    slow = sorted(((s, n) for n, s in timings.items() if s >= under), reverse=True)
+    quick = [s for s in timings.values() if s < under]
+    lines = [f"gate wall times (this process's own clock, slowest first; gates under {under:g} s are summed):"]
+    for seconds, name in slow:
+        share = 100 * seconds / total if total else 0
+        lines.append(f"  {seconds:8.1f} s {share:5.1f}%  {name}")
+    if quick:
+        lines.append(f"  {len(quick)} gate(s) under {under:g} s: {sum(quick):.1f} s in total")
+    lines.append(f"  {len(timings)} gate(s) ran for {total:.1f} s in total")
+    return lines
+
+
 def gate_output(out: str, code: int) -> tuple[str, tuple[str, ...]]:
     """`(summary, the lines before it)` — a failing gate's output, not a line of it (#820).
 
@@ -844,6 +864,8 @@ class Doctor:
     shards_external: bool = False
     results: list[Result] = field(default_factory=list)
     fixed: list[str] = field(default_factory=list)
+    # Wall time of each gate that RAN, by gate name, on this process's own clock (#2246). A skip never ran, so it has none.
+    timings: dict[str, float] = field(default_factory=dict)
 
     # ---- helpers ----------------------------------------------------------------------
     def run(self, *args: str, cwd: Path | None = None,
@@ -1412,8 +1434,10 @@ class Doctor:
                     " ".join(cmd),
                 )
                 continue
+            started = time.monotonic()
             code, out = self.run(*slow_gate_command(name, cmd, self.require_slow),
                                  timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
+            self.timings[name] = time.monotonic() - started  # a killed gate is timed too: how long it ran is the evidence
             if code == 0:
                 # A slow gate's own summary line (mutation_check prints jobs and elapsed) is the
                 # measurement SLOW_GATES is set from; on a runner this is the only place it exists.
@@ -1541,6 +1565,12 @@ class Doctor:
                 print(f"             {finding_line}")
             if r.remedy and r.status in (FAIL, SKIP):
                 print(f"           -> {r.remedy}")
+
+        timing = gate_time_lines(self.timings)
+        if timing:
+            print()
+            for line in timing:
+                print(line)
 
         if self.fixed:
             print("\nRepaired (safe changes only):")

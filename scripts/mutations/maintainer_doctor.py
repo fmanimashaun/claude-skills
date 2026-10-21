@@ -15,6 +15,49 @@ GUARD = Guard(
         "plugins",
         "evals", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
+        # #2246: the sweep prints each gate's wall time (the CI log had none, so a gate near its budget could not be seen).
+        Mutation(
+            "a gate's wall time is never recorded",
+            "            self.timings[name] = time.monotonic() - started  # a killed gate is timed too: how long it ran is the evidence",
+            "            pass",
+            "a recorded wall time of at least 1 s",
+        ),
+        Mutation(
+            "the report drops the timing block",
+            "        timing = gate_time_lines(self.timings)\n        if timing:",
+            "        timing = []\n        if timing:",
+            "prints the slow gate's wall time on its own line",
+        ),
+        Mutation(
+            "gates are listed fastest first",
+            "    slow = sorted(((s, n) for n, s in timings.items() if s >= under), reverse=True)",
+            "    slow = sorted(((s, n) for n, s in timings.items() if s >= under), reverse=False)",
+            "slowest first",
+        ),
+        Mutation(
+            "a gate's share of the total is wrong",
+            "        share = 100 * seconds / total if total else 0",
+            "        share = seconds",
+            "its share of the total",
+        ),
+        Mutation(
+            "gates under a second are not summed",
+            "    quick = [s for s in timings.values() if s < under]",
+            "    quick = []",
+            "summed on one line",
+        ),
+        Mutation(
+            "the total line is dropped",
+            "    lines.append(f\"  {len(timings)} gate(s) ran for {total:.1f} s in total\")",
+            "    pass",
+            "ends with every gate that ran",
+        ),
+        Mutation(
+            "a sweep that ran nothing prints a timing block",
+            "    if not timings:\n        return []",
+            "    if False:\n        return []",
+            "no timing lines",
+        ),
         # #1664: a gate that exits 3 because its timing checks were STARVED is a skip, and a skip refuses a release proof.
         Mutation(
             "a STARVED gate (exit 3) is read as a failure-free ok instead of a skip",
