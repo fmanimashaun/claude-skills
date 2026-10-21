@@ -119,7 +119,11 @@ def _claim_bodies(base: Path) -> None:
     # could not tell the directory for a heredoc, a VAR or a `cd` chain (88% of 3,211 real calls), and read nothing of an inline --body or a `--body-file "$F"`. Each shape is run
     # with a body the repository's PR template refuses AND with one it accepts, so a shim that refuses every body fails here too.
     fx = Fixture(base, in_force=False)
-    fx.started = time.time() - 1
+    # The shim's judged copies go to THIS case's own TMPDIR: a shared temp directory races with parallel runs (a guard's mutant jobs created and removed
+    # their own copies under the leftover check, which then stat'ed a vanished file), and another run's live copy is not a leftover of this one.
+    own_tmp = base / "tmp"
+    own_tmp.mkdir()
+    fx.env["TMPDIR"] = str(own_tmp)
     (fx.repo / ".github").mkdir(exist_ok=True)
     (fx.repo / ".github" / "pull_request_template.md").write_text("## Summary\n\n## Notes\n")
     bad, good = base / "bad.md", base / "good.md"
@@ -186,8 +190,8 @@ def _claim_bodies(base: Path) -> None:
     posted = fx.ran()[0] if fx.ran() else ""
     check("gh is handed the judged copy (--body-file <temp>), not the original flag", r.returncode == 0 and "--body-file" in posted and "--body ##" not in posted,
           f"ran {fx.ran()}")
-    leftovers = sorted(Path(os.environ.get("TMPDIR", "/tmp")).glob("rf-gh-body.*"))
-    check("the judged copy is removed after gh runs", not [p for p in leftovers if p.stat().st_mtime > fx.started], f"{leftovers[-3:]}")
+    leftovers = sorted(own_tmp.glob("rf-gh-body.*"))
+    check("the judged copy is removed after gh runs", leftovers == [], f"{leftovers[-3:]}")
     ok, why = refused(fx, f"gh pc --title t --body-file {bad}", env={"STUB_ALIASES": "pc: pr create"})
     check("an alias that expands to pr create has its body judged", ok, why)
     ok, why = allowed(fx, f"gh pc --title t --body-file {good}", env={"STUB_ALIASES": "pc: pr create"})
