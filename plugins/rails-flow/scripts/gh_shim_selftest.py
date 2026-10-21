@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -178,9 +179,16 @@ def _claim_bodies(base: Path) -> None:
     fifo = base / "body.fifo"
     os.mkfifo(fifo)
     fx.reset()
-    r = fx.sh(f"gh pr create --title t --body-file {fifo}")       # no writer: a shim that reads it would hang (sh() times out at 60 s)
-    check("a fifo body is not read by the shim (no hang): NOT checked, said, and it runs", r.returncode == 0 and len(fx.ran()) == 1 and "NOT checked" in r.stderr,
-          f"rc {r.returncode}, {r.stderr.strip()[-160:]!r}")
+    try:      # no writer: a shim that reads it HANGS, which must be this check failing by name, not the selftest crashing on a timeout
+        proc = subprocess.Popen(["bash", "-c", f"gh pr create --title t --body-file {fifo}"], cwd=fx.repo, env=fx.env, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, start_new_session=True)
+        out, err = proc.communicate(timeout=15)
+        ok, why = proc.returncode == 0 and len(fx.ran()) == 1 and "NOT checked" in err, f"rc {proc.returncode}, {err.strip()[-160:]!r}"
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)       # the whole group: a `cat` blocked on the fifo would otherwise outlive the test
+        proc.communicate()
+        ok, why = False, "the shim hung reading the fifo (15 s)"
+    check("a fifo body is not read by the shim (no hang): NOT checked, said, and it runs", ok, why)
     fx.reset()
     r = fx.sh(f"gh pr create --title t --body-file {bad}", env={"GH_REPO": "someone/else"})
     check("GH_REPO names another repository as -R does: its template is NOT checked, said", r.returncode == 0 and "NOT checked" in r.stderr and "-R" in r.stderr,
