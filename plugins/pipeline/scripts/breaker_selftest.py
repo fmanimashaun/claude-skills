@@ -418,11 +418,12 @@ def run() -> int:  # noqa: PLR0915 -- a fixture list; splitting it would hide th
                 "one surface that needs a bound is the one that has none"
             )
     _tick()
-    if matched < 4:
+    if matched < 3:
         FAILURES.append(
-            f"only {matched} pipeline surface(s) matched the unattended-run vocabulary; four are "
-            "known to (pipeline.md, deploy-cloud.md, pipeline-coordinator.md, "
-            "kamal-configurator.md). A shrinking scan reports clean over work it never did"
+            f"only {matched} pipeline surface(s) matched the unattended-run vocabulary; three are "
+            "known to (pipeline.md, deploy-cloud.md, pipeline-coordinator.md). The fourth, the "
+            "deploy agent, moved to rails-stack (#2179), whose kamal_destination selftest asserts "
+            "it uses the handed-over $BREAKER. A shrinking scan reports clean over work it never did"
         )
 
     if FAILURES:

@@ -33,7 +33,7 @@ invisible to every other check and only surfaces as a `NoMethodError` at a user'
 run. It reads the shipped doctrine and generator, so it is meaningful from any clone:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/setup_doctrine_crosscheck.py"
+python3 "${CLAUDE_PLUGIN_ROOT}/ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py"
 ```
 
 Read the exit code, because two of them mean opposite things:
@@ -314,7 +314,7 @@ and skips are not passes.
 - `app/views/design_variants/`, `app/controllers/design_variants_controller.rb`, or a
   `design_variants` route still present. A variant set is a **decision in progress**: once one is
   chosen the rest are dead screens, and an un-run discard step looks exactly like a completed one.
-  Verify rather than eyeball it — `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variant_conformance.py"
+  Verify rather than eyeball it — `python3 "${CLAUDE_PLUGIN_ROOT}/ui/viewcomponent-erb/scripts/variant_conformance.py"
   --verify-discard .` — and if the set is still live, the audit is premature: choose first, then
   audit the winner in its real home.
 
