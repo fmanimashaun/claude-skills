@@ -9,6 +9,42 @@ GUARD = Guard(
     needs=("scripts/component_classes.py", "scripts/rails_assumptions.py", "scripts/hermetic_git.py", "plugins/rails-flow/scripts/fixture_git.py", "plugins/rails-flow/scripts/project_gates.py", "plugins/rails-flow/checks.json"),
     mutations=(
         Mutation(
+            "a floor lower than the base branch's passes",
+            '    if base is None or head.get("floor", 0) >= base.get("floor", 0):',
+            "    if True:",
+            "a floor that fell with no reason is a finding",
+        ),
+        Mutation(
+            "a reset from any floor excuses a drop",
+            '    if reset.get("from") == base.get("floor") and',
+            "    if True and",
+            "a reset from a different floor does not excuse the drop",
+        ),
+        Mutation(
+            "an empty reason excuses a drop",
+            '    if reset.get("from") == base.get("floor") and str(reset.get("reason", "")).strip():',
+            '    if reset.get("from") == base.get("floor"):',
+            "an empty reason does not excuse the drop",
+        ),
+        Mutation(
+            "--reset-floor is accepted with --check or alone",
+            '    if a.reset_floor is not None and (not a.record or a.check or not a.reset_floor.strip()):',
+            "    if False:",
+            "--reset-floor with --check is refused",
+        ),
+        Mutation(
+            "--check never compares the floor with the base branch",
+            "        findings += floor_drop(base, proof)",
+            "        pass",
+            "--check fails a floor lower than the base branch's with no reason",
+        ),
+        Mutation(
+            "an unreadable base branch is accepted",
+            "        if unreadable:",
+            "        if False:",
+            "--check fails when the base branch cannot be read",
+        ),
+        Mutation(
             "exit 1 reads as clean again",
             "    if rc == 0:\n        return \"clean\", \"\"",
             "    if rc in (0, 1):\n        return \"clean\", \"\"",
