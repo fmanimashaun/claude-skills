@@ -1401,6 +1401,20 @@ GUARD = Guard(
             'findings-script-drift / a missing qa-flow findings.py is a finding',
         ),
         Mutation(
+            # #2173
+            "vendored-copy-drift never compares the bytes, so a rails-stack copy can drift from rails-flow's",
+            '        if a.read_bytes() != b.read_bytes():',
+            '        if False:',
+            'vendored-copy-drift / a vendored triage_failures.py that differs by one byte is a finding',
+        ),
+        Mutation(
+            # #2173
+            'vendored-copy-drift does not notice a missing copy',
+            '            findings.append(Finding("vendored-copy-drift", missing, 0,',
+            '            continue\n            findings.append(Finding("vendored-copy-drift", missing, 0,',
+            'vendored-copy-drift / a missing vendored triage_failures.py is a finding',
+        ),
+        Mutation(
             # #1680
             'cross-plugin-relative-path loses its same-plugin exemption, so ../scripts/ inside a plugin is refused',
             '            if match.group(1) == own:\n                continue\n',

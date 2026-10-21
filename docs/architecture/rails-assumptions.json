@@ -2905,70 +2905,34 @@
   "plugins/rails-flow/agents/code-reviewer.md": {
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
-    "concept": 5,
-    "gem": 1,
-    "hotwire": 2,
-    "path": 2
+    "concept": 1
    },
    "decision": "rails-stack",
    "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
    "ids": {
-    "app-layers": 2,
-    "gem": 1,
-    "hotwire": 2,
-    "rails-idiom": 1,
-    "rails-word": 2,
-    "ruby-file": 2
+    "rails-word": 1
    },
    "invokes": [],
    "kind": "agent",
    "lines": [
-    4,
-    5,
-    11,
-    22,
-    23,
-    27,
-    79,
-    80
+    8
    ],
    "move": "rails-agents"
   },
   "plugins/rails-flow/agents/design-auditor.md": {
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
-    "concept": 7,
-    "gem": 5,
-    "hotwire": 3,
-    "path": 5
+    "concept": 1
    },
    "decision": "rails-stack",
    "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
    "ids": {
-    "app-layers": 4,
-    "erb": 3,
-    "gem": 5,
-    "hotwire": 3,
-    "rails-config": 1,
-    "rails-idiom": 3,
-    "ruby-file": 1
+    "rails-word": 1
    },
    "invokes": [],
    "kind": "agent",
    "lines": [
-    5,
-    6,
-    19,
-    22,
-    23,
-    24,
-    30,
-    31,
-    32,
-    34,
-    42,
-    60,
-    61
+    10
    ],
    "move": "rails-agents"
   },
@@ -2992,35 +2956,17 @@
   "plugins/rails-flow/agents/migration-writer.md": {
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
-    "concept": 3,
-    "path": 4,
-    "tool": 3
+    "concept": 1
    },
    "decision": "rails-stack",
    "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
    "ids": {
-    "bin-rails": 3,
-    "db": 3,
-    "gemfile": 1,
-    "rails-word": 2,
-    "ruby-file": 1
+    "rails-word": 1
    },
-   "invokes": [
-    34,
-    35,
-    38
-   ],
+   "invokes": [],
    "kind": "agent",
    "lines": [
-    4,
-    10,
-    13,
-    34,
-    35,
-    36,
-    38,
-    39,
-    51
+    8
    ],
    "move": "rails-agents"
   },
@@ -3046,71 +2992,34 @@
   "plugins/rails-flow/agents/rails-developer.md": {
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
-    "concept": 4,
-    "gem": 1,
-    "hotwire": 4,
-    "path": 2,
-    "tool": 1
+    "concept": 1
    },
    "decision": "rails-stack",
    "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
    "ids": {
-    "app-layers": 1,
-    "gem": 1,
-    "hotwire": 4,
-    "rails-idiom": 1,
-    "rails-word": 2,
-    "rspec": 1,
-    "ruby-file": 1,
-    "spec-dir": 1
+    "rails-word": 1
    },
    "invokes": [],
    "kind": "agent",
    "lines": [
-    4,
-    5,
-    12,
-    17,
-    19,
-    24,
-    25,
-    27,
-    44
+    8
    ],
    "move": "rails-agents"
   },
   "plugins/rails-flow/agents/security-auditor.md": {
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
-    "concept": 4,
-    "path": 1,
-    "tool": 6
+    "concept": 1
    },
    "decision": "rails-stack",
    "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
    "ids": {
-    "app-layers": 1,
-    "brakeman": 3,
-    "bundler": 2,
-    "bundler-audit": 1,
-    "rails-idiom": 1,
-    "rails-word": 1,
-    "ruby-file": 2
+    "rails-word": 1
    },
-   "invokes": [
-    14,
-    15
-   ],
+   "invokes": [],
    "kind": "agent",
    "lines": [
-    5,
-    11,
-    14,
-    15,
-    21,
-    34,
-    52,
-    53
+    8
    ],
    "move": "rails-agents"
   },
@@ -3137,39 +3046,17 @@
   "plugins/rails-flow/agents/test-runner.md": {
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
-    "concept": 1,
-    "gem": 1,
-    "path": 1,
-    "tool": 10
+    "concept": 1
    },
    "decision": "rails-stack",
    "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
    "ids": {
-    "bin-rails": 2,
-    "bundler": 3,
-    "gem": 1,
-    "rspec": 5,
-    "ruby-file": 1,
-    "spec-dir": 1
+    "rails-word": 1
    },
-   "invokes": [
-    10,
-    16,
-    17,
-    30,
-    31
-   ],
+   "invokes": [],
    "kind": "agent",
    "lines": [
-    4,
-    10,
-    12,
-    16,
-    17,
-    30,
-    31,
-    32,
-    44
+    10
    ],
    "move": "rails-agents"
   },
@@ -3304,6 +3191,7 @@
   "plugins/rails-flow/commands/feature.md": {
    "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
    "categories": {
+    "concept": 1,
     "hotwire": 1,
     "tool": 1
    },
@@ -3311,39 +3199,42 @@
    "how": "the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction)",
    "ids": {
     "bundler": 1,
-    "hotwire": 1
+    "hotwire": 1,
+    "rails-word": 1
    },
    "invokes": [
-    237
+    239
    ],
    "kind": "command",
    "lines": [
-    225,
-    237
+    12,
+    227,
+    239
    ],
    "move": ""
   },
   "plugins/rails-flow/commands/fix.md": {
    "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
    "categories": {
-    "concept": 1,
+    "concept": 2,
     "tool": 2
    },
    "decision": "detector",
    "how": "the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction)",
    "ids": {
     "binstub": 1,
-    "rails-word": 1,
+    "rails-word": 2,
     "ruby": 1
    },
    "invokes": [
-    79
+    81
    ],
    "kind": "command",
    "lines": [
-    51,
-    79,
-    86
+    8,
+    53,
+    81,
+    88
    ],
    "move": ""
   },
@@ -3376,7 +3267,7 @@
   "plugins/rails-flow/commands/handoff.md": {
    "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
    "categories": {
-    "concept": 4,
+    "concept": 5,
     "path": 5,
     "tool": 4
    },
@@ -3386,39 +3277,61 @@
     "app-layers": 2,
     "bundler": 2,
     "db": 1,
+    "rails-word": 1,
     "rspec": 2,
     "ruby-file": 4,
     "spec-dir": 2
    },
    "invokes": [
-    76,
-    78
+    78,
+    80
    ],
    "kind": "command",
    "lines": [
-    54,
-    55,
+    8,
+    56,
     57,
-    58,
-    76,
-    78
+    59,
+    60,
+    78,
+    80
    ],
    "move": ""
   },
   "plugins/rails-flow/commands/issues.md": {
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
    "categories": {
+    "concept": 1,
     "tool": 1
    },
    "decision": "reword",
    "how": "reworded in the slice that touches the file; no code changes",
    "ids": {
+    "rails-word": 1,
     "ruby": 1
    },
    "invokes": [],
    "kind": "command",
    "lines": [
-    145
+    12,
+    147
+   ],
+   "move": ""
+  },
+  "plugins/rails-flow/commands/pr-comments.md": {
+   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "categories": {
+    "concept": 1
+   },
+   "decision": "reword",
+   "how": "reworded in the slice that touches the file; no code changes",
+   "ids": {
+    "rails-word": 1
+   },
+   "invokes": [],
+   "kind": "command",
+   "lines": [
+    8
    ],
    "move": ""
   },
@@ -3442,7 +3355,7 @@
   "plugins/rails-flow/commands/review.md": {
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
    "categories": {
-    "concept": 3,
+    "concept": 4,
     "hotwire": 1,
     "path": 2
    },
@@ -3452,16 +3365,17 @@
     "app-layers": 2,
     "hotwire": 1,
     "rails-idiom": 1,
-    "rails-word": 1,
+    "rails-word": 2,
     "ruby-file": 1
    },
    "invokes": [],
    "kind": "command",
    "lines": [
     12,
-    32,
-    33,
-    66
+    14,
+    34,
+    35,
+    68
    ],
    "move": ""
   },
@@ -4023,6 +3937,26 @@
    "lines": [
     116,
     117
+   ],
+   "move": ""
+  },
+  "plugins/rails-flow/reference/stack-roles.md": {
+   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "categories": {
+    "concept": 4
+   },
+   "decision": "reword",
+   "how": "reworded in the slice that touches the file; no code changes",
+   "ids": {
+    "rails-word": 4
+   },
+   "invokes": [],
+   "kind": "reference",
+   "lines": [
+    3,
+    24,
+    29,
+    31
    ],
    "move": ""
   },
@@ -8237,16 +8171,16 @@
  "policy": "docs/architecture/rails-assumptions.policy.json",
  "summary": {
   "by_category": {
-   "concept": 2029,
-   "gem": 138,
-   "hotwire": 96,
-   "path": 1252,
-   "tool": 896
+   "concept": 2021,
+   "gem": 130,
+   "hotwire": 87,
+   "path": 1237,
+   "tool": 876
   },
   "by_decision": {
    "detector": {
     "files": 90,
-    "lines": 1243
+    "lines": 1246
    },
    "neutral": {
     "files": 11,
@@ -8254,11 +8188,11 @@
    },
    "rails-stack": {
     "files": 84,
-    "lines": 1814
+    "lines": 1764
    },
    "reword": {
-    "files": 45,
-    "lines": 166
+    "files": 47,
+    "lines": 173
    }
   },
   "by_flow": {
@@ -8288,21 +8222,21 @@
    },
    "rails-flow": {
     "detector": 50,
-    "files": 135,
-    "lines": 2289,
+    "files": 137,
+    "lines": 2249,
     "neutral": 3,
     "rails-stack": 47,
-    "reword": 35
+    "reword": 37
    }
   },
   "by_kind": {
    "agent": {
     "files": 19,
-    "lines": 101
+    "lines": 51
    },
    "command": {
-    "files": 19,
-    "lines": 82
+    "files": 20,
+    "lines": 88
    },
    "data": {
     "files": 4,
@@ -8325,8 +8259,8 @@
     "lines": 292
    },
    "reference": {
-    "files": 8,
-    "lines": 31
+    "files": 9,
+    "lines": 35
    },
    "scaffold": {
     "files": 2,
@@ -8347,31 +8281,31 @@
   },
   "by_pattern": {
    "active-framework": 20,
-   "app-layers": 596,
-   "bin-rails": 125,
+   "app-layers": 588,
+   "bin-rails": 120,
    "binstub": 53,
-   "brakeman": 8,
-   "bundler": 85,
-   "bundler-audit": 5,
-   "db": 137,
-   "erb": 410,
+   "brakeman": 5,
+   "bundler": 80,
+   "bundler-audit": 4,
+   "db": 134,
+   "erb": 407,
    "erb-lint": 73,
-   "gem": 138,
-   "gemfile": 186,
-   "hotwire": 96,
-   "rails-config": 112,
-   "rails-idiom": 52,
-   "rails-word": 325,
+   "gem": 130,
+   "gemfile": 185,
+   "hotwire": 87,
+   "rails-config": 111,
+   "rails-idiom": 46,
+   "rails-word": 334,
    "rake": 56,
    "routes": 37,
-   "rspec": 186,
+   "rspec": 180,
    "rubocop": 84,
    "rubocop-yml": 2,
    "ruby": 221,
-   "ruby-file": 1222,
-   "spec-dir": 182
+   "ruby-file": 1214,
+   "spec-dir": 180
   },
-  "files": 230,
-  "lines": 3258
+  "files": 232,
+  "lines": 3218
  }
 }
