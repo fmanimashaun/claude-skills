@@ -1704,7 +1704,7 @@ GUARD = Guard(
         Mutation(
             # #2208: a hook planted in .git/hooks under a machine whose system config sets core.hooksPath never runs.
             "a selftest planting a hook under the machine's git config stops being a finding",
-            "        if not any(marker in text for marker in _HOOK_DIR_RESOLVED):\n",
+            "        if not _HOOK_DIR_RESOLVED.search(code):\n",
             "        if False:\n",
             "a selftest planting a hook in .git/hooks under the machine's config",
         ),
@@ -1719,6 +1719,18 @@ GUARD = Guard(
             """_PLANTED_HOOKS = re.compile(r\"\"\"["']\\.git["']\\s*\\)?\\s*/\\s*["']hooks["']|["'][^"'\\n]*\\.git/hooks\"\"\")""",
             """_PLANTED_HOOKS = re.compile(r\"\"\"["']\\.git["']\\s*\\)?\\s*/\\s*["']hooks["']\"\"\")""",
             "a .git/hooks path written as one string is planted too",
+        ),
+        Mutation(
+            "comments are read as code, so a comment naming hermetic_git makes a non-hermetic script pass",
+            "        code = _code_only(read(path), shell=path.suffix == \".sh\")\n",
+            "        code = read(path)\n",
+            "a marker only in a comment does not make a script hermetic",
+        ),
+        Mutation(
+            "nested folders are not scanned",
+            'paths = [p for pattern in ("scripts/**/*", "plugins/*/scripts/**/*") for p in ROOT.glob(pattern) if p.suffix in (".py", ".sh")]',
+            'paths = [p for pattern in ("scripts/*", "plugins/*/scripts/*") for p in ROOT.glob(pattern) if p.suffix in (".py", ".sh")]',
+            "a nested selftest planting a hook is scanned too",
         ),
     ),
 )

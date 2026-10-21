@@ -85,9 +85,11 @@ from __future__ import annotations
 
 import argparse
 import ast
+import io
 import json
 import re
 import sys
+import tokenize
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -2855,8 +2857,22 @@ def emit_claude_md(setup_text: str, has_database: bool) -> str:
 
 
 _PLANTED_HOOKS = re.compile(r"""["']\.git["']\s*\)?\s*/\s*["']hooks["']|["'][^"'\n]*\.git/hooks""")
-_HOOK_DIR_RESOLVED = ("--git-path", "GIT_CONFIG_NOSYSTEM", "import fixture_git", "from fixture_git", "fixture_git.", "hermetic_git")
+# REAL USE, NOT A MENTION (#2242 review): a comment naming hermetic_git is not git run through it. Each marker is a code shape, and
+# it is matched against the text with comments removed.
+_HOOK_DIR_RESOLVED = re.compile(r"""["']--git-path["']|["']GIT_CONFIG_NOSYSTEM["']\s*[\]:=,]|^\s*(?:import|from)\s+(?:fixture_git|hermetic_git)\b|"""
+                                r"""\b(?:fixture_git|hermetic_git)\.\w+\(|--git-path\b(?=[^\n]*\bhooks\b)|\bGIT_CONFIG_NOSYSTEM=1\b""", re.M)
 _HERMETIC_ENVS = ("plugins/rails-flow/scripts/fixture_git.py", "scripts/hermetic_git.py")
+
+
+def _code_only(text: str, shell: bool) -> str:
+    """`text` without comments: a mention in a comment is not git run through anything (#2242 review)."""
+    if shell:
+        return "\n".join("" if line.lstrip().startswith("#") else line for line in text.splitlines())
+    try:
+        tokens = [t for t in tokenize.generate_tokens(io.StringIO(text).readline) if t.type != tokenize.COMMENT]
+        return tokenize.untokenize(tokens)
+    except (tokenize.TokenError, SyntaxError, IndentationError):
+        return text
 
 
 def check_planted_hooks_hermetic() -> tuple[list[Finding], int]:
@@ -2867,6 +2883,10 @@ def check_planted_hooks_hermetic() -> tuple[list[Finding], int]:
     survived exactly so. A Python file that builds a `.git/hooks` path must therefore resolve the directory (`rev-parse
     --git-path hooks`), isolate the system config (`GIT_CONFIG_NOSYSTEM`), or run its git through `fixture_git`/`hermetic_git`,
     which set it; and those two must keep setting it.
+
+    SCOPE: every `.py` and `.sh` under `scripts/` and `plugins/*/scripts/` (nested folders included), comments removed before
+    either pattern is read. `wip_commit.py` passes through `--git-path`, not the helpers: its own git scrubs every `GIT_*` by
+    design, so its selftest must resolve the hooks directory git uses rather than isolate it (#2207).
     """
     found: list[Finding] = []
     examined = 0
@@ -2876,16 +2896,18 @@ def check_planted_hooks_hermetic() -> tuple[list[Finding], int]:
             found.append(Finding("planted-hooks-not-hermetic", rel, 0,
                                  "no longer sets GIT_CONFIG_NOSYSTEM, so every fixture that plants a hook in .git/hooks reads the machine's "
                                  "core.hooksPath again (#2208)"))
-    for path in sorted(ROOT.glob("scripts/*.py")) + sorted(ROOT.glob("plugins/*/scripts/*.py")):
+    paths = [p for pattern in ("scripts/**/*", "plugins/*/scripts/**/*") for p in ROOT.glob(pattern) if p.suffix in (".py", ".sh")]
+    for path in sorted(set(paths)):
         rel = path.relative_to(ROOT).as_posix()
         if "/mutations/" in rel or rel == "scripts/lint_self_consistency.py" or rel == "scripts/self_consistency_selftest.py":
             continue
-        text = read(path)
-        if not _PLANTED_HOOKS.search(text):
+        code = _code_only(read(path), shell=path.suffix == ".sh")
+        planted = _PLANTED_HOOKS.search(code) or (path.suffix == ".sh" and re.search(r"\.git/hooks", code))
+        if not planted:
             continue
         examined += 1
-        if not any(marker in text for marker in _HOOK_DIR_RESOLVED):
-            line = text[: _PLANTED_HOOKS.search(text).start()].count("\n") + 1
+        if not _HOOK_DIR_RESOLVED.search(code):
+            line = code[: planted.start()].count("\n") + 1
             found.append(Finding("planted-hooks-not-hermetic", rel, line,
                                  "builds a .git/hooks path but runs git with the machine's system config, where core.hooksPath can point "
                                  "elsewhere (Homebrew: .githooks) and the hook never runs: resolve it with `git rev-parse --git-path hooks`, "
@@ -5045,6 +5067,14 @@ def selftest() -> int:
         {"plugins/x/scripts/a_selftest.py": 'subprocess.run(["git", "commit"])\n(repo / ".git" / "hooks" / "pre-commit").write_text("x")\n'}, True)
     php("a .git/hooks path written as one string is planted too",
         {"scripts/b.py": 'open(f"{repo}/.git/hooks/pre-commit", "w")\n'}, True)
+    php("a marker only in a comment does not make a script hermetic",
+        {"plugins/x/scripts/a_selftest.py": '# runs through hermetic_git and fixture_git.env, see #2208\nsubprocess.run(["git", "commit"])\n(repo / ".git" / "hooks").mkdir()\n'}, True)
+    php("a nested selftest planting a hook is scanned too",
+        {"plugins/x/scripts/sub/b_selftest.py": 'subprocess.run(["git", "commit"])\n(repo / ".git" / "hooks").mkdir()\n'}, True)
+    php("a shell selftest planting a hook is scanned too",
+        {"plugins/x/scripts/c_selftest.sh": 'git init "$d"\nprintf x > "$d/.git/hooks/pre-commit"\n'}, True)
+    php("CONTROL: a shell selftest that isolates the system config is silent",
+        {"plugins/x/scripts/c_selftest.sh": 'export GIT_CONFIG_NOSYSTEM=1\nprintf x > "$d/.git/hooks/pre-commit"\n'}, False)
     php("fixture_git that stopped isolating the system config",
         {"plugins/rails-flow/scripts/fixture_git.py": "out = {}\n"}, True)
     SP = "setup-flow-preflight"
