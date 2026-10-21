@@ -200,6 +200,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | agent output contract selftest | `repo` | `python3 scripts/check_agent_output_contract.py --selftest` | selftest |
 | always-on cost | `repo` | `python3 scripts/check_always_on_cost.py` | live check |
 | always-on cost selftest | `repo` | `python3 scripts/check_always_on_cost.py --selftest` | selftest |
+| architecture rules | `repo` | `python3 scripts/check_architecture_rules.py` | live check |
+| architecture rules selftest | `repo` | `python3 scripts/check_architecture_rules.py --selftest` | selftest |
 | arm window | `repo` | `python3 scripts/check_arm_window.py` | live check |
 | arm window selftest | `repo` | `python3 scripts/check_arm_window.py --selftest` | selftest |
 | assertion reachability selftest | `repo` | `python3 scripts/audit_assertion_reachability.py --selftest` | selftest |

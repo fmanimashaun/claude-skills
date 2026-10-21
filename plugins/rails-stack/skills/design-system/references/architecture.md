@@ -16,7 +16,7 @@ Nothing here is advice you may ignore. **Every rule below names its basis**, and
 | `claim: C#` | an external standard or published pattern, confirmed against the source by `doctrine-verifier`; the rule is worded as the source words it |
 | `decision: D#` | our own choice, with no upstream; reported as a house rule, **never** as a WCAG or NN/g failure |
 
-A rule whose check is not built yet is not in the table. It is listed under *Arrives with its
+**Today the design-flow checks (A11–A13) read a Rails project's `app/views` and `app/components`;** the same rules for another stack arrive with that stack's adapter (#2185, #2222), and until then they are enforced there by the reviewer, not by a script. A rule whose check is not built yet is not in the table. It is listed under *Arrives with its
 enforcement* and joins the table in the change that builds the check.
 
 ## The shape: four structural layers, two contracts, one index
