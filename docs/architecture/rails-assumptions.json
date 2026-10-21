@@ -6292,6 +6292,23 @@
    ],
    "move": ""
   },
+  "plugins/rails-flow/scripts/fixtures/security-adversary-2213.json": {
+   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "categories": {
+    "tool": 1
+   },
+   "decision": "reword",
+   "how": "reworded in the slice that touches the file; no code changes",
+   "ids": {
+    "ruby": 1
+   },
+   "invokes": [],
+   "kind": "script",
+   "lines": [
+    17
+   ],
+   "move": ""
+  },
   "plugins/rails-flow/scripts/generated_docs.py": {
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
    "categories": {

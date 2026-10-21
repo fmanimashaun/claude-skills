@@ -4937,6 +4937,18 @@
    "class": "mixed",
    "issue": 2183,
    "nextjs_lines": 0,
+   "path": "plugins/rails-flow/scripts/fixtures/security-adversary-2213.json",
+   "plugin": "rails-flow",
+   "rails_lines": 1,
+   "registered": [],
+   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "type": "script",
+   "via": "decision"
+  },
+  {
+   "class": "mixed",
+   "issue": 2183,
+   "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/generated_docs.py",
    "plugin": "rails-flow",
    "rails_lines": 2,
