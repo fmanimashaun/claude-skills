@@ -1,5 +1,5 @@
 ---
-description: Port a Claude Design output — JSX/TSX, or a `<x-dc>` canvas export — into this app, faithful to the design and aligned to the design system by construction. Resolves the project's UI adapter from its stack descriptor and dispatches to that adapter's porter agent.
+description: Port a Claude Design output — JSX/TSX, or a `<x-dc>` canvas export — into this app, faithful to the design and aligned to the design system by construction. Dispatches to the UI adapter's porter agent.
 ---
 
 # /design-flow:port
