@@ -6161,6 +6161,19 @@
    "via": "declared"
   },
   {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-flow/scripts/mutations/advisory_scope.py",
+   "plugin": "rails-flow",
+   "proven": false,
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests advisory_scope.py"
+  },
+  {
    "class": "rails",
    "issue": 2177,
    "nextjs_lines": 0,
