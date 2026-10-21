@@ -44,6 +44,8 @@ WHAT IT CHECKS
                               pipeline) differ, or one is missing -- one fixture-git lock, three copies (#1588)
   findings-script-drift       the two shipped copies of scripts/findings.py (rails-flow, qa-flow) differ,
                               or one is missing -- qa-reporter runs its own copy (#1680)
+  vendored-copy-drift         a file rails-stack vendors from rails-flow (triage_failures.py, check_simple_form_only.py,
+                              agent-output-contract.md) differs from its canonical copy, or one is missing (#2173)
   cross-plugin-relative-path  shipped markdown that runs `../<other-plugin>/...`, which resolves in the
                               clone and not in an install's per-plugin cache directories (#1680)
   fixture-git-bypass          a git call with the fixture identity (`t@t`) outside fixture_git -- a fixture's git
@@ -804,7 +806,10 @@ def check_gate_without_onfailure() -> tuple[list[Finding], int]:
 # `../rails-flow/scripts/findings.py`, which resolves only in this repo's checkout: an install puts each
 # plugin in its own versioned cache directory. qa-flow now ships a copy; this keeps it the same script.
 FINDINGS_COPIES = ("plugins/rails-flow/scripts/findings.py",
-                   "plugins/qa-flow/scripts/findings.py")
+                   "plugins/qa-flow/scripts/findings.py",
+                   # #2173: rails-stack's code-reviewer moved out of rails-flow and runs its own copy (a plugin sees only its own
+                   # ${CLAUDE_PLUGIN_ROOT}). TEMPORARY: findings.py is a neutral reference whose single home is core-skills (#2186).
+                   "plugins/rails-stack/scripts/findings.py")
 
 
 def check_findings_script_drift() -> tuple[list[Finding], int]:
@@ -827,6 +832,37 @@ def check_findings_script_drift() -> tuple[list[Finding], int]:
                                     "review records would validate against different rules. Copy the canonical "
                                     "file over it (cp) and re-run"))
     return findings, len(FINDINGS_COPIES)
+
+
+# Rule: vendored-copy-drift (#2173)
+# The Rails agents moved from rails-flow to rails-stack, and three of them run rails-flow files through
+# ${CLAUDE_PLUGIN_ROOT}, which in rails-stack points at rails-stack: there is no cross-plugin root. So rails-stack
+# ships copies, kept byte-identical here (#906's pattern). EACH COPY IS TEMPORARY, and the third field says what removes it.
+VENDORED_COPIES = (
+    ("plugins/rails-flow/scripts/triage_failures.py", "plugins/rails-stack/scripts/triage_failures.py",
+     "rails-stack's test-runner runs it; it leaves when the flows' triage reads the descriptor and rails-stack owns the original"),
+    ("plugins/rails-flow/scripts/check_simple_form_only.py", "plugins/rails-stack/scripts/check_simple_form_only.py",
+     "rails-stack's design-auditor runs it; step 4 (#2175) moves the original and its checks.json row and deletes this copy"),
+    ("plugins/rails-flow/reference/agent-output-contract.md", "plugins/rails-stack/reference/agent-output-contract.md",
+     "every moved agent cites it; a neutral reference whose single home is core-skills (#2186), which removes this copy"),
+)
+
+
+def check_vendored_copy_drift() -> tuple[list[Finding], int]:
+    """Each vendored copy exists and is byte-identical to its canonical file."""
+    findings: list[Finding] = []
+    for canonical, copy, home in VENDORED_COPIES:
+        a, b = ROOT / canonical, ROOT / copy
+        if not a.is_file() or not b.is_file():
+            missing = copy if a.is_file() else canonical
+            findings.append(Finding("vendored-copy-drift", missing, 0,
+                                    f"missing -- the pair {canonical} / {copy} is one file in two plugins ({home}); copy the canonical over it"))
+            continue
+        if a.read_bytes() != b.read_bytes():
+            findings.append(Finding("vendored-copy-drift", copy, 0,
+                                    f"differs from {canonical} -- two plugins would run different code for one job ({home}). "
+                                    "Edit the canonical file and copy it over (cp), then re-run"))
+    return findings, len(VENDORED_COPIES)
 
 
 # Rule: cross-plugin-relative-path (#1680)
@@ -4323,6 +4359,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     hook_start, hook_start_examined = check_hook_start_hardened()
     gate_onfail, gate_onfail_examined = check_gate_without_onfailure()
     findings_copy, findings_copies = check_findings_script_drift()
+    vendored_copy, vendored_copies = check_vendored_copy_drift()
     rel_xplugin, rel_xplugin_examined = check_cross_plugin_relative_path()
     fixture_bypass, fixture_bypass_examined = check_fixture_git_bypass(python_sources)
     submod, submod_examined = check_git_status_recurses_submodules()
@@ -4390,6 +4427,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "hook_commands_checked_for_a_hardened_start": hook_start_examined,
         "gate_hooks_checked_for_onfailure": gate_onfail_examined,
         "findings_script_copies": findings_copies,
+        "vendored_copy_pairs": vendored_copies,
         "shipped_markdown_checked_for_cross_plugin_paths": rel_xplugin_examined,
         "fixture_git_identity_lines": fixture_bypass_examined,
         "git_status_diff_calls_in_shipped_code": submod_examined,
@@ -4450,7 +4488,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
-            + findings_copy + rel_xplugin
+            + findings_copy + vendored_copy + rel_xplugin
             + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
             coverage)
 
@@ -5616,6 +5654,18 @@ def selftest() -> int:
              only=check_findings_script_drift)
     scenario("a missing qa-flow findings.py is a finding", rule="findings-script-drift", expect_finding=True,
              files={FINDINGS_COPIES[0]: FS}, only=check_findings_script_drift)
+    scenario("a rails-stack findings.py that differs by one byte is a finding", rule="findings-script-drift",
+             expect_finding=True, files={**{c: FS for c in FINDINGS_COPIES}, FINDINGS_COPIES[2]: FS + "\n"},
+             only=check_findings_script_drift)
+    VC = "BODY = 1\n"
+    scenario("identical vendored copies are silent", rule="vendored-copy-drift", expect_finding=False,
+             files={rel: VC for pair in VENDORED_COPIES for rel in pair[:2]}, only=check_vendored_copy_drift)
+    for canonical, copy, _home in VENDORED_COPIES:   # a2's condition: EACH copy has its own one-byte negative case
+        scenario(f"a vendored {copy.rsplit('/', 1)[-1]} that differs by one byte is a finding", rule="vendored-copy-drift",
+                 expect_finding=True, files={**{rel: VC for pair in VENDORED_COPIES for rel in pair[:2]}, copy: VC + "x"},
+                 only=check_vendored_copy_drift)
+        scenario(f"a missing vendored {copy.rsplit('/', 1)[-1]} is a finding", rule="vendored-copy-drift", expect_finding=True,
+                 files={rel: VC for pair in VENDORED_COPIES for rel in pair[:2] if rel != copy}, only=check_vendored_copy_drift)
     XP = "cross-plugin-relative-path"
     XP_TREE = {"plugins/rails-flow/scripts/findings.py": FS}
     scenario("an agent running ../rails-flow/ from qa-flow is a finding (the #1680 line)", rule=XP,
