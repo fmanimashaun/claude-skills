@@ -5000,7 +5000,7 @@ def selftest() -> int:
     scenario("...an adapter naming an agent that does not exist", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
              files={k: v for k, v in UAU_OK.items() if not k.endswith("rails-ui-porter.md")})
     scenario("...a descriptor porter that disagrees with the adapter", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
-             files={**UAU_OK, "plugins/rails-stack/stacks.json": UAU_STACKS.replace("rails-ui-porter", "design-porter")})
+             files={**UAU_OK, "plugins/rails-stack/stacks.json": UAU_STACKS.replace("rails-ui-porter", "some-other-porter")})
     scenario("...an adapter whose id is not its directory", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
              files={**UAU_OK, "plugins/design-flow/ui/viewcomponent-erb/adapter.json": UAU_ADAPTER.replace('"id":"viewcomponent-erb"', '"id":"other"')})
     scenario("...an adapter check id checks.json does not carry", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
