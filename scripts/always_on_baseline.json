@@ -27,20 +27,20 @@
       "est_tokens": 272
     },
     "pipeline": {
-      "chars": 1538,
-      "est_tokens": 513
+      "chars": 1084,
+      "est_tokens": 361
     },
     "qa-flow": {
       "chars": 5558,
       "est_tokens": 1853
     },
     "rails-flow": {
-      "chars": 8580,
-      "est_tokens": 2860
+      "chars": 7811,
+      "est_tokens": 2604
     },
     "rails-stack": {
-      "chars": 5416,
-      "est_tokens": 1805
+      "chars": 7473,
+      "est_tokens": 2491
     }
   }
 }
