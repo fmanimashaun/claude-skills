@@ -2,7 +2,7 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**37 shipped agents · 54 shipped commands · 5 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
+**37 shipped agents · 55 shipped commands · 5 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
@@ -11,7 +11,7 @@
 | `nextjs-stack` | 0.1.0 | — | — | — |
 | `pipeline` | 1.5.2 | 1 | 9 | 1 |
 | `qa-flow` | 1.39.0 | 11 | 8 | 11 |
-| `rails-flow` | 1.65.0 | 13 | 25 | 13 |
+| `rails-flow` | 1.65.0 | 13 | 26 | 13 |
 | `rails-stack` | 1.76.1 | 7 | — | 7 |
 
 ## Agents
@@ -63,7 +63,7 @@
 | `migration-writer` | judgement · inherit | Read | — | — |
 | `pr-reviewer` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:pr-comments`, `/rails-flow:retro` | — |
 | `rails-developer` | judgement · inherit | Read | — | — |
-| `security-auditor` | judgement · inherit | Read | — | — |
+| `security-auditor` | judgement · inherit | Read | `/rails-flow:secure-design` | — |
 | `skill-curator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/rails-flow:curate` | — |
 | `spec-reviewer` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:retro`, `/rails-flow:spec` | — |
 | `test-runner` | mechanical · haiku | Read | — | `bundle exec rspec` exit status — 0 failures or the gate blocks |

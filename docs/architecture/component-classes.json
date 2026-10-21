@@ -3611,6 +3611,18 @@
    "via": "decision"
   },
   {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-flow/commands/secure-design.md",
+   "plugin": "rails-flow",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "command",
+   "via": "declared"
+  },
+  {
    "class": "mixed",
    "issue": 2180,
    "nextjs_lines": 1,
@@ -4697,6 +4709,18 @@
    "class": "neutral",
    "issue": null,
    "nextjs_lines": 0,
+   "path": "plugins/rails-flow/scripts/check_threat_model.py",
+   "plugin": "rails-flow",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/check_toolchain_mutations.py",
    "plugin": "rails-flow",
    "rails_lines": 0,
@@ -5004,6 +5028,18 @@
    "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
    "type": "script",
    "via": "decision"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-flow/scripts/security_scope.py",
+   "plugin": "rails-flow",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
   },
   {
    "class": "mixed",
@@ -6074,6 +6110,18 @@
    "via": "tests check_tenancy_cop.py"
   },
   {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-flow/scripts/mutations/check_threat_model.py",
+   "plugin": "rails-flow",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests check_threat_model.py"
+  },
+  {
    "class": "mixed",
    "issue": 2183,
    "nextjs_lines": 0,
@@ -6468,6 +6516,18 @@
    "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
    "type": "test",
    "via": "tests risky_diff.py"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-flow/scripts/mutations/security_scope.py",
+   "plugin": "rails-flow",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests security_scope.py"
   },
   {
    "class": "mixed",
@@ -6890,6 +6950,18 @@
    "via": "declared"
   },
   {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-flow/templates/threat-model.md",
+   "plugin": "rails-flow",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
    "class": "rails",
    "issue": 2173,
    "nextjs_lines": 0,
@@ -7245,6 +7317,30 @@
    "class": "rails",
    "issue": 2182,
    "nextjs_lines": 0,
+   "path": "plugins/rails-stack/security/boundary-cases.json",
+   "plugin": "rails-stack",
+   "rails_lines": 32,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2182,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/security/rails.md",
+   "plugin": "rails-stack",
+   "rails_lines": 5,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2182,
+   "nextjs_lines": 0,
    "path": "plugins/rails-stack/setup/rails.md",
    "plugin": "rails-stack",
    "rails_lines": 94,
@@ -7259,7 +7355,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/stacks.json",
    "plugin": "rails-stack",
-   "rails_lines": 12,
+   "rails_lines": 21,
    "registered": [],
    "seam": "",
    "type": "support",
@@ -7270,9 +7366,9 @@
  "summary": {
   "by_class": {
    "mixed": 202,
-   "neutral": 270,
+   "neutral": 276,
    "nextjs": 3,
-   "rails": 127
+   "rails": 129
   },
   "by_plugin": {
    "design-flow": {
@@ -7312,17 +7408,17 @@
    },
    "rails-flow": {
     "mixed": 105,
-    "neutral": 114,
+    "neutral": 120,
     "nextjs": 0,
     "rails": 71,
-    "total": 290
+    "total": 296
    },
    "rails-stack": {
     "mixed": 7,
     "neutral": 4,
     "nextjs": 0,
-    "rails": 20,
-    "total": 31
+    "rails": 22,
+    "total": 33
    }
   },
   "by_type": {
@@ -7335,10 +7431,10 @@
    },
    "command": {
     "mixed": 26,
-    "neutral": 27,
+    "neutral": 28,
     "nextjs": 0,
     "rails": 1,
-    "total": 54
+    "total": 55
    },
    "gate": {
     "mixed": 14,
@@ -7356,10 +7452,10 @@
    },
    "script": {
     "mixed": 60,
-    "neutral": 54,
+    "neutral": 56,
     "nextjs": 0,
     "rails": 22,
-    "total": 136
+    "total": 138
    },
    "skill": {
     "mixed": 3,
@@ -7370,19 +7466,19 @@
    },
    "support": {
     "mixed": 16,
-    "neutral": 35,
+    "neutral": 36,
     "nextjs": 3,
-    "rails": 21,
-    "total": 75
+    "rails": 23,
+    "total": 78
    },
    "test": {
     "mixed": 58,
-    "neutral": 96,
+    "neutral": 98,
     "nextjs": 0,
     "rails": 33,
-    "total": 187
+    "total": 189
    }
   },
-  "components": 602
+  "components": 610
  }
 }
