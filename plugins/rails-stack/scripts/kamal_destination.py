@@ -290,14 +290,25 @@ def selftest() -> int:
             except Unusable as e:
                 failures.append(f"the flat env form is read as clear: {e}")
 
-    # THE SHIPPED CALL SITES. The helper is not the fix unless the command and the agent use it,
-    # and the hard-coded environment is gone from both.
+    # THE SHIPPED CALL SITE. The helper is not the fix unless the agent uses it, and the hard-coded
+    # environment is gone. The agent ships in this plugin and the command in `pipeline` (#2179): a plugin
+    # cannot reach another's files by relative path, so the agent must name no `../` and no pipeline
+    # script path; the caller hands it the tools it needs as absolute paths (BREAKER and the rest).
     here = Path(__file__).resolve().parents[1]
-    for rel in ("commands/deploy-cloud.md", "agents/kamal-configurator.md"):
-        p = here / rel
-        text = p.read_text(encoding="utf-8") if p.is_file() else ""
-        check_that(f"{rel} runs kamal_destination.py", "scripts/kamal_destination.py" in text)
-        check_that(f"{rel} hard-codes no credentials environment", 'env = "production"' not in text)
+    p = here / "agents/kamal-configurator.md"
+    text = p.read_text(encoding="utf-8") if p.is_file() else ""
+    check_that("agents/kamal-configurator.md exists", bool(text))
+    check_that("agents/kamal-configurator.md runs kamal_destination.py", "scripts/kamal_destination.py" in text)
+    check_that("agents/kamal-configurator.md hard-codes no credentials environment", 'env = "production"' not in text)
+    check_that("agents/kamal-configurator.md reaches no other plugin by relative path", "../" not in text)
+    for tool in ("breaker.py", "scan_committed_secrets.py", "apm_advisory.py"):
+        check_that(f"agents/kamal-configurator.md never names pipeline's {tool} by path (it is handed over)",
+                   f"scripts/{tool}" not in text)
+    check_that("agents/kamal-configurator.md names no pipeline-root reference file", "reference/stop-conditions.md" not in text)
+    check_that("agents/kamal-configurator.md makes a missing handed-over path a STOP",
+               "A missing or unopenable one is a STOP" in text and "Do not look for a copy" in text)
+    for var in ("BREAKER", "SECRET_SCAN", "APM_ADVISORY", "STOP_CONDITIONS"):
+        check_that(f"agents/kamal-configurator.md uses the handed-over ${var}", f"${var}" in text)
 
     for f in failures:
         print(f"selftest FAIL: {f}")

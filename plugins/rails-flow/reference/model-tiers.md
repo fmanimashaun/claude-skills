@@ -222,7 +222,7 @@ transcript anew, with no reuse between calls"*. Measured on 2026-09-30 by
 `scripts/measure_subagent_context.py` over 578 stored runs on one maintainer machine
 (peak request context per run; indicative, not a population, and several agents have 1–4 runs;
 `docs/evidence/advisor/subagent-context-2026-09-30.md`): shipped agents' medians run from 11k tokens
-(`test-runner`) to 222k (`design-porter`), and the six Haiku agents' from 11k to 83k (`a11y-auditor`).
+(`test-runner`) to 222k (`rails-ui-porter`), and the six Haiku agents' from 11k to 83k (`a11y-auditor`).
 So a Haiku-tier agent consulting an Opus advisor pays Opus rates on tens of thousands of uncached
 tokens per call, which spends part of the saving the Haiku tier exists for: the docs put a Haiku main
 with an Opus advisor at *"higher cost than Haiku alone but lower than switching the main model to

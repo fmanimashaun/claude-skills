@@ -1,5 +1,5 @@
 ---
-name: ui-composer
+name: rails-ui-composer
 description: >
   Builds and refactors UI (views, components, screens) for Rails 8 + Hotwire + Tailwind v4 by
   COMPOSING the design system — layout primitives + semantic role tokens + catalog

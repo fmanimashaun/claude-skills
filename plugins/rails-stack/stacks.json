@@ -108,12 +108,12 @@
         "deploy": {
           "target": "kamal",
           "artifact": "docker-image",
-          "agent": "pipeline:kamal-configurator"
+          "agent": "rails-stack:kamal-configurator"
         },
         "ui": {
           "implementation": "viewcomponent-erb",
-          "porter": "design-flow:design-porter",
-          "composer": "design-flow:ui-composer"
+          "porter": "design-flow:rails-ui-porter",
+          "composer": "design-flow:rails-ui-composer"
         },
         "dangerous_commands": [
           { "pattern": "db:reset", "allowed": "RAILS_ENV=test bin/rails db:reset" }

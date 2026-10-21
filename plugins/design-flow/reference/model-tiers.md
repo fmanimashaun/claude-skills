@@ -14,11 +14,11 @@ version of the family; otherwise it runs on the inherited model.
 <!-- design-flow:tiers:begin -->
 | Agent | Tier | `model:` | What proves its output |
 |---|---|---|---|
-| `ui-composer` | judgement | `inherit` | — |
+| `rails-ui-composer` | judgement | `inherit` | — |
 | `design-auditor` | judgement | `inherit` | — |
 | `brand-guardian` | judgement | `inherit` | — |
 | `design-critic` | judgement | `inherit` | — |
-| `design-porter` | judgement | `inherit` | — |
+| `rails-ui-porter` | judgement | `inherit` | — |
 <!-- design-flow:tiers:end -->
 
 ## Why nothing here is mechanical, despite the plugin owning three linters

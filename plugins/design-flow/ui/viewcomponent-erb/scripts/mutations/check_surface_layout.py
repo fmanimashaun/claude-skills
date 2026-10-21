@@ -3,12 +3,12 @@ from mutation_types import Guard, Mutation  # noqa: F401
 
 GUARD = Guard(
     name="check_surface_layout",
-    subject="scripts/check_surface_layout.py",
-    selftest="scripts/check_surface_layout.py",   # --selftest lives in the module
+    subject="ui/viewcomponent-erb/scripts/check_surface_layout.py",
+    selftest="ui/viewcomponent-erb/scripts/check_surface_layout.py",   # --selftest lives in the module
     # It now imports the shared ratchet (#1187). Undeclared, the mutant dies on
     # ModuleNotFoundError and an environmental death reads as a caught mutation.
-    deps=("scripts/content_floors.py",),
-    needs=("scripts/source_text.py",),   # comments are blanked here (#1128)
+    deps=("ui/viewcomponent-erb/scripts/content_floors.py",),
+    needs=("ui/viewcomponent-erb/scripts/source_text.py",),   # comments are blanked here (#1128)
     mutations=(
         Mutation(
             # The rule. A surface wrapping arbitrary content silently overrode 77 of 112 callers'
