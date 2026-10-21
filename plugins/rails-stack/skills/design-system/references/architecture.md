@@ -58,7 +58,7 @@ labelled so:
 | sign-in | GOV.UK: *Create accounts*, *Start using a service* |
 | system: not found, error, maintenance | GOV.UK: *Page not found pages*, *There is a problem with the service pages*, *Service unavailable pages* |
 | list, create-edit, settings, system: no permission | ours (D3) |
-| search-results | ours (D3); the GOV.UK Design System has no search or search-results pattern (checked 2026-10-21), so it has no anatomy and no rule until a source is verified |
+| search-results | Scottish Government Design System *Search results* (not GOV.UK, which has no such pattern, checked 2026-10-21) |
 
 `page-anatomies.md` already holds the detailed anatomy of list-detail, detail, the data table,
 settings, the dashboard, errors and sign-in; this page names the set and does not repeat them.
@@ -148,6 +148,12 @@ plugin, since escaping, content-security policy and action authorization are sta
 | A50 | template | The user moves on from the task list only when every task is Completed. | claim: C60 | GOV.UK *Task list* |
 | A51 | template | A task list is not used for a flow that must be done in a fixed order. | claim: C64 | GOV.UK *Task list* |
 | A52 | template | A task list is never the way answers are shown; a description list is. | claim: C65 | GOV.UK *Task list* |
+| A53 | template | A search-results page has a results count, pagination when there are several pages, and a no-results message. | claim: C66 | Scottish Government Design System *Search results* |
+| A54 | template | The results count is at the top of the list and names the search terms. | claim: C67 | Scottish Government Design System *Search results* |
+| A55 | template | A no-results state says plainly that there are no results and offers hints. | claim: C69 | Scottish Government Design System *Search results* |
+| A56 | template | A sort control sits above the results and offers only a sort that applies to all content. | claim: C70 | Scottish Government Design System *Search results* |
+| A57 | template | Results paginate at more than ten, ten to a page, with pagination at the bottom. | claim: C71 | Scottish Government Design System *Search results* |
+| A58 | template | When results update in part, the heading carrying the total count is `aria-live` and focus moves to the start of the changed content. | claim: C73 | Scottish Government Design System *Search results* |
 
 ## Arrives with its enforcement
 

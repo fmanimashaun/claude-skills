@@ -578,6 +578,18 @@ The state contract (`architecture.md`, layer 5) applies to each question page; i
 the field's error ([forms.md](forms.md)). Whether a page also shows an error summary is not settled
 here: the GOV.UK pattern defers it to its separate validation pattern, which is not yet verified.
 
+## Search results
+
+The pattern is the Scottish Government Design System's *Search results* (GOV.UK has none); its rules
+are claims `doctrine-verifier` confirmed, listed in `architecture.md` (rules A53–A58). Composition in
+ours: the shell the product already uses, one `Stack`; the query in a `role="search"` form at the top;
+the **results count** (with the search terms) above the list; the **sort** control above the results;
+the list; **pagination** at the bottom (ten to a page, only when there are more than ten). The
+**no-results** state replaces the list with a plain statement and hints ([Empty state](components.md#empty-state)),
+not a blank page. When results change without a page load, the heading that carries the count is
+`aria-live` and focus moves to the start of the changed content. What one result contains (title,
+summary, metadata) is not settled here: the source delegates it to a separate page not yet verified.
+
 ---
 
 # No breakpoint where a primitive says it better

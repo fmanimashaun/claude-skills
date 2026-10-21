@@ -163,3 +163,19 @@ The coordinator asked that multi-step, confirmation and search-results patterns 
 | C65 | C | design-system.service.gov.uk/components/task-list | Do not use the task list to show users their answers. |
 | C40 | I | design-system.service.gov.uk/patterns/question-pages | an error summary on the question page: the page only links to the separate recover-from-validation-errors pattern; not verified here |
 | C51 | I | design-system.service.gov.uk/patterns/confirmation-pages | the order of the confirmation page's parts, and the reference number inside the panel: examples, not mandates |
+
+## Search results: Scottish Government Design System (doctrine-verifier, 2026-10-21)
+
+GOV.UK has no search-results pattern, so a2 chose the Scottish Government Design System's `/patterns/search-results` (first published 19 Aug 2020, last updated 4 Aug 2025; no version number). It is a public-sector system, not GOV.UK, and is cited as such. **Caveat recorded by the verifier:** the fetch tool returns a summary, so quotes may be paraphrases; the rules below are the structural ones the page states, and each should be re-read against the live page before the next edit of that section. Material 3's Search covers the input component, not the results page, and the GOV.UK finder template is marked out of date; neither is used.
+
+| # | Verdict | Citation | Use as |
+|---|---|---|---|
+| C66 | C | designsystem.gov.scot/patterns/search-results | All search results lists have a results count, pagination for multi-page results, and a "no results" message. |
+| C67 | C | designsystem.gov.scot/patterns/search-results | Show the results count at the top of the list of results, with the search terms. |
+| C68 | I | designsystem.gov.scot/patterns/search-results | Query editable on the results page: the page states no rule, examples only. |
+| C69 | C | designsystem.gov.scot/patterns/search-results | The no-results state clearly explains there are no results to display, with hints. |
+| C70 | C | designsystem.gov.scot/patterns/search-results | Put the "sort by" dropdown above the search results; offer only a sort that applies to all content. |
+| C71 | C | designsystem.gov.scot/patterns/search-results | Split results over multiple pages when there are more than 10; ten per page; pagination at the bottom. |
+| C72 | I | designsystem.gov.scot/patterns/search-results | Related searches and spelling suggestions: not carried as a rule (optional content). |
+| C73 | C | designsystem.gov.scot/patterns/search-results | On a partial update, apply `aria-live` to the heading that gives the total number of results and move focus to the start of the changed content. |
+| C74 | I | designsystem.gov.scot/patterns/search-results | Result item content: delegated to a separate page not fetched; examples only. |
