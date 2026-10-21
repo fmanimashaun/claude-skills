@@ -106,5 +106,11 @@ GUARD = Guard(
             "    if False:\n        print(f\"advisory REQUIRED",
             "a required advisory with no record is exit 1",
         ),
+        Mutation(
+            "the word `check` counts as structure again, so an app's ordinary check owes an advisory",
+            "|descriptor key|schema key)s?\\b\", re.I)",
+            "|descriptor key|schema key|check)s?\\b\", re.I)",
+            "an app's ordinary check is not structure",
+        ),
     ),
 )

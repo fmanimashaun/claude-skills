@@ -24,7 +24,8 @@ REQUIRED when any category fires (each is the whole definition of its category):
   * dependency  a planned dependency manifest or lockfile, or the plan says it adds a gem, package or dependency
   * breadth     the planned paths span BREADTH or more components (a component is a path's first two segments). Measured
                 2026-10-21 on the 30 most recent PRs merged into dev, bookkeeping paths excluded: 0-3 components 11, 4: 4, 5: 6,
-                6+: 9. At 6, the 30% most cross-cutting fire.
+                6+: 9. At 6, the 30% most cross-cutting fire. Re-take it: `gh pr list --state merged --base dev --limit 30 --json files`,
+                count each PR's distinct first-two-segment paths outside `BOOKKEEPING`.
 
 THE RECORD, `docs/evidence/reviews/plans/<slug>/advisor.md`:
   * `--begin` writes `Plan: <file>` per plan file, `Plan-SHA256: <hash>`, `Categories: <...>`, and a snapshot of the plan beside the
@@ -38,7 +39,8 @@ THE RECORD, `docs/evidence/reviews/plans/<slug>/advisor.md`:
     revised plan (`Disposed-SHA256`) only when every finding is disposed, its categories are a subset of the reviewed ones, and at
     most RESTAMP_MAX of its lines changed against the snapshot. Measured 2026-10-21 on 66 revisions of 53 acceptance files
     (Retask): changed share 25th percentile 4%, median 9%, 75th 22%, 90th 52%. Above 30%, about one revision in seven, a new pass is
-    owed even in the same categories.
+    owed even in the same categories. Re-take it: every revision pair of each acceptance file (`git log --follow`), scored with
+    `changed_share`.
 
 LIMITS. A classifier over the plan's words and backticked paths: a plan worded unlike every pattern, or one naming no path, is
 missed. The snapshot and the record are files the session writes, so nothing here stops a hand-written record; it makes the pass,
@@ -70,7 +72,7 @@ PATH_RE = re.compile(r"`([A-Za-z0-9_.@-][\w.@/-]*/[\w.@/-]+)`")
 STRUCTURE_PATHS = re.compile(r"(?:^|/)(?:\.claude-plugin/|agents/[^/]+\.md$|commands/[^/]+\.md$|skills/[^/]+/SKILL\.md$|"
                              r"hooks/(?:hooks\.json$|scripts/)|checks\.json$|stacks\.json$|marketplace\.json$)")
 STRUCTURE_TEXT = re.compile(r"\b(?:add|adds|adding|new|move|moves|moving|remove|removes|removing|rename|renames|split|merge|retire)\b[^.\n]{0,40}"
-                            r"\b(?:plugin|agent|command|skill|hook|gate|descriptor key|schema key|check)s?\b", re.I)
+                            r"\b(?:plugin|agent|command|skill|hook|gate|descriptor key|schema key)s?\b", re.I)  # not "check": an app adds checks every day
 # A dependency manifest is a STACK's own root marker file (its manifest names it in `all`/`any`), so this script names no stack;
 # a lockfile is recognised by shape.
 LOCKFILE = re.compile(r"(?:^|/)[^/]*(?:\.lock|\.lockb|-lock\.json|-lock\.yaml|\.sum)$")
@@ -315,6 +317,7 @@ def selftest() -> int:  # noqa: C901 -- one fixture table, read top to bottom
             ("a webhook is security", "Receive the partner webhook at `src/hooks/partner.py`.", {"security"}),
             ("a new agent path is structure", "Write `plugins/x/agents/advisor.md`.", {"structure"}),
             ("plan text adding a hook is structure", "Add a hook that refuses the push.", {"structure"}),
+            ("an app's ordinary check is not structure", "Add a check that the email is present.", set()),
             ("an app's own hooks folder is not structure", "Refactor `src/hooks/use_cart.py`.", set()),
             ("a plugin hook script is structure", "Write `plugins/x/hooks/scripts/guard.sh`.", {"structure"}),
             ("a migration path is data-model", "Write `data/migrations/0042_add_x.sql`.", {"data-model"}),
