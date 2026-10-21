@@ -6,11 +6,6 @@
    "summary": "Agents whose whole job is a Rails task (implement in Rails, write migrations, run RSpec, audit with Brakeman, review against Rails practice). They are loaded by every rails-flow install; a Next.js project would see agents it can never use.",
    "issue": 2173
   },
-  "rails-hooks": {
-   "title": "The Rails-only hooks",
-   "summary": "Hooks that fire on a Rails artifact: guard-migrate.sh on a new db/migrate file, lint-ruby.sh on a .rb edit. They register through the plugin's hooks.json, so the stack plugin must register them instead.",
-   "issue": 2174
-  },
   "rails-gates": {
    "title": "The Rails project gates",
    "summary": "Gate scripts that read a Rails project (simple_form, migrations order, tenancy cop, privacy inventory, production config, MCP checks, i18n, CI-runs-tests, coverage ratchet, spec support, layer structure, herb) and their checks.json registrations. project_gates.py already discovers checks.json from sibling plugins, so this is a move, not new machinery.",
@@ -51,16 +46,6 @@
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
    "move": "rails-agents"
-  },
-  {
-   "match": [
-    "plugins/rails-flow/hooks/scripts/guard-migrate.sh",
-    "plugins/rails-flow/hooks/scripts/lint-ruby.sh"
-   ],
-   "decision": "rails-stack",
-   "assumes": "fires on db/migrate files and .rb edits; runs bin/rails and rubocop",
-   "how": "its hooks.json entry moves to the stack plugin",
-   "move": "rails-hooks"
   },
   {
    "match": [
@@ -352,7 +337,8 @@
     "rails-flow": 2183,
     "qa-flow": 2183,
     "pipeline": 2183,
-    "design-flow": 2183
+    "design-flow": 2183,
+    "rails-stack": 2183
    }
   },
   {
@@ -809,7 +795,17 @@
     "class": "rails",
     "issue": 2173,
     "why": "the Rails specialist agents (implement in Rails, migrations, RSpec, Brakeman, Rails review, simple_form audit), moved here from rails-flow"
+   },   {
+    "match": [
+     "plugins/rails-stack/hooks/hooks.json",
+     "plugins/rails-stack/hooks/scripts/guard-migrate.sh",
+     "plugins/rails-stack/hooks/scripts/lint-ruby.sh"
+    ],
+    "class": "rails",
+    "issue": 2174,
+    "why": "the Rails-only hooks (a migration guard on a new db/migrate file, rubocop auto-correct on a .rb edit) and the manifest that registers them, moved here from rails-flow"
    },
+
    {
     "match": [
      "plugins/rails-stack/scripts/findings.py"
