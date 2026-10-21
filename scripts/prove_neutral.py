@@ -377,9 +377,10 @@ def _selftest() -> int:
     check("a floor at or above the base floor is clean", floor_drop({"floor": 5}, {"floor": 5}) == [] and floor_drop({"floor": 5}, {"floor": 9}) == [])
     check("a first introduction (no base file) is clean", floor_drop(None, {"floor": 3}) == [])
     check("a floor that fell with no reason is a finding", any("no recorded reason" in f for f in floor_drop({"floor": 5}, {"floor": 3})))
-    check("a floor that fell with a reason from the base floor is clean", floor_drop({"floor": 5}, {"floor": 3, "floor_reset": {"from": 5, "reason": "criteria tightened"}}) == [])
-    check("a reset from a different floor does not excuse the drop", any("no recorded reason" in f for f in floor_drop({"floor": 5}, {"floor": 3, "floor_reset": {"from": 4, "reason": "x"}})))
-    check("an empty reason does not excuse the drop", any("no recorded reason" in f for f in floor_drop({"floor": 5}, {"floor": 3, "floor_reset": {"from": 5, "reason": "  "}})))
+    check("a floor that fell with a reason from the base floor is clean", floor_drop({"floor": 5}, {"floor": 3, "floor_reset": {"from": 5, "to": 3, "reason": "criteria tightened"}}) == [])
+    check("a reset from a different floor does not excuse the drop", any("no recorded reason" in f for f in floor_drop({"floor": 5}, {"floor": 3, "floor_reset": {"from": 4, "to": 3, "reason": "x"}})))
+    check("a reset recorded for a different floor does not excuse the drop", any("no recorded reason" in f for f in floor_drop({"floor": 5}, {"floor": 2, "floor_reset": {"from": 5, "to": 3, "reason": "x"}})))
+    check("an empty reason does not excuse the drop", any("no recorded reason" in f for f in floor_drop({"floor": 5}, {"floor": 3, "floor_reset": {"from": 5, "to": 3, "reason": "  "}})))
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / ".claude-plugin").mkdir()
@@ -401,7 +402,7 @@ def _selftest() -> int:
         with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
             rc_drop = main(["--check"], root, base_ref="basebranch")
         check("--check fails a floor lower than the base branch's with no reason", rc_drop == 1 and "no recorded reason" in sink.getvalue())
-        (root / PROOF).write_text(json.dumps({"floor": 3, "proven": [], "floor_reset": {"from": 5, "reason": "tightened"}}), encoding="utf-8")
+        (root / PROOF).write_text(json.dumps({"floor": 3, "proven": [], "floor_reset": {"from": 5, "to": 3, "reason": "tightened"}}), encoding="utf-8")
         sink = io.StringIO()
         with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
             main(["--check"], root, base_ref="basebranch")
@@ -410,6 +411,23 @@ def _selftest() -> int:
         with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
             rc_missing = main(["--check"], root, base_ref="no-such-ref")
         check("--check fails when the base branch cannot be read", rc_missing == 1 and "cannot be compared" in sink.getvalue())
+        (root / PROOF).write_text("{not json", encoding="utf-8")
+        fixture_git.run(root, "add", "--", PROOF)
+        fixture_git.run(root, "commit", "-qm", "bad base")
+        fixture_git.run(root, "branch", "badbase")
+        (root / PROOF).write_text(json.dumps({"floor": 0, "proven": [], "floor_reset": {"from": 7, "to": 0, "reason": "stale"}}), encoding="utf-8")
+        sink = io.StringIO()
+        with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+            try:
+                rc_bad = main(["--check"], root, base_ref="badbase")
+            except Exception as exc:  # a crash must fail THIS row, with the label, not end the selftest
+                rc_bad = -1
+                sink.write(f"Traceback: {exc!r}")
+        check("a base proof file that is not valid JSON is a named finding, not a traceback", rc_bad == 1 and "base proof file unreadable" in sink.getvalue() and "Traceback" not in sink.getvalue())
+        sink = io.StringIO()
+        with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+            main(["--record"], root)
+        check("--record that does not lower the floor clears a stale floor_reset", "floor_reset" not in json.loads((root / PROOF).read_text(encoding="utf-8")))
     check("a recorded component that vanished is a finding", any("no longer a neutral" in f for f in judge({"a": {"state": "proven", "why": ""}}, proof)))
     check("a proven count below the floor is a finding", any("below the recorded floor" in f for f in judge({"a": {"state": "proven", "why": ""}}, {"floor": 5, "proven": []})))
     print(f"prove_neutral selftest: {ok} checks passed, {len(bad)} failed")
@@ -425,7 +443,10 @@ def base_proof(root: Path, base_ref: str) -> tuple[dict | None, str]:
     except OSError as exc:
         return None, f"git could not run ({exc})"
     if done.returncode == 0:
-        return json.loads(done.stdout), ""
+        try:
+            return json.loads(done.stdout), ""
+        except ValueError as exc:
+            return None, f"base proof file unreadable: {exc}"
     if "exists on disk, but not in" in done.stderr or "does not exist in" in done.stderr:
         return None, ""
     return None, f"{base_ref} cannot be read ({done.stderr.strip().splitlines()[-1][:80] if done.stderr.strip() else 'no output'})"
@@ -436,7 +457,7 @@ def floor_drop(base: dict | None, head: dict) -> list[str]:
     if base is None or head.get("floor", 0) >= base.get("floor", 0):
         return []
     reset = head.get("floor_reset") or {}
-    if reset.get("from") == base.get("floor") and str(reset.get("reason", "")).strip():
+    if reset.get("from") == base.get("floor") and reset.get("to") == head.get("floor", 0) and str(reset.get("reason", "")).strip():
         return []
     return [f"the floor fell from {base.get('floor')} (the base branch) to {head.get('floor', 0)} with no recorded reason: lower it only with "
             f"`--record --reset-floor \"<why the criteria changed>\"`, which records `floor_reset` {{from, reason}} in {PROOF}"]
@@ -480,7 +501,7 @@ def main(argv: list[str] | None = None, root: Path = REPO, base_ref: str = "orig
             proven = sorted(p for p, r in results.items() if r["state"] == "proven")
             data = {"floor": len(proven) if a.reset_floor else max(proof.get("floor", 0), len(proven)), "proven": proven}
             if a.reset_floor:
-                data["floor_reset"] = {"from": proof.get("floor", 0), "reason": a.reset_floor.strip()}
+                data["floor_reset"] = {"from": proof.get("floor", 0), "to": data["floor"], "reason": a.reset_floor.strip()}
             (root / PROOF).write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
             print(f"wrote {PROOF}: {len(proven)} proven, floor {data['floor']}. `git add docs/` AND COMMIT.")
     if findings:

@@ -9,6 +9,24 @@ GUARD = Guard(
     needs=("scripts/component_classes.py", "scripts/rails_assumptions.py", "scripts/hermetic_git.py", "plugins/rails-flow/scripts/fixture_git.py", "plugins/rails-flow/scripts/project_gates.py", "plugins/rails-flow/checks.json"),
     mutations=(
         Mutation(
+            "a reset recorded for a different floor excuses a drop",
+            '    if reset.get("from") == base.get("floor") and reset.get("to") == head.get("floor", 0) and',
+            '    if reset.get("from") == base.get("floor") and',
+            "a reset recorded for a different floor does not excuse the drop",
+        ),
+        Mutation(
+            "a base proof file that is not JSON raises a traceback again",
+            "        except ValueError as exc:\n            return None, f\"base proof file unreadable: {exc}\"",
+            "        except KeyError as exc:\n            return None, f\"base proof file unreadable: {exc}\"",
+            "a base proof file that is not valid JSON is a named finding, not a traceback",
+        ),
+        Mutation(
+            "--record keeps a stale floor_reset",
+            '            data = {"floor": len(proven) if a.reset_floor else max(proof.get("floor", 0), len(proven)), "proven": proven}',
+            '            data = {"floor": len(proven) if a.reset_floor else max(proof.get("floor", 0), len(proven)), "proven": proven, **({"floor_reset": proof["floor_reset"]} if "floor_reset" in proof else {})}',
+            "--record that does not lower the floor clears a stale floor_reset",
+        ),
+        Mutation(
             "a floor lower than the base branch's passes",
             '    if base is None or head.get("floor", 0) >= base.get("floor", 0):',
             "    if True:",
@@ -22,8 +40,8 @@ GUARD = Guard(
         ),
         Mutation(
             "an empty reason excuses a drop",
-            '    if reset.get("from") == base.get("floor") and str(reset.get("reason", "")).strip():',
-            '    if reset.get("from") == base.get("floor"):',
+            '    if reset.get("from") == base.get("floor") and reset.get("to") == head.get("floor", 0) and str(reset.get("reason", "")).strip():',
+            '    if reset.get("from") == base.get("floor") and reset.get("to") == head.get("floor", 0):',
             "an empty reason does not excuse the drop",
         ),
         Mutation(

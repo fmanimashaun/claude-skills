@@ -24,6 +24,7 @@
  ],
  "floor_reset": {
   "from": 34,
-  "reason": "the proof criteria were tightened in review of #2237: only exit 0 proves (exit 1 and a not-applicable gate no longer count as clean), so the first recording of 34 fell to 20"
+  "reason": "the proof criteria were tightened in review of #2237: only exit 0 proves (exit 1 and a not-applicable gate no longer count as clean), so the first recording of 34 fell to 20",
+  "to": 20
  }
 }
