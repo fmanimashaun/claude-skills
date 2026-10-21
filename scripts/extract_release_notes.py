@@ -68,7 +68,7 @@ above reads headings, and none asks which section a heading sits in. So `--check
   * two sections for one component unless all but one are listed in `ARCHIVED`;
   * an `### Unreleased` in an archived section;
   * an `### Unreleased` in a live section whose newest release is not the component's CURRENT version
-    (`marketplace.json` for rails-stack and the metadata, each plugin's `plugin.json` otherwise) --
+    (`marketplace.json` for the metadata, each plugin's `plugin.json` otherwise, rails-stack included since #2182) --
     the section a release would actually be cut from;
   * an `ARCHIVED` entry that matches no section, which is how a release added to an archived section
     shows up: its newest tag no longer matches the one it was frozen at.
