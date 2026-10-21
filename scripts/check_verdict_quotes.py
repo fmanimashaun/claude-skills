@@ -2,7 +2,7 @@
 """A CONFIRMED verdict may quote only what the cited page says. This fetches the page and checks, phrase by phrase. (#2233)
 
 Run:  python3 scripts/check_verdict_quotes.py AUDIT.md [...]     # every `quotes` block in the file(s): fetch each URL, match each phrase
-      python3 scripts/check_verdict_quotes.py --format-check      # offline: a new audit that says CONFIRMED carries a `quotes` block
+      python3 scripts/check_verdict_quotes.py --format-check      # offline: each CONFIRMED verdict of a new audit carries its quotes or a reasoned waiver
       python3 scripts/check_verdict_quotes.py --legacy [FILE...]  # the audits written before this gate: heuristic (url, quote) pairs, a report
       python3 scripts/check_verdict_quotes.py --selftest
 
@@ -11,28 +11,37 @@ fetch, so it could CONFIRM a quote that was a paraphrase, or text from a page it
 on the cited page (a GOV.UK sentence quoted from the wrong page; a Polaris claim CONFIRMED from a page that serves only a JavaScript shell). A gate
 that can confirm a quote the source does not contain cannot fail. This is the check that can.
 
-THE RECORD. A CONFIRMED verdict carries a fenced block, one quote per line, three fields split by ` | `:
+THE RECORD. Every line of an audit that gives a CONFIRMED verdict (the word, in any case) ends with `[quotes: C1]` and the audit holds a fenced block
+of that id, one quote per line, three fields split by ` | `, none empty:
 
-    ```quotes
+    | C1 | the claim | CONFIRMED [quotes: C1] |
+
+    ```quotes C1
     https://design-system.service.gov.uk/patterns/validation | page read 2026-10-21 | show an error summary component at the top of the page
     ```
 
-URL, the version or date in scope, and the exact phrase. The phrase is matched against the page's RAW text, never a summary of it.
+URL, the version or date in scope, and the exact phrase. The phrase is matched against the page's RAW text, never a summary of it. A verdict whose
+evidence is source in this repository has no page to match: it says `[waived: <the reason, at least 20 characters>]` instead. One block or one waiver
+covers one verdict, never a second.
 
-THE MATCH (the procedure 4a used on the #2220 claims, written down): fetch the raw page with a plain GET; drop `<script>`, `<style>`, `<noscript>` and
-comments; strip the tags; unescape entities; normalise (NFKC, curly quotes and dashes to ASCII, non-breaking and zero-width spaces, runs of whitespace
-to one space); then the phrase, normalised the same way, must appear as a substring. Case is NOT folded: "Always show" is not "always show".
+THE MATCH (the procedure 4a used on the #2220 claims, written down): fetch the raw page with a plain GET; keep only what a reader sees: drop `<head>`
+(its `<title>` too), `<script>` (an unclosed one runs to the end of the file), `<style>`, `<noscript>`, `<template>`, `<svg>`, comments, and any element
+with `hidden`, `aria-hidden="true"` or an inline `display:none` / `visibility:hidden`, with everything inside it; strip the tags; unescape entities;
+normalise (NFKC, curly quotes and dashes to ASCII, non-breaking and zero-width spaces, runs of whitespace to one space); then the phrase, normalised the
+same way, must appear as a substring. Case is NOT folded: "Always show" is not "always show".
 
 EXIT CODES
   0  every phrase is on its page.
   1  a phrase is absent from its page: the verdict is refused. The output names the phrase and the URL.
-  2  it cannot judge: the page could not be fetched, or it serves no text of its own (a JavaScript shell). The verdict is INCONCLUSIVE ("rendered
-     page; not verified"), never CONFIRMED.
+  2  it cannot judge: the page could not be fetched, it REDIRECTED (the page read is not the page cited: cite the final URL, and check the version it
+     describes), or it serves no text of its own (a JavaScript shell). The verdict is INCONCLUSIVE ("rendered page; not verified"), never CONFIRMED.
   A page that is missing (exit 2) and a phrase that is missing (exit 1) are different answers; 1 wins when both occur.
 
 LIMITS. A match proves the phrase is on the page, not that the page is the right authority, nor that the version in scope is the one the page
 describes: the verifier still states both. A shell is recognised by how little text the page has (SHELL_MIN_CHARS), so a very short real page
-reads as INCONCLUSIVE: that errs toward refusing.
+reads as INCONCLUSIVE: that errs toward refusing. An inline tag is removed without a space, so two words a page joins only by markup (`foo<b>bar</b>`)
+read as one word, where a reader may see two; and text a stylesheet hides (a class, not an inline style) is counted as visible. Both err toward
+accepting a phrase the reader could not read, so a phrase that matters should be checked on the page by eye as well.
 
 Stdlib only. Fetching needs a network, so this is a verifier's tool and the maintainer's, not a gate that runs in CI; the gate is `--format-check`
 and `--selftest`, which are offline.
@@ -40,7 +49,6 @@ and `--selftest`, which are offline.
 from __future__ import annotations
 
 import argparse
-import html
 import re
 import sys
 import tempfile
@@ -49,13 +57,59 @@ import unicodedata
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 AUDITS = "docs/evidence/audits"
 SHELL_MIN_CHARS = 400          # a page whose own text is shorter than this is a shell, or too short to verify anything against
-FORMAT_CUTOFF = "2026-10-22"   # audits dated on or after this day must carry a `quotes` block when they say CONFIRMED
+# The audits that existed before this check: they are not held to the quotes format. FROZEN: an audit not named here is new, whatever its file name says
+# (a back-dated or undated name does not make it old), and the list is never extended: a new audit carries its quotes.
+LEGACY_AUDITS = frozenset((
+    "2026-07-21-framework-gap-audit.md",
+    "2026-09-16-no-enterprise-manual.md",
+    "2026-10-02-mods-api-2.1.287.md",
+    "2026-10-07-mods-tool-call-ratelimits-2.1.292.md",
+    "2026-10-09-mods-command-run-clear-2.1.292.md",
+    "2026-10-10-haiku-55-effort-advisor-verdict.md",
+    "2026-10-10-model-tiers-refresh-1681.md",
+    "2026-10-10-pwa-doctrine-1750.md",
+    "2026-10-10-rails-8-1-8-2-doctrine-verification.md",
+    "2026-10-11-github-rulesets-free-private-403-1872.md",
+    "2026-10-11-hook-environment-1843.md",
+    "2026-10-11-mcp-annotations-gate-1882.md",
+    "2026-10-11-mission-control-1816.md",
+    "2026-10-11-observability-otel-1694.md",
+    "2026-10-12-hotwire-audit.md",
+    "2026-10-12-pipeline-design-flow-audit.md",
+    "2026-10-12-qa-flow-audit.md",
+    "2026-10-12-rails-8-2-readiness-round-2.md",
+    "2026-10-12-rails-flow-commands-agents-claims.md",
+    "2026-10-12-test-preflight-threat-model-1821.md",
+    "2026-10-14-agent-surface-read-research.md",
+    "2026-10-14-agent-surface-write-research.md",
+    "2026-10-14-mcp-authorization-2035.md",
+    "2026-10-14-mcp-server-tool-design-2033.md",
+    "2026-10-14-observability-postgres-2037.md",
+    "2026-10-14-production-monitoring-research.md",
+    "2026-10-14-rails-8-fix-menu-2039.md",
+    "2026-10-14-worktree-teardown-2058.md",
+    "2026-10-14-write-tools-epic-review.md",
+    "2026-10-16-observability-postgres-index-bloat-2045.md",
+    "2026-10-16-postgres-18-baseline-2057.md",
+    "2026-10-16-postgres-inconclusive-2107.md",
+    "raw/2026-10-11-mission-control-1816-verifier.md",
+    "raw/2026-10-11-observability-otel-1694-verifier-1.md",
+    "raw/2026-10-11-observability-otel-1694-verifier-2.md",
+    "raw/2026-10-11-observability-otel-1694-verifier-3.md",
+    "raw/2026-10-11-observability-otel-1694-verifier-4.md",
+    "raw/2026-10-12-hotwire-audit-native.md",
+    "raw/2026-10-12-hotwire-audit-production.md",
+    "raw/2026-10-12-hotwire-audit-stimulus.md",
+    "raw/2026-10-12-hotwire-audit-turbo.md",
+    "raw/2026-10-16-postgres-index-bloat-2045-runs.md",
+))
 USER_AGENT = "claude-skills-verdict-quote-check/1 (+https://github.com/fmanimashaun/claude-skills)"
 TIMEOUT = 25
 
@@ -76,19 +130,59 @@ def normalise(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-_DROP = re.compile(r"<(script|style|noscript|template|svg)\b[^>]*>.*?</\1\s*>|<!--.*?-->", re.S | re.I)
-_TAG = re.compile(r"<[^>]*>")
-# Block-level tags end a run of text the way a reader sees it; an inline tag (<code>, <a>, <b>) does not, so it is removed without a space:
-# `<code>1</code>, the` reads "1, the", not "1 , the".
-_BLOCK = re.compile(r"</?(?:p|div|li|ul|ol|br|hr|h[1-6]|tr|td|th|table|thead|tbody|section|article|aside|header|footer|nav|main|pre|blockquote|dt|dd|dl|figure|figcaption|form|details|summary)\b[^>]*>", re.I)
+_BLOCK_TAGS = frozenset("p div li ul ol br hr h1 h2 h3 h4 h5 h6 tr td th table thead tbody section article aside header footer nav main pre blockquote dt dd dl "
+                        "figure figcaption form details summary".split())
+_VOID = frozenset("area base br col embed hr img input link meta param source track wbr".split())
+_NEVER_VISIBLE = frozenset("head script style noscript template svg title".split())
+_HIDDEN_STYLE = re.compile(r"display\s*:\s*none|visibility\s*:\s*hidden", re.I)
+
+
+class _Text(HTMLParser):
+    """The text a reader of the page sees. Not visible: <head> (its <title> included), <script>, <style>, <noscript>, <template>, <svg>, an element with
+    `hidden`, `aria-hidden="true"` or an inline `display:none` / `visibility:hidden`, and anything inside one. An unclosed <script> runs to the end of
+    the file (the parser never leaves it). An inline tag is removed without a space (`<code>1</code>,` reads `1,`), a block tag is a break."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.stack: list[tuple[str, bool]] = []     # (tag, hides what is inside it)
+
+    def _hidden(self) -> bool:
+        return any(h for _, h in self.stack)
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        a = {k: (v or "") for k, v in attrs}
+        hides = (tag in _NEVER_VISIBLE or "hidden" in a or a.get("aria-hidden", "").lower() == "true" or bool(_HIDDEN_STYLE.search(a.get("style", ""))))
+        if tag in _BLOCK_TAGS and not self._hidden():
+            self.parts.append(" ")
+        if tag not in _VOID:
+            self.stack.append((tag, hides))
+
+    def handle_startendtag(self, tag: str, attrs: list) -> None:
+        if tag in _BLOCK_TAGS and not self._hidden():
+            self.parts.append(" ")
+
+    def handle_endtag(self, tag: str) -> None:
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i][0] == tag:
+                del self.stack[i:]
+                break
+        if tag in _BLOCK_TAGS and not self._hidden():
+            self.parts.append(" ")
+
+    def handle_data(self, data: str) -> None:
+        if not self._hidden():
+            self.parts.append(data)
 
 
 def visible_text(raw: str, is_html: bool) -> str:
     """The text a reader of the raw page would see, normalised. A non-HTML body (raw source, Markdown) is its own text."""
-    if is_html:
-        raw = _TAG.sub("", _BLOCK.sub(" ", _DROP.sub(" ", raw)))
-        raw = html.unescape(raw)
-    return normalise(raw)
+    if not is_html:
+        return normalise(raw)
+    parser = _Text()
+    parser.feed(raw)
+    parser.close()
+    return normalise("".join(parser.parts))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -106,6 +200,8 @@ def fetch(url: str) -> Page:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "text/html,text/plain,*/*"})
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as r:       # noqa: S310 (a verifier reads public docs by URL)
+            if r.geturl() != url:
+                return Page("", False, f"redirected to {r.geturl()}: cite the final URL, and check the version it describes")
             kind = r.headers.get("Content-Type", "")
             body = r.read(8_000_000).decode(r.headers.get_content_charset() or "utf-8", errors="replace")
     except (urllib.error.URLError, OSError, ValueError) as exc:
@@ -129,27 +225,30 @@ class Quote:
     scope: str
     phrase: str
     where: str          # file:line, for the report
+    ident: str = ""     # the id of the ```quotes block it sits in
 
 
 def parse_blocks(text: str, where: str) -> tuple[list[Quote], list[str]]:
-    """The quotes in every ```quotes block, and the lines that are not three ` | ` fields (a malformed record is refused, not skipped)."""
+    """The quotes in every ```quotes ID block, and the lines that are not three ` | ` fields (a malformed record, or an empty version/date field, is
+    refused, not skipped)."""
     quotes: list[Quote] = []
     bad: list[str] = []
-    inside = False
+    ident: str | None = None
     for n, line in enumerate(text.splitlines(), 1):
-        if re.match(r"^\s*```quotes\s*$", line):
-            inside = True
+        opener = re.match(r"^\s*```quotes(?:\s+(\S+))?\s*$", line)
+        if ident is None and opener:
+            ident = opener.group(1) or ""
             continue
-        if inside and re.match(r"^\s*```\s*$", line):
-            inside = False
+        if ident is not None and re.match(r"^\s*```\s*$", line):
+            ident = None
             continue
-        if not inside or not line.strip():
+        if ident is None or not line.strip():
             continue
         parts = [p.strip() for p in line.split(" | ", 2)]
-        if len(parts) != 3 or not parts[0].startswith(("http://", "https://")) or not parts[2]:
-            bad.append(f"{where}:{n}: not `url | version or date | phrase`: {line.strip()[:90]}")
+        if len(parts) != 3 or not parts[0].startswith(("http://", "https://")) or not parts[1] or not parts[2]:
+            bad.append(f"{where}:{n}: not `url | version or date | phrase` with all three filled: {line.strip()[:90]}")
             continue
-        quotes.append(Quote(parts[0], parts[1], parts[2], f"{where}:{n}"))
+        quotes.append(Quote(parts[0], parts[1], parts[2], f"{where}:{n}", ident))
     return quotes, bad
 
 
@@ -177,25 +276,49 @@ def check_quotes(quotes: list[Quote], fetcher=fetch) -> tuple[int, list[str]]:
 # The format check (offline) and the legacy report
 # ---------------------------------------------------------------------------------------------
 
-WAIVER = re.compile(r"<!--\s*quotes-waived:\s*\S.*?-->")
+VERDICT = re.compile(r"\bCONFIRMED\b", re.I)
+EVIDENCE = re.compile(r"\[quotes:\s*([A-Za-z0-9._-]+)\s*\]")
+WAIVED = re.compile(r"\[waived:\s*([^\]]*)\]")
+MIN_REASON = 20
+
+
+def verdict_lines(text: str) -> list[tuple[int, str]]:
+    """The lines that give a verdict: any line outside a code fence that uses the word CONFIRMED, in any case."""
+    out: list[tuple[int, str]] = []
+    fenced = False
+    for n, line in enumerate(text.splitlines(), 1):
+        if re.match(r"^\s*```", line):
+            fenced = not fenced
+            continue
+        if not fenced and VERDICT.search(line):
+            out.append((n, line))
+    return out
 
 
 def format_findings(root: Path) -> list[str]:
-    """A new audit (dated on or after FORMAT_CUTOFF) that says CONFIRMED carries a `quotes` block, or a written waiver with its reason."""
+    """Every verdict line of an audit that is not in LEGACY_AUDITS carries `[quotes: ID]` pointing at a ```quotes ID block that holds a record, or
+    `[waived: reason]` with a reason of at least MIN_REASON characters. One record or one waiver never covers a second verdict."""
     findings: list[str] = []
     base = root / AUDITS
     for path in sorted(base.rglob("*.md")) if base.is_dir() else []:
-        stamp = path.name[:10]
-        if not re.match(r"\d{4}-\d{2}-\d{2}$", stamp) or stamp < FORMAT_CUTOFF:
+        rel = path.relative_to(base).as_posix()
+        if rel in LEGACY_AUDITS:
             continue
         text = path.read_text(encoding="utf-8")
-        if "CONFIRMED" not in text:
-            continue
-        quotes, bad = parse_blocks(text, path.relative_to(root).as_posix())
+        shown = path.relative_to(root).as_posix()
+        quotes, bad = parse_blocks(text, shown)
         findings += bad
-        if not quotes and not WAIVER.search(text):
-            findings.append(f"{path.relative_to(root).as_posix()}: says CONFIRMED but carries no ```quotes block and no `<!-- quotes-waived: reason -->`: "
-                            "a verdict whose quotes were never matched against the raw page is the defect #2233 reports")
+        have = {q.ident for q in quotes if q.ident}
+        for n, line in verdict_lines(text):
+            ev, waived = EVIDENCE.search(line), WAIVED.search(line)
+            if ev and ev.group(1) in have:
+                continue
+            if waived and len(waived.group(1).strip()) >= MIN_REASON:
+                continue
+            why = ("its `[quotes: ID]` names a block that has no record" if ev else
+                   f"its waiver gives a reason shorter than {MIN_REASON} characters" if waived else "it carries neither")
+            findings.append(f"{shown}:{n}: a CONFIRMED verdict needs `[quotes: ID]` with a ```quotes ID block, or `[waived: reason]`; {why}. "
+                            "A verdict whose quotes were never matched against the raw page is the defect #2233 reports")
     return findings
 
 
@@ -271,15 +394,26 @@ REAL = """<!doctype html><html><head><title>Validation</title><style>.x{color:re
 <p>When there is an error, <b>show an error summary</b> component at the top of the page, and move keyboard focus to&nbsp;it.</p>
 <p>Don&rsquo;t validate when the user moves away from a field &ndash; wait for the submit.</p>
 <!-- an editor note nobody sees: hidden from readers -->
+<script>var more = "text a body script holds, not the reader";</script>
 <p>""" + ("Plain explanatory text so the page is long enough to be a real page, not a shell. " * 8) + """</p></main></body></html>"""
 SHELL_PAGE = '<!doctype html><html><head><script src="/app.js"></script></head><body><div id="root"></div><noscript>You need to enable JavaScript to run this app.</noscript></body></html>'
 INLINE = "<html><body><p>keep it (the value <code>x</code>, then the next one) here</p><p>the first paragraph ends</p><p>the second begins</p><p>" + ("Plain explanatory text so the page is long enough to be a real page. " * 8) + "</p></body></html>"
+HIDDEN = ("<!doctype html><html><head><title>the title only the head holds</title></head><body>"
+          "<div hidden>text inside a hidden attribute</div><p style=\"display: none\">text inside an inline display none</p>"
+          "<p style=\"visibility:hidden\">text inside visibility hidden</p><span aria-hidden=\"true\">text inside aria hidden</span>"
+          "<div hidden><p>text nested inside a hidden element</p></div><p>the one sentence a reader can see here</p><p>"
+          + ("Plain explanatory text so the page is long enough to be a real page. " * 8) + "</p><script>text after an unclosed script runs to the end of the file")
 PLAIN = ("def tool(self):\n    return annotations(read_only_hint: true)\n" * 12)
 
 
 class _Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
-        routes = {"/real": ("text/html; charset=utf-8", REAL), "/shell": ("text/html", SHELL_PAGE), "/raw.rb": ("text/plain", PLAIN), "/inline": ("text/html", INLINE)}
+        routes = {"/real": ("text/html; charset=utf-8", REAL), "/shell": ("text/html", SHELL_PAGE), "/raw.rb": ("text/plain", PLAIN), "/inline": ("text/html", INLINE), "/hidden": ("text/html", HIDDEN)}
+        if self.path == "/go":                      # a redirect: the page read is not the page cited
+            self.send_response(302)
+            self.send_header("Location", "/real")
+            self.end_headers()
+            return
         if self.path not in routes:
             self.send_response(404)
             self.end_headers()
@@ -323,11 +457,19 @@ def selftest() -> int:
         check("a paraphrase is refused", run("show an error summary next to each answer") == 1)
         check("case is not folded: the wrong case is refused", run("Show An Error Summary component") == 1)
         check("text only a <script> holds is not on the page", run("the sentence only a script holds") == 1)
+        check("text only a <script> in the body holds is not on the page", run("text a body script holds") == 1)
         check("text only an HTML comment holds is not on the page", run("an editor note nobody sees") == 1)
         check("a JavaScript shell is INCONCLUSIVE (exit 2), never CONFIRMED", run("You need to enable JavaScript", "/shell") == 2)
         check("a shell is INCONCLUSIVE even for a phrase it does contain", run("enable JavaScript", "/shell") == 2)
         check("a missing page is INCONCLUSIVE (exit 2)", run("anything", "/nope") == 2)
         check("raw source text matches as itself", run("annotations(read_only_hint: true)", "/raw.rb") == 0)
+        check("a redirect is INCONCLUSIVE (exit 2): the page read is not the page cited", run("show an error summary component", "/go") == 2)
+        check("a redirect names where it went, so the verifier can cite it", "redirected to" in (check_quotes([Quote(base + "/go", "f", "x", "f:1")])[1] or [""])[0])
+        check("the page a redirect leads to matches when it is cited directly", run("show an error summary component", "/real") == 0)
+        check("a visible sentence on a page full of hidden text matches", run("the one sentence a reader can see here", "/hidden") == 0)
+        for hidden in ("the title only the head holds", "text inside a hidden attribute", "text inside an inline display none", "text inside visibility hidden",
+                       "text inside aria hidden", "text nested inside a hidden element", "text after an unclosed script runs to the end"):
+            check(f"hidden text is not on the page: {hidden}", run(hidden, "/hidden") == 1)
         code, report = check_quotes([Quote(base + "/real", "f", "show an error summary component", "f:1"), Quote(base + "/real", "f", "a fabricated phrase", "f:2"),
                                      Quote(base + "/shell", "f", "x", "f:3")])
         check("an absent phrase wins over an inconclusive page (exit 1), and both are reported", code == 1 and len(report) == 2)
@@ -342,32 +484,46 @@ def selftest() -> int:
         server.shutdown()
         server.server_close()
 
-    q, bad = parse_blocks("text\n```quotes\nhttps://a.example/x | page read 2026-10-21 | one phrase here\nnot a record\n```\n", "f.md")
-    check("a quotes block yields its records", len(q) == 1 and q[0].url == "https://a.example/x" and q[0].scope.startswith("page read") and q[0].phrase == "one phrase here")
+    q, bad = parse_blocks("text\n```quotes C1\nhttps://a.example/x | page read 2026-10-21 | one phrase here\nnot a record\n```\n", "f.md")
+    check("a quotes block yields its records, with its id", len(q) == 1 and q[0].url == "https://a.example/x" and q[0].scope.startswith("page read") and q[0].phrase == "one phrase here" and q[0].ident == "C1")
     check("a malformed record is reported, not skipped", len(bad) == 1)
-    check("a phrase may itself contain a pipe", parse_blocks("```quotes\nhttps://a.example | v | a | b\n```\n", "f")[0][0].phrase == "a | b")
+    check("an empty version or date field is refused", len(parse_blocks("```quotes C1\nhttps://a.example |  | a phrase\n```\n", "f")[1]) == 1)
+    check("a phrase may itself contain a pipe", parse_blocks("```quotes C1\nhttps://a.example | v | a | b\n```\n", "f")[0][0].phrase == "a | b")
     check("a record outside a quotes block is ignored", parse_blocks("https://a.example | v | not in a block\n", "f")[0] == [])
 
+    GOOD = "```quotes C1\nhttps://a.example | page read 2026-10-21 | a phrase\n```\n"
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         audits = root / AUDITS
         audits.mkdir(parents=True)
-        (audits / "2026-10-20-old.md").write_text("old verdict CONFIRMED, no quotes\n", encoding="utf-8")
-        check("an audit before the cutoff needs no quotes block", format_findings(root) == [])
-        (audits / "2026-10-23-new.md").write_text("verdict CONFIRMED\n", encoding="utf-8")
-        check("a new audit that says CONFIRMED with no quotes block is a finding", len(format_findings(root)) == 1)
-        (audits / "2026-10-23-new.md").write_text("verdict CONFIRMED\n```quotes\nhttps://a.example | v | a phrase\n```\n", encoding="utf-8")
-        check("a new audit with a quotes block is clean", format_findings(root) == [])
-        (audits / "2026-10-23-new.md").write_text("verdict CONFIRMED\n<!-- quotes-waived: the evidence is source in this repository -->\n", encoding="utf-8")
-        check("a new audit with a written waiver is clean", format_findings(root) == [])
-        (audits / "2026-10-23-new.md").write_text("verdict CONFIRMED\n<!-- quotes-waived: -->\n", encoding="utf-8")
-        check("a waiver with no reason is a finding", len(format_findings(root)) == 1)
-        (audits / "2026-10-23-new.md").write_text("verdict REFUTED\n", encoding="utf-8")
-        check("a new audit with no CONFIRMED verdict needs no block", format_findings(root) == [])
-        (audits / "2026-10-23-new.md").write_text("verdict CONFIRMED\n```quotes\nnot a record\n```\n", encoding="utf-8")
-        check("a malformed record in a new audit is a finding", len(format_findings(root)) >= 1)
+
+        def findings(name: str, text: str) -> list[str]:
+            for old in audits.glob("*.md"):
+                old.unlink()
+            (audits / name).write_text(text, encoding="utf-8")
+            return format_findings(root)
+
+        legacy_name = sorted(LEGACY_AUDITS)[0]
+        check("an audit on the frozen legacy list needs no quotes", findings(legacy_name, "old verdict CONFIRMED, no quotes\n") == [])
+        check("a new audit that says CONFIRMED with no quotes is a finding", len(findings("2026-10-23-new.md", "verdict CONFIRMED\n")) == 1)
+        check("a BACK-DATED name does not make an audit old", len(findings("2026-10-01-x.md", "verdict CONFIRMED\n")) == 1)
+        check("an UNDATED name does not make an audit old", len(findings("foo.md", "verdict CONFIRMED\n")) == 1)
+        check("`Confirmed` in any case is a verdict", len(findings("2026-10-23-new.md", "Verdict: Confirmed\n")) == 1 and len(findings("2026-10-23-new.md", "verdict: confirmed.\n")) == 1)
+        check("`unconfirmed` is not the word", findings("2026-10-23-new.md", "the claim is unconfirmed\n") == [])
+        check("a verdict with [quotes: ID] and its block is clean", findings("2026-10-23-new.md", "verdict CONFIRMED [quotes: C1]\n" + GOOD) == [])
+        check("a verdict whose [quotes: ID] has no block is a finding", len(findings("2026-10-23-new.md", "verdict CONFIRMED [quotes: C9]\n" + GOOD)) == 1)
+        check("a block with no verdict pointing at it does not clear another verdict", len(findings("2026-10-23-new.md", "verdict CONFIRMED\n" + GOOD)) == 1)
+        check("ONE block does not cover a second verdict", len(findings("2026-10-23-new.md", "one CONFIRMED [quotes: C1]\ntwo CONFIRMED\n" + GOOD)) == 1)
+        check("two verdicts with their own blocks are clean", findings("2026-10-23-new.md", "one CONFIRMED [quotes: C1]\ntwo CONFIRMED [quotes: C2]\n" + GOOD + GOOD.replace("C1", "C2")) == [])
+        check("a reasoned waiver clears its own verdict", findings("2026-10-23-new.md", "verdict CONFIRMED [waived: the evidence is source in this repository]\n") == [])
+        check("ONE waiver does not cover a second verdict", len(findings("2026-10-23-new.md", "one CONFIRMED [waived: the evidence is source in this repository]\ntwo CONFIRMED\n")) == 1)
+        check("a waiver reason of `x` is a finding", len(findings("2026-10-23-new.md", "verdict CONFIRMED [waived: x]\n")) == 1)
+        check("a waiver with no reason is a finding", len(findings("2026-10-23-new.md", "verdict CONFIRMED [waived: ]\n")) == 1)
+        check("a REFUTED audit needs no block", findings("2026-10-23-new.md", "verdict REFUTED\n") == [])
+        check("the word inside a code fence is not a verdict", findings("2026-10-23-new.md", "```\nCONFIRMED\n```\n") == [])
+        check("a malformed record in a new audit is a finding", len(findings("2026-10-23-new.md", "verdict CONFIRMED [quotes: C1]\n```quotes C1\nnot a record\n```\n")) >= 1)
         legacy = audits / "2026-10-10-legacy.md"
-        legacy.write_text('CONFIRMED. The docs say “show an error summary component at the top of the page” (https://127.0.0.1:1/x).\n', encoding="utf-8")
+        legacy.write_text('CONFIRMED. The docs say \u201cshow an error summary component at the top of the page\u201d (https://127.0.0.1:1/x).\n', encoding="utf-8")
         pairs = legacy_pairs(legacy, root)
         check("a legacy audit's long quote is paired with the URL in its unit", len(pairs) == 1 and pairs[0].url == "https://127.0.0.1:1/x")
     legacy_page = {"https://a.example/p": Page(normalise("alpha beta gamma delta epsilon zeta eta theta iota kappa lambda"), False)}
@@ -398,7 +554,7 @@ def selftest() -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("files", nargs="*")
-    ap.add_argument("--format-check", action="store_true", help="offline: a new audit that says CONFIRMED carries a quotes block")
+    ap.add_argument("--format-check", action="store_true", help="offline: every CONFIRMED verdict of a new audit carries its quotes or a reasoned waiver")
     ap.add_argument("--legacy", action="store_true", help="report on audits written before the quotes block (heuristic pairs; fetches pages)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
@@ -408,7 +564,7 @@ def main(argv: list[str] | None = None) -> int:
         findings = format_findings(REPO)
         for f in findings:
             print(f"  {f}")
-        print(f"verdict quotes: {len(findings)} finding(s)" if findings else "verdict quotes: every new CONFIRMED audit carries its quotes (or a written waiver)")
+        print(f"verdict quotes: {len(findings)} finding(s)" if findings else "verdict quotes: every CONFIRMED verdict of a new audit carries its quotes (or a reasoned waiver)")
         return 1 if findings else 0
     if a.legacy:
         files = [Path(f) for f in a.files] or sorted((REPO / AUDITS).rglob("*.md"))
