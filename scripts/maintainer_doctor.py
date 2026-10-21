@@ -455,7 +455,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("pipeline committed-secret scan", ("python3", "plugins/pipeline/scripts/scan_committed_secrets.py", "--selftest")),
     # #1465. A Kamal destination is carried through whole: `-d` on every command, the destination's
     # secrets file and overlay, and the credentials environment read from the MERGED config.
-    ("pipeline kamal destination", ("python3", "plugins/pipeline/scripts/kamal_destination.py", "--selftest")),
+    ("rails-stack kamal destination", ("python3", "plugins/rails-stack/scripts/kamal_destination.py", "--selftest")),
     # #1701. The release image build passes the build args and labels pipeline.yml declares (a bare build when it declares
     # none), reads the two keys strictly, and names a Dockerfile ARG nothing feeds.
     ("pipeline release build", ("python3", "plugins/pipeline/scripts/release_build.py", "--selftest")),

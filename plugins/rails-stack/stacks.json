@@ -39,7 +39,7 @@
         "deploy": {
           "target": "kamal",
           "artifact": "docker-image",
-          "agent": "pipeline:kamal-configurator"
+          "agent": "rails-stack:kamal-configurator"
         },
         "ui": {
           "implementation": "viewcomponent-erb",

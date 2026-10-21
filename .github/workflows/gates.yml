@@ -64,7 +64,7 @@ jobs:
           # on every run, before that install.
           for bin in perl shasum; do echo "host tool $bin: $(command -v "$bin" || echo ABSENT)"; done
 
-      # `kamal_destination.py --selftest` asks Kamal's own loader how a destination merges and what
+      # `plugins/rails-stack/scripts/kamal_destination.py --selftest` asks Kamal's own loader how a destination merges and what
       # RAILS_ENV each role resolves (#1465). Without the gem those fixtures report exit 3 (INCOMPLETE),
       # which the doctor maps to SKIP, and its mutation guard's baseline reads INERT. Pinned to the
       # version the fixtures were verified against; the require FAILS the step rather than skip.
