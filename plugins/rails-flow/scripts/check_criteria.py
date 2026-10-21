@@ -183,7 +183,8 @@ def _strict_lines(text: str, path: Path) -> str:
             fence, opened_at = mark.group(1), n
             out.append("")
         else:
-            if re.match(r" {0,3}<(?:[A-Za-z][\w-]*|/[A-Za-z]|[!?])", line) or (inner != line and re.match(r"<(?:[A-Za-z][\w-]*|/[A-Za-z]|[!?])", inner)):
+            # Any indentation or container: a list item's continuation can open an HTML block at four spaces or a tab (security review).
+            if re.match(r"[ \t]*<(?:[A-Za-z][\w-]*|/[A-Za-z]|[!?])", inner):
                 raise Unusable(f"{path}:{n} no raw HTML blocks in a criteria file (`{line.strip()[:30]}`): a renderer and this check read them differently")
             if re.match(r"(?: {4}|\t)", line) and (BOLD_ID_RE.search(line) or DEF_RE.match(line.strip())):
                 raise Unusable(f"{path}:{n} a criterion indented four spaces is a code block to a renderer: write it at the start of the line")
