@@ -216,6 +216,20 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "brakeman",
+      "why": "Brakeman is the upstream tool that already catches the Rails security claims this stack states as doctrine: cross-site scripting through unescaped output (CheckCrossSiteScripting, CheckSanitizeMethods, CheckStripTags), the CSRF setting (CheckForgerySetting) and SQL injection. A scaffolded project ran it in its own CI only when its config/ci.rb had that step and nothing in this toolchain asked, so a project that installed rails-stack had no Brakeman gate (#2223, verified against the Brakeman docs by doctrine-verifier on 2026-10-21). Warnings a project has reviewed and ignored (config/brakeman.ignore) are Brakeman's own mechanism and are not counted; a missing Brakeman is a failure, not a skip.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_brakeman.py"
+      ],
+      "applies_when": [
+        "config/application.rb"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }
