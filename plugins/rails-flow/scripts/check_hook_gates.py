@@ -46,6 +46,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fixture_git  # noqa: E402  (#1588: a fixture's git touches only its own temp repo)
 
 HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
+# The two Rails-only hooks (guard-migrate, lint-ruby) live in rails-stack since #2174; this checker still drives them.
+STACK_HOOKS = Path(__file__).resolve().parents[2] / "rails-stack" / "hooks" / "scripts"
 
 
 # The prefix of every fixture directory. The `--match` mask (`_TEMP_PATH`) is built from it, so a label that embeds a scratch path compares equal in the survey and the run
@@ -547,7 +549,7 @@ def blocked_lines(out: str) -> str:
 
 def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
              env_extra: dict[str, str] | None = None, unset: tuple[str, ...] = (),
-             shell: str | tuple[str, ...] = "bash") -> tuple[int, str]:
+             shell: str | tuple[str, ...] = "bash", hooks_dir: Path = HOOKS) -> tuple[int, str]:
     env = dict(os.environ)
     for k in unset:
         env.pop(k, None)
@@ -558,7 +560,7 @@ def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
         env["PATH"] = os.pathsep.join(str(p) for p in path_prefix) + os.pathsep + env["PATH"]
     if env_extra:
         env.update(env_extra)
-    done = _run([*((shell,) if isinstance(shell, str) else shell), str(HOOKS / name)], cwd=cwd, input=stdin, env=env,
+    done = _run([*((shell,) if isinstance(shell, str) else shell), str(hooks_dir / name)], cwd=cwd, input=stdin, env=env,
                           capture_output=True, text=True, timeout=60)
     return done.returncode, done.stdout + done.stderr
 
@@ -681,7 +683,7 @@ def guard_migrate_fixtures() -> None:
             file_path = file_path_fn(proj)
             payload = json.dumps({"tool_input": {"file_path": file_path}, "cwd": str(proj)})
             return run_hook("guard-migrate.sh", cwd=proj, stdin=payload,
-                            unset=("CLAUDE_PROJECT_DIR",))
+                            unset=("CLAUDE_PROJECT_DIR",), hooks_dir=STACK_HOOKS)
 
     # THE BLOCKED SHAPE, both ways a path arrives: relative and absolute.
     code, out = write(lambda p: "db/migrate/20260927120000_add_thing.rb")
@@ -713,7 +715,7 @@ def guard_migrate_fixtures() -> None:
             (proj / "bin" / "rails").write_text("#!/usr/bin/env ruby\n")
             (proj / "db" / "mig").symlink_to("migrate")
             payload = json.dumps({"tool_input": {"file_path": "db/mig/20260927120000_add_thing.rb"}, "cwd": str(proj)})
-            return run_hook("guard-migrate.sh", cwd=proj, stdin=payload, unset=("CLAUDE_PROJECT_DIR",))[0]
+            return run_hook("guard-migrate.sh", cwd=proj, stdin=payload, unset=("CLAUDE_PROJECT_DIR",), hooks_dir=STACK_HOOKS)[0]
     code = via_symlink()
     check("guard-migrate (#1416): a Write through a symlink into db/migrate/ is blocked", code == 2, f"exit {code}")
 
@@ -756,7 +758,7 @@ def guard_migrate_fixtures() -> None:
             (proj / "db" / "migrate").mkdir(parents=True)
             (proj / "bin").mkdir()
             (proj / "bin" / "rails").write_text("#!/usr/bin/env ruby\n")
-            return run_hook("guard-migrate.sh", cwd=proj, stdin=stdin, unset=("CLAUDE_PROJECT_DIR",))
+            return run_hook("guard-migrate.sh", cwd=proj, stdin=stdin, unset=("CLAUDE_PROJECT_DIR",), hooks_dir=STACK_HOOKS)
 
     code, _ = raw("not json, but it mentions db/migrate/20260927120000_add_thing.rb in passing")
     check("guard-migrate: an UNPARSABLE payload naming a db/migrate/*.rb path is blocked",
@@ -779,7 +781,7 @@ def guard_migrate_fixtures() -> None:
             only.mkdir()
             for tool in ("bash", "cat"):
                 (only / tool).symlink_to(bash if (tool == "bash" and bash) else shutil.which(tool))
-            done = _run([str(only / "bash"), str(HOOKS / "guard-migrate.sh")], cwd=proj,
+            done = _run([str(only / "bash"), str(STACK_HOOKS / "guard-migrate.sh")], cwd=proj,
                                   input=json.dumps({"tool_input": {"file_path": file_path}}),
                                   env={"PATH": str(only)}, capture_output=True, text=True, timeout=60)
             return done.returncode, done.stdout + done.stderr
@@ -806,7 +808,7 @@ def guard_migrate_fixtures() -> None:
 
     # WIRED SCOPE: hooks.json must route this hook from `Write` alone. `Edit`/`MultiEdit` cannot
     # create a file, so there is no creation moment for either of them to carry into this hook.
-    manifest = json.loads((HOOKS.parent / "hooks.json").read_text(encoding="utf-8"))
+    manifest = json.loads((STACK_HOOKS.parent / "hooks.json").read_text(encoding="utf-8"))
     matchers = [entry.get("matcher") for entry in manifest.get("hooks", {}).get("PreToolUse", [])
                 for hook in entry.get("hooks", []) if "guard-migrate.sh" in hook.get("command", "")]
     check("guard-migrate: hooks.json wires it to exactly one PreToolUse entry, matcher `Write`",
@@ -838,7 +840,7 @@ def lint_ruby_fixtures() -> None:
                 _stub(stubs, "mise", 'case "$1" in current) exit 0;; exec) shift; shift; '
                                      f'[ "$1" = bundle ] && shift && exec "{rubybin}/bundle" "$@";; esac; exit 1')
             payload = json.dumps({"tool_input": {"file_path": str(proj / "a.rb")}})
-            return run_hook("lint-ruby.sh", cwd=proj, stdin=payload, path_prefix=[stubs])
+            return run_hook("lint-ruby.sh", cwd=proj, stdin=payload, path_prefix=[stubs], hooks_dir=STACK_HOOKS)
 
     # THE #824 SHAPE: everything corrected; the summary counts the corrected offenses as detected.
     corrected = ('echo "== a.rb =="; echo "C:  1:  1: [Corrected] Style/FrozenStringLiteralComment: Missing."; '
