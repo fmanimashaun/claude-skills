@@ -136,6 +136,67 @@ trusted_python() {
   ( . "$self_dir/../hooks/scripts/lib/trusted-env.sh" >/dev/null 2>&1 && rf_trusted_python >/dev/null 2>&1 && printf '%s' "${RF_PYTHON:-}" ) 2>/dev/null
 }
 
+# THE BODY OF A CLAIM-CARRYING COMMAND (#2258). `gh pr create`, `gh pr edit` and `gh issue comment` carrying a body are judged HERE, with the argv the shell expanded and in the
+# directory gh really runs in, by the SAME rules as guard-claims.sh (template sections, change type, load-bearing claims). The hook judges the command's TEXT, and it could not
+# tell the directory for 88% of 3,211 real calls (a heredoc, a VAR, a `cd` chain): the template went unchecked, and an inline `--body` or a `--body-file "$F"` was not read at all.
+# No rule is restated: the body is handed to the hook in its plainest shape, `gh <verb> [-R x] --body-file <absolute path>`, which the hook always resolves. An inline body is
+# written to a temp file first. NOT checked, said on stderr: a body read from stdin (`-F -`), which only gh may consume. As in the hook, -R/--repo names another repository, so its
+# template is not this checkout's and the hook says so. FAILS CLOSED: a hook that is missing or exits other than 0 refuses the command.
+claims_verb() {
+  local w1="" w2="" skip=0 a
+  for a in "$@"; do
+    if [ "$skip" = 1 ]; then skip=0; continue; fi
+    case "$a" in -R|--repo) skip=1; continue ;; -*) continue ;; esac
+    if [ -z "$w1" ]; then w1="$a"; continue; fi
+    w2="$a"; break
+  done
+  case "$w1 $w2" in "pr create"|"pr edit"|"issue comment") printf '%s %s' "$w1" "$w2"; return 0 ;; esac
+  return 1
+}
+
+judge_body() {
+  local verb="$1"; shift
+  local body="" file="" repo="" stdin=0 next="" a
+  for a in "$@"; do
+    case "$next" in
+      body) body="$a"; next=""; continue ;; file) file="$a"; next=""; continue ;; repo) repo="$a"; next=""; continue ;;
+    esac
+    case "$a" in
+      -b|--body) next=body ;; --body=*) body="${a#--body=}" ;;
+      -F|--body-file) next=file ;; --body-file=*) file="${a#--body-file=}" ;;
+      -R|--repo) next=repo ;; --repo=*) repo="${a#--repo=}" ;;
+    esac
+  done
+  [ -n "$body$file" ] || return 0
+  if [ "$file" = - ]; then
+    echo "gh-shim (rails-flow): the body of \`gh $verb\` comes from stdin, which only gh may read, so it is NOT checked (template, change type, claims)." >&2
+    return 0
+  fi
+  local tmp="" path="$file"
+  if [ -z "$file" ]; then
+    tmp="$(mktemp "${TMPDIR:-/tmp}/rf-gh-body.XXXXXX")" || { echo "gh-shim (rails-flow): refused \`gh $verb\`: no temp file to judge the inline --body in." >&2; return 1; }
+    printf '%s' "$body" > "$tmp"; path="$tmp"
+  fi
+  case "$path" in /*) ;; *) path="$(pwd -P)/$path" ;; esac
+  local hook="$self_dir/../hooks/scripts/guard-claims.sh" cmd payload rc
+  cmd="gh $verb${repo:+ -R $repo} --body-file $path"
+  payload="$(cmd="$cmd" cwd="$(pwd -P)" "$(trusted_python)" -I -c 'import json,os;print(json.dumps({"tool_name":"Bash","tool_input":{"command":os.environ["cmd"]},"cwd":os.environ["cwd"]}))' 2>/dev/null)"
+  if [ -z "$payload" ] || [ ! -f "$hook" ]; then
+    [ -n "$tmp" ] && rm -f "$tmp"
+    echo "gh-shim (rails-flow): refused \`gh $verb\`: the claim guard or python3 is missing, so the body cannot be checked (RAILS_FLOW_CLAIMS_OK=1 to ship it unchecked, audited)." >&2
+    return 1
+  fi
+  printf '%s' "$payload" | CLAUDE_PLUGIN_ROOT="$self_dir/.." /bin/bash -p "$hook"; rc=$?
+  [ -n "$tmp" ] && rm -f "$tmp"
+  [ "$rc" = 0 ] && return 0
+  echo "gh-shim (rails-flow): refused \`gh $verb\` (the claim guard exited $rc on its body)." >&2
+  return 1
+}
+
+if verb="$(claims_verb "${ORIG[@]}")"; then
+  judge_body "$verb" "${ORIG[@]}" || exit 1
+fi
+
 judge=0
 argv=("${ORIG[@]}")
 if has_pr_ready "${ORIG[@]}" || has_api_ready "${ORIG[@]}"; then
