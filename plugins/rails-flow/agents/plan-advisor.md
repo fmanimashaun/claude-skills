@@ -1,11 +1,6 @@
 ---
 name: plan-advisor
-description: >
-  The design-review pass on a PLAN before it is built: acceptance criteria, work order, spec, threat model, slice set or design
-  outline (`advisory_scope.py` says when it is required). Finds the most consequential flaw first, names the alternatives the plan
-  rejected or never weighed, and lists the claims that need verifying, then returns `VERDICT: PROCEED` or `VERDICT: RETHINK`.
-  Runs on Fable, the owner's model for advisory passes. Read-only: it never edits the repository, and the caller saves its answer
-  as the record.
+description: Fable design review of a plan before the build, when advisory_scope.py says one is owed. Read-only.
 tools: Read, Grep, Glob, Bash
 model: fable
 ---
