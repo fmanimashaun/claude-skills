@@ -83,12 +83,32 @@ def plugin_sources(root: Path) -> dict[str, list[tuple[str, Path, bool]]]:
         comps += [(f.stem, f, False) for f in sorted((base / "commands").glob("*.md"))]
         comps += [(f.stem, f, True) for f in sorted((base / "agents").glob("*.md"))]
         for s in p.get("skills", []) or []:
-            skill = (root / s / "SKILL.md")
+            skill = (base / s / "SKILL.md")      # a manifest skill path is relative to the plugin's own source, not to the repo root (#2231)
             if skill.is_file():
                 comps.append((Path(s).name, skill, False))
         comps += [(f.parent.name, f, False) for f in sorted((base / "skills").glob("*/SKILL.md"))] if (base / "skills").is_dir() and not p.get("skills") else []
         out[p["name"]] = comps
     return out
+
+
+def unmeasured(root: Path = ROOT) -> list[str]:
+    """What the measurement cannot see. A plugin whose skills exist on disk under its source but are not in what `measure` counted, and a manifest
+    skill path that names no SKILL.md, are both a number that reads low for no reason: rails-stack measured 0 chars for its skills when they moved
+    under `plugins/rails-stack/`, and the gate passed (#2231)."""
+    findings: list[str] = []
+    manifest = json.loads((root / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+    counted = plugin_sources(root)
+    for p in manifest["plugins"]:
+        base = (root / p.get("source", "./")).resolve()
+        seen = {f.resolve() for _, f, agent in counted[p["name"]] if not agent}
+        on_disk = sorted((base / "skills").glob("*/SKILL.md")) if (base / "skills").is_dir() else []
+        for f in on_disk:
+            if f.resolve() not in seen:
+                findings.append(f"{p['name']}: skill {f.parent.name} exists on disk ({f.resolve().relative_to(root.resolve())}) but is not measured: its always-on cost is unguarded")
+        for s in p.get("skills", []) or []:
+            if not (base / s / "SKILL.md").is_file():
+                findings.append(f"{p['name']}: the manifest lists skill {s}, which has no SKILL.md under {base.relative_to(root.resolve()) if base != root.resolve() else '.'}")
+    return findings
 
 
 def measure(root: Path = ROOT) -> dict[str, int]:
@@ -121,7 +141,8 @@ def selftest() -> int:
         (r / ".claude-plugin").mkdir()
         (r / ".claude-plugin" / "marketplace.json").write_text(json.dumps({"plugins": [
             {"name": "alpha", "source": "./plugins/alpha"},
-            {"name": "stack", "source": "./", "skills": ["./skills/one"]}]}))
+            {"name": "stack", "source": "./", "skills": ["./skills/one"]},
+            {"name": "nested", "source": "./plugins/nested", "skills": ["./skills/two"]}]}))
         cmd = r / "plugins" / "alpha" / "commands"; cmd.mkdir(parents=True)
         agent = r / "plugins" / "alpha" / "agents"; agent.mkdir(parents=True)
         (cmd / "go.md").write_text("---\ndescription: Do the thing\n---\nbody that is never counted\n")
@@ -132,7 +153,12 @@ def selftest() -> int:
         (agent / "big.md").write_text("---\nname: big\ndescription: " + "y" * 2000 + "\n---\n")
         (r / "skills" / "one").mkdir(parents=True)
         (r / "skills" / "one" / "SKILL.md").write_text("---\nname: one\ndescription: A skill\n---\n")
+        (r / "plugins" / "nested" / "skills" / "two").mkdir(parents=True)
+        (r / "plugins" / "nested" / "skills" / "two" / "SKILL.md").write_text("---\nname: two\ndescription: A nested skill\n---\n")
         m = measure(r)
+        check("measure: a skill under a plugin whose source is NOT the repo root is counted (#2231: it measured 0)",
+              m["nested"] == len("two") + len("A nested skill"), m)
+        check("unmeasured: nothing is hidden from the measurement in a clean fixture", unmeasured(r) == [], unmeasured(r))
         check("measure: name + description, body never counted", component_chars(cmd / "go.md", "go") == len("go") + len("Do the thing"),
               component_chars(cmd / "go.md", "go"))
         check("measure: disable-model-invocation: true is not in context (0)", component_chars(cmd / "quiet.md", "quiet") == 0)
@@ -146,6 +172,13 @@ def selftest() -> int:
               and m["stack"] == len("one") + len("A skill"), m)
         check("measure: an agent's description is NOT capped at 1,536 (no cap for agents in sub-agents.md)",
               component_chars(agent / "big.md", "big", agent=True) == len("big") + 2000)
+        # A declared plugin that measures 0 while its skills exist on disk is a vacuous gate: the check must name it.
+        (r / ".claude-plugin" / "marketplace.json").write_text(json.dumps({"plugins": [
+            {"name": "ghost", "source": "./plugins/nested", "skills": ["./skills/moved-away"]}]}))
+        ghost = measure(r)
+        check("unmeasured: a plugin measuring 0 while its skill exists on disk is a finding",
+              ghost["ghost"] == 0 and any("two exists on disk" in f and "not measured" in f for f in unmeasured(r)), (ghost, unmeasured(r)))
+        check("unmeasured: a manifest skill path naming no SKILL.md is a finding", any("moved-away" in f and "no SKILL.md" in f for f in unmeasured(r)), unmeasured(r))
         base = {"plugins": {k: {"chars": v} for k, v in m.items()}}
         check("gate: at the baseline passes", gate(m, base) == [], gate(m, base))
         check("gate: one character of growth fails, naming the plugin",
@@ -174,7 +207,7 @@ def main() -> int:
     except (OSError, ValueError) as exc:
         print(f"check_always_on_cost: cannot read {BASELINE}: {exc}", file=sys.stderr)
         return 2
-    findings = gate(measured, baseline)
+    findings = gate(measured, baseline) + unmeasured()
     for f in findings:
         print(f)
     total = sum(measured.values())
