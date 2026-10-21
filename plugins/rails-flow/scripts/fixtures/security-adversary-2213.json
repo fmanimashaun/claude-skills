@@ -14,7 +14,7 @@
  },
  {
   "name": "criterion after a fence 'closed' by ``` with trailing text (",
-  "criteria": "## Webhook\n- **AC-1** Given a callback with a bad signature, when it posts to the webhook, then the response is 401 and no contract changes [error] [security] (TM-1)\n```ruby\nputs 1\n``` not a closing fence\n- **AC-2** Given a signed callback, when the log is written, then the body is filtered from the log line [security] covers: TM-3\n",
+  "criteria": "## Webhook\n- **AC-1** Given a callback with a bad signature, when it posts to the webhook, then the response is 401 and no contract changes [error] [security] (TM-1)\n```text\nputs 1\n``` not a closing fence\n- **AC-2** Given a signed callback, when the log is written, then the body is filtered from the log line [security] covers: TM-3\n",
   "model_name": "x.md",
   "model": "# T\n## What we are building\nA webhook.\n## Trust boundaries\n- Zoho -> app: the callback body\n## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-1 | Forged callback | S | webhook | mitigate | signature checked |\n| TM-2 | Replay | R | webhook | accept | idempotent, harmless |\n| TM-3 | Body logged | I | logger | mitigate | filtered |\n## Security requirements\n- verify the signature\n"
  },
@@ -242,5 +242,40 @@
   "model_name": "x.md",
   "model": "# T\n## What we are building\nA webhook.\n## Trust boundaries\n- Zoho -> app: the callback body\n## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-1 | Forged callback | S | webhook | mitigate | signature checked |\n| TM-2 | Replay | R | webhook | accept | idempotent, harmless |\n## Security requirements\n- verify the signature\n",
   "passes": "the sub-heading never made it into this input; the shape is a check_threat_model case"
+ },
+ {
+  "name": "pass 3: a fence inside a blockquote hides a quoted criterion",
+  "criteria": "## Webhook\n- **AC-1** Given a callback with a bad signature, when it posts to the webhook, then the response is 401 and no contract changes [error] [security] (TM-1)\n> ```\n> - **AC-2** Given a signed callback, when the log is written, then the body is filtered from the log line [security] covers: TM-3\n> ```\n",
+  "model_name": "x.md",
+  "model": "# T\n## What we are building\nA webhook.\n## Trust boundaries\n- Zoho -> app: the callback body\n## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-1 | Forged callback | S | webhook | mitigate | signature checked |\n| TM-2 | Replay | R | webhook | accept | idempotent, harmless |\n| TM-3 | Body logged | I | logger | mitigate | filtered |\n## Security requirements\n- verify the signature\n",
+  "refused_with": "write a fence at the start of its line"
+ },
+ {
+  "name": "pass 3: a fence inside a list item",
+  "criteria": "## Webhook\n- **AC-1** Given a callback with a bad signature, when it posts to the webhook, then the response is 401 and no contract changes [error] [security] (TM-1)\n- ```\n  - **AC-2** Given a signed callback, when the log is written, then the body is filtered from the log line [security] covers: TM-3\n  ```\n",
+  "model_name": "x.md",
+  "model": "# T\n## What we are building\nA webhook.\n## Trust boundaries\n- Zoho -> app: the callback body\n## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-1 | Forged callback | S | webhook | mitigate | signature checked |\n| TM-2 | Replay | R | webhook | accept | idempotent, harmless |\n| TM-3 | Body logged | I | logger | mitigate | filtered |\n## Security requirements\n- verify the signature\n",
+  "refused_with": "write a fence at the start of its line"
+ },
+ {
+  "name": "pass 3: a backtick in the info string makes it no fence",
+  "criteria": "## Webhook\n- **AC-1** Given a callback with a bad signature, when it posts to the webhook, then the response is 401 and no contract changes [error] [security] (TM-1)\n```a`b\n- **AC-2** Given a signed callback, when the log is written, then the body is filtered from the log line [security] covers: TM-3\n```\n",
+  "model_name": "x.md",
+  "model": "# T\n## What we are building\nA webhook.\n## Trust boundaries\n- Zoho -> app: the callback body\n## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-1 | Forged callback | S | webhook | mitigate | signature checked |\n| TM-2 | Replay | R | webhook | accept | idempotent, harmless |\n| TM-3 | Body logged | I | logger | mitigate | filtered |\n## Security requirements\n- verify the signature\n",
+  "refused_with": "info string"
+ },
+ {
+  "name": "pass 3: a criterion inside a details block",
+  "criteria": "## Webhook\n- **AC-1** Given a callback with a bad signature, when it posts to the webhook, then the response is 401 and no contract changes [error] [security] (TM-1)\n<details>\n\n- **AC-2** Given a signed callback, when the log is written, then the body is filtered from the log line [security] covers: TM-3\n\n</details>\n",
+  "model_name": "x.md",
+  "model": "# T\n## What we are building\nA webhook.\n## Trust boundaries\n- Zoho -> app: the callback body\n## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-1 | Forged callback | S | webhook | mitigate | signature checked |\n| TM-2 | Replay | R | webhook | accept | idempotent, harmless |\n| TM-3 | Body logged | I | logger | mitigate | filtered |\n## Security requirements\n- verify the signature\n",
+  "refused_with": "no raw HTML blocks"
+ },
+ {
+  "name": "pass 3: a criterion after an HTML comment-like tag line",
+  "criteria": "## Webhook\n- **AC-1** Given a callback with a bad signature, when it posts to the webhook, then the response is 401 and no contract changes [error] [security] (TM-1)\n<div>\n- **AC-2** Given a signed callback, when the log is written, then the body is filtered from the log line [security] covers: TM-3\n</div>\n",
+  "model_name": "x.md",
+  "model": "# T\n## What we are building\nA webhook.\n## Trust boundaries\n- Zoho -> app: the callback body\n## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-1 | Forged callback | S | webhook | mitigate | signature checked |\n| TM-2 | Replay | R | webhook | accept | idempotent, harmless |\n| TM-3 | Body logged | I | logger | mitigate | filtered |\n## Security requirements\n- verify the signature\n",
+  "refused_with": "no raw HTML blocks"
  }
 ]

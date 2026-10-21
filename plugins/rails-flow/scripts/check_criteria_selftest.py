@@ -438,6 +438,8 @@ def run() -> int:
             FAILURES.append(f"adversary input `{case['name']}` should pass ({case['passes']}), got exit {got}: {err.getvalue()[:160]}")
         elif "passes" not in case and got == 0:
             FAILURES.append(f"adversary input `{case['name']}` got through (exit 0)")
+        elif "refused_with" in case and (got != 2 or case["refused_with"] not in err.getvalue()):
+            FAILURES.append(f"adversary input `{case['name']}` must be refused naming {case['refused_with']!r}, got exit {got}: {err.getvalue()[:160]}")
     sec_check("a model with only accept rows asks for nothing", GOOD, [(1, "Replay", "accept")], None)
     sec_check("no model, no security rule", GOOD, [], None)
 

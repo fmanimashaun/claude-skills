@@ -165,9 +165,14 @@ def _strict_lines(text: str, path: Path) -> str:
         raise Unusable(f"{path}: {NO_COMMENTS}")
     out, fence, opened_at = [], "", 0
     for n, line in enumerate(text.split("\n"), start=1):
-        if re.match(r"\s+(?:`{3,}|~{3,})", line):
-            raise Unusable(f"{path}:{n} write a fence at the start of its line: an indented one means different things in and out of a list")
+        # A fence anywhere but column 0 (indented, or after `>` or a list marker) means something different in each container, so it is
+        # refused, never interpreted (#2213 adversary: a fence inside a blockquote hid a live-looking criterion from a renderer).
+        inner = re.sub(r"^(?:[ \t]*>|[ \t]*(?:[-*+]|\d+[.)])(?=[ \t]))+[ \t]*", "", line)
+        if re.match(r"\s+(?:`{3,}|~{3,})", line) or (inner != line and re.match(r"`{3,}|~{3,}", inner)):
+            raise Unusable(f"{path}:{n} write a fence at the start of its line: an indented, quoted or listed one means different things in different containers")
         mark = re.match(r"(`{3,}|~{3,})(.*)$", line)
+        if not fence and mark and mark.group(1)[0] == "`" and "`" in mark.group(2):
+            raise Unusable(f"{path}:{n} a backtick in a backtick fence's info string makes it no fence to a renderer: remove it")
         if fence:
             if mark and mark.group(1)[0] == fence[0] and len(mark.group(1)) >= len(fence):
                 if mark.group(2).strip():
@@ -178,6 +183,8 @@ def _strict_lines(text: str, path: Path) -> str:
             fence, opened_at = mark.group(1), n
             out.append("")
         else:
+            if re.match(r" {0,3}<(?:[A-Za-z][\w-]*|/[A-Za-z]|[!?])", line):
+                raise Unusable(f"{path}:{n} no raw HTML blocks in a criteria file (`{line.strip()[:30]}`): a renderer and this check read them differently")
             if re.match(r"(?: {4}|\t)", line) and (BOLD_ID_RE.search(line) or DEF_RE.match(line.strip())):
                 raise Unusable(f"{path}:{n} a criterion indented four spaces is a code block to a renderer: write it at the start of the line")
             out.append(line)
