@@ -165,6 +165,11 @@ def _claim_bodies(base: Path) -> None:
     check("an alias that expands to pr create with a good body runs", ok, why)
     ok, why = refused(fx, "gh pr create --title t --body-file /nonexistent/body.md")
     check("a --body-file that cannot be read is refused, not passed unchecked", ok, why)
+    # STRICT reaches the hook: a body the claim extractor cannot decode (not UTF-8) is "claims not judged", which the tripwire alone allows and the shim refuses.
+    garbled = base / "garbled.md"
+    garbled.write_bytes(b"A comment\n\n\xff\xfe not text\n")
+    ok, why = refused(fx, f"gh issue comment 5 --body-file {garbled}")
+    check("a body the claim extractor cannot read (not UTF-8) is refused: the shim runs the hook strict", ok, why)
 
 
 @case("no record")
