@@ -2425,6 +2425,42 @@ def check_non_hermetic_fixture_git() -> tuple[list[Finding], int]:
 # packaging's binary detection: "never an extension allowlist, which fails open on the first type
 # nobody added". A dot-extension still keeps globs and bare directories out, which is all the
 # allowlist was ever doing.
+_FENCE_BLOCK = re.compile(r"^(```|~~~).*?^\1", re.M | re.S)
+
+
+def _without_fences(text: str) -> str:
+    """The text with every fenced block blanked (line count kept): an example is not a declaration."""
+    return _FENCE_BLOCK.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+
+
+def _unreleased_only(text: str) -> str:
+    """A CHANGELOG with every block but `Unreleased` blanked (line count kept). Released and dated blocks
+    describe what shipped, as it shipped (#2182 review): their paths are history, not pointers to verify."""
+    keep, out = False, []
+    for line in text.split("\n"):
+        if line.startswith("## ") or line.startswith("### "):
+            keep = line.startswith("### ") and "Unreleased" in line
+            out.append(line)
+        else:
+            out.append(line if keep else "")
+    return "\n".join(out)
+
+
+def _setup_sections() -> set[str]:
+    """Repo paths of every stack's `setup_section` (plugins/<p>/stacks.json, descriptor.setup_section)."""
+    found: set[str] = set()
+    for manifest in sorted((ROOT / "plugins").glob("*/stacks.json")):
+        try:
+            data = json.loads(read(manifest))
+        except (ValueError, OSError):
+            continue
+        for stack in data.get("stacks") or [] if isinstance(data, dict) else []:
+            section = ((stack or {}).get("descriptor") or {}).get("setup_section") if isinstance(stack, dict) else None
+            if isinstance(section, str) and section:
+                found.add(f"{manifest.parent.relative_to(ROOT).as_posix()}/{section}")
+    return found
+
+
 _DECLARED_PLUGIN_ROOT = re.compile(r"`\$\{CLAUDE_PLUGIN_ROOT\}` below is \*\*([a-z][a-z0-9-]*)'s\*\* plugin root")
 _PLUGIN_ROOT_POINTER = re.compile(
     r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9._/-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+)")
@@ -2456,17 +2492,21 @@ def check_doc_pointers() -> tuple[list[Finding], int]:
     """
     findings: list[Finding] = []
     examined = 0
+    setup_sections = _setup_sections()
     for path in walk(".md"):
         body = read(path)
+        if rel(path) == "CHANGELOG.md":
+            body = _unreleased_only(body)
         parts = Path(rel(path)).parts
         # `${CLAUDE_PLUGIN_ROOT}` only has a referent INSIDE a plugin. Elsewhere (the CHANGELOG
         # describing a plugin's script, a skill quoting a command) it is prose about a variable,
         # not a path this linter can resolve -- and guessing an owner would invent findings.
         owning_plugin = ROOT / parts[0] / parts[1] if len(parts) >= 2 and parts[0] == "plugins" else None
-        # A file another plugin's command runs declares whose root the variable is (#2182: rails-stack's
-        # setup/rails.md is run by rails-flow's setup-flow, so its scripts are rails-flow's). The pointers
-        # are then checked against THAT plugin, so a wrong one is still a finding.
-        declared = _DECLARED_PLUGIN_ROOT.search(body)
+        # A stack's setup section is run by rails-flow's setup-flow, so it may declare whose root the variable
+        # is (#2182: rails-stack's setup/rails.md says rails-flow's). Honoured ONLY in a file some stacks.json
+        # names as a setup_section, and only outside fences, so no other file can silence a wrong-plugin
+        # pointer. The pointers are then checked against THAT plugin, so a wrong one is still a finding.
+        declared = _DECLARED_PLUGIN_ROOT.search(_without_fences(body)) if rel(path) in setup_sections else None
         if owning_plugin is not None and declared and (ROOT / "plugins" / declared.group(1)).is_dir():
             owning_plugin = ROOT / "plugins" / declared.group(1)
         if owning_plugin is not None:
@@ -6551,12 +6591,25 @@ def selftest() -> int:
                     "plugins/rails-flow/reference/agent-instruction-conventions.md": "# rationale\n"})
     # #2182: a file in one plugin that another plugin's command runs may declare whose root the variable is.
     DECL = "`${CLAUDE_PLUGIN_ROOT}` below is **rails-flow's** plugin root.\n\n"
+    STACKS = {"plugins/rails-stack/stacks.json":
+              '{"plugin": "rails-stack", "stacks": [{"id": "rails", "descriptor": {"setup_section": "setup/rails.md"}}]}'}
     scenario("a declared root resolves the pointer against that plugin", rule=P, expect_finding=False,
-             files={"plugins/rails-stack/setup/rails.md": DECL + "Run `${CLAUDE_PLUGIN_ROOT}/scripts/x.py`.\n",
+             files={**STACKS, "plugins/rails-stack/setup/rails.md": DECL + "Run `${CLAUDE_PLUGIN_ROOT}/scripts/x.py`.\n",
                     "plugins/rails-flow/scripts/x.py": "pass\n"})
     scenario("...and a pointer missing from the declared plugin is still a finding", rule=P, expect_finding=True,
-             files={"plugins/rails-stack/setup/rails.md": DECL + "Run `${CLAUDE_PLUGIN_ROOT}/scripts/gone.py`.\n",
+             files={**STACKS, "plugins/rails-stack/setup/rails.md": DECL + "Run `${CLAUDE_PLUGIN_ROOT}/scripts/gone.py`.\n",
                     "plugins/rails-flow/scripts/x.py": "pass\n"})
+    scenario("...but a declaration in a file no setup_section names is ignored", rule=P, expect_finding=True,
+             files={**STACKS, "plugins/qa-flow/commands/q.md": DECL + "Run `${CLAUDE_PLUGIN_ROOT}/scripts/x.py`.\n",
+                    "plugins/rails-flow/scripts/x.py": "pass\n"})
+    scenario("...and a declaration only inside a fence is ignored", rule=P, expect_finding=True,
+             files={**STACKS, "plugins/rails-stack/setup/rails.md":
+                    "Run `${CLAUDE_PLUGIN_ROOT}/scripts/x.py`.\n\n```md\n" + DECL + "```\n",
+                    "plugins/rails-flow/scripts/x.py": "pass\n"})
+    scenario("a released CHANGELOG block's old path is history, not a pointer", rule=P, expect_finding=False,
+             files={"CHANGELOG.md": "# C\n\n## rails-stack\n\n### 1.0.0 (release v1.0.0)\n\n- moved `skills/x/references/y.md`\n"})
+    scenario("...but a broken path in an Unreleased block is a finding", rule=P, expect_finding=True,
+             files={"CHANGELOG.md": "# C\n\n## rails-stack\n\n### Unreleased\n\n- see `skills/x/references/y.md`\n"})
     scenario("...and with no declaration it resolves against the file's own plugin", rule=P, expect_finding=True,
              files={"plugins/rails-stack/setup/rails.md": "Run `${CLAUDE_PLUGIN_ROOT}/scripts/x.py`.\n",
                     "plugins/rails-flow/scripts/x.py": "pass\n"})

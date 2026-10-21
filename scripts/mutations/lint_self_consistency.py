@@ -7,11 +7,30 @@ GUARD = Guard(
     selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
     mutations=(
         Mutation(
-            # #2182: rails-stack's setup/rails.md declares that its ${CLAUDE_PLUGIN_ROOT} is rails-flow's.
-            "a declared plugin root is ignored, so a file another plugin runs is checked against the wrong plugin",
+            # #2182: only a stack's setup_section may declare whose ${CLAUDE_PLUGIN_ROOT} it means.
+            "a declaration is honoured in any file, so any command can silence a wrong-plugin pointer",
+            "_without_fences(body)) if rel(path) in setup_sections else None\n",
+            "_without_fences(body))\n",
+            "broken-doc-pointer / ...but a declaration in a file no setup_section names is ignored",
+        ),
+        Mutation(
+            "a declaration inside a fenced example is honoured",
+            "declared = _DECLARED_PLUGIN_ROOT.search(_without_fences(body))",
+            "declared = _DECLARED_PLUGIN_ROOT.search((body))",
+            "broken-doc-pointer / ...and a declaration only inside a fence is ignored",
+        ),
+        Mutation(
+            "the declaration is never honoured, so a setup section is checked against its own plugin",
             "        if owning_plugin is not None and declared and (ROOT / \"plugins\" / declared.group(1)).is_dir():\n",
             "        if False:\n",
             "broken-doc-pointer / a declared root resolves the pointer against that plugin",
+        ),
+        Mutation(
+            # #2182 review: released CHANGELOG blocks are history, as shipped.
+            "released CHANGELOG blocks are checked as live pointers again",
+            "            body = _unreleased_only(body)\n",
+            "            pass\n",
+            "broken-doc-pointer / a released CHANGELOG block's old path is history, not a pointer",
         ),
         # #1109. Six hook_* guards went INERT at once because a driven hook gained a script
         # dependency nothing declared -- the unmutated selftest already failed in the staged
