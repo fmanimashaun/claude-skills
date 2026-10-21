@@ -2,10 +2,31 @@
 
 All notable changes to this repository. Components version independently:
 **rails-flow** (version in `plugins/rails-flow/.claude-plugin/plugin.json`),
-**rails-stack** (version in its `marketplace.json` entry), and repository-level
+**rails-stack** (version in `plugins/rails-stack/.claude-plugin/plugin.json`), and repository-level
 changes (README, packaging, infrastructure). Every version bump gets an entry here.
 
 ## Repository hygiene
+
+### 2026-10-21 (release v1.158.0)
+
+- **The brain index loads only live lessons: 9 enforced ones become one-line pointers to their check, 8 archived ones move to history — `docs/brain/MEMORY.md`, `docs/brain/history/archived-lessons.md`** (#2146). From the prose-rule audit of 2026-10-18 (maintainer-approved via the coordinator). An enforced lesson's index line now names the check that makes it true (its memo stays); brain line 70 says that `git stash pop` is still uncovered. The eight archived lessons (one-off, superseded or settled in code) are relocated verbatim, index line and memo, to `docs/brain/history/`, never summarised; a line at the foot of the index points to `history/archived-lessons.md`, so they stay findable. The other 56 lessons are recurring and unenforced; they are mapped to #2147–#2158. Our own design, not a framework claim.
+- Added a re-checkable inventory of the Rails assumptions in the four flows (`scripts/rails_assumptions.py`, policy `docs/architecture/rails-assumptions.policy.json`, generated `docs/architecture/rails-assumptions.md`): every file that names a Rails thing has a decision (`rails-stack`, `detector`, `reword` or `neutral`) with the reason, setup-flow is decided section by section, and each move is an issue under #2162. Maintainer-only, no plugin code moves; `--check` is a doctor gate; tool and gem names match in any case, a file decided neutral is pinned to its recorded hit-line count, and the drift half of `--check` and the four-flow scope are guarded by mutations. (#2164)
+- **A gate proves the shipped stack markers detect real projects — `scripts/check_stack_markers.py`** (#2165, e6's review of #2198). It runs hand-written Next.js, Supabase and Vercel projects, plus three near misses (a react-only app, a `supabase/` directory with no `config.toml`, an empty project), through the real `detect_stack.py` against the shipped `plugins/nextjs-stack/stacks.json`, and states the stacks each must produce. `detect_stack.py --check` validates a manifest's shape, so a well-formed typo (`next` to `nxt`) passed every check while real detection broke. Registered in `maintainer_doctor.py` as "stack markers detect their projects"; its guard (`scripts/mutations/check_stack_markers.py`) mutates the shipped manifest four ways, each caught by the fixture it names.
+- **The gates follow setup-flow's Rails repairs into rails-stack — `scripts/check_manifest_paths.py`** (#2180).
+  - **The paths gate.** `checks.json paths` reads each stack's `setup_section` (rails-stack's `setup/rails.md`) as a surface of the plugin that ships `detect_stack.py`, and of no other plugin. That plugin's setup-flow is what runs those sections, so `architecture-boundaries` still finds its `Archspec.rb`. A section that escapes its plugin vouches for nothing. Selftest 18 checks; guard 9 mutations, all caught.
+  - **The markdown linters.** `lint_markdown_shell.py` and `lint_markdown_code.py` add `setup` to their roots, so the moved blocks are still linted.
+- **Our own gate fixtures no longer fail when our rails-flow `git-shim` is on PATH — `scripts/hermetic_git.py`** (#2190). Every agent session runs with the shim first on PATH, and it rightly refuses a fixture's `git add .`, `git add -A` or `git config filter.*`. So four gates were red in every agent shell and green only with PATH stripped by hand:
+  - `check_upstream_docs` selftest;
+  - `vendored alone` (the wiki and generated-docs selftests);
+  - the `where-stopped` helper;
+  - the doctor's own selftest.
+
+  `hermetic_git.env()`, which builds the environment of every subprocess the gate and mutation runners launch, now drops the rails-flow shim from PATH. It matches the session hook's own pattern (`rails-flow(/<version>)?/git-shim`), so another tool's `git-shim` directory stays. Measured through that environment with the shim on PATH, the four gates go from exit 1 to exit 0. `scripts/mutation_check_selftest.py` proves it with a stub shim that refuses every command, first on PATH, while a fixture's `git init` and `git add .` still run. The guard has two new mutations (the strip dropped, and the pattern widened to any `git-shim`), 7 of 7 caught.
+- **A generated page classifies every shipped hook, command, agent, skill, script and gate as neutral, rails, nextjs or mixed — `scripts/component_classes.py`, `docs/architecture/component-classes.html`** (#2192). The class is declared once in `docs/architecture/rails-assumptions.policy.json` and verified by the scan: a component declared neutral that names a Rails or Next.js thing fails, an unclassified component fails, a mixed one needs its seam and plan issue. Gate rows and hooks take the class of the script they run, and mutation guards and selftests that of the script they test. Maintainer-only, no plugin code moves; `--check` is a doctor gate and the page is built through `rebuild_generated.py`.
+- **The Rails-assumption inventory sees Rails idioms named without the word Rails — `scripts/rails_assumptions.py`** (#2196 review).
+  - **The new pattern.** `rails-idiom` covers `Current.*`, `perform` as code or `perform_later`/`perform_now`, `form_with`/`form_for`, the association macros and the controller callbacks. The English verb "perform" and the word "current" are not hits.
+  - **The re-measure.** It finds 21 files, every one already classified (rails-stack, detector or reword), so no unclassified file. Setup-flow's section table loses the template row: it has no hit left.
+  - **Proof.** The selftest has 4 new checks; the guard is 17 mutations, all caught.
 
 ### 2026-10-17 (release v1.157.5)
 
@@ -3781,6 +3802,50 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### 1.65.0 (release v1.158.0) — 2026-10-21
+
+The release number is assigned at promotion.
+
+- **The git shim admits the config pairs Claude Code's own git calls carry, so `claude plugin marketplace update` works with the shim on PATH — `plugins/rails-flow/git-shim/git`** (#2129). The shim refused `GIT_CONFIG_KEY_0=credential.interactive`, so Claude Code's marketplace refresh failed and plugin auto-update silently stayed on the old version. Measured with a logging git: the refresh carries 38 pairs in the environment and 43 as `-c` arguments. Admitted now, exact key (case-insensitive) and exact value, no prefix or wildcard: `credential.interactive=false`; `core.fsmonitor=` and `core.askPass=` EMPTY only; `protocol.<ext|fd|git|ftp|ftps>.allow=never`; `submodule.recurse=false`; `log.showSignature=false`; `format.pretty=medium`; `init.defaultRefFormat=files`; `hook.<name>.enabled=false` for the 28 listed hook names, which sets the hooks-off rule (admitted only on commands that run no hook: `ls-remote`, `config`, `remote`, …); and `core.sshCommand` with exactly `ssh -o BatchMode=yes -o StrictHostKeyChecking=yes`, the one program-running key (git's default `ssh` plus two options that forbid prompts and unknown hosts). Every other key, value or hook name stays refused. The capture is a fixture (`plugins/rails-flow/scripts/fixtures/claude_code_git_config.json`) the selftest replays, with a neighbour and value-variant row per pair, and nine mutants. Our own design: owner-approved 2026-10-18.
+- **One stack detector reads each stack plugin's own markers — `plugins/rails-flow/scripts/detect_stack.py`** (#2163, slice 1 of #2162). `detect_stack.py [project] [--json]` reports every stack a project matches; a project can be several at once (Next.js + Supabase + Vercel). It knows no stack itself.
+  - **Markers.** Each stack plugin ships a `stacks.json` at its plugin root, declaring its stacks and their markers: `{"file": path}`, `{"dir": path}` (a path inside the project), or `{"package_dependency": name}`. A stack matches when every marker in `all` holds and, if it lists `any`, one of those does.
+  - **Discovery.** Manifests are read only at plugin roots (a directory carrying `.claude-plugin/plugin.json`, or `.claude-plugin/marketplace.json` for `rails-stack`, whose source is the repo root), in a checkout and in the installed cache, so a stray `stacks.json` elsewhere is never read. Two cached versions of one plugin collapse to the higher. `rails-stack` declares Rails in the repo-root `stacks.json`: a project with both a `Gemfile` and `config/application.rb`.
+  - **"Cannot judge" is never "no stack"** (exit 2, never the "none detected" code): an unreadable or nameless manifest; `stacks` or a stack of the wrong shape; a stack without a string `id`; an unknown marker kind; a marker value that is not a string; an absolute path, one with `..`, or the project root itself (`.`, which every project has); a stack with no markers; two manifests for one plugin at one version; a project path that is missing or a file; and a `package.json` that exists but does not parse (or is not a JSON object, or has a `dependencies` that is not a map) when a stack reads dependencies. A missing `package.json` is simply no dependency. Exit 0 means a stack was detected, 1 none.
+  - **Adding a stack is a new manifest,** never an edit to the detector (`.claude/skills/plugin-boundaries` rule 1).
+  - **Proof.** The selftest (36 cases, counted by the selftest itself) covers a project per stack, a combined project and an empty one, a stack no plugin ships yet, every manifest shape above, both discovery layouts and `--json`. A mutation guard (`plugins/rails-flow/scripts/mutations/detect_stack.py`, 24 mutations, all caught) holds each rule, and `maintainer_doctor.py` runs the selftest as the "stack detector selftest" gate.
+
+  Our own design (#2162's decisions, maintainer, 2026-10-20), not a framework claim.
+- **`/rails-flow:setup-flow` detects the stack of an existing project and asks for a new one — `plugins/rails-flow/commands/setup-flow.md`** (#2180, owner ruling of 2026-10-20 on #2180 and #2162). A new §0 runs `detect_stack.py`:
+  - **an existing project** (one stack detected or several): setup-flow asks nothing. It activates every detected stack's descriptor and setup sections, and says which;
+  - **a new project** (nothing detected): it asks which stack, offering exactly what `detect_stack.py --available` lists from the installed stack plugins' manifests (no list is written into the command), then takes the choice with `--stack <id>`;
+  - **cannot judge** (exit 2): it asks, quoting the problems, and never falls back to Rails.
+
+  The working rules it writes are the same in all three paths. The Rails-only repairs (the `Tests:` steps, locales, the launch baseline, the tenancy cop, the coverage ratchet, spec/support wiring, simple_form, `Archspec.rb`) move out of the command into rails-stack's `setup/rails.md`, which `stacks.json` names as Rails' `setup_section`. The command is 1353 → 1024 lines.
+
+  `detect_stack.py` gains `--available` and `--stack`. A setup section is per stack and never merged, so a two-plugin project runs both. A section that leaves its plugin, or names no file, is a problem (exit 2), which `--check` catches. With #2181 merged in, the selftest is 77 cases and the guard 52 mutations, all caught. §0 stops on `--available` or `--stack` exiting 2 rather than offering a partial list, reports `fresh` (a tree of only `.git`, `README*`, `LICENSE*`, `.gitignore`, `.github/`, `docs/` and its own agent files is still a new project, asked which stack; anything else with no markers is never scaffolded over), names each stack with its plugin in `--descriptor`, activates and names every detected stack with no question, and ignores `stacks` whenever `problems` is non-empty. The template's Rails fact lines move in #2196. Our own design (owner ruling), not a framework claim.
+- **A stack says how it tests, boots, reviews and deploys: the `descriptor` in `stacks.json`, read by `detect_stack.py --descriptor` — `plugins/rails-flow/scripts/detect_stack.py`** (#2181, plan step 2 of #2162). A stack's `descriptor` declares:
+  - `runner_prefix`;
+  - `tests` (command, glob, preflight) and `lint`;
+  - `layout` (source, migrations, schema, views, components);
+  - `boot` (command, port, health, routes);
+  - `agents` (role to agent), `deploy` (target, artifact, agent) and `ui` (implementation, porter, composer);
+  - `dangerous_commands`, `setup_section`, `scripts` and `review_checklist`.
+
+  `--descriptor` prints the detected stacks' merged descriptor. Stacks of one plugin merge (Next.js + Supabase + Vercel). A key declared by two plugins, or one leaf given two values, is exit 2 naming both sources. Every key and its shape is declared once, in `DESCRIPTOR_SCHEMA`; an unknown key or a wrong type is a problem (`descriptor-key-undeclared`). Five keys are `REQUIRED` across a plugin's stacks (`tests.command`, `tests.glob`, `agents.developer`, `agents.test_runner`, `agents.reviewer`), and every agent-naming value must resolve to `<plugin>/agents/<agent>.md` in the discovered plugins. `--check` judges every discovered manifest against an empty project, so a shape, marker or descriptor problem anywhere is reported whatever the project.
+  `rails-stack`'s `stacks.json` declares the Rails values the flows use today, and a coined label where no flow names one yet (`docker-image`, `viewcomponent-erb`): `bundle exec rspec --fail-fast --no-color` over `spec/**/*_spec.rb` with `pg_isready` first; `bin/dev` on 3000 with `/up`; `db/migrate/` and `db/schema.rb`; the six `rails-flow` agents; Kamal through `pipeline:kamal-configurator`; ViewComponent/ERB through `design-flow`'s porter and composer; and `db:reset` allowed only as `RAILS_ENV=test bin/rails db:reset`.
+  Nothing reads the descriptor yet; step 3 (#2173, #2174) moves the flows onto it. The selftest grows to 66 cases (a `go` stack no Rails value fits, a three-stack merge, both conflicts, an undeclared key and a wrong type; then, from the #2189 review, `--check` itself, a plugin missing a required key, agent names that are misspelt, of an absent plugin or not `<plugin>:<agent>`, ports outside 1-65535 or a bool, a deploy agent or ui composer naming no agent, a list item missing a key, a markers-only manifest passing, empty lists and strings, a nested item of the wrong shape, and the merge handing out the manifest's own lists), and the mutation guard to 42 mutations, all caught. Our own design (maintainer, #2162, 2026-10-20), not a framework claim.
+- **setup-flow's CLAUDE.md template names no stack — `plugins/rails-flow/commands/setup-flow.md`** (#2196, split from #2180). These now come from each active stack's setup section, under its **`## CLAUDE.md facts`**:
+  - the §1 inspection list, the database marker, the stack line and the App Identity rows;
+  - the Common Commands and the Project Override and verification examples;
+  - the style reference and the test-run preflight's stack checks;
+  - the `loop.md` suite, lint and security checks.
+
+  For Rails that is `setup/rails.md`: `pg_isready`, the held `bundler.lock`, rspec, rubocop, brakeman, bundler-audit, simple_form and `style.md`. The audit-and-repair, §0 and §1b wording is stack-neutral too.
+
+  `lint_self_consistency.py`'s `setup-flow-preflight` rule is re-pointed. The template must keep its neutral preflight (the stack's checks, test paths, load, no mid-sweep swaps, the advice label). Every shipped stack's setup section must carry a `### Test-run preflight` under `## CLAUDE.md facts`, and Rails' must keep `pg_isready` and `bundler.lock` there, not elsewhere in the file. Its guard has three new mutations and is 237 of 237 caught.
+
+  The structural map (the Rails graph's node kinds), the scope idiom (`Current.*`) and the pattern kinds (controller, service, an idempotent `perform`) move into Rails' facts too, so a project whose stacks give no structural map gets no such section, and a Next.js project's CLAUDE.md carries no Rails text. Our own design (#2162, owner ruling on #2180), not a framework claim.
 
 ### 1.64.0 (release v1.157.6) — 2026-10-17
 
@@ -12021,6 +12086,12 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### 1.39.0 (release v1.158.0) — 2026-10-21
+
+The release number is assigned at promotion.
+
+- **`check_ts_strict.py` reads a Next.js app, not only the e2e suite: `--scope app` — `plugins/qa-flow/scripts/check_ts_strict.py`** (#2170, slice 8 of #2162). The qa scope stays the default and is unchanged, except that a tsc which only prints or lists (`--version`, `--help`, `--showConfig`, `--listFilesOnly`, ...) no longer counts as the suite's type-check. The app scope reads the app's own TypeScript (everything outside `qa/`, `node_modules`, `.next` and the other build directories) and adds two rules to the three it already had: `ts-missing-option` (every tsconfig, merged through `extends`, must set `strict` plus `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`, `noPropertyAccessFromIndexSignature`, `noImplicitReturns`, `noFallthroughCasesInSwitch`, `noUnusedLocals` and `noUnusedParameters` true, and `allowUnreachableCode` and `allowUnusedLabels` false, because `strict` includes none of them and an unset `allow*` is an editor hint, not an error) and `ts-directive` (`@ts-ignore`, `@ts-expect-error` and `@ts-nocheck` in a comment, with a description or not). A `tsc` that only prints or lists (`--version`, `-v`, `--help`, `-h`, `--all`, `--showConfig`, `--listFilesOnly`, `--init`, `-b --clean`, `-b --dry`) is never a type-check, in either scope. The app's files are every TypeScript file except dependency and cache directories at any depth (`node_modules`, `.next`, `.vercel`, `.turbo`, `.git`) and `build`, `dist`, `out`, `coverage` and `qa` at the root (`src/build/` is an ordinary folder); in a git repository the list is `git ls-files`, so a monorepo's ignored `dist/` is skipped. JSX prose containing the word "any" is a known false finding with the escape `{/* ts-strict: allow-any -- prose */}`. The type-check step is `tsc` on the app (no `-p`, or a path outside `qa/` and `node_modules`) in CI and able to fail; a tsc on the suite does not satisfy the app and the reverse; `next build` is not accepted. The option set and the `allow*` semantics were checked by the doctrine-verifier on 2026-10-20 against typescriptlang.org/tsconfig (CONFIRMED); the `@ts-` ban is the maintainer's policy (#2162 decision 6), not a compiler fact. Not checked, and said in the docstring: a non-null assertion (`x!`), which needs a parser and belongs to the stack's ESLint rule. The selftest gains the app cases (every option in both polarities, `extends`, every CI shape, the exit codes of both scopes) and the mutation guard 33 more mutations (89 in all, all caught, on macOS and on Linux, `scripts/linux_check.sh`); wiring it as a gate is the `nextjs-stack` plugin's (#2165, #2166).
+
 ### 1.38.1 (release v1.157.1) — 2026-10-13
 
 - **`plugins/qa-flow/scripts/remote_evidence.py`'s selftest finds the real git past rails-flow's shim, and `plugins/qa-flow/scripts/fixture_git.py` writes the fixture identity file** (#1994, #1982). The selftest used `shutil.which("git")`, which is the shim when the shim is first on PATH (the Claude Code Bash tool), so its stub `git` and the shim called each other until the budget ended and \"a fetch that times out leaves no child running\" tested nothing; it now skips the shim's directory. `fixture_git.init` also writes `.git/rails-flow-fixture`, the identity rails-flow's shim now requires (byte-identical copy of the rails-flow and pipeline ones).
@@ -17369,6 +17440,12 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
+### 1.76.1 (release v1.158.0) — 2026-10-21
+
+The release number is assigned at promotion.
+
+- **rails-stack installs only its skills, not the whole repository — `plugins/rails-stack/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `scripts/check_plugin_install_shape.py`** (#2182). rails-stack's source was the repository root (`./`), so an install copied all 1,061 tracked files (18.1 MB), including the maintainer-only `.claude/`, where its seven skills are 67 files (1.5 MB). The skills move to `plugins/rails-stack/skills/`, rails-stack gets its own `plugin.json` (which now carries its version, as for every other plugin), and the marketplace source is `./plugins/rails-stack`: 68 tracked files. Skill names (`rails-stack:rails-8`, …) and the plugin name are unchanged, and `dist/*.skill` rebuild byte-identical. New gate `check_plugin_install_shape.py` fails on a root source, a `.claude/` inside a plugin, a missing source, or more than 600 files; on `dev` before this change it reports `[root-source] rails-stack`. Path readers follow: `package_core.py`, `build_maintainer_skills.py`, `build_coverage.py`, `doctrine_path.py` (the clone path moves; the install path does not), `skill_version_tag.py` (finds a version in either `marketplace.json` or `plugin.json`, and a skills tree that only moved is not "different"), and the issue triager's lookup at a release tag (tries `plugins/rails-stack/skills/<skill>`, then `skills/<skill>`). Our own design: maintainer decisions on #2162; the CLAUDE.md versioning line was approved by the owner on 2026-10-20.
+
 ### 1.76.0 (release v1.157.6) — 2026-10-17
 
 - **MCP write tools: a "before you add a write tool" checklist — `skills/rails-8/references/mcp-server.md`** (#2052, #2051). A new §6 opens with "If you cannot answer these, do not ship a write tool." and asks five decisions each project records in its CLAUDE.md: who may write, how a change is confirmed, what stops a retried call writing twice, how the audit tells agent writes from human ones, how a wrong write is undone. The scope change is the owner's ruling on #2056 (a checklist, not rules); every spec-cited mechanism is `doctrine-verifier` CONFIRMED against MCP revision 2026-07-28 (verdicts on #2051), and the three gaps the spec leaves are labelled our design. Registered as advice in `scripts/doctrine_map.py`.
@@ -18929,6 +19006,12 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## nextjs-stack (Next.js + Supabase + Vercel stack plugin)
 
+
+### 0.1.0 (release v1.158.0) — 2026-10-21
+
+The release number is assigned at promotion.
+
+- **A new plugin, `nextjs-stack`: the Next.js + Supabase + Vercel stack — `plugins/nextjs-stack/skills/nextjs-supabase-vercel/SKILL.md`** (#2165, EPIC #2162). Its one skill holds only how the three fit together: the official guidance to install first (Vercel's `vercel-plugin`, the Next.js skills, `supabase/agent-skills`), the key and environment-variable seam (`NEXT_PUBLIC_` only for Supabase's publishable key, never its secret key), and the vendor commands to use for each step (the flows do not drive them yet). Every fact was checked against the vendor's documentation on 2026-10-20 (doctrine-verifier CONFIRMED, two corrections: `npx plugins add vercel/vercel-plugin`, `supabase gen types --lang typescript`). `plugins/nextjs-stack/stacks.json` declares the stack's markers for the stack detector (#2163): Next.js (a `next` dependency), Supabase (`supabase/config.toml`), Vercel (`vercel.json` or `.vercel/`).
 
 ## Repository / marketplace
 
