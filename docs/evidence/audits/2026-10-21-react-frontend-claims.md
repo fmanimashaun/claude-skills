@@ -4,9 +4,9 @@ The evidence for nextjs-stack's React frontend-architecture skill and detector (
 
 **Versions in scope** (npm `latest` and the vendors' release pages, checked 2026-10-21): React 19.3.x (19.3.0 on react.dev/versions; 19.3.1 on npm); Next.js 16.4.x (16.4.2); eslint-plugin-react-hooks 7.1.1; eslint-plugin-react 7.37.5; @next/eslint-plugin-next 16.4.2. React Compiler 1.0 has been stable since 2025-10-07. It is a separate build tool, not part of a React version.
 
-**Verification:** `doctrine-verifier`, three passes on 2026-10-21, against react.dev, nextjs.org/docs and the official React and Next.js blogs. Lint coverage comes from the plugins' official docs and source. **Caveat on the lint column:** each rule's scope was taken from its name, its one-line description and its preset listing, not from every rule's own page, so a gap line is a summary. C11's generic rules (`max-lines-per-function`, `complexity`) were not checked. **Recommended?** means in the plugin's recommended preset. `eslint-config-next` turns on the recommended sets of `eslint-plugin-react`, `eslint-plugin-react-hooks` and the Next plugin, so in a Next app the recommended rules are on by default.
+**Verification:** `doctrine-verifier`, three passes on 2026-10-21, against react.dev, nextjs.org/docs and the official React and Next.js blogs. The lint column was first read from the plugins' docs; it is now **measured** ("Measured lint run" below), and where the two disagreed the measurement wins (it found that `@next/next/no-html-link-for-pages` does not cover `app/`). **Recommended?** means in the plugin's recommended preset. `eslint-config-next` turns on the recommended sets of `eslint-plugin-react`, `eslint-plugin-react-hooks` and the Next plugin, so in a Next app the recommended rules are on by default.
 
-**Skill coverage today:** none. nextjs-stack's one skill (`nextjs-supabase-vercel`) covers only the key and environment-variable seam.
+**Skill coverage:** `plugins/nextjs-stack/skills/react/SKILL.md` (#2222) states every CONFIRMED row with its enforcement; before it, none. nextjs-stack's one skill (`nextjs-supabase-vercel`) covers only the key and environment-variable seam.
 
 Verdict key: **C** confirmed as written · **C*** confirmed with the correction applied (the claim below is the corrected wording) · **I** inconclusive (held out) · **R** refuted.
 
@@ -90,3 +90,55 @@ nextjs-stack's security surface (checklist, scanners, boundary patterns) is **#2
 | unsanitised `dangerouslySetInnerHTML` | R21 | partly (`react/no-danger`, not on by default) | enable upstream; sanitiser use is judgement |
 | Server Action without an auth check | R22 | no | defer to #2210 |
 | lift/colocate, god components, memo as a band-aid | R13, R14, R3, R19 | no (judgement) | no: doctrine only |
+
+## Measured lint run (2026-10-21)
+
+One hand-written fixture per anti-pattern, in an App Router project (`app/`), linted by eslint 9.39.5 with `eslint-config-next` 16.4.2 (`core-web-vitals`) and its bundled react-hooks 7.1.1, eslint-plugin-react 7.37.5 and @next/eslint-plugin-next 16.4.2. Then again with the three off-by-default rules turned on.
+
+| fixture | default Next preset | with the three rules on |
+|---|---|---|
+| derived state in an Effect (R11) | `react-hooks/set-state-in-effect` | same |
+| prop reset in an Effect (R12) | `react-hooks/set-state-in-effect` | same |
+| component inside a component (R2) | `react-hooks/static-components` | same |
+| missing key (R4) | `react/jsx-key` | same |
+| `Math.random()` key (R4) | `react-hooks/purity` | same |
+| index key (R4) | nothing | `react/no-array-index-key` |
+| inline context value (R15) | nothing | `react/jsx-no-constructed-context-values` |
+| inline context value, React 19 `<Ctx value>` (R15) | nothing | `react/jsx-no-constructed-context-values` |
+| `dangerouslySetInnerHTML` (R21) | nothing | `react/no-danger` |
+| raw `<img>` (R18) | `@next/next/no-img-element` | same |
+| internal `<a href="/dashboard">` in `app/` (R6) | **nothing** (`no-html-link-for-pages` reads `pages/` only) | nothing |
+| `fetch` in a client `useEffect` (R16) | nothing | nothing |
+| `"use client"` on a route layout (R8) | nothing | nothing |
+| sequential independent awaits in a page (R17) | nothing | nothing |
+| Server Action with no auth check (R22) | nothing | nothing |
+
+So nextjs-stack runs the three rules (`react-lint-off-by-default`, via `check_react_lint.py`: on this fixture project, exactly those four findings and no other rule) and checks itself only what nothing upstream catches: R8 (client route files), R16 (fetch in a client Effect) and R6 (internal `<a>`), in `check_react_patterns.py` (`react-patterns`), which on the fixture project reports exactly those three. R17 and R22 are not mechanised: R17 is a review verdict, R22 belongs to the security surface (#2210).
+
+## False positives, measured (2026-10-21)
+
+`check_react_patterns.py` over the 27 Next.js apps in the licensed design corpora (Tailwind UI and Flowbite templates: 908 source files, 62 with `useEffect`), read-only. flo-it-ui was the first choice, but it has no `"use client"` module yet.
+
+| rule | fired | judged by hand | outcome |
+|---|---|---|---|
+| a `"use client"` module with no hook, handler, browser API or context | 9 | 4 certain false positives (a `Providers` wrapping `next-themes`' `ThemeProvider`, which needs the client because it renders a third-party context provider); 5 render `flowbite-react` components, undecidable from the file | **dropped** as a mechanical rule: a third-party import can be the reason a module needs the client, and source text cannot see it. It is now the review verdict `server-components-by-default`. |
+| `use-client-route-file` | 3 | three client mail pages built from form inputs: deliberate trade-offs, exactly what R8 asks to be stated | kept, satisfied by **declaration** (`react-architecture: client-route -- <reason>`) |
+| `fetch-in-effect` | 0 | an independent count found 0 files with both `useEffect` and `fetch(` | 0 false positives; the corpora contain no true positive, so detection rests on the fixtures |
+| `internal-anchor` | 0 | an independent count found 0 internal `<a href="/...">` | as above |
+
+The scan first read only `app/`, while 303 of the corpora's 335 client files live outside it (`components/`, `src/components/`); the rules other than route files now read the whole source tree, and the numbers above are from the widened scan. The guard on the script also found a real bug: comment stripping erased `//` inside strings (so `href="//cdn..."` and `https://` vanished); it is now string-aware.
+
+## Enforcement by claim (owner ruling on #2222: "everything must be enforced")
+
+| claim | enforcement |
+|---|---|
+| R2, R4 (missing/random key), R11, R12, R18 | default lint (on in every Next app) |
+| R4 (index key), R15, R21 | `react-lint-off-by-default` (nextjs-stack `checks.json`) |
+| R6, R16 | `react-patterns` |
+| R8 | `react-patterns` + required declaration |
+| R9 | the framework (runtime error) |
+| R23 | the framework (`server-only` build error) |
+| R22 | the security surface, #2210 |
+| R1, R3, R5, R7, R10, R13, R14, R17, R19, R20 | recorded review verdict (rails-flow #2225); declared in the skill's last section |
+| C18 | not shipped (INCONCLUSIVE) |
+
