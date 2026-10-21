@@ -42,7 +42,7 @@ GUARD = Guard(
         "dist/",
         ".claude/skills/",
         "plugins/rails-flow/mandated_gems.json",
-        "plugins/rails-flow/scaffold/",           # derive_tenancy_cop.py's declared output
+        "plugins/rails-stack/scaffold/",          # derive_tenancy_cop.py's declared output
     ),
     mutations=(
         Mutation(

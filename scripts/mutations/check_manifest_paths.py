@@ -57,9 +57,15 @@ GUARD = Guard(
         ),
         Mutation(
             "every plugin reads the stack setup sections, so one that never runs them is vouched for by them",
-            '    if not (plugin / "scripts" / "detect_stack.py").is_file():\n        return []',
-            '    if False:\n        return []',
+            '    if (plugin / "scripts" / "detect_stack.py").is_file():\n        manifests = [repo / "stacks.json"',
+            '    if True:\n        manifests = [repo / "stacks.json"',
             "is no surface of the plugin",
+        ),
+        Mutation(
+            "a stack plugin's own setup section stops counting for it, so the gates it registers read as phantoms again",
+            '        manifests = [plugin / "stacks.json"]',
+            '        manifests = []',
+            "a stack plugin's own setup section counts for it, with no detector",
         ),
         Mutation(
             "a setup section escaping its plugin is read, so a file outside vouches for a phantom path",

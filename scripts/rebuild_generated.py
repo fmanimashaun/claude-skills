@@ -46,7 +46,7 @@ BUILDERS = (
     ("dist/*.skill", "package_core.py", ("dist/",)),
     ("maintainer skill mirrors", "build_maintainer_skills.py", (".claude/skills/",)),
     ("mandated gems", "derive_mandated_gems.py", ("plugins/rails-flow/mandated_gems.json",)),
-    ("tenancy cop", "derive_tenancy_cop.py", ("plugins/rails-flow/scaffold/",)),
+    ("tenancy cop", "derive_tenancy_cop.py", ("plugins/rails-stack/scaffold/",)),
 )
 
 # A `scripts/*.py --check` gate that this script deliberately does NOT run, and why. Every entry is

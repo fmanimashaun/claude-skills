@@ -198,16 +198,21 @@ def surfaces(plugin: Path) -> list[tuple[Path, list[str]]]:
 
 
 def setup_sections(plugin: Path) -> list[Path]:
-    """The stack setup sections this plugin's setup-flow runs: none unless it ships the detector (#2180).
+    """The stack setup sections that count as this plugin's surfaces (#2180, #2175).
 
-    Read from every `stacks.json` in the repository (the root, for rails-stack, and each plugin's), the same files the
-    detector reads; a section outside its plugin or missing is the detector's `--check` finding, not this one's.
+    The plugin that ships the detector runs every stack's section through its setup-flow, so it gets all of them, read from
+    every `stacks.json` in the repository (the root, for rails-stack, and each plugin's), the same files the detector reads.
+    A stack plugin that does not ship the detector gets only its OWN `stacks.json` sections: what its section writes, it
+    writes, so a gate the stack registers can wait on a file its own section creates (the Rails gates moved here with
+    `Archspec.rb`). A section outside its plugin or missing is the detector's `--check` finding, not this one's.
     """
-    if not (plugin / "scripts" / "detect_stack.py").is_file():
-        return []
     repo = plugin.parent.parent
+    if (plugin / "scripts" / "detect_stack.py").is_file():
+        manifests = [repo / "stacks.json", *sorted((repo / PLUGINS).glob("*/stacks.json"))]
+    else:
+        manifests = [plugin / "stacks.json"]
     found: list[Path] = []
-    for manifest in [repo / "stacks.json", *sorted((repo / PLUGINS).glob("*/stacks.json"))]:
+    for manifest in manifests:
         try:
             stacks = json.loads(manifest.read_text(encoding="utf-8")).get("stacks") or []
         except (OSError, ValueError, AttributeError):
@@ -457,6 +462,18 @@ def selftest() -> int:
         wants = _manifest(("c", ["Boundaries.rb"], []))
         check("without the detector, a stack setup section is no surface of the plugin",
               any("Boundaries.rb" in f for f in reconcile(runner, wants).findings), "no finding")
+        # A stack plugin's OWN section counts for that plugin even without the detector (#2175), and a neighbour's does not.
+        own = repo / PLUGINS / "ystack"
+        (own / "scripts").mkdir(parents=True)
+        (own / "setup").mkdir(parents=True)
+        (own / "setup" / "y.md").write_text("```ruby\n# Own.rb at the project root\n```\n", encoding="utf-8")
+        (own / "stacks.json").write_text(json.dumps({"plugin": "y-stack", "stacks": [
+            {"id": "y", "all": [{"file": "y"}], "descriptor": {"setup_section": "setup/y.md"}}]}), encoding="utf-8")
+        check("a stack plugin's own setup section counts for it, with no detector",
+              reconcile(own, _manifest(("c", ["Own.rb"], []))).findings == [],
+              f"{reconcile(own, _manifest(('c', ['Own.rb'], []))).findings}")
+        check("...and not for a plugin that neither ships the detector nor owns the section",
+              any("Own.rb" in f for f in reconcile(runner, _manifest(("c", ["Own.rb"], []))).findings), "no finding")
         (runner / "scripts" / "detect_stack.py").write_text("", encoding="utf-8")
         out = reconcile(runner, wants)
         check("a path a stack setup section writes counts for the plugin that runs the sections",
