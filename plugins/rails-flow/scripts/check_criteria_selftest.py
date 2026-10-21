@@ -350,6 +350,26 @@ def run() -> int:
         got = cc.main([str(d / "ac.md"), "--threat-model", str(d / mf)])
         if got != 2:
             FAILURES.append(f"{label}: expected exit 2, got {got}")
+    # The default model is found from the repository root, wherever the criteria file sits (#2213 review), and a miss is said.
+    import contextlib, io
+    repo = Path(_t.mkdtemp(prefix="railsflow-repo-"))
+    (repo / ".git").mkdir()
+    deep = repo / "docs" / "product" / "acceptance" / "2026"
+    deep.mkdir(parents=True)
+    (deep / "unit.md").write_text(GOOD, encoding="utf-8")
+    (repo / "docs" / "security" / "threat-models").mkdir(parents=True)
+    (repo / "docs" / "security" / "threat-models" / "unit.md").write_text(
+        "## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-1 | Forged | S | hook | mitigate | sig |\n", encoding="utf-8")
+    (deep / "other.md").write_text(GOOD, encoding="utf-8")
+    for label, name, want, needle in (
+            ("a criteria file deeper than docs/product/acceptance still finds its model at the repo root", "unit.md", 1, ""),
+            ("no model found says the security check was skipped", "other.md", 0, "security check skipped")):
+        _tick()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            got = cc.main([str(deep / name)])
+        if got != want or needle not in err.getvalue():
+            FAILURES.append(f"{label}: expected exit {want} naming {needle!r}, got {got}: {err.getvalue()[:200]}")
     sec_check("a model with only accept rows asks for nothing", GOOD, [(1, "Replay", "accept")], None)
     sec_check("no model, no security rule", GOOD, [], None)
 

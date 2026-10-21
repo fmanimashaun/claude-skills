@@ -116,5 +116,18 @@ GUARD = Guard(
             "        if False:\n            print(f\"UNUSABLE: {model} exists",
             "a model with no table is exit 2",
         ),
+        Mutation(
+            # #2213 review: the default model sat three parents up, so a criteria file anywhere else skipped the security check.
+            "the default threat model is three parents up again",
+            "            return d / \"docs\" / \"security\" / \"threat-models\" / criteria_path.name, \"\"",
+            "            return criteria_path.resolve().parent.parent.parent / \"security\" / \"threat-models\" / criteria_path.name, \"\"",
+            "a criteria file deeper than docs/product/acceptance still finds its model at the repo root",
+        ),
+        Mutation(
+            "a skipped security check is silent again",
+            "        print(f\"security check skipped: {why or f'no threat model at {model}'}; pass --threat-model FILE if the unit has one\", file=sys.stderr)",
+            "        pass",
+            "no model found says the security check was skipped",
+        ),
     ),
 )
