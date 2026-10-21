@@ -515,5 +515,53 @@ GUARD = Guard(
             '                    pass\n                except re.error as err:\n                    found.append(f"{where}.security.code_syntax[{i}].refuse_when',
             "a refuse_when pattern that does not compile is a problem",
         ),
+        Mutation(
+            'ui_scope is merged across plugins like any other key',
+            'PER_STACK_KEYS = ("setup_section", "security", "ui_scope")',
+            'PER_STACK_KEYS = ("setup_section", "security")',
+            'two stacks of two plugins each declare their own ui_scope',
+        ),
+        Mutation(
+            'a ui_scope may omit its cases',
+            '    found = [f"{where}.ui_scope needs `{key}`" for key in ("paths", "cases") if key not in value]',
+            '    found = [f"{where}.ui_scope needs `{key}`" for key in ("paths",) if key not in value]',
+            'a ui_scope with no cases is a problem',
+        ),
+        Mutation(
+            'a ui_scope may omit its paths',
+            '    found = [f"{where}.ui_scope needs `{key}`" for key in ("paths", "cases") if key not in value]',
+            '    found = [f"{where}.ui_scope needs `{key}`" for key in ("cases",) if key not in value]',
+            'a ui_scope with no paths is a problem',
+        ),
+        Mutation(
+            'a ui_scope pattern that does not compile is accepted',
+            '                    re.compile(pattern)\n                except re.error as err:\n                    found.append(f"{where}.ui_scope.{key}',
+            '                    re.compile("")\n                except re.error as err:\n                    found.append(f"{where}.ui_scope.{key}',
+            'a ui_scope pattern that does not compile is a problem',
+        ),
+        Mutation(
+            'ui_scope cases may name no file',
+            '        elif not (plugin_root(manifest) / named).is_file():\n            found.append(f"{where}.ui_scope.cases',
+            '        elif False:\n            found.append(f"{where}.ui_scope.cases',
+            'ui_scope cases naming no file is a problem',
+        ),
+        Mutation(
+            'ui_scope cases may escape the plugin',
+            '        if escapes(named):\n            found.append(f"{where}.ui_scope.cases',
+            '        if False:\n            found.append(f"{where}.ui_scope.cases',
+            'ui_scope cases that escape the plugin are a problem',
+        ),
+        Mutation(
+            'the report omits ui_scope',
+            '"ui_scope": ui_scopes(manifests, matched),',
+            '"ui_scope": [],',
+            'a valid ui_scope is reported with its cases as a path',
+        ),
+        Mutation(
+            "the reported cases path is the manifest's relative one",
+            '                entry["cases"] = str(plugin_root(manifest) / value["cases"])',
+            '                entry["cases"] = value["cases"]',
+            'a valid ui_scope is reported with its cases as a path',
+        ),
     ),
 )
