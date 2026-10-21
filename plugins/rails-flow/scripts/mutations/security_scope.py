@@ -187,7 +187,7 @@ GUARD = Guard(
         ),
         Mutation(
             'a repeated case name passes',
-            '        if case["name"] in seen:',
+            '        if name in seen:',
             '        if False:',
             'a repeated name is refused',
         ),
@@ -202,6 +202,24 @@ GUARD = Guard(
             '                continue\n            for case in cases:',
             '                pass\n            for case in cases:',
             'a stack whose cases break the shape fails without running them',
+        ),
+        Mutation(
+            'a key given twice is read as its last value',
+            '                                   object_pairs_hook=unique_keys)',
+            '                                   object_pairs_hook=dict)',
+            'a case with a key twice is refused',
+        ),
+        Mutation(
+            'a blank plan passes',
+            '            wrong = [k for k in ("name", "plan") if not case[k].strip()]',
+            '            wrong = [k for k in ("name",) if not case[k].strip()]',
+            'a blank plan is refused',
+        ),
+        Mutation(
+            'names differing only in spacing count as different',
+            '        name = " ".join(case["name"].split())',
+            '        name = case["name"]',
+            'a name repeated but for spacing is refused',
         ),
     ),
 )

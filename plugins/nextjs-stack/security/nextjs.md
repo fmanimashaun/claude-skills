@@ -20,8 +20,7 @@ own. Each question that rests on a framework fact cites it as `(C-n)`, a CONFIRM
 
 ## Tampering — can the input change what it must not?
 
-- Each Server Function argument and Route Handler body: where is it validated before it reaches the database? Treat
-  every argument as untrusted input, the same as a public endpoint's (C-4)
+- Each Server Function argument and Route Handler body: where is it validated before it reaches the database?
 - A redirect built from `searchParams` or a form field: is the target restricted to this site?
 
 ## Repudiation — can we show who did it?

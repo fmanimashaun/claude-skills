@@ -79,6 +79,15 @@ def stack_rows(project: Path, dirs: list[Path] | None = None) -> tuple[list[Row]
 CASE_KEYS = {"name": str, "plan": str, "paths": list, "boundary": bool}
 
 
+def unique_keys(pairs: list[tuple[str, object]]) -> dict:
+    """A JSON object with a key twice is refused: `json` keeps the last, a reader sees the first (#2210 adversary)."""
+    keys = [k for k, _ in pairs]
+    repeated = sorted({k for k in keys if keys.count(k) > 1})
+    if repeated:
+        raise ValueError(f"a case repeats the key(s) {repeated}")
+    return dict(pairs)
+
+
 def case_shape_problems(cases: object) -> list[str]:
     """A stack's cases file in its one strict shape (#2210): a non-empty list of objects with exactly CASE_KEYS, typed, names unique.
     Anything else is refused, never read around: an extra key is a typo of a real one, and a case nobody can run proves nothing."""
@@ -93,16 +102,17 @@ def case_shape_problems(cases: object) -> list[str]:
             found.append(f"case {i} keys {sorted(case)} must be exactly {sorted(CASE_KEYS)}")
             continue
         wrong = [k for k, t in CASE_KEYS.items() if type(case[k]) is not t]
-        if not wrong and not case["name"].strip():
-            wrong = ["name"]
+        if not wrong:
+            wrong = [k for k in ("name", "plan") if not case[k].strip()]   # a blank plan with no paths proves nothing
         if not wrong and not all(type(p) is str and p.strip() for p in case["paths"]):
             wrong = ["paths"]
         if wrong:
             found.append(f"case {i} has a wrong type or an empty value in {wrong}")
             continue
-        if case["name"] in seen:
+        name = " ".join(case["name"].split())
+        if name in seen:
             found.append(f"case {i} repeats the name {case['name']!r}")
-        seen.add(case["name"])
+        seen.add(name)
     return found
 
 
@@ -122,7 +132,8 @@ def stack_case_failures(dirs: list[Path]) -> tuple[list[str], int]:
             rows = [(e["boundary"], kind, re.compile(e["pattern"], re.I), label)
                     for kind, key in (("text", "boundary_text"), ("path", "boundary_paths")) for e in sec.get(key) or []]
             try:
-                cases = json.loads((detect_stack.plugin_root(manifest) / sec["cases"]).read_text(encoding="utf-8"))
+                cases = json.loads((detect_stack.plugin_root(manifest) / sec["cases"]).read_text(encoding="utf-8"),
+                                   object_pairs_hook=unique_keys)
             except (OSError, ValueError) as err:
                 failures.append(f"{label}: cannot read its cases {sec['cases']}: {err}")
                 continue
@@ -258,7 +269,9 @@ def selftest() -> int:
                 ("a non-string path is refused", [{**good, "paths": [3]}], 1),
                 ("an empty path is refused", [{**good, "paths": [" "]}], 1),
                 ("a blank name is refused", [{**good, "name": " "}], 1),
-                ("a repeated name is refused", [good, dict(good)], 1)):
+                ("a repeated name is refused", [good, dict(good)], 1),
+                ("a name repeated but for spacing is refused", [good, {**good, "name": " n "}], 1),
+                ("a blank plan is refused", [{**good, "plan": "  "}], 1)):
             got = 1 if case_shape_problems(cases_value) else 0
             if got != want:
                 bad += 1
@@ -268,6 +281,11 @@ def selftest() -> int:
         if shaped_ran != 0 or not any("must be exactly" in f for f in shaped):
             bad += 1
             print(f"FAIL a stack whose cases break the shape fails without running them: ran {shaped_ran}, {shaped}")
+        (plug / "cases.json").write_text('[{"name": "x", "plan": "Tidy.", "paths": [], "boundary": false, "boundary": true}]', encoding="utf-8")
+        duped, duped_ran = stack_case_failures([plug])
+        if duped_ran != 0 or not any("repeats the key" in f for f in duped):
+            bad += 1
+            print(f"FAIL a case with a key twice is refused, not read as its last value: ran {duped_ran}, {duped}")
         proj.mkdir()
         (proj / "marker.txt").write_text("x", encoding="utf-8")
         rows, notes = stack_rows(proj, [plug])

@@ -15,8 +15,8 @@ row of `docs/evidence/audits/2026-10-21-nextjs-security-claims.md` in the claude
 
 ## Tampering — can the input change what it must not?
 
-- Each new or changed table in an exposed schema (`public` by default): is RLS enabled, and which policy allows
-  each of select, insert, update and delete (C-1)
+- Each new or changed table in an exposed schema: is RLS enabled, and which policy allows each of select, insert,
+  update and delete (C-1)
 - An `update` policy: does its `with check` stop a row being moved to another owner?
 
 ## Repudiation — can we show who did it?
@@ -26,7 +26,7 @@ row of `docs/evidence/audits/2026-10-21-nextjs-security-claims.md` in the claude
 ## Information disclosure — what can leak?
 
 - Does the `service_role` (secret) key stay on the server, out of every client bundle and out of source control (C-2)
-- Each new view: is it created with `security_invoker = true`, or else kept away from `anon` and `authenticated` (C-10)
+- Each new view: on Postgres 15 or later, is it created with `security_invoker = true` (C-10)
 - Each storage bucket: public or private? A public bucket serves every file to anyone with the URL (C-11)
 - Uploads, deletes and moves in storage: which `storage.objects` policy allows them (C-11)
 

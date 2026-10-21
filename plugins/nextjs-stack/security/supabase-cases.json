@@ -15,5 +15,11 @@
  {"name": "auth.getSession in server code is a boundary", "plan": "Read auth.getSession in the layout.", "paths": [], "boundary": true},
  {"name": "a public bucket is a boundary", "plan": "Create a public bucket for avatars.", "paths": [], "boundary": true},
  {"name": "a plain column rename is not a boundary", "plan": "Rename the invoices.total column to amount.", "paths": [], "boundary": false},
- {"name": "a word containing rls is not RLS", "plan": "Fix the curls in the logo.", "paths": [], "boundary": false}
+ {"name": "a word containing rls is not RLS", "plan": "Fix the curls in the logo.", "paths": [], "boundary": false},
+ {"name": "a nested migration is a boundary", "plan": "Tidy.", "paths": ["supabase/migrations/2026/x.sql"], "boundary": true},
+ {"name": "the service role in prose is a boundary", "plan": "Use the service role key in the cron job.", "paths": [], "boundary": true},
+ {"name": "getSession() in prose is a boundary", "plan": "Read the user from getSession() in the layout.", "paths": [], "boundary": true},
+ {"name": "a select policy is a boundary", "plan": "Add a select policy on invoices.", "paths": [], "boundary": true},
+ {"name": "verify-jwt disabled is a boundary", "plan": "Deploy with verify-jwt disabled.", "paths": [], "boundary": true},
+ {"name": "a role column is not the service role", "plan": "Show each member's role in the list.", "paths": [], "boundary": false}
 ]

@@ -323,26 +323,84 @@ def setup_section_problems(manifest: dict, stack: dict, where: str) -> list[str]
 
 # A CHECKLIST IN ONE STRICT SHAPE (#2210, the coordinator's rule from #2213): it is read as text, never interpreted as Markdown, so
 # anything a renderer would hide or reshape is refused rather than read around. A claim id (`C-n`, a row of the stack's audit) is a
-# citation only in the slot at the END of its line.
-CLAIM_ID = re.compile(r"\bC-\d+\b")
-CITATION_SLOT = re.compile(r"\((C-\d+(?:, C-\d+)*)\)\s*$")
+# citation only in the slot at the END of its line, and only for a row its audit marks CONFIRMED (#2210 adversary).
+# The alphabet is a whitelist (printable ASCII plus the two marks the checklists use), so a look-alike citation (a zero-width
+# character, a Cyrillic C, a non-ASCII dash) or a line break only Python sees (U+0085, U+001C) is refused, not normalised.
+CHECKLIST_EXTRA_CHARS = "—§"
+CITATION_SLOT = re.compile(r"\((C-\d+(?:, C-\d+)*)\)$")
+CLAIM_LIKE = re.compile(r"c\s*-\s*\d", re.I)
+AUDIT_PATH = re.compile(r"`(docs/evidence/audits/[\w.-]+\.md)`")
 
 
 def checklist_format_problems(text: str) -> list[str]:
     """`<line>: <why>` for each line of a security checklist outside its strict shape; empty when it holds."""
     found = []
-    for n, line in enumerate(text.splitlines(), 1):
+    prev_blank = True
+    for n, raw in enumerate(text.split("\n"), 1):
+        line = raw.rstrip(" ")
+        odd = sorted({c for c in line if not (" " <= c <= "~" or c in CHECKLIST_EXTRA_CHARS)})
+        if odd:
+            found.append(f"{n}: characters outside the checklist alphabet {[hex(ord(c)) for c in odd]} (a tab, CR, look-alike or hidden character)")
         if "<!--" in line or "-->" in line:
             found.append(f"{n}: an HTML comment hides text from the reader; delete it, don't hide it")
+        elif re.search(r"<[A-Za-z/!?]", line):
+            found.append(f"{n}: raw HTML; a renderer can hide or reshape it (`<details>`, `hidden`), so a checklist holds none")
         if re.match(r"\s*(?:`{3,}|~{3,})", line):
             found.append(f"{n}: a code fence; a checklist asks questions in prose and holds no fenced block")
+        if prev_blank and re.match(r" {4,}\S", line):
+            found.append(f"{n}: an indented code block (four spaces after a blank line)")
+        if re.match(r" {0,3}\[[^\]]+\]:", line):
+            found.append(f"{n}: a link reference definition; a renderer shows none of it")
         if line.lstrip().startswith("|") and not line.startswith("|"):
             found.append(f"{n}: an indented table row; every row starts with `|` in the first column")
+        if not line.startswith("|") and "|" in line and re.fullmatch(r"[\s|:-]*-{3,}[\s|:-]*", line):
+            found.append(f"{n}: a table delimiter row that does not start with `|`; every row starts with `|`")
         slot = CITATION_SLOT.search(line)
         outside = line[:slot.start()] if slot else line
-        if CLAIM_ID.search(outside):
-            found.append(f"{n}: a claim id outside its end-of-line slot `(C-n)`")
+        if CLAIM_LIKE.search(outside):
+            found.append(f"{n}: a claim id outside its end-of-line slot `(C-n)` (or a malformed one)")
+        prev_blank = not line.strip()
     return found
+
+
+def checklist_citations(text: str) -> set[str]:
+    """Every `C-n` a checklist cites, read from the end-of-line slots only."""
+    out: set[str] = set()
+    for line in text.split("\n"):
+        slot = CITATION_SLOT.search(line.rstrip(" "))
+        if slot:
+            out.update(slot.group(1).split(", "))
+    return out
+
+
+def confirmed_claims(audit: str) -> set[str]:
+    """The `C-n` rows of an audit whose own section (`## C-n — ...` up to the next `## `) says `Verdict: CONFIRMED`."""
+    out: set[str] = set()
+    for section in re.split(r"(?m)^(?=## )", audit):
+        head = re.match(r"## (C-\d+) ", section)
+        if head and re.search(r"(?m)^Verdict: CONFIRMED\b", section):
+            out.add(head.group(1))
+    return out
+
+
+def citation_problems(text: str, plugin: Path) -> list[str]:
+    """A cited `C-n` is a CONFIRMED row of the one audit the checklist names. The audit is maintainer evidence, so it is read only
+    in a marketplace checkout (where the gate runs); an installed copy has no audit beside it and was proved before it shipped."""
+    cited = checklist_citations(text)
+    if not cited:
+        return []
+    audits = sorted(set(AUDIT_PATH.findall(text)))
+    if len(audits) != 1:
+        return [f" cites {sorted(cited)} but names {len(audits)} audits; name exactly one `docs/evidence/audits/<file>.md`"]
+    repo = plugin.parent.parent
+    if not (repo / ".claude-plugin" / "marketplace.json").is_file():
+        return []
+    try:
+        confirmed = confirmed_claims((repo / audits[0]).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as err:
+        return [f" names the audit {audits[0]}, which cannot be read: {err}"]
+    missing = sorted(cited - confirmed, key=lambda c: int(c[2:]))
+    return [f" cites {', '.join(missing)}, not a CONFIRMED row of {audits[0]}"] if missing else []
 
 
 def security_problems(manifest: dict, stack: dict, where: str) -> list[str]:
@@ -365,6 +423,7 @@ def security_problems(manifest: dict, stack: dict, where: str) -> list[str]:
                     found.append(f"{where}.security.checklist {named!r} cannot be read: {err}")
                 else:
                     found.extend(f"{where}.security.checklist {named}:{p}" for p in checklist_format_problems(text))
+                    found.extend(f"{where}.security.checklist {named}{p}" for p in citation_problems(text, plugin_root(manifest)))
     for key in ("boundary_text", "boundary_paths"):
         for i, row in enumerate(value.get(key) or []):
             if isinstance(row, dict) and isinstance(row.get("pattern"), str):
@@ -912,7 +971,7 @@ def selftest() -> int:
         sec_manifest = {"_path": str(sec_dir / MANIFEST), "plugin": "sec-stack",
                         "stacks": json.loads((sec_dir / MANIFEST).read_text(encoding="utf-8"))["stacks"]}
         for label, body, want in (
-                ("a checklist in its strict shape passes", "# C\n\n- Is RLS on? (C-1)\n- Both? (C-1, C-2)\n\n| a | b |\n|---|---|\n", True),
+                ("a checklist in its strict shape passes", "# C\n\nRows of `docs/evidence/audits/a.md`.\n\n- Is RLS on? (C-1)\n- Both? (C-1, C-2)\n\n| a | b |\n|---|---|\n", True),
                 ("a checklist with an HTML comment is refused", "- Ask. (C-1)\n<!-- hidden -->\n", False),
                 ("a comment closing on a later line is refused", "- Ask.\nstill hidden -->\n", False),
                 ("a fenced block is refused", "- Ask.\n```\nx\n```\n", False),
@@ -922,10 +981,58 @@ def selftest() -> int:
                 ("a claim id mid-line is refused", "- Per C-1, is RLS on?\n", False),
                 ("a claim id before the slot is refused", "- C-2 says so (C-1)\n", False),
                 ("a slot that is not at the end is refused", "- Ask (C-1) then more.\n", False),
-                ("a malformed slot is refused", "- Ask. (C-1,C-2)\n", False)):
-            (sec_dir / "sec.md").write_text(body, encoding="utf-8")
+                ("a malformed slot is refused", "- Ask. (C-1,C-2)\n", False),
+                # #2210 adversary: each input that got through the first rule
+                ("a <details> block is refused", "<details><summary>x</summary>\nhidden\n</details>\n", False),
+                ("an inline hidden span is refused", "- Ask <span hidden>x</span> now.\n", False),
+                ("a link reference definition is refused", "- Ask.\n\n[k]: <> \"hidden text\"\n", False),
+                ("an indented code block is refused", "- Ask.\n\n    const x = secret();\n", False),
+                ("a list continuation is not a code block", "- Ask a long\n    question here.\n", True),
+                ("a pipeless table is refused", "a | b\n--- | ---\n", False),
+                ("a zero-width character in a citation is refused", "- Per C​-1 ask\n", False),
+                ("a non-ASCII hyphen in the slot is refused", "- Ask (C‑1)\n", False),
+                ("a Cyrillic C in the slot is refused", "- Ask (С1)\n- Ask (С-1)\n", False),
+                ("a spaced claim id outside the slot is refused", "- Per C - 1, ask\n", False),
+                ("a suffixed id in the slot is refused", "- Ask (C-1a)\n", False),
+                ("a break only Python sees is refused", "- Ask (C-1)\x1c then more\n", False),
+                ("a NEL is refused", "- Ask (C-1)\x85 then more\n", False),
+                ("a CRLF line ending is a line end, as in CommonMark", "- Ask. (C-1)\r\n- More. (C-2)\r\n", True),
+                ("a tab is refused", "-\tAsk.\n", False),
+                ("a BOM is refused", "﻿# C\n", False),
+                ("the marks the checklists use pass", "# Spoofing — who? (rails-8 §2b)\n", True)):
+            # every fixture names its audit, so a refusal is the format rule's and never the "names 0 audits" one
+            audit_line = "" if "docs/evidence/audits/" in body else "Rows of `docs/evidence/audits/a.md`.\n"
+            (sec_dir / "sec.md").write_text(audit_line + body, encoding="utf-8")
             got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
             case((not got) == want, f"{label}: {got}")
+        # A cited row must be a CONFIRMED row of the one audit the checklist names, read in a marketplace checkout.
+        named = "Rows in `docs/evidence/audits/a.md`.\n"
+        (sec_dir / "sec.md").write_text("- Ask. (C-1)\n", encoding="utf-8")
+        got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+        case(any("names 0 audits" in p for p in got), f"a citation with no audit named is refused: {got}")
+        (sec_dir / "sec.md").write_text(named + "Also `docs/evidence/audits/b.md`.\n- Ask. (C-1)\n", encoding="utf-8")
+        got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+        case(any("names 2 audits" in p for p in got), f"a citation naming two audits is refused: {got}")
+        (sec_dir / "sec.md").write_text(named + "- Ask. (C-1, C-3)\n", encoding="utf-8")
+        got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+        case(not got, f"outside a marketplace checkout the audit is not read: {got}")
+        (root / ".claude-plugin").mkdir(exist_ok=True)
+        (root / ".claude-plugin" / "marketplace.json").write_text("{}", encoding="utf-8")
+        got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+        case(any("cannot be read" in p for p in got), f"a named audit that is missing is a problem: {got}")
+        (root / "docs" / "evidence" / "audits").mkdir(parents=True)
+        (root / "docs" / "evidence" / "audits" / "a.md").write_text(
+            "# A\n\n## C-1 — x\n\nVerdict: CONFIRMED [quotes: C-1]\n\n## C-2 — y\n\nVerdict: CONFIRMED\n\n## C-3 — z\n\nVerdict: REFUTED\n",
+            encoding="utf-8")
+        got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+        case(any("cites C-3, not a CONFIRMED row" in p for p in got), f"a citation of a REFUTED row is refused: {got}")
+        (sec_dir / "sec.md").write_text(named + "- Ask. (C-99)\n", encoding="utf-8")
+        got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+        case(any("cites C-99" in p for p in got), f"a citation of a row the audit lacks is refused: {got}")
+        (sec_dir / "sec.md").write_text(named + "- Ask. (C-1, C-2)\n", encoding="utf-8")
+        got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+        case(not got, f"citations of CONFIRMED rows pass: {got}")
+        (root / ".claude-plugin" / "marketplace.json").unlink()
         (sec_dir / "sec.md").write_bytes(b"\xff\xfe bad")
         got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
         case(any("cannot be read" in p for p in got), f"an undecodable checklist is a problem, not a pass: {got}")
