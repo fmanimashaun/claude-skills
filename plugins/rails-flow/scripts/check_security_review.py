@@ -29,8 +29,12 @@ STRICT (#2214 adversary). A cited file must be a regular file (mode 100644 or 10
 `security.code_syntax`; any other file type is refused ("declare this file type's comment syntax"), never read with neutral rules. A row
 answered twice is refused, never "last wins".
 
+A ROW MAY ALSO DECLARE (#2260) `line_comments` (markers that make a line that STARTS with them a comment, such as JavaScript's `<!--` and `-->`) and `refuse_when`
+(a pattern which, on any line of the file, means a line-by-line reader cannot tell code from non-code, such as a template literal spanning lines: the WHOLE file is
+refused, never guessed at). A file type is read only when a stack declares it: `.ts`, `.jsx` and `.tsx` stay refused until a verified source says their comments match.
+
 LIMITS. It proves the record is current, complete and cites a line of code that exists, not that the cited line implements the control. The
-code-line reading is line-by-line, not a parser: a `<<ID` or a comment marker inside a string is misread; a language's multi-line string
+code-line reading is line-by-line, not a parser: a `<<ID` or a comment marker inside a string is misread (a `/*` inside a JavaScript string opens a span, so the lines after it are refused: a false refusal, never a false accept); a language's multi-line string
 literals (a percent-literal, a quoted string spanning lines) read as code; dead code (`if false`) reads as code; a byte-order mark before line 1
 makes a column-0 opener on line 1 not count. That is the auditor's work and the reviewer's. Nothing stops a session that writes the record by hand, as with `risky_diff.py`. The model is found only
 when the change adds or edits it, so a unit that has a boundary and no model is `security_scope.py`'s concern, not this check's.
@@ -77,10 +81,10 @@ def _open_after(text: str, blocks: tuple[tuple[str, str, bool], ...], pos: int =
 
 
 def non_code_lines(lines: list[str], blocks: tuple[tuple[str, str, bool], ...] = NEUTRAL_BLOCKS, heredoc: "re.Pattern | None" = None,
-                   end_markers: tuple[str, ...] = ()) -> set[int]:
+                   end_markers: tuple[str, ...] = (), line_comments: tuple[str, ...] = ()) -> set[int]:
     """1-based numbers of lines that are not code: blank, a `#` or `//` comment, inside a block comment (`blocks`: open, close, column0),
-    the body (and terminator) of a heredoc (`heredoc`), or anything from a data marker on (`end_markers`, a line that is exactly the
-    marker, such as `__END__` in a language that has one). A line-by-line reading, not a parser: a heredoc opener inside a string or a comment still opens
+    the body (and terminator) of a heredoc (`heredoc`), a line that STARTS with one of `line_comments` (a language's own line-comment marker,
+    #2260), or anything from a data marker on (`end_markers`, a line that is exactly the marker, such as `__END__` in a language that has one). A line-by-line reading, not a parser: a heredoc opener inside a string or a comment still opens
     one, and a comment marker inside a string closes nothing.
 
     A column0 block opens and closes only at the very start of the raw line (#2214 adversary: an indented or mid-line `=end` closes
@@ -122,7 +126,7 @@ def non_code_lines(lines: list[str], blocks: tuple[tuple[str, str, bool], ...] =
                 left = _open_after(t, blocks)
                 closing = (left, False) if left else None
             continue
-        if not t or t.startswith(("#", "//")):
+        if not t or t.startswith(("#", "//", *line_comments)):
             out.add(n)
             continue
         # This line is code; a span it leaves open, after any number of closed ones, still covers the lines below.
@@ -171,6 +175,24 @@ def rules_for(path: str, rows: list[dict], markers: list[dict] | None = None) ->
             heredoc = heredoc or (re.compile(row["heredoc"]) if row.get("heredoc") else None)
     ends = tuple(m["marker"] for m in markers or [] if any(path.endswith(ext) for ext in m.get("extensions") or []))
     return tuple(blocks), heredoc, ends
+
+
+def line_comments_for(path: str, rows: list[dict]) -> tuple[str, ...]:
+    """The line-comment markers a detected stack declares for `path`'s extension, on top of the neutral `#` and `//` (#2260)."""
+    return tuple(m for row in rows if any(path.endswith(ext) for ext in row.get("extensions") or []) for m in row.get("line_comments") or [])
+
+
+def refusal_for(path: str, lines: list[str], rows: list[dict]) -> str | None:
+    """Why `path` cannot be read line by line, or None (#2260). A row's `refuse_when` names a pattern which, on any line, means this reader cannot tell
+    code from non-code (a template literal that spans lines has body lines that look like code): the whole file is refused, never guessed at."""
+    for row in rows:
+        if any(path.endswith(ext) for ext in row.get("extensions") or []):
+            for refusal in row.get("refuse_when") or []:
+                pattern = re.compile(refusal["pattern"])
+                for n, line in enumerate(lines, 1):
+                    if pattern.search(line):
+                        return f"line {n} {refusal['why']}"
+    return None
 
 
 def file_at_head(root: Path, path: str) -> list[str] | None:
@@ -233,7 +255,11 @@ def judge(model_text: str, record_text: str, root: Path) -> tuple[list[str], lis
                                       "a file type no detected stack declares is refused, never read with neutral rules")
                 elif int(ev.group(2)) < 1 or int(ev.group(2)) > len(src):
                     incomplete.append(f"{label}: {ev.group(0)} is past the end of {ev.group(1)}")
-                elif int(ev.group(2)) in non_code_lines(src, *rules_for(ev.group(1), code_syntax(root), data_markers(root))):
+                elif refusal_for(ev.group(1), src, code_syntax(root)):
+                    incomplete.append(f"{label}: {ev.group(1)} cannot be read safely, so no line of it is accepted as the place a control is implemented: "
+                                      f"{refusal_for(ev.group(1), src, code_syntax(root))}")
+                elif int(ev.group(2)) in non_code_lines(src, *rules_for(ev.group(1), code_syntax(root), data_markers(root)),
+                                                         line_comments=line_comments_for(ev.group(1), code_syntax(root))):
                     incomplete.append(f"{label}: {ev.group(0)} is blank, a comment or a heredoc body, so it cannot be where the control is implemented")
         else:
             if verdict == "stale":
@@ -348,7 +374,10 @@ def selftest() -> int:
         # Keyed by both spellings of the root: main() resolves it (macOS /var -> /private/var), and a miss is now refused, not neutral.
         for key in {str(root), str(root.resolve())}:
             _SYNTAX[key] = [{"extensions": [".x"], "block_comments": [{"open": "=open", "close": "=close", "column0": True}],
-                             "heredoc": r"<<[~-]?(?P<id>[A-Za-z_]\w*)"}]
+                             "heredoc": r"<<[~-]?(?P<id>[A-Za-z_]\w*)"},
+                            # #2260: a row with no heredoc, its own line-comment marker, and a file-level refusal
+                            {"extensions": [".y"], "block_comments": [{"open": "(*", "close": "*)", "column0": False}], "line_comments": ["%%"],
+                             "refuse_when": [{"pattern": r"^[^`]*`(?:[^`]*`[^`]*`)*[^`]*$", "why": "has an odd number of backticks"}]}]
             _MARKERS[key] = [{"extensions": [".x"], "marker": "__DATA__"}]
         (root / "src").mkdir()
         (root / "src/c.x").write_text("a\nb\nc\n# note\n\n=open\nhidden\n=close\nlast\nx = <<TXT\n  select 1\nTXT\n/* block\nmiddle no star\nend */\ntail\n  *args,\ny = [<<X, <<Y]\n  one\nX\n  two\nY\ndone\n")
@@ -358,12 +387,16 @@ def selftest() -> int:
                "end */", "tail", "y = <<~low", "  body", "  low", "z = <<bare", "  bare", "bare", "code2", "__DATA__", "data"]
         (root / "src/d.x").write_text("\n".join(D_X) + "\n")
         (root / "src/e.js").write_text("const a = 1;\n")
+        (root / "src/g.y").write_text("%% a line comment in this language\ncode(1)\n(* block\nhidden *)\ncode(2)\n")
+        (root / "src/h.y").write_text("code(1)\nx = `a\nb`\ncode(2)\n")
+        (root / "src/i.x").write_text("%% this marker belongs to .y files, not .x\ncode(1)\n")
+        (root / "src/j.x").write_text("x = `a\ncode(2)\n")
         (root / "src/dir.x").mkdir()
         (root / "src/dir.x/inner.x").write_text("x\n")
         # #2214 adversary pass 4: a line that closes one span and opens another, and a closing line that reopens one.
         F_X = ["a /* x */ b /* begin", "hidden", "end */ y /* again", "hidden2", "*/", "code"]
         (root / "src/f.x").write_text("\n".join(F_X) + "\n")
-        git("add", "src/c.x", "src/d.x", "src/e.js", "src/dir.x/inner.x", "src/f.x")
+        git("add", "src/c.x", "src/d.x", "src/e.js", "src/dir.x/inner.x", "src/f.x", "src/g.y", "src/h.y", "src/i.x", "src/j.x")
         git("commit", "-q", "-m", "base")
         got_f = non_code_lines(F_X, *rules_for("src/f.x", _SYNTAX[str(root)], _MARKERS[str(root)]))
         if got_f != {2, 3, 4, 5}:
@@ -439,6 +472,14 @@ def selftest() -> int:
                 ("a span reopened on its closing line hides the next line", "src/f.x:4", 1),
                 ("code after every span closes passes", "src/f.x:6", 0)):
             case(label, good.replace("src/c.x:2", cite), want, NOT_CODE if want else "answered")
+        case("a line starting with the row's own line-comment marker is not code (#2260)", good.replace("src/c.x:2", "src/g.y:1"), 1, NOT_CODE)
+        case("code after a row's line comment passes (#2260)", good.replace("src/c.x:2", "src/g.y:2"), 0, "answered")
+        case("a block comment of a row with no heredoc hides its lines (#2260)", good.replace("src/c.x:2", "src/g.y:4"), 1, NOT_CODE)
+        case("a file the row's refuse_when matches is refused whole, even on a line before the match (#2260)", good.replace("src/c.x:2", "src/h.y:1"), 1,
+             "cannot be read safely")
+        case("a refused file names the line and why (#2260)", good.replace("src/c.x:2", "src/h.y:4"), 1, "line 2 has an odd number of backticks")
+        case("a row's line-comment marker does not apply to another file type (#2260)", good.replace("src/c.x:2", "src/i.x:1"), 0, "answered")
+        case("a row's refuse_when does not apply to another file type (#2260)", good.replace("src/c.x:2", "src/j.x:2"), 0, "answered")
         case("a directory is never read as a cited file", good.replace("src/c.x:2", "src/dir.x:1"), 1, "a regular file committed at HEAD")
         case("a file type no stack declares is refused, not read with neutral rules", good.replace("src/c.x:2", "src/e.js:1"), 1,
              "declare this file type's comment syntax in the stack descriptor")
@@ -510,7 +551,25 @@ def selftest() -> int:
                 continue
             for c in cases:
                 ran += 1
-                got = non_code_lines(c["lines"], *rules_for(c["file"], sec.get("code_syntax") or [], sec.get("data_markers") or []))
+                rows = sec.get("code_syntax") or []
+                if "declared" in c:
+                    # A file type no detected stack declares is refused, never read with neutral rules (#2214); #2260 keeps .ts, .jsx and .tsx there.
+                    if declared(c["file"], rows) != c["declared"]:
+                        bad += 1
+                        print(f"FAIL {label}: {c['name']}: declared({c['file']}) is {not c['declared']}, expected {c['declared']}")
+                    continue
+                if c.get("refused"):
+                    # A refused case: the file cannot be read line by line, whatever its non-code lines would be (#2260).
+                    why = refusal_for(c["file"], c["lines"], rows)
+                    if not why:
+                        bad += 1
+                        print(f"FAIL {label}: {c['name']}: expected the file to be refused, it was read")
+                    continue
+                if refusal_for(c["file"], c["lines"], rows):
+                    bad += 1
+                    print(f"FAIL {label}: {c['name']}: the file was refused ({refusal_for(c['file'], c['lines'], rows)}), expected it read")
+                    continue
+                got = non_code_lines(c["lines"], *rules_for(c["file"], rows, sec.get("data_markers") or []), line_comments=line_comments_for(c["file"], rows))
                 if got != set(c["non_code"]):
                     bad += 1
                     print(f"FAIL {label}: {c['name']}: non-code lines {sorted(got)}, expected {c['non_code']}")

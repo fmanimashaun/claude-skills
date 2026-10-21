@@ -341,5 +341,17 @@ GUARD = Guard(
             "        return []",
             "a column0 that is not true or false is a problem",
         ),
+        Mutation(
+            "#2260: every key of a code_syntax record is required, so a row with no heredoc is refused",
+            '                      for key in shape[0] if key != "*" and not key.endswith("?") and key not in item]',
+            '                      for key in shape[0] if key != "*" and key not in item]',
+            "a code_syntax row with no heredoc, and with line_comments and refuse_when, is valid",
+        ),
+        Mutation(
+            "#2260: a refuse_when pattern is not compiled, so one that does not compile reaches the reader and crashes it",
+            '                    re.compile(refusal["pattern"])\n                except re.error as err:\n                    found.append(f"{where}.security.code_syntax[{i}].refuse_when',
+            '                    pass\n                except re.error as err:\n                    found.append(f"{where}.security.code_syntax[{i}].refuse_when',
+            "a refuse_when pattern that does not compile is a problem",
+        ),
     ),
 )
