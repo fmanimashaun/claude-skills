@@ -718,9 +718,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
 CORPORA_GATES = frozenset({"coverage matrix drift"})
 # Gates a PULL-REQUEST or dev-push run skips -- reported as SKIP with the reason, never omitted (#866,
 # #1635). `mutation coverage` is most of the sweep's cost (over 30 min of 41 locally at load, #1635), on every PR, for a check whose subjects
-# each PR's own selftest gates already run once. It runs on the maintainer's machine before a promotion
-# (`--require-slow --record-proof`, recorded against the tree by sweep_proof.py), and release.yml runs it
-# itself unless that record matches the tree it is publishing, so nothing reaches `main` without it.
+# each PR's own selftest gates already run once. release.yml runs it on GitHub for this public repo (owner rule 2026-10-21), unless a
+# recorded proof matches the tree it is publishing (a local `--require-slow --record-proof`, recorded against the tree by sweep_proof.py,
+# is for private repos), so nothing reaches `main` without it.
 # An exact set, pinned by the selftest in both directions like CORPORA_GATES: widening it is how a
 # "fast" mode becomes the only mode.
 PR_SKIPPED_GATES = frozenset({"mutation coverage", "guard-bash cases (full)"})
@@ -1445,7 +1445,7 @@ class Doctor:
             if fast and name in PR_SKIPPED_GATES:
                 self.add(
                     SKIP, f"gate: {name}",
-                    "not run in --fast mode — it runs locally before a promotion (--record-proof), and in the release when no proof matches the tree",
+                    "not run in --fast mode — it runs in the release on GitHub (release.yml), unless a recorded proof matches the tree; a local --record-proof is for private repos only",
                     " ".join(cmd),
                 )
                 continue

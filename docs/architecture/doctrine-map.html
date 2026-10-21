@@ -53,7 +53,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <li><code>script:scripts/maintainer_doctor.py</code></li>
 <li><code>mutation:maintainer_doctor</code></li>
 </ul>
-<p class="note">Asserted by the doctor&#x27;s `the last promotion carried dev&#x27;s ancestry` check, which asks both halves -- is main&#x27;s tip a merge, AND does it have a parent on dev. It is a DIAGNOSTIC, so --gates-only skips it; run the full doctor before a promotion.</p>
+<p class="note">Asserted by the doctor&#x27;s `the last promotion carried dev&#x27;s ancestry` check, which asks both halves -- is main&#x27;s tip a merge, AND does it have a parent on dev. It is a DIAGNOSTIC, so --gates-only skips it, and so does the sweep release.yml runs; run the plain doctor (no flags) before promoting.</p>
 </div>
 <div class="row" data-k="guarantee">
 <h2>Every component bump gets a CHANGELOG entry under that component&#x27;s section.</h2>
