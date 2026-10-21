@@ -265,6 +265,12 @@ DESCRIPTOR_SCHEMA: dict = {
                  "boundary_paths": [{"boundary": STR, "pattern": STR}],
                  # data_markers (#2214): a line that is exactly the marker (an end-of-code line such as `__END__`) ends code for the rest of the file.
                  "data_markers": [{"extensions": STRS, "marker": STR}]},
+    # WHICH PATHS A USER SEES (#2219). The mock-up gate holds a user-visible change until a mock-up is approved, and which files are
+    # user-visible is per stack: Rails views, Next.js pages. Each stack declares its own (never merged: a Rails app with a Next.js front
+    # end has both); regexes matched with `re.search`. `not_paths` are files under them a person does not see (a JSON template, an API
+    # route handler); `seen_anyway` wins over `not_paths` (the PWA manifest is JSON a person installs). `cases` is a JSON list of
+    # `{"path", "ui"}` rows that proves the patterns, run by check_mockup_gate's selftest.
+    "ui_scope": {"paths": STRS, "not_paths?": STRS, "seen_anyway?": STRS, "cases": STR},
     "scripts": {"*": STR},
     "review_checklist": STRS,
 }
@@ -313,7 +319,7 @@ def shape_problems(value: object, shape: object, where: str) -> list[str]:
 
 # KEYS THAT BELONG TO ONE STACK, NOT TO THE PROJECT (#2180). A Rails app with a Next.js front end runs BOTH stacks' setup
 # sections, so a setup section is never merged (two plugins declaring it is no conflict); each detected stack's is listed.
-PER_STACK_KEYS = ("setup_section", "security")  # security: #2117, each stack reports its own surface
+PER_STACK_KEYS = ("setup_section", "security", "ui_scope")  # security: #2117, ui_scope: #2219; each stack reports its own
 
 
 def plugin_root(manifest: dict) -> Path:
@@ -471,6 +477,43 @@ def security_problems(manifest: dict, stack: dict, where: str) -> list[str]:
     return found
 
 
+def ui_scope_problems(manifest: dict, stack: dict, where: str) -> list[str]:
+    value = (stack.get("descriptor") or {}).get("ui_scope") if isinstance(stack.get("descriptor"), dict) else None
+    if not isinstance(value, dict):
+        return []                               # absent, or a shape problem shape_problems already reports
+    found = [f"{where}.ui_scope needs `{key}`" for key in ("paths", "cases") if key not in value]
+    for key in ("paths", "not_paths", "seen_anyway"):
+        for i, pattern in enumerate(value.get(key) or [] if isinstance(value.get(key), list) else []):
+            if isinstance(pattern, str):
+                try:
+                    re.compile(pattern)
+                except re.error as err:
+                    found.append(f"{where}.ui_scope.{key}[{i}] does not compile: {err}")
+    named = value.get("cases")
+    if isinstance(named, str) and named:
+        if escapes(named):
+            found.append(f"{where}.ui_scope.cases {named!r} must stay inside its plugin (no absolute path, no `..`)")
+        elif not (plugin_root(manifest) / named).is_file():
+            found.append(f"{where}.ui_scope.cases {named!r} names no file in {plugin_root(manifest)}")
+    return found
+
+
+def ui_scopes(manifests: list[dict], matched: list[dict]) -> list[dict]:
+    """Each matched stack's `ui_scope`, its cases as a readable path, in detection order (#2219)."""
+    by_plugin = {m["plugin"]: m for m in manifests}
+    out = []
+    for found in matched:
+        manifest = by_plugin[found["plugin"]]
+        stack = next(s for s in manifest["stacks"] if isinstance(s, dict) and s.get("id") == found["id"])
+        value = (stack.get("descriptor") or {}).get("ui_scope")
+        if isinstance(value, dict):
+            entry = {"stack": found["id"], "plugin": found["plugin"], **json.loads(json.dumps(value))}
+            if isinstance(value.get("cases"), str):
+                entry["cases"] = str(plugin_root(manifest) / value["cases"])
+            out.append(entry)
+    return out
+
+
 def security_surfaces(manifests: list[dict], matched: list[dict]) -> list[dict]:
     """Each matched stack's security block, its checklist as a readable path, in detection order (#2117)."""
     by_plugin = {m["plugin"]: m for m in manifests}
@@ -533,6 +576,7 @@ def descriptor_problems(manifest: dict, roots: list[Path] | None = None) -> list
             found.extend(shape_problems(stack["descriptor"], DESCRIPTOR_SCHEMA, where))
             found.extend(setup_section_problems(manifest, stack, where))
             found.extend(security_problems(manifest, stack, where))
+            found.extend(ui_scope_problems(manifest, stack, where))
             values = leaves(stack["descriptor"]) if isinstance(stack["descriptor"], dict) else {}
             found.extend(agent_problems(values, where, roots))
             # a setup section or a security block alone is no flow-facing descriptor; leaves are dotted (`security.checklist`)
@@ -648,7 +692,7 @@ def run(project: Path, dirs: list[Path], stacks: list[str] | None = None, roots:
     problems += conflicts
     report = {"project": str(project), "stacks": matched, "manifests": [m["_path"] for m in manifests], "problems": problems,
               "descriptor": descriptor, "descriptor_sources": sources, "setup_sections": setup_sections(manifests, matched),
-              "security": security_surfaces(manifests, matched),
+              "security": security_surfaces(manifests, matched), "ui_scope": ui_scopes(manifests, matched),
               "available": available(manifests), "fresh": fresh(project)}
     if problems:
         return 2, report
@@ -1005,6 +1049,36 @@ def selftest() -> int:
         code, report = run(go_app, [plug("js-row", [{"id": "go", "all": [{"file": "go.mod"}], "descriptor": {"tests": {"command": ["go"], "glob": "*_test.go"}, "agents": AGENTS,
                                                                                                          "security": {"code_syntax": [js_row]}}}])])
         case(code == 0 and not report["problems"], f"a code_syntax row with no heredoc, and with line_comments and refuse_when, is valid: {code} {report['problems']}")
+        # #2219: a stack's `ui_scope`, per stack, never merged; its patterns must compile and its cases file must exist inside the plugin.
+        def ui_stack(name: str, marker: str, scope: dict, with_cases: bool = True, alone: bool = False) -> Path:
+            """`alone`: an add-on stack whose descriptor holds only its ui_scope (it owns no test runner, so two such plugins cannot conflict)."""
+            descriptor = {"ui_scope": scope} if alone else {"tests": {"command": ["go"], "glob": "*_test.go"}, "agents": AGENTS, "ui_scope": scope}
+            d = plug(name, [{"id": name, "all": [{"file": marker}], "descriptor": descriptor}])
+            if with_cases:
+                (d / "ui-cases.json").write_text("[]", encoding="utf-8")
+            return d
+
+        ui_app = project("ui-app", {"a.txt": "", "b.txt": ""})
+        good_scope = {"paths": ["^views/"], "not_paths": ["\\.json$"], "seen_anyway": ["^views/pwa/"], "cases": "ui-cases.json"}
+        code, report = run(ui_app, [ui_stack("ui-one", "a.txt", good_scope)])
+        case(code == 0 and not report["problems"] and len(report["ui_scope"]) == 1 and report["ui_scope"][0]["paths"] == ["^views/"]
+             and report["ui_scope"][0]["cases"].endswith("ui-one/ui-cases.json"),
+             f"a valid ui_scope is reported with its cases as a path: {code} {report['problems']} {report['ui_scope']}")
+        code, report = run(ui_app, [ui_stack("ui-a", "a.txt", good_scope), ui_stack("ui-b", "b.txt", {**good_scope, "paths": ["^pages/"]}, alone=True)])
+        case(code == 0 and [e["plugin"] for e in report["ui_scope"]] == ["ui-a", "ui-b"] and "ui_scope" not in report["descriptor"],
+             f"two stacks of two plugins each declare their own ui_scope, with no conflict and no merge: {code} {report['problems']}")
+        for n, (label, scope, with_cases, needle) in enumerate((
+                ("a ui_scope pattern that does not compile is a problem", {**good_scope, "paths": ["("]}, True, "does not compile"),
+                ("a not_paths pattern that does not compile is a problem", {**good_scope, "not_paths": ["["]}, True, "does not compile"),
+                ("a seen_anyway pattern that does not compile is a problem", {**good_scope, "seen_anyway": ["*"]}, True, "does not compile"),
+                ("ui_scope cases naming no file is a problem", good_scope, False, "names no file"),
+                ("ui_scope cases that escape the plugin are a problem", {**good_scope, "cases": "../x.json"}, True, "stay inside its plugin"),
+                ("an empty paths list is a problem", {**good_scope, "paths": []}, True, "non-empty list"),
+                ("a ui_scope with no cases is a problem", {"paths": ["^views/"]}, True, "needs `cases`"),
+                ("a ui_scope with no paths is a problem", {"cases": "ui-cases.json"}, True, "needs `paths`"),
+                ("an unknown ui_scope key is a problem", {**good_scope, "globs": ["x"]}, True, "descriptor-key-undeclared"))):
+            code, report = run(ui_app, [ui_stack(f"ui-bad-{n}", "a.txt", scope, with_cases)])
+            case(code == 2 and any(needle in p for p in report["problems"]), f"{label}: {code} {report['problems']}")
         held = {"plugin": "p", "_path": "p/stacks.json", "stacks": [{"id": "s", "descriptor": {"tests": {"command": ["go", "test"]}}}]}
         merged, _, _ = merged_descriptor([held], [{"id": "s", "plugin": "p"}])
         merged["tests"]["command"].append("MUTATED")

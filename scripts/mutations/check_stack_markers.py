@@ -13,7 +13,12 @@ GUARD = Guard(
     # The detector reads a directory as a plugin only beside its `.claude-plugin/plugin.json`, so both manifests are staged
     # (without them the unmutated selftest fails in the tempdir and every mutant reads as caught: INERT).
     needs=("plugins/rails-flow/scripts/detect_stack.py", "plugins/rails-flow/.claude-plugin/plugin.json",
-           "plugins/nextjs-stack/.claude-plugin/plugin.json"),
+           "plugins/nextjs-stack/.claude-plugin/plugin.json",
+           # The detector also checks that every file the descriptor names exists (the security checklists and cases, #2210; the ui_scope
+           # cases, #2219). Unstaged, the unmutated selftest failed in the tempdir and every mutant read as caught: INERT, on dev since #2210.
+           "plugins/nextjs-stack/security/nextjs.md", "plugins/nextjs-stack/security/nextjs-cases.json",
+           "plugins/nextjs-stack/security/supabase.md", "plugins/nextjs-stack/security/supabase-cases.json",
+           "plugins/nextjs-stack/ui-scope-cases.json"),
     deps=(),
     mutations=(
         Mutation(
