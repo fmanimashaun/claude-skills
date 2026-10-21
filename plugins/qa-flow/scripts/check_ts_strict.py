@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """A TypeScript e2e suite is strict, type-checked, and free of explicit `any` (#1447).
 
-Run:  python3 check_ts_strict.py                 # this project
+Run:  python3 check_ts_strict.py                 # this project's e2e suite under qa/
+      python3 check_ts_strict.py --scope app      # the Next.js app's own TypeScript (#2170)
       python3 check_ts_strict.py --root path/to/app
       python3 check_ts_strict.py --selftest
 
@@ -45,6 +46,26 @@ THREE RULES, on the suite under `qa/`:
 
 NOT APPLICABLE (exit 3) when the project has no TypeScript under `qa/` -- reported, never a pass.
 
+THE APP SCOPE (`--scope app`, #2162 decision 6, #2170). The same three rules on the app's own source, which is every
+`.ts/.tsx/.mts/.cts` in the project except the skipped directories: dependency and cache directories (`node_modules`, `.next`, `.vercel`, `.turbo`, `.git`) at any depth,
+`build`, `dist`, `out`, `coverage` and `qa` only at the project root (`src/build/` and `lib/coverage/` are ordinary folders).
+In a git repository the list is `git ls-files` (tracked plus untracked and not ignored), so a monorepo package's ignored
+`dist/` is skipped as well; without git a nested `packages/*/dist/` is read. And two more rules:
+
+  ts-missing-option the app's stricter profile is not all set in some tsconfig (merged through `extends`, as above):
+                    `strict` plus `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`,
+                    `noPropertyAccessFromIndexSignature`, `noImplicitReturns`, `noFallthroughCasesInSwitch`,
+                    `noUnusedLocals`, `noUnusedParameters` all true, and `allowUnreachableCode` and `allowUnusedLabels`
+                    both false (unset is an editor hint, not an error). `strict` includes none of them (doctrine-verifier
+                    CONFIRMED 2026-10-20, typescriptlang.org/tsconfig).
+  ts-directive      `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck` in a comment, with a description or without: the
+                    maintainer's policy for the app (a suite keeps its right to one; the rule is not applied under `qa/`).
+
+and ts-not-strict, ts-no-typecheck and ts-explicit-any read the app: every tsconfig outside the skipped directories (a
+tsconfig under `qa/` is the suite's), a CI step that runs `tsc` on the app (`-p` a path outside `qa/` and `node_modules`, or no
+`-p`, from a directory outside them) and can fail, and any in the app's source. A tsc on the suite does not satisfy the app, and
+the reverse. The qa scope is unchanged, except that a tsc which only prints or lists (`--version`, `--help`, `--showConfig`, `--listFilesOnly`, ...) no longer counts as the suite's type-check.
+
 KNOWN LIMITS.
 - Blanking is a scanner's, not a parser's. A regex literal is recognised by the character before its `/`
   (an operator, `(`, `,`, `=`, a line start -- where a value cannot end; a postfix `++`/`--` ends a
@@ -52,13 +73,20 @@ KNOWN LIMITS.
   quote in it opens a string to the end of the line -- either can hide a real `any` on that line. (Without
   the rule, downstream's `path.replace(/\\//g, "-")` inside a template put the scanner out of phase.)
 - JSX text in a `.tsx` is read as code, and so are `{ any }` shorthand and `let any = 1`: the word is a
-  false finding there (declare it).
+  false finding there (declare it). The commonest case is prose in a component ("Do you have any questions?"); the escape is a
+  comment on the line or directly above it: `{/* ts-strict: allow-any -- prose */}` in JSX, `// ts-strict: allow-any -- <why>` elsewhere.
 - The workflow reader is not a YAML parser: flow-style steps (`steps: [{...}]`), anchors and multi-line
   plain scalars are not read, and a matrix `-p ${{ matrix.p }}` is not resolved (so is not a step). A
   `set +e` before the call is not seen. A package script is followed one level: a script that calls
   another script is not traced.
-- `noUncheckedIndexedAccess` is doctrine advice, not a finding, because `strict` does not include it
-  (CONFIRMED) and a gate requiring it would be red on day one for a reason the owner did not state.
+- `noUncheckedIndexedAccess` is doctrine advice in the QA scope, not a finding, because `strict` does not include it
+  (CONFIRMED) and a gate requiring it would be red on day one for a reason the owner did not state. In the APP scope the
+  maintainer stated it (decision 6), so it is required there.
+- A non-null assertion (`x!`) is NOT checked: telling it from a logical not needs a parser, and this scanner is not one. The app bans it
+  with the ESLint rule `@typescript-eslint/no-non-null-assertion` (the stack's lint config), beside `no-explicit-any` and
+  `ban-ts-comment`; this check is the type-check half, and it does not read the ESLint config.
+- `next build` type-checks the project too (nextjs.org docs, CONFIRMED 2026-10-20) but is not accepted as the app's type-check step:
+  it fails for other reasons first, and `typescript.ignoreBuildErrors` can switch it off. A visible `tsc --noEmit` step is the gate.
 
 Stdlib only, no network. Exit 0 clean, 1 findings, 3 not applicable.
 """
@@ -66,9 +94,11 @@ Stdlib only, no network. Exit 0 clean, 1 findings, 3 not applicable.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import posixpath
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -101,6 +131,27 @@ TRAILING = re.compile(r'"(?:\\.|[^"\\\n])*"|,(?=\s*[}\]])')
 STRICT_FAMILY = ("alwaysStrict", "noImplicitAny", "noImplicitThis", "strictBindCallApply",
                  "strictBuiltinIteratorReturn", "strictFunctionTypes", "strictNullChecks",
                  "strictPropertyInitialization", "useUnknownInCatchVariables")
+# THE APP'S STRICTER PROFILE (#2162 decision 6, #2170). `strict` includes none of these (typescriptlang.org/tsconfig, doctrine-verifier
+# CONFIRMED 2026-10-20: all eight keys exist and report errors when true, `false` on the two `allow*` raises compiler errors where
+# undefined gives editor suggestions only, and `strict` includes none of them), so an app that says `"strict": true` and nothing else is not "very strict". Each must be `true`; the two
+# `allow*` options must be `false`, because left unset an unreachable statement or an unused label is only an editor hint.
+APP_REQUIRED_TRUE = ("noUncheckedIndexedAccess", "exactOptionalPropertyTypes", "noImplicitOverride",
+                     "noPropertyAccessFromIndexSignature", "noImplicitReturns", "noFallthroughCasesInSwitch",
+                     "noUnusedLocals", "noUnusedParameters")
+APP_REQUIRED_FALSE = ("allowUnreachableCode", "allowUnusedLabels")
+# A directive that suppresses the compiler for a line (`@ts-ignore`, `@ts-expect-error`) or a file (`@ts-nocheck`, which TypeScript 3.7 made
+# work in `.ts` files). Banned by the maintainer's decision 6 on #2162 and #2170, with or without a description: a policy, not a compiler
+# fact. `@ts-check` is not one (it asks for MORE checking in JavaScript).
+TS_DIRECTIVE = re.compile(r"@ts-(?:ignore|expect-error|nocheck)\b")
+# Directories that are not the app's own source. Dependencies and tooling caches are skipped at ANY depth; `build`, `dist`, `out`, `coverage`
+# and `qa` only AT THE ROOT, because `src/build/`, `lib/coverage/` and `app/out/` are ordinary feature folders (a finding there is real) and
+# `qa/` is the suite's own scope. In a git repository the file list is `git ls-files` (tracked, plus untracked and not ignored), so a
+# monorepo package's ignored `dist/` is skipped too; without git the root-only rule is all there is.
+APP_SKIP_ANYWHERE = frozenset({"node_modules", ".next", ".vercel", ".turbo", ".git"})
+APP_SKIP_AT_ROOT = frozenset({"build", "dist", "out", "coverage", "qa"})
+# A `tsc` that prints or writes something and checks nothing: the compiler's version or help, its option listing, a config dump or a file
+# list without a compile, `--init`, and a build-mode `--clean` or `--dry`. None of these makes the app type-checked.
+INFORMATIONAL = re.compile(r"(?:^|\s)(?:-v|--version|-h|--help|--all|--showConfig|--listFilesOnly|--init|--clean|--dry)(?=\s|=|$)")
 
 
 def _scan(text: str) -> tuple[str, str]:
@@ -284,6 +335,62 @@ def _under_qa(cwd: str, path: str) -> bool:
     return rel == "qa" or rel.startswith("qa/")
 
 
+def _skipped(parts: tuple[str, ...]) -> bool:
+    """A path (its parts, the file name last) the app scope does not read: a dependency or cache directory anywhere, or a build-output
+    or suite directory at the root."""
+    return bool(APP_SKIP_ANYWHERE.intersection(parts[:-1])) or (len(parts) > 1 and parts[0] in APP_SKIP_AT_ROOT)
+
+
+def _under_app(cwd: str, path: str) -> bool:
+    """`path`, from `cwd`, is inside the project and is not the e2e suite or a dependency: the app's own."""
+    rel = posixpath.normpath(posixpath.join(cwd, path))
+    parts = tuple(rel.split("/"))
+    return not (rel == ".." or rel.startswith("../") or APP_SKIP_ANYWHERE.intersection(parts) or parts[0] in APP_SKIP_AT_ROOT)
+
+
+def _listed(root: Path) -> list[Path] | None:
+    """The project's files by `git ls-files` (tracked, plus untracked and not ignored), or None when it is not a git repository or git
+    cannot say, in which case the caller walks the tree."""
+    if not (root / ".git").exists():
+        return None
+    try:
+        done = subprocess.run(["git", "-C", str(root), "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    return [root / rel for rel in done.stdout.split("\0") if rel]
+
+
+class Scope:
+    """WHAT THE CHECK IS ABOUT: the e2e suite under `qa/` (the Rails and qa-flow use, unchanged but for the informational-tsc rule) or the Next.js APP (#2170).
+    The three rules are the same; the scope decides which files they read, which tsconfigs must be strict, which
+    `tsc` call counts as the type-check step, and whether the app's stricter profile and the `@ts-` ban apply."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.app = name == "app"
+        self.label = "the app" if self.app else "qa/"
+        self.prefix = "app" if self.app else "qa"
+        # A `tsc` with no `-p` reads the tsconfig in its own directory: that is the app's usual call, never the suite's.
+        self.default_project = "." if self.app else None
+        self.under = _under_app if self.app else _under_qa
+
+    def files(self, root: Path, patterns: tuple[str, ...]) -> list[Path]:
+        if not self.app:
+            qa = root / "qa"
+            return sorted({p for ext in patterns for p in qa.glob(f"**/{ext}") if "node_modules" not in p.parts}) if qa.is_dir() else []
+        listed = _listed(root)
+        found = ([p for p in listed if p.is_file() and any(fnmatch.fnmatch(p.name, ext) for ext in patterns)] if listed is not None
+                 else [p for ext in patterns for p in root.glob(f"**/{ext}")])
+        return sorted({p for p in found if not _skipped(p.relative_to(root).parts)})
+
+
+QA = Scope("qa")
+APP = Scope("app")
+
+
 def _strip_comment(line: str) -> str:
     """A shell/YAML/Ruby line up to its comment: a `#` outside quotes, at the start or after whitespace."""
     quote = ""
@@ -307,12 +414,16 @@ def _enforces(cmd: str, start: int, end: int, later: str) -> bool:
     return not SWALLOWED.search(cmd[end:]) and not re.search(r"(?<![\w-])exit\s+0\b", later)
 
 
-def _checks_suite(cmd: str, cwd: str, later: str = "") -> bool:
-    """`cmd`, run from `cwd` (relative to the root), invokes tsc on a project under qa/ and can fail."""
+def _checks_suite(cmd: str, cwd: str, later: str = "", scope: Scope = QA) -> bool:
+    """`cmd`, run from `cwd` (relative to the root), invokes tsc on a project in `scope` (under qa/, or the app's
+    own: with `-p`, or with none, which reads the tsconfig in `cwd`) and can fail."""
     for m in TSC.finditer(cmd):
+        if INFORMATIONAL.search(m.group("args")):
+            continue
         here = posixpath.join(cwd, *[c.group("dir") for c in CD.finditer(cmd[:m.start()])])
         p = PROJECT.search(m.group("args"))
-        if p and _under_qa(here, p.group("path")) and _enforces(cmd, m.start(), m.end(), later):
+        path = p.group("path") if p else scope.default_project
+        if path is not None and scope.under(here, path) and _enforces(cmd, m.start(), m.end(), later):
             return True
     return False
 
@@ -325,7 +436,7 @@ def _scripts(root: Path, pkg_dir: str) -> dict:
     return scripts if isinstance(scripts, dict) else {}
 
 
-def _runs_suite_script(root: Path, cmd: str, cwd: str, later: str = "") -> str | None:
+def _runs_suite_script(root: Path, cmd: str, cwd: str, later: str = "", scope: Scope = QA) -> str | None:
     """`npm|pnpm|yarn [--prefix DIR] run NAME` in `cmd` whose package script type-checks the suite."""
     for m in RUNNER.finditer(cmd):
         here = posixpath.join(cwd, *[c.group("dir") for c in CD.finditer(cmd[:m.start()])])
@@ -338,7 +449,7 @@ def _runs_suite_script(root: Path, cmd: str, cwd: str, later: str = "") -> str |
         elif m.group("tool") == "npm":
             continue                  # npm runs a script only through `run`
         script = _scripts(root, pkg).get(words[0]) if words else None
-        if isinstance(script, str) and _checks_suite(script, pkg) and _enforces(cmd, m.start(), m.end(), later):
+        if isinstance(script, str) and _checks_suite(script, pkg, "", scope) and _enforces(cmd, m.start(), m.end(), later):
             return f"{pkg}/package.json scripts.{words[0]}"
     return None
 
@@ -403,15 +514,15 @@ def workflow_steps(text: str) -> list[dict]:
     return steps
 
 
-def _script_finds(root: Path, rel: str, lines: list[tuple[int, str]], cwd: str) -> str | None:
+def _script_finds(root: Path, rel: str, lines: list[tuple[int, str]], cwd: str, scope: Scope = QA) -> str | None:
     """The first line of one script (a step's `run`, a `bin/*` file) that type-checks the suite and can fail.
     A `cd <dir>` carries forward to the lines after it, as it does in a shell."""
     text = [(n, _strip_comment(t)) for n, t in lines]
     for k, (n, cmd) in enumerate(text):
         later = "\n".join(t for _, t in text[k + 1:])
-        if _checks_suite(cmd, cwd, later):
+        if _checks_suite(cmd, cwd, later, scope):
             return f"{rel}:{n}"
-        via = _runs_suite_script(root, cmd, cwd, later)
+        via = _runs_suite_script(root, cmd, cwd, later, scope)
         if via:
             return f"{rel}:{n} (via {via})"
         for c in CD.finditer(cmd):
@@ -419,28 +530,30 @@ def _script_finds(root: Path, rel: str, lines: list[tuple[int, str]], cwd: str) 
     return None
 
 
-def typecheck_step(root: Path) -> str | None:
+def typecheck_step(root: Path, scope: Scope = QA) -> str | None:
     """The first CI step that type-checks the SUITE -- `tsc -p <path under qa/>` directly, or a package script
     doing so that the step runs -- and can fail, as `file:line`, or None. A tsc on the app, a script nothing
-    runs, a step that is switched off or swallows its verdict, and a tsc that is only printed are not one."""
+    runs, a step that is switched off or swallows its verdict, and a tsc that is only printed are not one.
+    With the app scope it is the reverse: `tsc` on the app's own project (`-p` a path outside qa/ and node_modules,
+    or no `-p`, from a directory outside them) counts, and a tsc on the suite does not."""
     for p in sorted((root / ".github/workflows").glob("*.y*ml")):
         for step in workflow_steps(p.read_text(encoding="utf-8", errors="replace")):
             keys = step["keys"]
             if step["off"] or keys.get("continue-on-error") == "true" or OFF.match(keys.get("if", "")):
                 continue
             wd = posixpath.normpath(keys.get("working-directory") or step["wd"] or ".")
-            hit = _script_finds(root, str(p.relative_to(root)), step["run"], wd)
+            hit = _script_finds(root, str(p.relative_to(root)), step["run"], wd, scope)
             if hit:
                 return hit
     ci = root / "config/ci.rb"
     if ci.is_file():                  # one `step "name", "command"` per line, each its own process
         for n, line in enumerate(ci.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-            hit = _script_finds(root, "config/ci.rb", [(n, line)], ".")
+            hit = _script_finds(root, "config/ci.rb", [(n, line)], ".", scope)
             if hit:
                 return hit
     for p in sorted(q for q in (root / "bin").glob("*") if q.is_file()):
         lines = list(enumerate(p.read_text(encoding="utf-8", errors="replace").splitlines(), 1))
-        hit = _script_finds(root, str(p.relative_to(root)), lines, ".")
+        hit = _script_finds(root, str(p.relative_to(root)), lines, ".", scope)
         if hit:
             return hit
     return None
@@ -468,15 +581,41 @@ def explicit_anys(rel: str, source: str) -> list[str]:
     return out
 
 
-def run(root: Path) -> tuple[list[str], int] | None:
-    qa = root / "qa"
-    ts = sorted({p for ext in EXTS for p in qa.glob(f"**/{ext}") if "node_modules" not in p.parts}) if qa.is_dir() else []
+def ts_directives(rel: str, source: str) -> list[str]:
+    """Every `@ts-ignore`, `@ts-expect-error` and `@ts-nocheck` in a COMMENT (the app's rule; a string that says it is not one)."""
+    out = []
+    raw = source.split("\n")
+    for n, note in enumerate(_scan(source)[1].split("\n")):
+        m = TS_DIRECTIVE.search(note)
+        if m:
+            out.append(f"{rel}:{n + 1}: ts-directive — `{m.group(0)}` suppresses the compiler, with a description or without: `{raw[n].strip()[:80]}`. "
+                       f"Fix the type, or narrow it with `unknown` and a guard.")
+    return out
+
+
+def missing_app_options(tsconfig: Path) -> str | None:
+    """The app's stricter profile (APP_REQUIRED_TRUE / APP_REQUIRED_FALSE) as the compiler merges it, or None when it is all there.
+    An `extends` that cannot be followed is `not_strict_reason`'s finding, not this one's."""
+    try:
+        opts = effective_options(tsconfig)
+    except Unfollowed:
+        return None
+    lacking = [f"`{k}`" for k in APP_REQUIRED_TRUE if opts.get(k) is not True]
+    lacking += [f"`{k}: false`" for k in APP_REQUIRED_FALSE if opts.get(k) is not False]
+    if not lacking:
+        return None
+    return f"the app's strict profile is not all set: {', '.join(lacking)} (`strict` includes none of them)"
+
+
+def run(root: Path, scope: Scope = QA) -> tuple[list[str], int] | None:
+    ts = scope.files(root, EXTS)
     if not ts:
         return None
     findings: list[str] = []
-    configs = sorted(p for p in qa.glob("**/tsconfig*.json") if "node_modules" not in p.parts)
+    configs = scope.files(root, ("tsconfig*.json",))
     if not configs:
-        findings.append("qa: ts-not-strict — the suite has TypeScript but no tsconfig under qa/, so nothing makes it strict.")
+        where = "under qa/" if not scope.app else "in the app"
+        findings.append(f"{scope.prefix}: ts-not-strict — the {'suite' if not scope.app else 'app'} has TypeScript but no tsconfig {where}, so nothing makes it strict.")
     for cfg in configs:
         try:
             why = not_strict_reason(cfg)
@@ -484,12 +623,23 @@ def run(root: Path) -> tuple[list[str], int] | None:
             why = f"unreadable tsconfig ({e})"
         if why:
             findings.append(f"{cfg.relative_to(root)}: ts-not-strict — {why}.")
-    if typecheck_step(root) is None:
-        findings.append("qa: ts-no-typecheck — no CI step type-checks the suite (`tsc -p <tsconfig under qa/>`, or "
-                        "`npm --prefix qa run typecheck` whose script does); Playwright does not type-check, so "
-                        "`strict` is enforced by nothing.")
+        elif scope.app:
+            lacking = missing_app_options(cfg)
+            if lacking:
+                findings.append(f"{cfg.relative_to(root)}: ts-missing-option — {lacking}.")
+    if typecheck_step(root, scope) is None:
+        if scope.app:
+            findings.append("app: ts-no-typecheck — no CI step type-checks the app (`tsc --noEmit`, with or without `-p <tsconfig>`, or "
+                            "`npm run <script>` whose script does); `next build` is not it, and a step that swallows the verdict is not one.")
+        else:
+            findings.append("qa: ts-no-typecheck — no CI step type-checks the suite (`tsc -p <tsconfig under qa/>`, or "
+                            "`npm --prefix qa run typecheck` whose script does); Playwright does not type-check, so "
+                            "`strict` is enforced by nothing.")
     for p in ts:
-        findings += explicit_anys(str(p.relative_to(root)), p.read_text(encoding="utf-8", errors="replace"))
+        source = p.read_text(encoding="utf-8", errors="replace")
+        findings += explicit_anys(str(p.relative_to(root)), source)
+        if scope.app:
+            findings += ts_directives(str(p.relative_to(root)), source)
     return findings, len(ts)
 
 
@@ -705,12 +855,153 @@ def _selftest() -> int:
     expect("catch (err: unknown) is the fix, and clean",
            rules({**base, "qa/e2e/b.spec.ts": "try { f() } catch (err: unknown) { g(err) }\n"}) == [])
 
+    # ---- the APP scope (#2170): the same three rules on the app's own source, plus the stricter profile and the @ts- ban.
+    def arules(files: dict[str, str]) -> list[str] | None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            for rel, body in files.items():
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).write_text(body)
+            got = run(root, APP)
+            if got is None:
+                return None
+            return [re.search(r"(ts-[a-z-]+)", f).group(1) for f in got[0]]
+
+    # LITERAL, not the constants under test: a profile built from `APP_REQUIRED_TRUE` would drop an option together with the check for it.
+    want_true = ("noUncheckedIndexedAccess", "exactOptionalPropertyTypes", "noImplicitOverride", "noPropertyAccessFromIndexSignature",
+                 "noImplicitReturns", "noFallthroughCasesInSwitch", "noUnusedLocals", "noUnusedParameters")
+    want_false = ("allowUnreachableCode", "allowUnusedLabels")
+
+    def tsconfig(**over: object) -> str:
+        opts: dict[str, object] = {"strict": True, **{k: True for k in want_true}, **{k: False for k in want_false}}
+        for k, v in over.items():
+            if v is None:
+                opts.pop(k, None)
+            else:
+                opts[k] = v
+        return json.dumps({"compilerOptions": opts})
+
+    app_ci = "jobs:\n  check:\n    steps:\n      - run: npx tsc --noEmit\n"
+    abase = {"tsconfig.json": tsconfig(), ".github/workflows/ci.yml": app_ci, "src/a.ts": "export const n: number = 1;\n"}
+    expect("APP CONTROL: a strict-profile, type-checked app with no any and no directive is clean", arules(abase) == [])
+    expect("APP: TypeScript only under qa/ is not the app's, so NOT APPLICABLE", arules({"qa/e2e/a.spec.ts": "export {};\n"}) is None)
+    expect("APP: files in node_modules, .next and dist are not the app's", arules({"node_modules/x/a.ts": "const z: any = 1;\n", ".next/b.ts": "const z: any = 1;\n",
+                                                                                 "dist/c.ts": "const z: any = 1;\n"}) is None)
+    expect("QA: the app's TypeScript does not make the suite applicable", rules({"src/a.ts": "export {};\n"}) is None)
+    expect("APP: a tsconfig without strict is caught", arules({**abase, "tsconfig.json": tsconfig(strict=None)}) == ["ts-not-strict"])
+    expect("APP: strict true with a family member off is caught", arules({**abase, "tsconfig.json": tsconfig(noImplicitAny=False)}) == ["ts-not-strict"])
+    expect("APP: no tsconfig at all is caught", arules({k: v for k, v in abase.items() if k != "tsconfig.json"}) == ["ts-not-strict"])
+    for opt in want_true:
+        expect(f"APP: {opt} missing is caught", arules({**abase, "tsconfig.json": tsconfig(**{opt: None})}) == ["ts-missing-option"])
+        expect(f"APP: {opt} set false is caught", arules({**abase, "tsconfig.json": tsconfig(**{opt: False})}) == ["ts-missing-option"])
+    for opt in want_false:
+        expect(f"APP: {opt} unset (an editor hint only) is caught", arules({**abase, "tsconfig.json": tsconfig(**{opt: None})}) == ["ts-missing-option"])
+        expect(f"APP: {opt} set true is caught", arules({**abase, "tsconfig.json": tsconfig(**{opt: True})}) == ["ts-missing-option"])
+    expect("APP: the profile inherited through a relative extends counts",
+           arules({**abase, "base.json": tsconfig(), "tsconfig.json": '{"extends": "./base.json"}'}) == [])
+    expect("APP: an option switched off in the child over a parent's true is caught",
+           arules({**abase, "base.json": tsconfig(), "tsconfig.json": '{"extends": "./base.json", "compilerOptions": {"noUnusedLocals": false}}'}) == ["ts-missing-option"])
+    expect("APP: every tsconfig in the app must carry the profile, not only the nearest",
+           arules({**abase, "packages/ui/tsconfig.json": tsconfig(noUnusedLocals=None), "packages/ui/b.ts": "export {};\n"}) == ["ts-missing-option"])
+    expect("APP: a tsconfig under qa/ is the suite's and is not read in the app scope",
+           arules({**abase, "qa/e2e/tsconfig.json": '{"compilerOptions": {}}'}) == [])
+    expect("APP: an extends that cannot be followed says so, once, as not-strict",
+           arules({**abase, "tsconfig.json": '{"extends": "@acme/tsconfig"}'}) == ["ts-not-strict"])
+    # ts-no-typecheck, app reading
+    no_ci = {k: v for k, v in abase.items() if not k.startswith(".github")}
+    expect("APP: no CI step is caught", arules(no_ci) == ["ts-no-typecheck"])
+    expect("APP: a `tsc -p tsconfig.json` step counts",
+           arules({**no_ci, ".github/workflows/ci.yml": "jobs:\n  c:\n    steps:\n      - run: npx tsc --noEmit -p tsconfig.json\n"}) == [])
+    expect("APP: a tsc on the SUITE is not the app's type-check",
+           arules({**no_ci, ".github/workflows/ci.yml": "jobs:\n  c:\n    steps:\n      - run: npx tsc --noEmit -p qa/e2e/tsconfig.json\n"}) == ["ts-no-typecheck"])
+    expect("APP: a tsc with no -p run from qa/ is the suite's, not the app's",
+           arules({**no_ci, ".github/workflows/ci.yml": "jobs:\n  c:\n    steps:\n      - working-directory: qa\n        run: npx tsc --noEmit\n"}) == ["ts-no-typecheck"])
+    expect("APP: a tsc run from a subdirectory app (working-directory) counts",
+           arules({**no_ci, ".github/workflows/ci.yml": "jobs:\n  c:\n    steps:\n      - working-directory: web\n        run: npx tsc --noEmit\n"}) == [])
+    expect("APP: `next build` alone is not a visible type-check step",
+           arules({**no_ci, ".github/workflows/ci.yml": "jobs:\n  c:\n    steps:\n      - run: npx next build\n"}) == ["ts-no-typecheck"])
+    expect("APP: a swallowed verdict is not a type-check",
+           arules({**no_ci, ".github/workflows/ci.yml": "jobs:\n  c:\n    steps:\n      - run: npx tsc --noEmit || true\n"}) == ["ts-no-typecheck"])
+    expect("APP: an echoed tsc is not a type-check",
+           arules({**no_ci, ".github/workflows/ci.yml": "jobs:\n  c:\n    steps:\n      - run: echo tsc --noEmit\n"}) == ["ts-no-typecheck"])
+    expect("APP: a step with continue-on-error is not a type-check",
+           arules({**no_ci, ".github/workflows/ci.yml": "jobs:\n  c:\n    steps:\n      - run: npx tsc --noEmit\n        continue-on-error: true\n"}) == ["ts-no-typecheck"])
+    expect("APP: `npm run typecheck` whose package script runs tsc counts",
+           arules({**no_ci, "package.json": '{"scripts": {"typecheck": "tsc --noEmit"}}',
+                   ".github/workflows/ci.yml": "jobs:\n  c:\n    steps:\n      - run: npm run typecheck\n"}) == [])
+    expect("APP: a package script nothing runs is not a step",
+           arules({**no_ci, "package.json": '{"scripts": {"typecheck": "tsc --noEmit"}}'}) == ["ts-no-typecheck"])
+    expect("APP: a CI line that runs a script which does not type-check is not one",
+           arules({**no_ci, "package.json": '{"scripts": {"typecheck": "eslint ."}}',
+                   ".github/workflows/ci.yml": "jobs:\n  c:\n    steps:\n      - run: npm run typecheck\n"}) == ["ts-no-typecheck"])
+    expect("APP: config/ci.rb and bin/* are read as in the suite scope",
+           arules({**no_ci, "config/ci.rb": 'step "Types", "npx tsc --noEmit"\n'}) == [])
+    # an informational tsc is not a type-check (60's review of #2197)
+    def ci(cmd: str) -> dict[str, str]:
+        return {**no_ci, ".github/workflows/ci.yml": f"jobs:\n  c:\n    steps:\n      - run: {cmd}\n"}
+
+    for flag in ("--version", "-v", "--help", "-h", "--all", "--showConfig", "--listFilesOnly", "--init", "-b --clean", "-b --dry"):
+        expect(f"APP: `tsc {flag}` is not a type-check", arules(ci(f"npx tsc {flag}")) == ["ts-no-typecheck"])
+        expect(f"APP: `tsc --noEmit {flag}` is not a type-check", arules(ci(f"npx tsc --noEmit {flag}")) == ["ts-no-typecheck"])
+    expect("QA: `tsc --version -p qa/e2e/tsconfig.json` is not a suite type-check",
+           rules({**{k: v for k, v in base.items() if not k.startswith(".github")},
+                  ".github/workflows/ci.yml": "jobs:\n  c:\n    steps:\n      - run: npx tsc --version -p qa/e2e/tsconfig.json\n"}) == ["ts-no-typecheck"])
+    expect("APP CONTROL: `tsc --noEmit --listFiles` still compiles, so it counts", arules(ci("npx tsc --noEmit --listFiles")) == [])
+    expect("APP CONTROL: `tsc -p tsconfig.json --noEmit --pretty false` counts", arules(ci("npx tsc -p tsconfig.json --noEmit --pretty false")) == [])
+    expect("APP: a package script that only prints the version is not a type-check",
+           arules({**no_ci, "package.json": '{"scripts": {"typecheck": "tsc --version"}}',
+                   ".github/workflows/ci.yml": "jobs:\n  c:\n    steps:\n      - run: npm run typecheck\n"}) == ["ts-no-typecheck"])
+    expect("APP: JSX prose containing the word any is a (known) false finding", arules({**abase, "src/p.tsx": "export const P = () => <p>Do you have any questions?</p>;\n"}) == ["ts-explicit-any"])
+    expect("APP: ...and the documented JSX comment escape clears it",
+           arules({**abase, "src/p.tsx": "export const P = () => (\n  <div>\n    {/* ts-strict: allow-any -- prose */}\n    <p>Do you have any questions?</p>\n  </div>\n);\n"}) == [])
+    # which directories the app scope reads (60's review of #2197)
+    boom = "const z: any = 1;\n"
+    for d in ("build", "dist", "out", "coverage", "qa"):
+        expect(f"APP: a src/{d}/ feature folder is read", arules({**abase, f"src/{d}/x.ts": boom}) == ["ts-explicit-any"])
+        expect(f"APP: a root {d}/ directory is not the app's", arules({**abase, f"{d}/x.ts": boom}) == [])
+    for d in ("node_modules", ".next", ".vercel", ".turbo"):
+        expect(f"APP: a nested {d}/ is skipped at any depth", arules({**abase, f"packages/ui/{d}/x.ts": boom}) == [])
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for rel, body in {**abase, "packages/ui/dist/x.d.ts": "export const z: any = 1;\n", "src/y.ts": boom, ".gitignore": "dist/\n"}.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(body)
+        walked = [f.split(":")[0] for f in (run(root, APP) or ([], 0))[0] if "ts-explicit-any" in f]
+        subprocess.run(["git", "-C", d, "init", "-q"], capture_output=True)
+        listed = [f.split(":")[0] for f in (run(root, APP) or ([], 0))[0] if "ts-explicit-any" in f]
+    expect("APP: with no git a monorepo package's dist/ is read (the stated limit)", sorted(walked) == ["packages/ui/dist/x.d.ts", "src/y.ts"])
+    expect("APP: in a git repository an ignored dist/ is skipped, and an untracked source file is read", listed == ["src/y.ts"])
+    # ts-explicit-any, app reading
+    expect("APP: an explicit any in the app's source is caught", arules({**abase, "src/b.tsx": "const x = y as any;\n"}) == ["ts-explicit-any"])
+    expect("APP: an allowed any with a reason is not a finding",
+           arules({**abase, "src/b.ts": "// ts-strict: allow-any -- the vendor type is wrong\nconst x = y as any;\n"}) == [])
+    expect("APP: unknown is the fix, and clean", arules({**abase, "src/b.ts": "try { f() } catch (e: unknown) { g(e) }\n"}) == [])
+    # ts-directive (the app only)
+    for d in ("// @ts-ignore", "// @ts-expect-error", "// @ts-expect-error -- upstream types are wrong", "/* @ts-nocheck */", "//@ts-ignore"):
+        expect(f"APP: the directive `{d}` is caught", arules({**abase, "src/b.ts": f"{d}\nconst x: number = 'a';\n"}) == ["ts-directive"])
+    expect("APP: a directive named inside a string is not one", arules({**abase, "src/b.ts": 'const s = "// @ts-ignore";\n'}) == [])
+    expect("APP: @ts-check is not a suppression", arules({**abase, "src/b.ts": "// @ts-check\nexport {};\n"}) == [])
+    expect("QA: the @ts- ban is the app's rule, so the suite's directive is not a finding",
+           rules({**base, "qa/e2e/b.spec.ts": "// @ts-expect-error -- the test says so\nconst x: number = 'a';\n"}) == [])
+    expect("APP: a suite directive under qa/ is not read in the app scope",
+           arules({**abase, "qa/e2e/b.spec.ts": "// @ts-ignore\nexport {};\n"}) == [])
+
     # #1873: the EXIT CODE the runner grades, driven end to end: no TypeScript under qa/ is n/a.
-    import subprocess
     with tempfile.TemporaryDirectory() as d:
         done = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--root", d], capture_output=True, text=True)
     expect(f"no TypeScript under qa/ is not applicable (exit 3), never a pass: got {done.returncode}",
            done.returncode == 3)
+    with tempfile.TemporaryDirectory() as d:
+        for rel, body in {**abase, "src/b.ts": "const x = y as any;\n"}.items():
+            (Path(d) / rel).parent.mkdir(parents=True, exist_ok=True)
+            (Path(d) / rel).write_text(body)
+        found = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--root", d, "--scope", "app"], capture_output=True, text=True)
+        same = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--root", d], capture_output=True, text=True)
+    with tempfile.TemporaryDirectory() as d:
+        empty = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--root", d, "--scope", "app"], capture_output=True, text=True)
+    expect(f"--scope app on an app with an explicit any exits 1: got {found.returncode}", found.returncode == 1)
+    expect(f"the default scope is qa: the same tree is not applicable there (exit 3): got {same.returncode}", same.returncode == 3)
+    expect(f"--scope app with no app TypeScript is not applicable (exit 3): got {empty.returncode}", empty.returncode == 3)
 
     for f in fails:
         print(f"selftest FAIL: {f}")
@@ -721,19 +1012,23 @@ def _selftest() -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=".", help="project root (default: cwd)")
+    ap.add_argument("--scope", choices=("qa", "app"), default="qa",
+                    help="qa (default): the e2e suite under qa/. app: the Next.js app's own TypeScript, with its stricter profile and the @ts- ban")
     ap.add_argument("--selftest", action="store_true", help="prove this check can fail")
     args = ap.parse_args()
     if args.selftest:
         return _selftest()
     root = Path(args.root).resolve()
-    got = run(root)
+    scope = APP if args.scope == "app" else QA
+    got = run(root, scope)
     if got is None:
-        print(f"not applicable — no TypeScript under {root / 'qa'}; this check examined nothing.")
+        where = root / "qa" if not scope.app else root
+        print(f"not applicable — no TypeScript {'under' if not scope.app else 'in the app, outside qa/ and node_modules, under'} {where}; this check examined nothing.")
         return 3
     findings, examined = got
     for f in findings:
         print(f"  {f}")
-    print(f"\n{examined} TypeScript file(s) under qa/ examined; {len(findings)} finding(s).")
+    print(f"\n{examined} TypeScript file(s) {'under qa/' if not scope.app else 'in the app'} examined; {len(findings)} finding(s).")
     return 1 if findings else 0
 
 

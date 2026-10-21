@@ -9,17 +9,17 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 | decision | what it means | files | lines |
 |---|---|---:|---:|
 | `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 68 | 1632 |
-| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 90 | 1246 |
+| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 90 | 1249 |
 | `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 63 | 275 |
 | `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change | 7 | 24 |
-| **all** | | **228** | **3177** |
+| **all** | | **228** | **3180** |
 
 ## By flow
 
 | flow | files | lines | `rails-stack` | `detector` | `reword` | `neutral` |
 |---|---:|---:|---:|---:|---:|---:|
 | `rails-flow` | 135 | 2269 | 47 | 50 | 35 | 3 |
-| `qa-flow` | 36 | 272 | 0 | 29 | 6 | 1 |
+| `qa-flow` | 36 | 275 | 0 | 29 | 6 | 1 |
 | `pipeline` | 19 | 89 | 3 | 9 | 4 | 3 |
 | `design-flow` | 38 | 547 | 18 | 2 | 18 | 0 |
 
@@ -29,8 +29,8 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 |---|---:|
 | tool | 906 |
 | gem | 141 |
-| path | 1253 |
-| concept | 1919 |
+| path | 1255 |
+| concept | 1922 |
 | hotwire | 107 |
 
 A line that names two things counts once per category it names in this table and once overall in the totals above.
@@ -261,7 +261,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `scripts/blast_radius.py:69`<br>L69, 70, 72, 73, 77 +41 more | script | 46 | maps .rb files, spec/ and app/ paths to routes and blast radius, reads bin/rails routes, or names Rails boot failures | `detector` | reads source and route extraction from the detector; the Rails route command becomes the rails-stack answer |
 | `scripts/blast_radius_selftest.py:13`<br>L13, 62, 64, 66, 69 +50 more ↳ | selftest | 55 | maps .rb files, spec/ and app/ paths to routes and blast radius, reads bin/rails routes, or names Rails boot failures | `detector` | reads source and route extraction from the detector; the Rails route command becomes the rails-stack answer |
 | `scripts/check_requirements.py:6`<br>L6 | script | 1 | names Rails paths or the Rails app as the host project in its messages and path filters | `detector` | reuse for a Next.js project (#2170) once its path filters come from the detector |
-| `scripts/check_ts_strict.py:36`<br>L36, 288, 435, 438, 603 +5 more | script | 10 | names Rails paths or the Rails app as the host project in its messages and path filters | `detector` | reuse for a Next.js project (#2170) once its path filters come from the detector |
+| `scripts/check_ts_strict.py:37`<br>L37, 367, 395, 548, 551 +8 more | script | 13 | names Rails paths or the Rails app as the host project in its messages and path filters | `detector` | reuse for a Next.js project (#2170) once its path filters come from the detector |
 | `scripts/classify_boot_failure.py:64`<br>L64, 140, 143, 145 | script | 4 | maps .rb files, spec/ and app/ paths to routes and blast radius, reads bin/rails routes, or names Rails boot failures | `detector` | reads source and route extraction from the detector; the Rails route command becomes the rails-stack answer |
 | `scripts/crawl_report.py:13`<br>L13, 69, 70, 72, 310 | script | 5 | names Rails paths or the Rails app as the host project in its messages and path filters | `detector` | reuse for a Next.js project (#2170) once its path filters come from the detector |
 | `scripts/evidence_app_tie.py:23`<br>L23, 160, 217, 225, 258 +17 more | script | 22 | maps .rb files, spec/ and app/ paths to routes and blast radius, reads bin/rails routes, or names Rails boot failures | `detector` | reads source and route extraction from the detector; the Rails route command becomes the rails-stack answer |

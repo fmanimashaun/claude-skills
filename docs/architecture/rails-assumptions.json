@@ -2213,34 +2213,38 @@
   "plugins/qa-flow/scripts/check_ts_strict.py": {
    "assumes": "names Rails paths or the Rails app as the host project in its messages and path filters",
    "categories": {
-    "concept": 7,
-    "path": 9,
+    "concept": 10,
+    "path": 11,
     "tool": 2
    },
    "decision": "detector",
    "how": "reuse for a Next.js project (#2170) once its path filters come from the detector",
    "ids": {
     "app-layers": 2,
-    "rails-config": 7,
+    "rails-config": 9,
+    "rails-word": 1,
     "rspec": 1,
     "ruby": 1,
-    "ruby-file": 7
+    "ruby-file": 9
    },
    "invokes": [
-    646
+    796
    ],
    "kind": "script",
    "lines": [
-    36,
-    288,
-    435,
-    438,
-    603,
-    612,
-    621,
-    622,
-    645,
-    646
+    37,
+    367,
+    395,
+    548,
+    551,
+    753,
+    762,
+    771,
+    772,
+    795,
+    796,
+    937,
+    938
    ],
    "move": ""
   },
@@ -8107,16 +8111,16 @@
  "policy": "docs/architecture/rails-assumptions.policy.json",
  "summary": {
   "by_category": {
-   "concept": 1919,
+   "concept": 1922,
    "gem": 141,
    "hotwire": 107,
-   "path": 1253,
+   "path": 1255,
    "tool": 906
   },
   "by_decision": {
    "detector": {
     "files": 90,
-    "lines": 1246
+    "lines": 1249
    },
    "neutral": {
     "files": 7,
@@ -8151,7 +8155,7 @@
    "qa-flow": {
     "detector": 29,
     "files": 36,
-    "lines": 272,
+    "lines": 275,
     "neutral": 1,
     "rails-stack": 0,
     "reword": 6
@@ -8204,7 +8208,7 @@
    },
    "script": {
     "files": 88,
-    "lines": 2220
+    "lines": 2223
    },
    "selftest": {
     "files": 16,
@@ -8229,18 +8233,18 @@
    "gem": 141,
    "gemfile": 180,
    "hotwire": 107,
-   "rails-config": 109,
-   "rails-word": 319,
+   "rails-config": 111,
+   "rails-word": 320,
    "rake": 56,
    "routes": 37,
    "rspec": 188,
    "rubocop": 86,
    "rubocop-yml": 2,
    "ruby": 219,
-   "ruby-file": 1220,
+   "ruby-file": 1222,
    "spec-dir": 183
   },
   "files": 228,
-  "lines": 3177
+  "lines": 3180
  }
 }
