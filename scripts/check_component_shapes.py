@@ -42,7 +42,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CATALOGUE_FILES = tuple(ROOT / "plugins" / "rails-stack" / "skills" / "design-system" / "references" / n
                         for n in ("components.md", "components-commerce.md"))
 CATALOGUE = CATALOGUE_FILES[0]  # kept for messages that name the primary file
-SHAPES = ROOT / "plugins" / "rails-stack" / "skills" / "design-system" / "references" / "component-shapes.json"
+SHAPES = ROOT / "plugins" / "design-flow" / "catalog" / "component-shapes.json"   # the neutral design home (#2272); it sat in rails-stack's skill
 THEME = ROOT / "plugins" / "design-flow" / "brands" / "fidara" / "theme.css"
 
 # The declared vocabulary for a shape entry. These began as the kinds `pen_library.part_node` could
@@ -51,6 +51,51 @@ THEME = ROOT / "plugins" / "design-flow" / "brands" / "fidara" / "theme.css"
 # reconcile against, so the selftest no longer asserts one — see the note where that check was.
 PART_KINDS = {"box", "pill", "text", "field", "line", "avatar", "icon-slot", "column"}
 SHAPE_KINDS = {"control", "pill", "banner", "surface", "panel", "bar", "bare"}
+
+
+AXES_MARK = "<!-- axes -->"
+AXES = ("variants", "sizes")
+
+
+def axes_line(entry: dict) -> str | None:
+    """The `Catalog axes` line a components.md section carries for `entry`, or None when it states no list. Generated, never hand-edited (#2272)."""
+    parts = [f"{axis} " + " · ".join(f"`{n}`" for n in entry[axis]) for axis in AXES if isinstance(entry.get(axis), list)]
+    if not parts:
+        return None
+    return f"- **Catalog axes** (generated from the catalog's `component-shapes.json`, do not edit): {'; '.join(parts)}. {AXES_MARK}"
+
+
+def sections(md: str) -> dict[str, str]:
+    """Each `## ` section's text, keyed by its heading (the row name)."""
+    return {block.split("\n", 1)[0].strip(): block for block in re.split(r"^## ", md, flags=re.M)[1:]}
+
+
+def axis_problems(name: str, entry: dict, section: str | None) -> list[str]:
+    """What is wrong with one drawable entry's `variants` and `sizes`, and with its generated line in the prose (#2272)."""
+    found: list[str] = []
+    for axis in AXES:
+        value = entry.get(axis)
+        if axis not in entry:
+            found.append(f"`{name}` declares no `{axis}`: a list of names, or {{\"none\": \"reason\"}}. Silence is not an answer, because it is indistinguishable from an oversight.")
+        elif isinstance(value, list):
+            if not value or not all(isinstance(n, str) and n.strip() for n in value) or len(set(value)) != len(value):
+                found.append(f"`{name}` `{axis}` must be a non-empty list of distinct non-empty names, got {value!r}")
+        elif not (isinstance(value, dict) and set(value) == {"none"} and isinstance(value["none"], str) and value["none"].strip()):
+            found.append(f"`{name}` `{axis}` must be a list of names or {{\"none\": \"reason\"}}, got {value!r}")
+    if found or section is None:
+        return found
+    marked = [line for line in section.split("\n") if line.rstrip().endswith(AXES_MARK)]
+    want = axes_line(entry)
+    if want is None and marked:
+        found.append(f"`{name}` states no list but its components.md section carries a generated `Catalog axes` line: regenerate (`python3 scripts/build_component_axes.py`)")
+    elif want is not None and marked != [want]:
+        found.append(f"`{name}`'s generated `Catalog axes` line in components.md is missing, duplicated or differs from the catalog: regenerate (`python3 scripts/build_component_axes.py`), never edit it by hand")
+    prose = "\n".join(line for line in section.split("\n") if not line.rstrip().endswith(AXES_MARK))
+    for axis in AXES:
+        for word in entry.get(axis) if isinstance(entry.get(axis), list) else []:
+            if not re.search(rf"(?<![\w-]){re.escape(word)}(?![\w-])", prose, re.I):
+                found.append(f"`{name}` declares {axis[:-1]} `{word}`, which its components.md section never mentions: a name in the catalog the prose cannot explain")
+    return found
 
 
 def catalogue_rows(md: str) -> list[str]:
@@ -101,12 +146,14 @@ def check(md: str, shapes: dict, roles: set[str]) -> list[str]:
                 f"`{name}` has a shape but is not a components.md row. A component offered in pen "
                 f"that `rails-ui-composer` cannot build is the drift this mirror exists to prevent.")
 
+    by_heading = sections(md)
     for name, entry in entries.items():
         if entry.get("drawable") is False:
             if not str(entry.get("why", "")).strip():
                 problems.append(f"`{name}` is marked non-drawable with no `why`. The reason is the "
                                 f"whole value: without it nobody can tell a decision from a gap.")
             continue
+        problems += axis_problems(name, entry, by_heading.get(name))
         shape = entry.get("shape")
         if shape not in SHAPE_KINDS:
             problems.append(f"`{name}` declares shape {shape!r}, which is not one of "

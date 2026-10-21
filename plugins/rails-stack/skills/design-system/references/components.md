@@ -183,6 +183,7 @@ DEFAULTS = { variant: :primary, size: :md }
 ```
 
 ## Button
+- **Catalog axes** (generated from the catalog's `component-shapes.json`, do not edit): variants `primary` · `secondary` · `destructive` · `outline` · `ghost` · `link`; sizes `sm` · `md` · `lg` · `icon`. <!-- axes -->
 - **Variants:** `primary · secondary · destructive · outline · ghost · link`. **Sizes:** `sm/md/lg/icon`.
   **States:** default the variant recipe above · hover (`/90` shift) · `focus-visible` ring ·
   `loading` (inline `animate-spin` Lucide `loader-2` + keep label; set `aria-busy`) · `disabled`
@@ -324,6 +325,7 @@ against it, and the `inset-viewport` utility
   four buttons wrap into a stack.
 
 ## Badge / Tag / Chip
+- **Catalog axes** (generated from the catalog's `component-shapes.json`, do not edit): variants `primary` · `secondary` · `success` · `warning` · `destructive` · `outline` · `muted`; sizes `sm` · `md`. <!-- axes -->
 - **Variants:** `primary · secondary · success · warning · destructive · outline · muted`. **Sizes:** `sm/md`.
   Shape `rounded-full`, `inline-flex items-center gap-1 px-2.5 py-0.5 text-step--1 font-medium`.
   Recipe (soft fill): `bg-primary/10 text-primary` (swap role per variant). Features: leading dot, dismissible
@@ -336,6 +338,7 @@ against it, and the `inset-viewport` utility
   `role="alert"` (assertive) or `role="status"` (polite). Colored by role token, text stays `foreground`.
 
 ## Modal / Dialog
+- **Catalog axes** (generated from the catalog's `component-shapes.json`, do not edit): sizes `sm` · `md` · `lg` · `xl` · `full`. <!-- axes -->
 - `Ui::Modal` rendered into the layout's `<turbo-frame id="modal">` (open via `data: { turbo_frame: "modal" }`).
   Centred inside an `inset-viewport` wrapper ([Viewport inset](#viewport-inset)) +
   `bg-popover text-popover-foreground rounded-lg shadow-lg` (card-class
@@ -429,6 +432,7 @@ against it, and the `inset-viewport` utility
   the detail is a pane, not this drawer — the drawer is the one-pane answer.
 
 ## Carousel
+- **Catalog axes** (generated from the catalog's `component-shapes.json`, do not edit): variants `basic` · `tabbed` · `grouped`. <!-- axes -->
 - **An APG pattern** — cite it, and note that most of its machinery is *conditional*. Best default:
   **do not auto-rotate.**
 - Container `role="region"` **or** `role="group"` (APG sanctions both; pick by the page's information
@@ -1191,6 +1195,7 @@ renders over the list when its URL is followed directly.
   `<caption>`; nothing else changes.
 
 ## Stacked list
+- **Catalog axes** (generated from the catalog's `component-shapes.json`, do not edit): variants `plain` · `card` · `separated`; sizes `sm` · `md` · `lg`. <!-- axes -->
 - **The dominant list idiom, and it introduces no new component:** `<ul role="list">` of `<li>` rows, each a
   [Media object](#media-object), with `divide-y divide-border` on the container so the container owns the
   separators (never an `<hr>` between rows — see [Divider](#divider)). Reach for it for any index of records
@@ -1418,6 +1423,7 @@ see [Activity feed / Timeline](#activity-feed--timeline).
   does its job instead of opening the record ([Table (CRUD)](#table-crud)).
 
 ## Media object
+- **Catalog axes** (generated from the catalog's `component-shapes.json`, do not edit): sizes `sm` · `md` · `lg`. <!-- axes -->
 - Fixed-size media beside flowing content — the row of the [Stacked list](#stacked-list), the
   [Activity feed](#activity-feed--timeline), comments and notifications. `cluster items-start` of a
   `frame` (avatar, icon chip, thumbnail) and a `stack gap-1` body; the media gets `flex-none`, the body
@@ -1724,6 +1730,7 @@ can carry.
   Built on **anchored-position** + **dismissable-layer** mixins. Popover adds focus move-in + `aria-expanded`.
 
 ## Avatar
+- **Catalog axes** (generated from the catalog's `component-shapes.json`, do not edit): sizes `sm` · `md` · `lg`. <!-- axes -->
 - `Ui::Avatar` (extract it — auctioneer inlines): `rounded-full` image or initials chip
   `bg-primary/10 text-primary`, sizes `sm size-8 / md size-10 / lg size-12`, optional status dot, group/stacked.
 - **a11y:** the image is decorative (`alt=""`) wherever the name is adjacent; the initials chip is
@@ -1733,6 +1740,7 @@ can carry.
   that says what it counts.
 
 ## Logo / Brand mark
+- **Catalog axes** (generated from the catalog's `component-shapes.json`, do not edit): variants `mark` · `lockup`; sizes `sm` · `md` · `lg`. <!-- axes -->
 - `Ui::Logo` — the ONLY way to render the Prism mark; never hand-roll a text eyebrow (a plain
   `<p>Fidara</p>` in place of the mark is a defect). **Variants:** `mark` (prism only) ·
   `lockup` (prism + wordmark). **Sizes:** `sm 20px / md 28px / lg 40px` prism height —
