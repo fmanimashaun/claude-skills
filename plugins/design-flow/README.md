@@ -15,7 +15,7 @@ across projects **without a designer or Figma**, by applying the **design-system
 
 The plugin ships **several brand packs** under `brands/` (`fidara`, `reliance`, and `_template` to start a
 client's own). A project uses **exactly one**, chosen on purpose and recorded by `/design-flow:setup` in
-`config/initializers/brand.rb` as `config.x.brand.pack = "<slug>"` — the record every drift check compares
+the project's brand record (where, is the UI adapter's choice) — the record every drift check compares
 against. `fidara` is the default, but only when you confirm it: `setup` with no argument asks which pack rather
 than assuming. Switching packs later is a deliberate re-scaffold (`setup <other-pack>` after you say so), never a
 second `setup` laid over the first's managed block — two packs' roles in one block are exactly the mixed state the
@@ -23,10 +23,10 @@ second `setup` laid over the first's managed block — two packs' roles in one b
 
 ## Commands
 
-- `/design-flow:setup [brand]` — scaffold the design system into a Rails 8 + Hotwire + Tailwind v4
-  project: the `@theme` token architecture (brand primitives → semantic roles → Utopia fluid
-  scale + measure/radius/shadow/motion), the layout-primitive `@utility` recipes, base
-  ViewComponents, and dark-mode wiring. Idempotent. `brand` = `<pack>` or `<pack>:<variant>` (e.g. `fidara:fmworkflows`).
+- `/design-flow:setup [brand]` — scaffold the design system into the project through its UI adapter:
+  the token architecture (brand primitives → semantic roles → Utopia fluid
+  scale + measure/radius/shadow/motion), the layout-primitive recipes, base
+  components, and dark-mode wiring. Idempotent. `brand` = `<pack>` or `<pack>:<variant>` (e.g. `fidara:fmworkflows`).
 - `/design-flow:component <name>` — author (or refactor) a UI component per the system: compose
   layout primitives + semantic role tokens, apply the `variant × size × state` vocabulary, add
   the a11y checklist and the prescribed responsive behavior.
@@ -40,21 +40,21 @@ second `setup` laid over the first's managed block — two packs' roles in one b
 - `/design-flow:audit [path]` — flag UI drift against the system: raw/brand colors in component
   code, brittle selectors, breakpoint misuse where an intrinsic primitive fits, missing focus
   ring / ARIA, non-`min-h-touch` targets, hand-rolled layout CSS.
-- `/design-flow:mobile [ios|android|both]` — scaffold **Hotwire Native parity** (Phase 2):
-  native-app detection + `body.mobile-app`, JSON path configuration, bridge components
-  (button/menu/tab-bar, progressive-enhancement), safe-area + `min-h-touch` wiring, and
+- `/design-flow:mobile [ios|android|both]` — scaffold **native-shell parity** (Phase 2) through the UI adapter:
+  native-app detection, path configuration, bridge components,
+  safe-area + `min-h-touch` wiring, and
   table→summary cards. Reuses the web components; the native Kotlin/Swift shells stay in their own
   repos.
 - `/design-flow:tokens [android|ios|both]` — **native token export** (Phase 3): generate
-  Android (`colors.xml` + `Theme.Fidara`) and iOS (SwiftUI `Color`) tokens from the `@theme`
+  Android (`colors.xml` + `Theme.Fidara`) and iOS (SwiftUI `Color`) tokens from the token source
   so fully-native screens match by construction. Writes to `tmp/` for you to carry into the
   native repos; never modifies them.
 - `/design-flow:critique [path]` — the design *lens* where `audit` is the gate: is this surface
   considered, or mechanically assembled? Advisory by design; see `references/art-direction.md`.
 - `/design-flow:canvas <brief>` — draft a design as a Claude Design canvas from the system's tokens
   and catalog, for visual refinement before porting.
-- `/design-flow:port <artboard>` — port a Claude Design artboard to ERB, ViewComponents,
-  simple_form, Turbo and Stimulus per `references/design-handoff.md`.
+- `/design-flow:port <artboard>` — port a Claude Design artboard into the project's UI implementation
+  per `references/design-handoff.md`.
 - `/design-flow:compose <brief>` — compose a surface from the catalog with the research layer
   first (`reference-research.md`): three sources, mechanisms extracted, expressed in the pack's tokens.
 - `/design-flow:assets` and `/design-flow:generate` — the visual-asset pipeline: set up, plan,
@@ -63,11 +63,17 @@ second `setup` laid over the first's managed block — two packs' roles in one b
 
 ## Agents
 
-- **rails-ui-composer** — builds views/components by composing primitives + tokens to the doctrine.
+- **the adapter's composer** (`agents.composer`) — builds views/components by composing primitives + tokens to the doctrine.
 - **design-auditor** — the consistency gate (design-system-specific; complements rails-flow's).
 - **brand-guardian** — enforces token/brand/logo/icon usage and the brand-pack model.
 - **design-critic** — the advisory lens behind `/design-flow:critique`; never blocks.
-- **rails-ui-porter** — ports a Claude Design artboard to the Rails stack behind `/design-flow:port`.
+- **the adapter's porter** (`agents.porter` in `ui/<implementation>/adapter.json`) — ports a Claude Design artboard behind `/design-flow:port`.
+
+## UI adapters
+
+The design doctrine, the brand packs and the art-direction lens are stack-neutral. What reads or writes one stack's UI lives in
+`ui/<implementation>/` (its checks, its canvas port gate, and its porter and composer agents). A project's stack descriptor selects it with `ui.implementation`, and the commands resolve it with
+`scripts/ui_adapter.py`; the directory name is the id. See `ui/README.md`.
 
 ## Checks
 
@@ -101,7 +107,7 @@ an edit, per the guarantee-vs-advice test in `docs/doctrine/harness-doctrine.md`
 ## The doctrine
 
 Everything follows the **design-system** skill (rails-stack's `skills/design-system/`): foundations/tokens,
-layout primitives, component catalog, forms, Stimulus interaction, responsive doctrine, brand.
+layout primitives, component catalog, forms, interaction, responsive doctrine, brand.
 Read it first — this plugin is the *applier*, that skill is the *law*.
 
 ## Platform note
