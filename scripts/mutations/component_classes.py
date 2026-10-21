@@ -62,5 +62,23 @@ GUARD = Guard(
             "    next_hits = {}",
             "a neutral component naming Next.js is a finding",
         ),
+        Mutation(
+            "#2247: the aggregate summary is committed in the JSON again, so every PR that adds a component conflicts with every other",
+            '"generated_by": "scripts/component_classes.py", "components": rows',
+            '"generated_by": "scripts/component_classes.py", "summary": summarise(comps), "components": rows',
+            "the committed JSON holds no aggregate",
+        ),
+        Mutation(
+            "#2247: a total is written into the HTML as a number instead of being counted in the page",
+            "<h2>Totals (<span data-total></span> components)</h2>",
+            "<h2>Totals (3 components)</h2>",
+            "the HTML counts its own rows in the page instead of storing totals",
+        ),
+        Mutation(
+            "#2247: the page's own script counts a row twice, so its totals disagree with the data",
+            "x.total++;",
+            "x.total += 2;",
+            "the page's script reports the same per-plugin counts as summarise()",
+        ),
     ),
 )
