@@ -11,6 +11,20 @@
       "descriptor": {
         "runner_prefix": ["bundle", "exec"],
         "setup_section": "setup/rails.md",
+        "ui_scope": {
+          "paths": [
+            "^app/views/",
+            "^app/components/",
+            "^app/javascript/",
+            "^app/assets/(stylesheets|tailwind|images)/",
+            "^app/helpers/",
+            "^config/locales/",
+            "^public/[^/]+\\.(html|png|svg|ico|webmanifest)$"
+          ],
+          "not_paths": ["\\.(json|xml)(\\.[a-z]+)?$"],
+          "seen_anyway": ["^app/views/pwa/"],
+          "cases": "ui-scope-cases.json"
+        },
         "security": {
             "checklist": "security/rails.md",
             "cases": "security/boundary-cases.json",

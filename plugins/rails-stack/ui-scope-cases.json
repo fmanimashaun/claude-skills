@@ -1,0 +1,94 @@
+[
+ {
+  "path": "app/views/invoices/index.html.erb",
+  "ui": true
+ },
+ {
+  "path": "app/views/layouts/application.html.erb",
+  "ui": true
+ },
+ {
+  "path": "app/components/bell_component.rb",
+  "ui": true
+ },
+ {
+  "path": "app/javascript/controllers/bell_controller.js",
+  "ui": true
+ },
+ {
+  "path": "config/locales/en.yml",
+  "ui": true
+ },
+ {
+  "path": "app/helpers/invoices_helper.rb",
+  "ui": true
+ },
+ {
+  "path": "app/assets/stylesheets/application.css",
+  "ui": true
+ },
+ {
+  "path": "app/assets/images/logo.svg",
+  "ui": true
+ },
+ {
+  "path": "public/404.html",
+  "ui": true
+ },
+ {
+  "path": "public/icon.png",
+  "ui": true
+ },
+ {
+  "path": "app/views/pwa/manifest.json.erb",
+  "ui": true
+ },
+ {
+  "path": "app/models/invoice.rb",
+  "ui": false
+ },
+ {
+  "path": "app/controllers/invoices_controller.rb",
+  "ui": false
+ },
+ {
+  "path": "db/migrate/1_x.rb",
+  "ui": false
+ },
+ {
+  "path": "app/jobs/sync_job.rb",
+  "ui": false
+ },
+ {
+  "path": "spec/models/invoice_spec.rb",
+  "ui": false
+ },
+ {
+  "path": "config/routes.rb",
+  "ui": false
+ },
+ {
+  "path": "app/views/api/invoices/show.json.jbuilder",
+  "ui": false
+ },
+ {
+  "path": "app/views/api/invoices/index.xml.builder",
+  "ui": false
+ },
+ {
+  "path": "public/robots.txt",
+  "ui": false
+ },
+ {
+  "path": "public/assets/app-1.css",
+  "ui": false
+ },
+ {
+  "path": "app/page.tsx",
+  "ui": false
+ },
+ {
+  "path": "components/Nav.tsx",
+  "ui": false
+ }
+]

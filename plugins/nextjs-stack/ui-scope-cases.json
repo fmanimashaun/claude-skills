@@ -1,0 +1,122 @@
+[
+ {
+  "path": "app/page.tsx",
+  "ui": true
+ },
+ {
+  "path": "app/dashboard/layout.tsx",
+  "ui": true
+ },
+ {
+  "path": "components/Nav.tsx",
+  "ui": true
+ },
+ {
+  "path": "src/app/page.tsx",
+  "ui": true
+ },
+ {
+  "path": "styles/globals.css",
+  "ui": true
+ },
+ {
+  "path": "app/globals.css",
+  "ui": true
+ },
+ {
+  "path": "src/components/Button.tsx",
+  "ui": true
+ },
+ {
+  "path": "pages/index.tsx",
+  "ui": true
+ },
+ {
+  "path": "src/pages/about.tsx",
+  "ui": true
+ },
+ {
+  "path": "public/logo.svg",
+  "ui": true
+ },
+ {
+  "path": "public/images/hero.webp",
+  "ui": true
+ },
+ {
+  "path": "public/favicon.ico",
+  "ui": true
+ },
+ {
+  "path": "components/Button.stories.tsx",
+  "ui": true
+ },
+ {
+  "path": "app/blog/[slug]/page.mdx",
+  "ui": true
+ },
+ {
+  "path": "messages/en.json",
+  "ui": true
+ },
+ {
+  "path": "src/locales/fr/common.json",
+  "ui": true
+ },
+ {
+  "path": "app/api/users/route.ts",
+  "ui": false
+ },
+ {
+  "path": "src/app/api/users/route.ts",
+  "ui": false
+ },
+ {
+  "path": "app/api/hello/page.tsx",
+  "ui": false
+ },
+ {
+  "path": "lib/db.ts",
+  "ui": false
+ },
+ {
+  "path": "app/actions.ts",
+  "ui": false
+ },
+ {
+  "path": "components/Button.test.tsx",
+  "ui": false
+ },
+ {
+  "path": "src/components/Nav.spec.tsx",
+  "ui": false
+ },
+ {
+  "path": "next.config.js",
+  "ui": false
+ },
+ {
+  "path": "package.json",
+  "ui": false
+ },
+ {
+  "path": "tsconfig.json",
+  "ui": false
+ },
+ {
+  "path": "middleware.ts",
+  "ui": false
+ },
+ {
+  "path": "supabase/migrations/1_init.sql",
+  "ui": false
+ },
+ {
+  "path": "public/robots.txt",
+  "ui": false
+ },
+ {
+  "path": "app/views/a.html.erb",
+  "ui": false
+ }
+]
