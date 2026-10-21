@@ -11,7 +11,8 @@ GUARD = Guard(
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
     selftest_args=("--only", "release_gate_large"),
     # The same staged tree as hook_release_gate: the harness drives the hook from its own location.
-    needs=("plugins/rails-flow/scripts/fixture_git.py", 
+    needs=("plugins/rails-flow/scripts/advisory_scope.py", "plugins/rails-flow/scripts/security_scope.py", "plugins/rails-flow/scripts/check_threat_model.py", "plugins/rails-flow/scripts/detect_stack.py",  # stop-gate.sh runs advisory_scope.py (#2262)
+           "plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # session-start.sh runs all three (#1581, #1828: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",

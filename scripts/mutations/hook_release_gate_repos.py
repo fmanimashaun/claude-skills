@@ -19,7 +19,8 @@ GUARD = Guard(
     # The harness resolves every hook from the selftest's own location and drives release-gate.sh beside
     # rails-flow's, so the hook trees and qa-flow's scripts are staged. DECLARED, not assumed: an undeclared
     # read kills the unmutated baseline and every mutation then reads as "caught" by that error.
-    needs=("plugins/rails-flow/scripts/fixture_git.py", "plugins/rails-flow/hooks/hooks.json",
+    needs=("plugins/rails-flow/scripts/advisory_scope.py", "plugins/rails-flow/scripts/security_scope.py", "plugins/rails-flow/scripts/check_threat_model.py", "plugins/rails-flow/scripts/detect_stack.py",  # stop-gate.sh runs advisory_scope.py (#2262)
+           "plugins/rails-flow/scripts/fixture_git.py", "plugins/rails-flow/hooks/hooks.json",
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # #1581 merge: run by session-start.sh / release-gate.sh
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
            "plugins/qa-flow/scripts",
