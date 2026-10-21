@@ -142,3 +142,33 @@ The scan first read only `app/`, while 303 of the corpora's 335 client files liv
 | R1, R3, R5, R7, R10, R13, R14, R17, R19, R20 | verified advice now, each citing its CONFIRMED claim; a recorded-verdict rule once rails-flow #2225 lands (the coordinator's call on the #2243 review, under the owner's "advice is fine when tested against a standard") |
 | C18 | not shipped (INCONCLUSIVE) |
 
+## Verified quotes (2026-10-21)
+
+The phrase each row rests on, quoted exactly. Each phrase was checked against the page itself, not the verifier's report (#2233 found the verifier inventing quotes): the page was fetched with `curl -sL`, its scripts and tags stripped, entities unescaped, typographic quotes and backticks normalised and whitespace collapsed, and the phrase had to occur verbatim. All 24 did. One verifier "quote" did not: for R14 it reported "don't lift state up any higher than you need to", but the page says "any further than necessary" (the row below has the page's words).
+
+| row | exact phrase on the page | source |
+|---|---|---|
+| R1 | "pass JSX as children" | https://react.dev/learn/passing-data-deeply-with-context |
+| R2 | "always declare component functions at the top level, and don't nest their definitions" | https://react.dev/learn/preserving-and-resetting-state |
+| R3 | "a component should ideally only be concerned with one thing" | https://react.dev/learn/thinking-in-react |
+| R4 | "do not generate keys on the fly" | https://react.dev/learn/rendering-lists |
+| R5 | "By default, layouts and pages are Server Components" | https://nextjs.org/docs/app/getting-started/server-and-client-components |
+| R6 | "Prefetching is only enabled in production" | https://nextjs.org/docs/app/api-reference/components/link |
+| R7 | "Error boundaries must be Client Components" | https://nextjs.org/docs/app/getting-started/error-handling |
+| R8 | "instead of marking large parts of your UI as Client Components" | https://nextjs.org/docs/app/getting-started/server-and-client-components |
+| R9 | "Prop values passed from a Server Component to Client Component must be serializable" | https://react.dev/reference/rsc/use-client |
+| R10 | "wrap the fetching component in <Suspense> to stream fresh data at request time" | https://nextjs.org/docs/app/getting-started/fetching-data |
+| R11 | "it does an entire render pass with a stale value" | https://react.dev/learn/you-might-not-need-an-effect |
+| R12 | "React will recreate the DOM and reset the state" | https://react.dev/learn/you-might-not-need-an-effect |
+| R13 | "move it to their closest common parent, and then pass it down to them via props" | https://react.dev/learn/sharing-state-between-components |
+| R14 | "Prefer local state and don't lift state up any further than necessary" | https://react.dev/reference/react/useMemo |
+| R15 | "pointing at a different function" | https://react.dev/reference/react/useContext |
+| R16 | "Effects don't run on the server" | https://react.dev/learn/synchronizing-with-effects |
+| R17 | "can still be sequential" | https://nextjs.org/docs/app/getting-started/fetching-data |
+| R18 | "Preventing layout shift automatically when images are loading" | https://nextjs.org/docs/app/getting-started/images |
+| R19 | "only rely on useMemo as a performance optimization" | https://react.dev/reference/react/useMemo |
+| R20 | "decreasing the amount of JavaScript needed to render a route" | https://nextjs.org/docs/app/guides/lazy-loading |
+| R21 | "it is trivial to introduce an XSS vulnerability" | https://react.dev/reference/react-dom/components/common |
+| R22 | "reachable via direct POST requests" | https://nextjs.org/docs/app/guides/data-security |
+| R23 | "prefixed with NEXT_PUBLIC_ are included in the client bundle" | https://nextjs.org/docs/app/getting-started/server-and-client-components |
+| C18 | "users can bookmark the current state of the application, including their search queries and filters, for future reference or sharing" | https://nextjs.org/learn/dashboard-app/adding-search-and-pagination |
