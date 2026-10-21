@@ -41,5 +41,5 @@ row of `docs/evidence/audits/2026-10-21-nextjs-security-claims.md` in the claude
 
 ## Scanners this stack runs
 
-Supabase's Security Advisor, from Studio or the CLI (`supabase db advisors`), as the descriptor lists it. It flags
+Hand-off: Supabase's Security Advisor, run from Studio or through the vendor's `supabase` skill (supabase/agent-skills), as the descriptor lists it. It flags
 misconfigured RLS among other issues (C-8)

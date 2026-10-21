@@ -218,6 +218,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #2233. A CONFIRMED verdict quotes only what the cited page says: the checker fetches and matches (a verifier's tool, networked), and these two run offline.
     ("verdict quotes selftest", ("python3", "scripts/check_verdict_quotes.py", "--selftest")),
     ("verdict quotes format", ("python3", "scripts/check_verdict_quotes.py", "--format-check")),
+    # #2289. Vercel and Supabase teach their own platforms: a vendor CLI step in a shipped doc must be a hand-off line to the vendor's skill or command.
+    ("vendor hand-off", ("python3", "scripts/check_vendor_handoff.py")),
+    ("vendor hand-off selftest", ("python3", "scripts/check_vendor_handoff.py", "--selftest")),
     ("frontmatter selftest", ("python3", "scripts/check_frontmatter.py", "--selftest")),
     # #1334. Every plugin hook command must survive an install path containing a space: the four
     # fail-closed guards stop guarding when their command splits. Local and deterministic, so it
