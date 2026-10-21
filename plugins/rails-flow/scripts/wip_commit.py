@@ -665,6 +665,17 @@ def selftest(match: str = "") -> int:
             hostile("a repository-local hook (.git/hooks/pre-commit and post-commit)", {},
                     setup=lambda repo, fake: [((repo / ".git" / "hooks" / n).write_text(f"#!/bin/sh\necho ran >> {marker}\n"),
                                                (repo / ".git" / "hooks" / n).chmod(0o755)) for n in ("pre-commit", "post-commit", "commit-msg")])
+            # THE HOOK DIRECTORY GIT ACTUALLY USES (v1.158.0 proof). A machine's system config can set core.hooksPath (Homebrew's git ships
+            # `core.hooksPath=.githooks`), and then a hook planted in .git/hooks never runs whatever wip_commit does: the row above passes
+            # with core.hooksPath=/dev/null removed. Plant the hooks where THIS git resolves them, so the row bites on every machine.
+            def resolved_hooks(repo: Path, fake: Path) -> None:
+                hooks = Path(git(repo, "rev-parse", "--git-path", "hooks"))
+                hooks = hooks if hooks.is_absolute() else repo / hooks
+                hooks.mkdir(parents=True, exist_ok=True)
+                for n in ("pre-commit", "post-commit", "commit-msg"):
+                    (hooks / n).write_text(f"#!/bin/sh\necho ran >> {marker}\n")
+                    (hooks / n).chmod(0o755)
+            hostile("a repository-local hook in the directory git resolves (rev-parse --git-path hooks)", {}, setup=resolved_hooks)
             hostile("a repository-local core.fsmonitor in .git/config", {},
                     setup=lambda repo, fake: git(repo, "config", "core.fsmonitor", str(fake)), skipped=True)
             hostile("a repository-local core.hooksPath in .git/config", {},

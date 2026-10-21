@@ -1,0 +1,5 @@
+section: Repository hygiene
+- **The v1.158.0 proof's `mutation coverage` gate is green again — `scripts/mutations/extract_release_notes.py`** (#2206, the v1.158.0 proof). The proof's `--require-slow` run found 6 of 4732 mutations wrong, and CI's `--fast` skips that gate, so every PR was green.
+  - **`extract_release_notes`.** Its staged tempdir now carries `plugins/rails-stack/.claude-plugin/plugin.json` (#2182 moved rails-stack's version there) and `plugins/nextjs-stack/.claude-plugin/plugin.json`. A missing-file mutant is caught by its own fixture again.
+  - **The four git-shim guards.** `git_shim`, `git_shim_hook`, `git_shim_real_git` and `git_shim_selftest_skip` stage `scripts/fixtures/claude_code_git_config.json`, the recorded Claude Code git calls the #2129 case reads. They are no longer INERT.
+  - **`wip_commit`.** A machine's system git config can set `core.hooksPath`; Homebrew's sets `.githooks`. Then a hook in `.git/hooks` never runs, and dropping wip_commit's `core.hooksPath=/dev/null` survived. A new selftest row plants the hooks where git resolves them (`rev-parse --git-path hooks`), so the mutant dies on every machine.
