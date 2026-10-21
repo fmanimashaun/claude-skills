@@ -5,9 +5,10 @@ Run:  check_security_review.py [--base dev] [--root DIR]            every threat
       check_security_review.py --model FILE --record FILE           one model, one record
       check_security_review.py --selftest
 Exit: 0 nothing owed (no threat model in the change) or every model has a current, complete, clean record
-      1 a record is missing, stale, or does not answer every row: run `security-auditor` against the model on this HEAD
+      1 a record is missing, stale, or does not answer every row: run `security-auditor` against the model on this HEAD;
+        or BLOCKING: the record says BLOCKED, a `mitigate` row is "not implemented", or an `accept` row is stale (a finding
+        for a human). Never 3: the project gates grade 3 as not applicable, which would let a blocking finding pass (#1873).
       2 unusable: a model that exists but has no readable Threats table, an unreadable record, no git, an unknown base
-      3 the record says BLOCKED, a `mitigate` row is "not implemented", or an `accept` row is stale: a finding for a human
 
 WHY. `security-auditor` ran "if auth, authorization, APIs or data handling changed", a judgement the session makes, against a generic list
 because nothing said what THIS unit must resist. The threat model (#2117) says; this makes the answer checkable, row by row, and tied to the
@@ -191,7 +192,9 @@ def check_one(model: Path, record: Path, root: Path, head: str) -> tuple[int, li
     if incomplete:
         return 1, [f"{model}: the record does not answer the model:", *[f"  {p}" for p in incomplete]]
     if blocking or kind == "BLOCKED":
-        return 3, [f"{model}: a finding for a human to decide:", *[f"  {p}" for p in blocking], *([f"  {record}: VERDICT: BLOCKED"] if kind == "BLOCKED" else [])]
+        # Exit 1, not 3: the project gates read 3 as NOT APPLICABLE, which never fails a run (#1873), so a blocking finding
+        # graded 3 would have passed the sweep it is meant to stop.
+        return 1, [f"{model}: BLOCKING, a finding for a human to decide:", *[f"  {p}" for p in blocking], *([f"  {record}: VERDICT: BLOCKED"] if kind == "BLOCKED" else [])]
     return 0, [f"{model}: every mitigate and accept row answered, record current for {head[:12]}"]
 
 
@@ -344,11 +347,11 @@ def selftest() -> int:
         case("a `..` evidence path is refused", good.replace("src/c.x:2", "app/../src/c.x:2"), 1, "inside the repository")
         case("evidence in a file that exists only in the working tree is refused", good.replace("src/c.x:2", "src/untracked.x:1"), 1, "committed at HEAD")
         case("evidence past the end of the file is incomplete", good.replace("src/c.x:2", "src/c.x:99"), 1, "past the end")
-        case("a mitigate row not implemented is BLOCKING, exit 3", good.replace("implemented src/c.x:2", "not implemented"), 3, "not implemented")
-        case("a stale accept row is a finding, exit 3", good.replace("holds a repeated callback is a no-op", "stale the signature now has a timestamp"), 3, "stale")
+        case("a mitigate row not implemented is BLOCKING, exit 1 (never 3, which the gates read as not applicable)", good.replace("implemented src/c.x:2", "not implemented"), 1, "BLOCKING")
+        case("a stale accept row is a BLOCKING finding, exit 1", good.replace("holds a repeated callback is a no-op", "stale the signature now has a timestamp"), 1, "no longer matches the code")
         case("a row the model does not have is another model", good + "TM-9: holds x\n", 1, "TM-9")
-        case("VERDICT: BLOCKED is exit 3 even with every row answered", good.replace("CLEAN", "BLOCKED"), 3, "BLOCKED")
-        case("a CLEAN verdict does not hide a not-implemented row", good.replace("implemented src/c.x:2", "not implemented"), 3, "BLOCKING")
+        case("VERDICT: BLOCKED is exit 1 even with every row answered", good.replace("CLEAN", "BLOCKED"), 1, "BLOCKED")
+        case("a CLEAN verdict does not hide a not-implemented row", good.replace("implemented src/c.x:2", "not implemented"), 1, "BLOCKING")
         case("through main(): a complete current record passes", good, 0, "answered", base=["--base", "dev"])
         case("through main(): no record asks for the pass", None, 1, "missing", base=["--base", "dev"])
         case("an unknown base is unusable, not clean", good, 2, "UNUSABLE", base=["--base", "nope"])

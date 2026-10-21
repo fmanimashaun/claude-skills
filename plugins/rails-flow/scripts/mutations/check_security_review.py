@@ -18,7 +18,7 @@ GUARD = Guard(
             "a mitigate row answered `not implemented` stops being BLOCKING",
             '            if verdict == "not implemented":',
             "            if False:",
-            "a mitigate row not implemented is BLOCKING, exit 3",
+            "a mitigate row not implemented is BLOCKING, exit 1 (never 3, which the gates read as not applicable)",
         ),
         Mutation(
             "evidence past the end of the file is accepted",
@@ -30,7 +30,7 @@ GUARD = Guard(
             "a stale accept row stops being a finding",
             '            if verdict == "stale":',
             "            if False:",
-            "a stale accept row is a finding, exit 3",
+            "a stale accept row is a BLOCKING finding, exit 1",
         ),
         Mutation(
             "a row the record leaves out stops being incomplete",
