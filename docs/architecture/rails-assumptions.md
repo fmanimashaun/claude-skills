@@ -8,17 +8,17 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 
 | decision | what it means | files | lines |
 |---|---|---:|---:|
-| `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 68 | 1673 |
-| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 90 | 1228 |
-| `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 63 | 278 |
+| `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 66 | 1591 |
+| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 90 | 1232 |
+| `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 64 | 284 |
 | `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change | 7 | 24 |
-| **all** | | **228** | **3203** |
+| **all** | | **227** | **3131** |
 
 ## By flow
 
 | flow | files | lines | `rails-stack` | `detector` | `reword` | `neutral` |
 |---|---:|---:|---:|---:|---:|---:|
-| `rails-flow` | 135 | 2289 | 47 | 50 | 35 | 3 |
+| `rails-flow` | 134 | 2217 | 45 | 50 | 36 | 3 |
 | `qa-flow` | 36 | 275 | 0 | 29 | 6 | 1 |
 | `pipeline` | 19 | 89 | 3 | 9 | 4 | 3 |
 | `design-flow` | 38 | 550 | 18 | 2 | 18 | 0 |
@@ -27,11 +27,11 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 
 | category | lines naming it |
 |---|---:|
-| tool | 890 |
-| gem | 138 |
-| path | 1245 |
-| concept | 1966 |
-| hotwire | 104 |
+| tool | 853 |
+| gem | 130 |
+| path | 1218 |
+| concept | 1945 |
+| hotwire | 95 |
 
 A line that names two things counts once per category it names in this table and once overall in the totals above.
 
@@ -42,12 +42,6 @@ A line that names two things counts once per category it names in this table and
 Agents whose whole job is a Rails task (implement in Rails, write migrations, run RSpec, audit with Brakeman, review against Rails practice). They are loaded by every rails-flow install; a Next.js project would see agents it can never use.
 
 Files: `agents/code-reviewer.md` (rails-flow), `agents/design-auditor.md` (rails-flow), `agents/migration-writer.md` (rails-flow), `agents/rails-developer.md` (rails-flow), `agents/security-auditor.md` (rails-flow), `agents/test-runner.md` (rails-flow)
-
-### rails-hooks: The Rails-only hooks (#2174)
-
-Hooks that fire on a Rails artifact: guard-migrate.sh on a new db/migrate file, lint-ruby.sh on a .rb edit. They register through the plugin's hooks.json, so the stack plugin must register them instead.
-
-Files: `hooks/scripts/guard-migrate.sh` (rails-flow), `hooks/scripts/lint-ruby.sh` (rails-flow)
 
 ### rails-gates: The Rails project gates (#2175)
 
@@ -106,35 +100,33 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 |---|---|---:|---|---|---|
 | `.claude-plugin/plugin.json:3`<br>L3 | manifest | 1 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
 | `agents/claude-skills-reporter.md:23`<br>L23, 24 | agent | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `agents/code-reviewer.md:4`<br>L4, 5, 11, 22, 23 +3 more | agent | 8 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
-| `agents/design-auditor.md:5`<br>L5, 6, 19, 22, 23 +8 more | agent | 13 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
+| `agents/code-reviewer.md:8`<br>L8 | agent | 1 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
+| `agents/design-auditor.md:10`<br>L10 | agent | 1 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
 | `agents/doc-updater.md:27`<br>L27 | agent | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `agents/migration-writer.md:4`<br>L4, 10, 13, 34, 35 +4 more | agent | 9 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
+| `agents/migration-writer.md:8`<br>L8 | agent | 1 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
 | `agents/pr-reviewer.md:152`<br>L152 | agent | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `agents/rails-developer.md:4`<br>L4, 5, 12, 17, 19 +4 more | agent | 9 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
-| `agents/security-auditor.md:5`<br>L5, 11, 14, 15, 21 +3 more | agent | 8 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
+| `agents/rails-developer.md:8`<br>L8 | agent | 1 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
+| `agents/security-auditor.md:8`<br>L8 | agent | 1 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
 | `agents/spec-reviewer.md:99`<br>L99, 100 | agent | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `agents/test-runner.md:4`<br>L4, 10, 12, 16, 17 +4 more | agent | 9 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
+| `agents/test-runner.md:10`<br>L10 | agent | 1 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
 | `checks.json:19`<br>L19, 147, 154, 155, 159 +24 more | data | 29 | registers the Rails gates and names Rails paths in applies_when | `detector` | the Rails rows leave with their gates (rails-gates, rails-mandated-gems); what remains is stack-neutral |
 | `commands/brief.md:62`<br>L62, 151 | command | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `commands/coordinate.md:51`<br>L51 | command | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `commands/explain.md:34`<br>L34, 71, 148 | command | 3 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
-| `commands/feature.md:225`<br>L225, 237 | command | 2 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
-| `commands/fix.md:51`<br>L51, 79, 86 | command | 3 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
+| `commands/feature.md:12`<br>L12, 227, 239 | command | 3 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
+| `commands/fix.md:8`<br>L8, 53, 81, 88 | command | 4 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
 | `commands/graph.md:2`<br>L2, 44, 63 | command | 3 | reads routes, app/**, db/schema.rb to draw the architecture, wiki and help | `rails-stack` (rails-docs-generators) | moves with /rails-flow:graph (commands/graph.md names it) |
-| `commands/handoff.md:54`<br>L54, 55, 57, 58, 76 +1 more | command | 6 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
-| `commands/issues.md:145`<br>L145 | command | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
+| `commands/handoff.md:8`<br>L8, 56, 57, 59, 60 +2 more | command | 7 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
+| `commands/issues.md:12`<br>L12, 147 | command | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
+| `commands/pr-comments.md:8`<br>L8 | command | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `commands/retro.md:54`<br>L54 | command | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `commands/review.md:12`<br>L12, 32, 33, 66 | command | 4 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
+| `commands/review.md:12`<br>L12, 14, 34, 35, 68 | command | 5 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `commands/setup-flow.md:348`<br>L348, 351, 366, 367, 382 +18 more | command | 23 | the scaffold, Gemfile, Rails config and gem doctrine it writes into CLAUDE.md | `detector` | asks the detector which stack descriptor to scaffold; the Rails sections move with the rails-stack scaffold |
 | `commands/spec.md:29`<br>L29, 73 | command | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `hooks/hooks.json:73`<br>L73 | hook | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `hooks/scripts/guard-bash.sh:93`<br>L93, 96, 100, 103, 104 +19 more | hook | 24 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `hooks/scripts/guard-lane.sh:33`<br>L33, 54 | hook | 2 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
-| `hooks/scripts/guard-migrate.sh:2`<br>L2, 7, 8, 14, 15 +17 more | hook | 22 | fires on db/migrate files and .rb edits; runs bin/rails and rubocop | `rails-stack` (rails-hooks) | its hooks.json entry moves to the stack plugin |
 | `hooks/scripts/lib/issue_labels.py:1300`<br>L1300, 1303 | hook | 2 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `hooks/scripts/lib/trusted-env.sh:13`<br>L13, 18, 29, 37, 45 +2 more | hook | 7 | a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others | `detector` | the env scrub keeps working exactly as today; only its stack facts (the repo-root markers and the RUBY*/GEM_*/BUNDLE_* names) move to a per-stack list the stack descriptor provides |
-| `hooks/scripts/lint-ruby.sh:2`<br>L2, 9, 14, 16, 17 +5 more | hook | 10 | fires on db/migrate files and .rb edits; runs bin/rails and rubocop | `rails-stack` (rails-hooks) | its hooks.json entry moves to the stack plugin |
 | `hooks/scripts/self-consistency.sh:21`<br>L21 | hook | 1 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `hooks/scripts/stop-gate.sh:26`<br>L26, 31, 32, 44, 178 +12 more | hook | 17 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
 | `hooks/scripts/test-preflight.sh:4`<br>L4, 5, 14, 21 | hook | 4 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
@@ -145,6 +137,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `reference/downstream-spec-fixtures.md:11`<br>L11 | reference | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `reference/help.md:34`<br>L34, 52, 53, 64, 67 | reference | 5 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `reference/model-tiers.md:116`<br>L116, 117 | reference | 2 | text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec) | `detector` | the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example |
+| `reference/stack-roles.md:3`<br>L3, 24, 29, 31 | reference | 4 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scaffold/tenancy/scoped_lookup.rb:3`<br>L3, 9, 13, 14, 15 +5 more | scaffold | 10 | parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project | `rails-stack` (rails-gates) | moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin |
 | `scripts/architecture_graph.py:2`<br>L2, 20, 81, 176, 178 +82 more | script | 87 | reads routes, app/**, db/schema.rb to draw the architecture, wiki and help | `rails-stack` (rails-docs-generators) | moves with /rails-flow:graph (commands/graph.md names it) |
 | `scripts/assign_lanes.py:146`<br>L146, 174, 181, 185, 188 +4 more | script | 9 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
@@ -160,7 +153,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `scripts/check_guide_selftest.py:23`<br>L23, 79, 229, 238, 256 +32 more ↳ | selftest | 37 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/check_handoff.py:99`<br>L99, 184, 258 | script | 3 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/check_handoff_selftest.py:11`<br>L11, 18, 24, 59, 60 +18 more ↳ | selftest | 23 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `scripts/check_hook_gates.py:12`<br>L12, 20, 21, 57, 62 +200 more | script | 205 | the harness that drives every hook, including the Rails ones, with Rails command fixtures (bin/rails, rspec) | `detector` | learns the sibling stack plugin's hooks directory (step 3d of the plan) and drives each stack's hooks with that stack's fixtures |
+| `scripts/check_hook_gates.py:12`<br>L12, 20, 21, 49, 59 +201 more | script | 206 | the harness that drives every hook, including the Rails ones, with Rails command fixtures (bin/rails, rspec) | `detector` | learns the sibling stack plugin's hooks directory (step 3d of the plan) and drives each stack's hooks with that stack's fixtures |
 | `scripts/check_i18n_setup.py:15`<br>L15, 33, 34, 80, 82 +19 more | script | 24 | parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project | `rails-stack` (rails-gates) | moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin |
 | `scripts/check_issue_mockup.py:47`<br>L47, 51, 206 | script | 3 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/check_issue_ready.py:27`<br>L27, 297, 298 | script | 3 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
