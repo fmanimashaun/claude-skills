@@ -46,6 +46,7 @@ LAYOUT: dict[str, tuple[str, str]] = {
     "runbooks":     ("HOW do I operate it?", "setup guides, deploy, on-call, integrations (SSO, mail, payments). Authored. Dated where a step depends on a version."),
     "evidence":     ("WHAT did we measure?", "spikes, screenshots, coverage reports, validation results. Dated, immutable: add a new file, never edit an old one."),
     "wiki":         ("WHERE is the reference?", "GENERATED reference pages from the codebase plus hand-written pages the generator leaves alone. Rebuilt at ship."),
+    "security":     ("WHAT can go wrong, and what did we decide?", "threat models under `threat-models/<slug>.md`, written by `/rails-flow:secure-design` before the criteria. Authored; edited in the PR that changes the boundary."),
     "brain":        ("WHAT did we learn and decide?", "`STATUS.md`, `DECISIONS.md`, `HYPOTHESES.md`, `PROGRESS-LOG.md`, `MEMORY.md`, memos under `memos/<type>/`, `history/`. Not: product specs (product/)."),
 }
 GENERATED_DIRS = {"architecture", "wiki"}

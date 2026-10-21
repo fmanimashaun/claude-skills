@@ -15,21 +15,19 @@ version of the family; otherwise it runs on the inherited model.
 | Agent | Tier | `model:` | What proves its output |
 |---|---|---|---|
 | `pipeline-coordinator` | judgement | `inherit` | — |
-| `kamal-configurator` | judgement | `inherit` | — |
 <!-- pipeline:tiers:end -->
 
-## Why both are judgement
+## Why it is judgement
 
-Neither agent's *output* is graded by anything outside it, which is the only thing that makes the
+The agent's *output* is not graded by anything outside it, which is the only thing that makes the
 cheap tier safe:
 
 - **`pipeline-coordinator`** routes a repo to a lifecycle stage by reading its state. A misrouted
   repo does not fail anything; it runs the wrong stage successfully, which is precisely the failure
   no exit status catches.
-- **`kamal-configurator`** performs an **autonomous cloud deployment** from a briefing sheet. The
-  blast radius is a production environment, and a deploy that succeeds against the wrong
-  configuration reports success. This is the last agent in the marketplace that should be capped
-  below the model a user deliberately selected.
+
+The deploy agent a stack declares (`/pipeline:deploy-cloud` delegates to it by name) is judgement for the same reason, and
+its tier row lives with its own plugin, not here (#2179).
 
 **`scripts/breaker.py` is not that proof, and saying so matters.** This section used to rest the
 whole argument on *"this plugin ships no deterministic scripts at all"*; #128 shipped one, so that
@@ -39,7 +37,7 @@ signatures, ordering, budget), never a **judgement**: it cannot tell that the co
 the wrong stage, or that a deploy succeeded against the wrong host. The conclusion is unchanged;
 its reason is now the honest one.
 
-If a checker ever grades either agent's judgement — a config validator, a stage-routing
+If a checker ever grades the coordinator's judgement — a config validator, a stage-routing
 cross-check — revisit this table then, and name the proof in the row. Until then, an empty proof
 cell is exactly right, and `check_handoff.py` enforces that a `haiku` row cannot have one.
 
