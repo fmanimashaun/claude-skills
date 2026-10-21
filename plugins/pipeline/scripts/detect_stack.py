@@ -380,8 +380,13 @@ def checklist_citations(text: str) -> set[str]:
 def confirmed_claims(audit: str) -> set[str]:
     """The `C-n` rows of an audit whose own section (`## C-n — ...` up to the next heading) has `Verdict: CONFIRMED` as its first verdict line."""
     out: set[str] = set()
-    for section in re.split(r"(?m)^(?=#+ )", audit):              # any heading ends a section, so a nested one cannot lend its verdict
+    unfenced = re.sub(r"(?ms)^(`{3,}|~{3,}).*?^\1[ \t]*$", "", audit)   # a quotes block holds no verdict
+    heads = re.findall(r"(?m)^## (C-\d+) ", unfenced)
+    twice = {h for h in heads if heads.count(h) > 1}                # a row given twice has no one verdict: neither counts
+    for section in re.split(r"(?m)^(?=#+ )", unfenced):            # any heading ends a section, so a nested one cannot lend its verdict
         head = re.match(r"## (C-\d+) ", section)
+        if head and head.group(1) in twice:
+            continue
         verdict = re.search(r"(?m)^Verdict:(.*)$", section)       # the section's FIRST verdict line is its verdict
         if head and verdict and re.fullmatch(r" CONFIRMED(?: \[(?:quotes|waived):[^\]]*\])?", verdict.group(1)):
             out.add(head.group(1))
@@ -1036,7 +1041,10 @@ def selftest() -> int:
         (root / "docs" / "evidence" / "audits" / "a.md").write_text(
             "# A\n\n## C-1 — x\n\nVerdict: CONFIRMED [quotes: C-1]\n\n## C-2 — y\n\nVerdict: CONFIRMED\n\n## C-3 — z\n\nVerdict: REFUTED\n"
             "\n## C-4 — w\n\nVerdict: CONFIRMED-ish\n\n## C-5 — v\n\nVerdict: REFUTED\n\n### C-9 — nested\n\nVerdict: CONFIRMED\n"
-            "\n## C-6 — u\n\nVerdict: REFUTED\nVerdict: CONFIRMED\n\n## C-7 — t\n\n### detail\n\nVerdict: CONFIRMED\n",
+            "\n## C-6 — u\n\nVerdict: REFUTED\nVerdict: CONFIRMED\n\n## C-7 — t\n\n### detail\n\nVerdict: CONFIRMED\n"
+            "\n## C-8 — s\n\nVerdict: REFUTED\n\n## C-8 — s again\n\nVerdict: CONFIRMED\n"
+            "\n## C-10 — r\n\n```quotes C-10\nVerdict: CONFIRMED\n```\n\nVerdict: REFUTED\n"
+            "\n## C-11 — q\n\n```quotes C-11\nhttps://x | d | p\n```\n\nVerdict: CONFIRMED [quotes: C-11]\n",
             encoding="utf-8")
         got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
         case(any("cites C-3, not a CONFIRMED row" in p for p in got), f"a citation of a REFUTED row is refused: {got}")
@@ -1045,11 +1053,12 @@ def selftest() -> int:
         case(any("cites C-99" in p for p in got), f"a citation of a row the audit lacks is refused: {got}")
         for cid, why in (("C-4", "a verdict that only starts CONFIRMED"), ("C-5", "a REFUTED row with a nested CONFIRMED heading"),
                          ("C-6", "a row whose first verdict is REFUTED"),
-                         ("C-7", "a row with no verdict of its own, only a nested heading's")):
+                         ("C-7", "a row with no verdict of its own, only a nested heading's"),
+                         ("C-8", "a row headed twice"), ("C-10", "a verdict line inside a quotes block")):
             (sec_dir / "sec.md").write_text(named + f"- Ask. ({cid})\n", encoding="utf-8")
             got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
             case(any(f"cites {cid}," in p for p in got), f"{why} is not CONFIRMED: {got}")
-        (sec_dir / "sec.md").write_text(named + "- Ask. (C-1, C-2)\n", encoding="utf-8")
+        (sec_dir / "sec.md").write_text(named + "- Ask. (C-1, C-2, C-11)\n", encoding="utf-8")
         got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
         case(not got, f"citations of CONFIRMED rows pass: {got}")
         (root / ".claude-plugin" / "marketplace.json").unlink()

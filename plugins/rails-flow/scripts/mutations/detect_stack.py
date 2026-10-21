@@ -462,8 +462,8 @@ GUARD = Guard(
         ),
         Mutation(
             'a nested heading lends its verdict to the row above',
-            '    for section in re.split(r"(?m)^(?=#+ )", audit):',
-            '    for section in re.split(r"(?m)^(?=## )", audit):',
+            '    for section in re.split(r"(?m)^(?=#+ )", unfenced):',
+            '    for section in re.split(r"(?m)^(?=## )", unfenced):',
             "a row with no verdict of its own, only a nested heading's is not CONFIRMED",
         ),
         Mutation(
@@ -477,6 +477,18 @@ GUARD = Guard(
             '        verdict = re.search(r"(?m)^Verdict:(.*)$", section)',
             '        verdict = ([m for m in re.finditer(r"(?m)^Verdict:(.*)$", section)] or [None])[-1]',
             'a row whose first verdict is REFUTED is not CONFIRMED',
+        ),
+        Mutation(
+            'a row headed twice counts its later verdict',
+            '        if head and head.group(1) in twice:',
+            '        if False:',
+            'a row headed twice is not CONFIRMED',
+        ),
+        Mutation(
+            'a verdict inside a quotes block counts',
+            '    unfenced = re.sub(r"(?ms)^(`{3,}|~{3,}).*?^\\1[ \\t]*$", "", audit)',
+            '    unfenced = audit',
+            'a verdict line inside a quotes block is not CONFIRMED',
         ),
     ),
 )

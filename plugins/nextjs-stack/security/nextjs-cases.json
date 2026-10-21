@@ -48,5 +48,9 @@
  {"name": "a config.matcher change is a boundary", "plan": "Change config.matcher to skip /api.", "paths": [], "boundary": true},
  {"name": "a split NextAuth config is a boundary", "plan": "Tidy.", "paths": ["auth.config.ts"], "boundary": true},
  {"name": "a lib/auth module is a boundary", "plan": "Tidy.", "paths": ["lib/auth/index.ts"], "boundary": true},
- {"name": "a transactions module is not auth", "plan": "Tidy.", "paths": ["lib/transactions.ts"], "boundary": false}
+ {"name": "a transactions module is not auth", "plan": "Tidy.", "paths": ["lib/transactions.ts"], "boundary": false},
+ {"name": "a redirect to an interpolated searchParam is a boundary", "plan": "Call redirect(`/${searchParams.next}`) after sign-in.", "paths": [], "boundary": true},
+ {"name": "a redirect to a form field is a boundary", "plan": "Call redirect(formData.get('next')) after save.", "paths": [], "boundary": true},
+ {"name": "server action allowed origins are a boundary", "plan": "Set experimental.serverActions.allowedOrigins.", "paths": [], "boundary": true},
+ {"name": "a redirect to a fixed path is not one", "plan": "Call redirect('/dashboard') after save.", "paths": [], "boundary": false}
 ]

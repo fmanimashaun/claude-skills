@@ -28,5 +28,13 @@
  {"name": "allowing anon is a boundary", "plan": "Allow anon to read invoices.", "paths": [], "boundary": true},
  {"name": "a bare policy is a boundary", "plan": "Add a policy on invoices for members.", "paths": [], "boundary": true},
  {"name": "the anon key is a boundary", "plan": "Put the anon key in the client.", "paths": [], "boundary": true},
- {"name": "an anonymous survey is not anon access", "plan": "Make the survey anonymous for respondents.", "paths": [], "boundary": false}
+ {"name": "an anonymous survey is not anon access", "plan": "Make the survey anonymous for respondents.", "paths": [], "boundary": false},
+ {"name": "signUp is a boundary", "plan": "Call supabase.auth.signUp from the form.", "paths": [], "boundary": true},
+ {"name": "signInWithPassword is a boundary", "plan": "Call supabase.auth.signInWithPassword on submit.", "paths": [], "boundary": true},
+ {"name": "signInWithOAuth is a boundary", "plan": "Add supabase.auth.signInWithOAuth for Google.", "paths": [], "boundary": true},
+ {"name": "exchangeCodeForSession is a boundary", "plan": "Handle exchangeCodeForSession in the callback.", "paths": [], "boundary": true},
+ {"name": "createServerClient is a boundary", "plan": "Create the server client with createServerClient and cookies.", "paths": [], "boundary": true},
+ {"name": "exposing a schema is a boundary", "plan": "Expose the billing schema in the API settings.", "paths": [], "boundary": true},
+ {"name": "the anon role is a boundary", "plan": "Give the anon role read access to invoices.", "paths": [], "boundary": true},
+ {"name": "a sign-up page copy change is not one", "plan": "Reword the heading on the welcome card.", "paths": [], "boundary": false}
 ]
