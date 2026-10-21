@@ -15,8 +15,7 @@ Prints JSON: `{implementation, dir, agents: {porter, composer}, checks: [...], s
 tokens_file}`. `dir` is the adapter directory; a command reads `<dir>/<command>.md` for the stack-specific
 steps.
 
-EXIT 0 resolved. EXIT 2 it cannot say, with the reason on stderr and nothing on stdout: the detector could not judge the project, the detected stacks declare no `ui.implementation`, two
-stacks declare different ones, or the named implementation has no adapter in this plugin (a stack whose adapter has not shipped
+EXIT 0 resolved. EXIT 2 it cannot say, with the reason on stderr and nothing on stdout: the detector could not judge the project, the detected stacks declare no `ui.implementation`, or the named implementation has no adapter in this plugin (a stack whose adapter has not shipped
 yet, #2171). There is no default adapter: "no answer" is never a stack.
 """
 from __future__ import annotations
@@ -83,8 +82,6 @@ def resolve_project(project: Path) -> dict:
     if not impls:
         raise Unresolved("the detected stack(s) "
                          f"{[s.get('id') for s in detected['stacks']]} declare no ui.implementation, so there is no UI adapter to run")
-    if len(impls) > 1:
-        raise Unresolved(f"the detected stacks declare different ui.implementation values {sorted(impls)}; pass --implementation <id>")
     ui = detected["descriptor"]["ui"]
     return resolve(next(iter(impls)), stack=",".join(s.get("id", "") for s in detected["stacks"]), tokens_file=ui.get("tokens_file"))
 
@@ -134,8 +131,8 @@ def selftest() -> int:
             try:
                 resolve(bad, plugin=plugin)
                 check(why, False)
-            except Unresolved:
-                check(why, True)
+            except Unresolved as exc:
+                check(why, "has no adapter in design-flow" in str(exc))   # refused for the right reason, not by a later read error
         (plugin / "ui" / "broken").mkdir()
         (plugin / "ui" / "broken" / "adapter.json").write_text("{not json")
         try:

@@ -3485,6 +3485,17 @@ def check_ui_adapter_unresolved() -> tuple[list[Finding], int]:
                     findings.append(Finding(
                         "ui-adapter-unresolved", arel, 1,
                         f"adapter check {check_id!r} is not an id in plugins/design-flow/checks.json."))
+    # A command that dispatches through `ui_adapter.py` reads `<adapter>/<command>.md` (#2185): an adapter without that file leaves the command
+    # telling an agent to read a file that is not there.
+    dispatching = sorted(c.stem for c in (ROOT / "plugins/design-flow/commands").glob("*.md") if "scripts/ui_adapter.py" in read(c)) \
+        if (ROOT / "plugins/design-flow/commands").is_dir() else []
+    for adapter in sorted((ROOT / "plugins/design-flow/ui").glob("*/adapter.json")):
+        examined += 1
+        for command in dispatching:
+            if not (adapter.parent / f"{command}.md").is_file():
+                findings.append(Finding(
+                    "ui-adapter-unresolved", adapter.relative_to(ROOT).as_posix(), 1,
+                    f"the command /design-flow:{command} dispatches through ui_adapter.py and reads {adapter.parent.name}/{command}.md, which does not exist."))
     return findings, examined
 
 
@@ -5007,6 +5018,11 @@ def selftest() -> int:
              files={**UAU_OK, "plugins/design-flow/checks.json": '{"checks":[]}'})
     scenario("...silent when the adapter, its agent and its checks all resolve", rule=UAU, expect_finding=False, only=check_ui_adapter_unresolved,
              files=UAU_OK)
+    UAU_CMD = {"plugins/design-flow/commands/port.md": "Run `python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/ui_adapter.py\"` and read <dir>/port.md.\n"}
+    scenario("a dispatching command whose adapter ships no procedure file for it", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
+             files={**UAU_OK, **UAU_CMD})
+    scenario("...silent once the adapter ships it", rule=UAU, expect_finding=False, only=check_ui_adapter_unresolved,
+             files={**UAU_OK, **UAU_CMD, "plugins/design-flow/ui/viewcomponent-erb/port.md": "# port\n"})
     scenario("...silent on a stack with no ui block", rule=UAU, expect_finding=False, only=check_ui_adapter_unresolved,
              files={"plugins/x-stack/stacks.json": '{"stacks":[{"id":"x","descriptor":{}}]}'})
 

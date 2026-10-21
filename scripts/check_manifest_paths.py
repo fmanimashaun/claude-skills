@@ -192,6 +192,14 @@ def surfaces(plugin: Path) -> list[tuple[Path, list[str]]]:
             out.append((path, [fenced(path.read_text(encoding="utf-8"))]))
     for path in sorted((plugin / "hooks" / "scripts").glob("*.sh")):
         out.append((path, [sh_source(path.read_text(encoding="utf-8"))]))
+    # A UI adapter (`ui/<implementation>/`, #2178) is a surface too: its scripts run and its procedure files carry the bash an agent executes.
+    for adapter in sorted((plugin / "ui").glob("*/")) if (plugin / "ui").is_dir() else []:
+        for path in sorted((adapter / "scripts").glob("*.py")):
+            if not path.name.endswith("_selftest.py"):
+                out.append((path, py_literals(path.read_text(encoding="utf-8"))))
+        for path in sorted(adapter.glob("*.md")):
+            procedure = path.read_text(encoding="utf-8")
+            out.append((path, [fenced(procedure)]))
     for path in setup_sections(plugin):
         out.append((path, [fenced(path.read_text(encoding="utf-8"))]))
     return out
@@ -461,6 +469,16 @@ def selftest() -> int:
         out = reconcile(runner, wants)
         check("a path a stack setup section writes counts for the plugin that runs the sections",
               out.findings == [], f"{out.findings}")
+
+        # ---- UI ADAPTERS (#2178): a path only an adapter's procedure file names counts for the plugin that ships the adapter.
+        adapter = _plugin(Path(tmpdir) / "with-adapter")
+        (adapter / "ui" / "x").mkdir(parents=True)
+        (adapter / "ui" / "x" / "port.md").write_text("```bash\npython3 tool.py --out adapter-only/result.json\n```\n", encoding="utf-8")
+        adapter_wants = _manifest(("c", ["adapter-only/result.json"], []))
+        check("a path only a UI adapter's procedure file names counts for the plugin that ships it",
+              reconcile(adapter, adapter_wants).findings == [], f"{reconcile(adapter, adapter_wants).findings}")
+        check("...and is phantom for a plugin that ships no such adapter",
+              any("adapter-only" in f for f in reconcile(_plugin(Path(tmpdir) / "without"), adapter_wants).findings), "no finding")
         (repo.parent / "outside.md").write_text("```ruby\n# Boundaries.rb at the project root\n```\n", encoding="utf-8")
         (repo / "stacks.json").write_text(json.dumps({"plugin": "x-stack", "stacks": [
             {"id": "x", "all": [{"file": "x"}], "descriptor": {"setup_section": "../outside.md"}}]}), encoding="utf-8")
