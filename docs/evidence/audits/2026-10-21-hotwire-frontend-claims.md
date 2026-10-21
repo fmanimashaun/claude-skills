@@ -52,3 +52,15 @@ Each is one precise claim with its failure and fix. **None is doctrine until the
 ## C. Verdicts and tool coverage
 
 Filled by `doctrine-verifier` in the next step of this PR. Until then every claim is a candidate.
+
+## D. Carried in from #2220 (coordinator ruling relayed by claude-skills-4a, 2026-10-21)
+
+"Modal-driven CRUD" (`plugins/rails-stack/skills/design-system/SKILL.md:106` and `references/crud-modal-pattern.md`, 274 lines) is a Rails/Turbo choice, not a stack-neutral rule. The neutral architecture page will not carry it; **#2223 takes it** into the Hotwire doctrine. It has two parts, judged differently:
+
+- **Our design choice** (CRUD opens in a shared modal, in page; the purchase flow is the full-page exception, `crud-modal-pattern.md:216`): the authority is the maintainer's recorded decision, not a citation. Phase 2 links the decision and states it as ours.
+- **The Turbo mechanics it relies on** (a shared `turbo-frame` the modal loads into, a form response that closes it, `422` re-render inside the frame): external claims, candidates H25 and H26 below, to be verified like the rest.
+
+| id | layer | kind | claim | failure it causes | fix |
+|---|---|---|---|---|---|
+| H25 | 3 | P | A modal opened by a link with `data-turbo-frame="modal"` loads the response's matching `<turbo-frame id="modal">` into the shared frame without navigating the page | the whole page navigates, or "Content missing" if the response has no `modal` frame | the edit/new views render inside `turbo_frame_tag "modal"` |
+| H26 | 3 | P | A form inside the modal frame that fails validation re-renders with 422 inside the same frame; a success redirect with a Turbo Stream (or a `_top` visit) closes it | a success leaves the modal open, or a failure replaces the page | 422 re-render; success responds with a stream that clears the frame or a redirect with `data-turbo-frame="_top"` |
