@@ -2,7 +2,7 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**31 shipped agents · 54 shipped commands · 4 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
+**37 shipped agents · 54 shipped commands · 5 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
@@ -12,7 +12,7 @@
 | `pipeline` | 1.5.2 | 2 | 9 | 2 |
 | `qa-flow` | 1.39.0 | 11 | 8 | 11 |
 | `rails-flow` | 1.65.0 | 13 | 25 | 13 |
-| `rails-stack` | 1.76.1 | — | — | — |
+| `rails-stack` | 1.76.1 | 6 | — | 6 |
 
 ## Agents
 
@@ -58,16 +58,27 @@
 | `adversary` | adversarial · fable | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix` | — |
 | `claim-verifier` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:issues` | — |
 | `claude-skills-reporter` | judgement · inherit | Read, Grep, Glob, Bash, Write, Skill | `/rails-flow:report`, `/rails-flow:setup-flow` | — |
-| `code-reviewer` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:handoff`, `/rails-flow:issues`, `/rails-flow:retro` | — |
-| `design-auditor` | mechanical · haiku | Read, Grep, Glob, Bash, Skill | `/rails-flow:feature`, `/rails-flow:issues`, `/rails-flow:review` | the mandated greps must come back empty (`form_with`, `f.label`) |
+| `code-reviewer` | judgement · inherit | Read | — | — |
+| `design-auditor` | mechanical · haiku | Read | — | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical · haiku | Read, Grep, Glob, Edit, Write, Bash | `/rails-flow:explain`, `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:setup-flow` | `architecture_graph.py` regenerates and its digest guard fails on drift |
-| `migration-writer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:review` | — |
+| `migration-writer` | judgement · inherit | Read | — | — |
 | `pr-reviewer` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:pr-comments`, `/rails-flow:retro` | — |
-| `rails-developer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix` | — |
-| `security-auditor` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:issues`, `/rails-flow:review` | — |
+| `rails-developer` | judgement · inherit | Read | — | — |
+| `security-auditor` | judgement · inherit | Read | — | — |
 | `skill-curator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/rails-flow:curate` | — |
 | `spec-reviewer` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:retro`, `/rails-flow:spec` | — |
-| `test-runner` | mechanical · haiku | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:handoff`, `/rails-flow:issues`, `/rails-flow:pr-comments`, `/rails-flow:setup-flow` | `bundle exec rspec` exit status — 0 failures or the gate blocks |
+| `test-runner` | mechanical · haiku | Read | — | `bundle exec rspec` exit status — 0 failures or the gate blocks |
+
+### `rails-stack`
+
+| agent | tier · model | tools | named by | what proves its output |
+|---|---|---|---|---|
+| `code-reviewer` | judgement · inherit | Read, Grep, Glob, Bash, Skill | — | — |
+| `design-auditor` | mechanical · haiku | Read, Grep, Glob, Bash, Skill | — | the mandated greps must come back empty (`form_with`, `f.label`) |
+| `migration-writer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash | — | — |
+| `rails-developer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | — | — |
+| `security-auditor` | judgement · inherit | Read, Grep, Glob, Bash | — | — |
+| `test-runner` | mechanical · haiku | Read, Grep, Glob, Bash | — | `bundle exec rspec` exit status — 0 failures or the gate blocks |
 
 ### `maintainer` (maintainer-only, not installed)
 
@@ -365,5 +376,16 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `design-auditor` | mechanical | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical | `architecture_graph.py` regenerates and its digest guard fails on drift |
 | `adversary` | adversarial | — |
+
+### `rails-stack`
+
+| agent | tier | what proves its output |
+|---|---|---|
+| `code-reviewer` | judgement | — |
+| `security-auditor` | judgement | — |
+| `migration-writer` | judgement | — |
+| `rails-developer` | judgement | — |
+| `test-runner` | mechanical | `bundle exec rspec` exit status — 0 failures or the gate blocks |
+| `design-auditor` | mechanical | the mandated greps must come back empty (`form_with`, `f.label`) |
 
 Manifest cross-check: the 7 plugin directories inventoried are exactly the ones marketplace.json installs.

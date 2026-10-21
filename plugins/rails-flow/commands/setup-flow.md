@@ -664,7 +664,7 @@ deploy; never touch main.
 1. Sync check: `git fetch`; report divergence from <base>. If behind and the
    working tree is clean, `git pull --ff-only`.
 2. Suite health: <the stack's loop.md suite check>. On red, delegate
-   analysis to the test-runner agent; fix per /rails-flow:fix principles
+   analysis to the `test_runner` role; fix per /rails-flow:fix principles
    (failing spec first for behavioral bugs).
 3. Lint drift: <the stack's loop.md lint check, over files changed vs origin/<base>>.
 4. Security deltas: <the stack's loop.md security checks> — report NEW findings only.
