@@ -321,6 +321,30 @@ def setup_section_problems(manifest: dict, stack: dict, where: str) -> list[str]
     return []
 
 
+# A CHECKLIST IN ONE STRICT SHAPE (#2210, the coordinator's rule from #2213): it is read as text, never interpreted as Markdown, so
+# anything a renderer would hide or reshape is refused rather than read around. A claim id (`C-n`, a row of the stack's audit) is a
+# citation only in the slot at the END of its line.
+CLAIM_ID = re.compile(r"\bC-\d+\b")
+CITATION_SLOT = re.compile(r"\((C-\d+(?:, C-\d+)*)\)\s*$")
+
+
+def checklist_format_problems(text: str) -> list[str]:
+    """`<line>: <why>` for each line of a security checklist outside its strict shape; empty when it holds."""
+    found = []
+    for n, line in enumerate(text.splitlines(), 1):
+        if "<!--" in line or "-->" in line:
+            found.append(f"{n}: an HTML comment hides text from the reader; delete it, don't hide it")
+        if re.match(r"\s*(?:`{3,}|~{3,})", line):
+            found.append(f"{n}: a code fence; a checklist asks questions in prose and holds no fenced block")
+        if line.lstrip().startswith("|") and not line.startswith("|"):
+            found.append(f"{n}: an indented table row; every row starts with `|` in the first column")
+        slot = CITATION_SLOT.search(line)
+        outside = line[:slot.start()] if slot else line
+        if CLAIM_ID.search(outside):
+            found.append(f"{n}: a claim id outside its end-of-line slot `(C-n)`")
+    return found
+
+
 def security_problems(manifest: dict, stack: dict, where: str) -> list[str]:
     """A security checklist is a file inside its own plugin, and every boundary pattern compiles (#2117)."""
     value = (stack.get("descriptor") or {}).get("security") if isinstance(stack.get("descriptor"), dict) else None
@@ -334,6 +358,13 @@ def security_problems(manifest: dict, stack: dict, where: str) -> list[str]:
                 found.append(f"{where}.security.{key} {named!r} must stay inside its plugin (no absolute path, no `..`)")
             elif not (plugin_root(manifest) / named).is_file():
                 found.append(f"{where}.security.{key} {named!r} names no file in {plugin_root(manifest)}")
+            elif key == "checklist":
+                try:
+                    text = (plugin_root(manifest) / named).read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError) as err:
+                    found.append(f"{where}.security.checklist {named!r} cannot be read: {err}")
+                else:
+                    found.extend(f"{where}.security.checklist {named}:{p}" for p in checklist_format_problems(text))
     for key in ("boundary_text", "boundary_paths"):
         for i, row in enumerate(value.get(key) or []):
             if isinstance(row, dict) and isinstance(row.get("pattern"), str):
@@ -875,6 +906,29 @@ def selftest() -> int:
             with contextlib.redirect_stdout(out):
                 rc = main(["--check"], dirs=plugs, roots=[agents_root])
             case(rc == want_rc and want_text in out.getvalue(), f"{label}: rc={rc} {out.getvalue()[:160]!r}")
+        # A checklist in its strict shape (#2210): checked through security_problems, so a stack's real file is what is judged.
+        sec_dir = plug("sec-stack", [{"id": "sx", "all": [{"file": "sx.txt"}],
+                                      "descriptor": {"security": {"checklist": "sec.md", "scanners": ["x"]}}}])
+        sec_manifest = {"_path": str(sec_dir / MANIFEST), "plugin": "sec-stack",
+                        "stacks": json.loads((sec_dir / MANIFEST).read_text(encoding="utf-8"))["stacks"]}
+        for label, body, want in (
+                ("a checklist in its strict shape passes", "# C\n\n- Is RLS on? (C-1)\n- Both? (C-1, C-2)\n\n| a | b |\n|---|---|\n", True),
+                ("a checklist with an HTML comment is refused", "- Ask. (C-1)\n<!-- hidden -->\n", False),
+                ("a comment closing on a later line is refused", "- Ask.\nstill hidden -->\n", False),
+                ("a fenced block is refused", "- Ask.\n```\nx\n```\n", False),
+                ("a tilde fence is refused", "~~~\nx\n", False),
+                ("an indented fence is refused", "- Ask.\n    ```sh\n", False),
+                ("an indented table row is refused", "  | a | b |\n", False),
+                ("a claim id mid-line is refused", "- Per C-1, is RLS on?\n", False),
+                ("a claim id before the slot is refused", "- C-2 says so (C-1)\n", False),
+                ("a slot that is not at the end is refused", "- Ask (C-1) then more.\n", False),
+                ("a malformed slot is refused", "- Ask. (C-1,C-2)\n", False)):
+            (sec_dir / "sec.md").write_text(body, encoding="utf-8")
+            got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+            case((not got) == want, f"{label}: {got}")
+        (sec_dir / "sec.md").write_bytes(b"\xff\xfe bad")
+        got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+        case(any("cannot be read" in p for p in got), f"an undecodable checklist is a problem, not a pass: {got}")
 
     for f in failures:
         print(f"FAIL {f}")

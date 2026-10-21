@@ -76,6 +76,36 @@ def stack_rows(project: Path, dirs: list[Path] | None = None) -> tuple[list[Row]
     return rows, notes
 
 
+CASE_KEYS = {"name": str, "plan": str, "paths": list, "boundary": bool}
+
+
+def case_shape_problems(cases: object) -> list[str]:
+    """A stack's cases file in its one strict shape (#2210): a non-empty list of objects with exactly CASE_KEYS, typed, names unique.
+    Anything else is refused, never read around: an extra key is a typo of a real one, and a case nobody can run proves nothing."""
+    if not isinstance(cases, list) or not cases:
+        return ["must be a non-empty JSON list of cases"]
+    found, seen = [], set()
+    for i, case in enumerate(cases):
+        if not isinstance(case, dict):
+            found.append(f"case {i} is not an object")
+            continue
+        if set(case) != set(CASE_KEYS):
+            found.append(f"case {i} keys {sorted(case)} must be exactly {sorted(CASE_KEYS)}")
+            continue
+        wrong = [k for k, t in CASE_KEYS.items() if type(case[k]) is not t]   # `type is`, so `true` is no str and `1` no bool
+        if not wrong and not case["name"].strip():
+            wrong = ["name"]
+        if not wrong and not all(type(p) is str and p.strip() for p in case["paths"]):
+            wrong = ["paths"]
+        if wrong:
+            found.append(f"case {i} has a wrong type or an empty value in {wrong}")
+            continue
+        if case["name"] in seen:
+            found.append(f"case {i} repeats the name {case['name']!r}")
+        seen.add(case["name"])
+    return found
+
+
 def stack_case_failures(dirs: list[Path]) -> tuple[list[str], int]:
     """Each discovered stack's own cases (`security.cases`, #2117) run through that stack's patterns: a stack proves its spellings."""
     here = Path(__file__).resolve()
@@ -95,6 +125,10 @@ def stack_case_failures(dirs: list[Path]) -> tuple[list[str], int]:
                 cases = json.loads((detect_stack.plugin_root(manifest) / sec["cases"]).read_text(encoding="utf-8"))
             except (OSError, ValueError) as err:
                 failures.append(f"{label}: cannot read its cases {sec['cases']}: {err}")
+                continue
+            shape = case_shape_problems(cases)
+            if shape:
+                failures.extend(f"{label}: {sec['cases']}: {problem}" for problem in shape)
                 continue
             for case in cases:
                 ran += 1
@@ -211,6 +245,29 @@ def selftest() -> int:
         if own_failures or own_ran != 1:
             bad += 1
             print(f"FAIL a stack's own cases run case-insensitively: ran {own_ran}, {own_failures}")
+        good = {"name": "n", "plan": "Tidy.", "paths": [], "boundary": False}
+        for name, cases_value, want in (
+                ("a well-formed cases file has no shape problem", [good], 0),
+                ("an empty cases list is refused", [], 1),
+                ("a cases object instead of a list is refused", {"cases": [good]}, 1),
+                ("a case with an extra key is refused", [{**good, "note": "x"}], 1),
+                ("a case missing a key is refused", [{k: v for k, v in good.items() if k != "plan"}], 1),
+                ("a string boundary is refused", [{**good, "boundary": "true"}], 1),
+                ("an integer boundary is refused", [{**good, "boundary": 1}], 1),
+                ("a string paths is refused", [{**good, "paths": "app/x.ts"}], 1),
+                ("a non-string path is refused", [{**good, "paths": [3]}], 1),
+                ("an empty path is refused", [{**good, "paths": [" "]}], 1),
+                ("a blank name is refused", [{**good, "name": " "}], 1),
+                ("a repeated name is refused", [good, dict(good)], 1)):
+            got = 1 if case_shape_problems(cases_value) else 0
+            if got != want:
+                bad += 1
+                print(f"FAIL {name}: expected {want}, got {case_shape_problems(cases_value)}")
+        (plug / "cases.json").write_text('[{"name": "x", "plan": "Tidy.", "paths": [], "boundary": false, "extra": 1}]', encoding="utf-8")
+        shaped, shaped_ran = stack_case_failures([plug])
+        if shaped_ran != 0 or not any("must be exactly" in f for f in shaped):
+            bad += 1
+            print(f"FAIL a stack whose cases break the shape fails without running them: ran {shaped_ran}, {shaped}")
         proj.mkdir()
         (proj / "marker.txt").write_text("x", encoding="utf-8")
         rows, notes = stack_rows(proj, [plug])
