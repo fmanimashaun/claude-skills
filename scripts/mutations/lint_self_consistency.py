@@ -1389,8 +1389,8 @@ GUARD = Guard(
         Mutation(
             # #1680
             "findings-script-drift never compares the copies, so qa-flow's findings.py can drift from rails-flow's",
-            '        if canonical is not None and texts.get(rel, canonical) != canonical:',
-            '        if False:',
+            '        if canonical is not None and texts.get(rel, canonical) != canonical:\n            findings.append(Finding("findings-script-drift"',
+            '        if False:\n            findings.append(Finding("findings-script-drift"',
             'findings-script-drift / a findings.py copy that differs by one byte is a finding',
         ),
         Mutation(
@@ -1413,6 +1413,20 @@ GUARD = Guard(
             '            findings.append(Finding("vendored-copy-drift", missing, 0,',
             '            continue\n            findings.append(Finding("vendored-copy-drift", missing, 0,',
             'vendored-copy-drift / a missing vendored triage_failures.py is a finding',
+        ),
+        Mutation(
+            # #2179
+            "detect-stack-drift never compares the copies, so a detector fix that misses pipeline's copy passes",
+            '        if canonical is not None and texts.get(rel, canonical) != canonical:\n            findings.append(Finding("detect-stack-drift"',
+            '        if False:\n            findings.append(Finding("detect-stack-drift"',
+            'detect-stack-drift / a detect_stack copy that differs by one byte is a finding',
+        ),
+        Mutation(
+            # #2179
+            'detect-stack-drift does not notice a missing pipeline copy',
+            '            findings.append(Finding("detect-stack-drift", rel, 0,\n                                    "missing',
+            '            continue\n            findings.append(Finding("detect-stack-drift", rel, 0,\n                                    "missing',
+            'detect-stack-drift / a missing pipeline detect_stack is a finding',
         ),
         Mutation(
             # #1680

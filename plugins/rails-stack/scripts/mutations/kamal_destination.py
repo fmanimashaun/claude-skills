@@ -9,7 +9,7 @@ GUARD = Guard(
     name="kamal_destination",
     subject="scripts/kamal_destination.py",
     selftest="scripts/kamal_destination.py",
-    needs=("commands/deploy-cloud.md", "agents/kamal-configurator.md"),
+    needs=("agents/kamal-configurator.md",),
     mutations=(
         Mutation(
             "the destination never reaches the kamal command (the #1465 defect, restored)",

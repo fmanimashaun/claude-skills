@@ -1473,69 +1473,6 @@
    ],
    "move": "design-flow-erb"
   },
-  "plugins/pipeline/agents/kamal-configurator.md": {
-   "assumes": "routes deploy values into Rails credentials and config/deploy.yml",
-   "categories": {
-    "concept": 8,
-    "path": 4,
-    "tool": 3
-   },
-   "decision": "rails-stack",
-   "how": "the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector",
-   "ids": {
-    "bin-rails": 1,
-    "rails-config": 4,
-    "rails-word": 5,
-    "ruby": 2,
-    "ruby-file": 3
-   },
-   "invokes": [
-    38
-   ],
-   "kind": "agent",
-   "lines": [
-    15,
-    30,
-    34,
-    37,
-    38,
-    41,
-    42,
-    47,
-    48,
-    50,
-    51,
-    83
-   ],
-   "move": "rails-deploy"
-  },
-  "plugins/pipeline/commands/deploy-cloud.md": {
-   "assumes": "prose or examples that name Rails, the Gemfile or Rails binstubs",
-   "categories": {
-    "concept": 8,
-    "path": 3
-   },
-   "decision": "reword",
-   "how": "reworded to reference the detector's commands",
-   "ids": {
-    "gemfile": 1,
-    "rails-config": 2,
-    "rails-word": 5,
-    "ruby-file": 3
-   },
-   "invokes": [],
-   "kind": "command",
-   "lines": [
-    10,
-    37,
-    43,
-    55,
-    57,
-    58,
-    73
-   ],
-   "move": ""
-  },
   "plugins/pipeline/commands/release.md": {
    "assumes": "prose or examples that name Rails, the Gemfile or Rails binstubs",
    "categories": {
@@ -1730,6 +1667,51 @@
    ],
    "move": ""
   },
+  "plugins/pipeline/scripts/detect_stack.py": {
+   "assumes": "the stack detector's own prose and fixtures name Rails and Next.js; the markers it reads are data in each plugin's stacks.json",
+   "categories": {
+    "concept": 12,
+    "path": 13,
+    "tool": 7
+   },
+   "decision": "detector",
+   "how": "a byte-identical mirror of plugins/rails-flow/scripts/detect_stack.py, held by the detect-stack-drift rule (a plugin installs alone and cannot import another's code); reworded only in the canonical copy",
+   "ids": {
+    "gemfile": 10,
+    "rails-config": 3,
+    "rails-word": 9,
+    "ruby": 7,
+    "ruby-file": 3
+   },
+   "invokes": [],
+   "kind": "script",
+   "lines": [
+    14,
+    15,
+    37,
+    290,
+    519,
+    520,
+    534,
+    535,
+    537,
+    539,
+    583,
+    584,
+    591,
+    638,
+    665,
+    703,
+    705,
+    709,
+    712,
+    716,
+    718,
+    734,
+    748
+   ],
+   "move": ""
+  },
   "plugins/pipeline/scripts/git_guard_selftest.py": {
    "assumes": "fixture repositories use Rails-shaped sample paths (app/models/user.rb) to exercise a stack-neutral guard, board or hook",
    "categories": {
@@ -1754,51 +1736,6 @@
    ],
    "move": ""
   },
-  "plugins/pipeline/scripts/kamal_destination.py": {
-   "assumes": "routes deploy values into Rails credentials and config/deploy.yml",
-   "categories": {
-    "concept": 5,
-    "path": 12,
-    "tool": 5
-   },
-   "decision": "rails-stack",
-   "how": "the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector",
-   "ids": {
-    "binstub": 1,
-    "rails-config": 12,
-    "rails-word": 3,
-    "ruby": 4,
-    "ruby-file": 2
-   },
-   "invokes": [
-    257
-   ],
-   "kind": "script",
-   "lines": [
-    13,
-    23,
-    24,
-    28,
-    92,
-    93,
-    94,
-    97,
-    112,
-    167,
-    191,
-    192,
-    193,
-    194,
-    197,
-    198,
-    200,
-    241,
-    242,
-    257,
-    286
-   ],
-   "move": "rails-deploy"
-  },
   "plugins/pipeline/scripts/mutations/git_guard_pre_commit.py": {
    "assumes": "fixture repositories use Rails-shaped sample paths (app/models/user.rb) to exercise a stack-neutral guard, board or hook",
    "categories": {
@@ -1819,25 +1756,6 @@
     141
    ],
    "move": ""
-  },
-  "plugins/pipeline/scripts/mutations/kamal_destination.py": {
-   "assumes": "routes deploy values into Rails credentials and config/deploy.yml",
-   "categories": {
-    "tool": 2
-   },
-   "decision": "rails-stack",
-   "followed": "plugins/pipeline/scripts/kamal_destination.py",
-   "how": "the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector",
-   "ids": {
-    "ruby": 2
-   },
-   "invokes": [],
-   "kind": "mutation",
-   "lines": [
-    58,
-    59
-   ],
-   "move": "rails-deploy"
   },
   "plugins/pipeline/scripts/release_build.py": {
    "assumes": "reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan",
@@ -8106,11 +8024,6 @@
    "summary": "Agents whose whole job is a Rails task (implement in Rails, write migrations, run RSpec, audit with Brakeman, review against Rails practice). They are loaded by every rails-flow install; a Next.js project would see agents it can never use.",
    "title": "The Rails specialist agents"
   },
-  "rails-deploy": {
-   "issue": 2179,
-   "summary": "kamal-configurator and kamal_destination.py route values into Rails credentials and deploy.yml; Vercel deploy (#2167) is its own path.",
-   "title": "The Kamal-on-Rails deploy path"
-  },
   "rails-docs-generators": {
    "issue": 2177,
    "summary": "architecture_graph.py (routes/app/db graph, /rails-flow:graph) and build_project_wiki.py read Rails sources to draw the architecture and the wiki.",
@@ -8130,28 +8043,28 @@
  "policy": "docs/architecture/rails-assumptions.policy.json",
  "summary": {
   "by_category": {
-   "concept": 1995,
+   "concept": 1986,
    "gem": 130,
    "hotwire": 95,
-   "path": 1218,
-   "tool": 853
+   "path": 1212,
+   "tool": 850
   },
   "by_decision": {
    "detector": {
-    "files": 90,
-    "lines": 1234
+    "files": 91,
+    "lines": 1257
    },
    "neutral": {
     "files": 7,
     "lines": 24
    },
    "rails-stack": {
-    "files": 73,
-    "lines": 1631
+    "files": 70,
+    "lines": 1596
    },
    "reword": {
-    "files": 63,
-    "lines": 291
+    "files": 62,
+    "lines": 284
    }
   },
   "by_flow": {
@@ -8164,12 +8077,12 @@
     "reword": 17
    },
    "pipeline": {
-    "detector": 9,
-    "files": 19,
-    "lines": 89,
+    "detector": 10,
+    "files": 16,
+    "lines": 70,
     "neutral": 3,
-    "rails-stack": 3,
-    "reword": 4
+    "rails-stack": 0,
+    "reword": 3
    },
    "qa-flow": {
     "detector": 29,
@@ -8190,12 +8103,12 @@
   },
   "by_kind": {
    "agent": {
-    "files": 21,
-    "lines": 55
+    "files": 20,
+    "lines": 43
    },
    "command": {
-    "files": 28,
-    "lines": 172
+    "files": 27,
+    "lines": 165
    },
    "data": {
     "files": 4,
@@ -8214,8 +8127,8 @@
     "lines": 2
    },
    "mutation": {
-    "files": 49,
-    "lines": 291
+    "files": 48,
+    "lines": 289
    },
    "reference": {
     "files": 9,
@@ -8227,7 +8140,7 @@
    },
    "script": {
     "files": 77,
-    "lines": 1868
+    "lines": 1870
    },
    "selftest": {
     "files": 16,
@@ -8241,8 +8154,8 @@
   "by_pattern": {
    "active-framework": 20,
    "app-layers": 594,
-   "bin-rails": 114,
-   "binstub": 53,
+   "bin-rails": 113,
+   "binstub": 52,
    "brakeman": 5,
    "bundler": 79,
    "bundler-audit": 4,
@@ -8250,21 +8163,21 @@
    "erb": 406,
    "erb-lint": 73,
    "gem": 130,
-   "gemfile": 175,
+   "gemfile": 184,
    "hotwire": 95,
-   "rails-config": 108,
+   "rails-config": 93,
    "rails-idiom": 47,
-   "rails-word": 319,
+   "rails-word": 315,
    "rake": 56,
    "routes": 37,
    "rspec": 180,
    "rubocop": 80,
    "rubocop-yml": 2,
-   "ruby": 209,
-   "ruby-file": 1203,
+   "ruby": 208,
+   "ruby-file": 1198,
    "spec-dir": 180
   },
-  "files": 233,
-  "lines": 3180
+  "files": 230,
+  "lines": 3161
  }
 }
