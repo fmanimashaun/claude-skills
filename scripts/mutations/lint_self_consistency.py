@@ -1720,5 +1720,11 @@ GUARD = Guard(
             "            if False:\n",
             "ui-adapter-unresolved / a dispatching command whose adapter ships no procedure file for it",
         ),
+        Mutation(
+            "a descriptor whose ui.implementation has no adapter.json is reported as an unreadable file, not as a missing adapter",
+            "            if not adapter.is_file():\n",
+            "            if False:\n",
+            "ui-adapter-unresolved / a descriptor whose ui.implementation has no adapter.json: expected a finding saying 'does not exist'",
+        ),
     ),
 )

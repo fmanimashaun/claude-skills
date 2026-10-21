@@ -3453,9 +3453,9 @@ def check_ui_adapter_unresolved() -> tuple[list[Finding], int]:
                 continue
             try:
                 spec = json.loads(read(adapter))
-            except json.JSONDecodeError as exc:
+            except (OSError, json.JSONDecodeError) as exc:
                 findings.append(Finding("ui-adapter-unresolved", adapter.relative_to(ROOT).as_posix(), 1,
-                                        f"adapter.json is not valid JSON: {exc}"))
+                                        f"adapter.json cannot be read as JSON: {exc}"))
                 continue
             arel = adapter.relative_to(ROOT).as_posix()
             if spec.get("id") != impl:
@@ -4553,7 +4553,7 @@ def selftest() -> int:
     checks = 0
 
     def scenario(label: str, files: dict[str, str], *, rule: str, expect_finding: bool, only=None,
-                 line: int | None = None) -> None:
+                 line: int | None = None, says: str | None = None) -> None:
         # `only`: one rule's check, instead of every rule over the fixture tree. `run()` is ~0.2s a
         # scenario, and this module is its own mutation guard's selftest -- run once per mutation.
         nonlocal checks
@@ -4576,6 +4576,8 @@ def selftest() -> int:
             want = "a finding" if expect_finding else "silence"
             detail = "; ".join(str(f) for f in got) or "(none)"
             failures.append(f"{rule} / {label}: expected {want}, got {detail}")
+        elif says is not None and got and not any(says in str(f) for f in got):
+            failures.append(f"{rule} / {label}: expected a finding saying {says!r}, got " + "; ".join(str(f) for f in got))
 
     # -- clone-shaped-doctrine-path (#777) --------------------------------
     CSD = "clone-shaped-doctrine-path"
@@ -5007,7 +5009,7 @@ def selftest() -> int:
               "plugins/design-flow/agents/rails-ui-porter.md": "---\nname: rails-ui-porter\n---\n",
               "plugins/design-flow/checks.json": '{"checks":[{"id":"token-drift"}]}'}
     scenario("a descriptor whose ui.implementation has no adapter.json", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
-             files={"plugins/rails-stack/stacks.json": UAU_STACKS})
+             says="does not exist", files={"plugins/rails-stack/stacks.json": UAU_STACKS})
     scenario("...an adapter naming an agent that does not exist", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
              files={k: v for k, v in UAU_OK.items() if not k.endswith("rails-ui-porter.md")})
     scenario("...a descriptor porter that disagrees with the adapter", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
