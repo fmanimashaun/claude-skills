@@ -791,6 +791,52 @@
     "class": "nextjs",
     "issue": 2165,
     "why": "the nextjs-stack plugin: Next.js + Supabase + Vercel conventions and the stack's markers; they name those platforms by design"
+   },
+   {
+    "match": [
+     "plugins/rails-stack/agents/*",
+     "plugins/rails-stack/VENDORED.md",
+     "plugins/rails-stack/reference/model-tiers.md"
+    ],
+    "class": "rails",
+    "issue": 2173,
+    "why": "the Rails specialist agents (implement in Rails, migrations, RSpec, Brakeman, Rails review, simple_form audit), moved here from rails-flow"
+   },
+   {
+    "match": [
+     "plugins/rails-stack/scripts/findings.py"
+    ],
+    "class": "mixed",
+    "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+    "issue": 2186,
+    "why": "a byte-identical vendored copy of rails-flow's findings.py for rails-stack's code-reviewer (no cross-plugin root); its single home is core-skills (#2186); plugins/rails-stack/VENDORED.md"
+   },
+   {
+    "match": [
+     "plugins/rails-stack/scripts/triage_failures.py",
+     "plugins/rails-stack/scripts/dev_baseline.py"
+    ],
+    "class": "mixed",
+    "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
+    "issue": 2183,
+    "why": "a byte-identical vendored copy of rails-flow's triage_failures.py for rails-stack's test-runner; it leaves when the flows' triage reads the descriptor (#2183); plugins/rails-stack/VENDORED.md"
+   },
+   {
+    "match": [
+     "plugins/rails-stack/reference/agent-output-contract.md",
+     "plugins/rails-stack/scripts/fixture_git.py"
+    ],
+    "class": "neutral",
+    "issue": 2186,
+    "why": "a byte-identical vendored copy of rails-flow's output contract, which every moved agent cites; its single home is core-skills (#2186); plugins/rails-stack/VENDORED.md"
+   },
+   {
+    "match": [
+     "plugins/rails-stack/scripts/check_simple_form_only.py"
+    ],
+    "class": "rails",
+    "issue": 2175,
+    "why": "a vendored copy of rails-flow's simple_form gate for rails-stack's design-auditor; step 4 (#2175) moves the original and deletes this copy"
    }
   ]
  }
