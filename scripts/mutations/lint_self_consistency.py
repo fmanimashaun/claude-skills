@@ -6,6 +6,13 @@ GUARD = Guard(
     subject="scripts/lint_self_consistency.py",
     selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
     mutations=(
+        Mutation(
+            # #2182: rails-stack's setup/rails.md declares that its ${CLAUDE_PLUGIN_ROOT} is rails-flow's.
+            "a declared plugin root is ignored, so a file another plugin runs is checked against the wrong plugin",
+            "        if owning_plugin is not None and declared and (ROOT / \"plugins\" / declared.group(1)).is_dir():\n",
+            "        if False:\n",
+            "broken-doc-pointer / a declared root resolves the pointer against that plugin",
+        ),
         # #1109. Six hook_* guards went INERT at once because a driven hook gained a script
         # dependency nothing declared -- the unmutated selftest already failed in the staged
         # tempdir, so every mutation read as caught, and dev's full sweep was red for an hour.

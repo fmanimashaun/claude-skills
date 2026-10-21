@@ -1,0 +1,8 @@
+{
+  "name": "nextjs-stack",
+  "description": "Next.js + Supabase + Vercel stack, 0.1.0, an early release: conventions for how the three fit together, and the stack's markers for the stack detector. feature/fix/review still lean on the Rails-flavoured agents. Platform knowledge stays in Vercel's official plugin (vercel-plugin) and Supabase's supabase/agent-skills, which it points to rather than copies.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Fisayo Animashaun"
+  }
+}

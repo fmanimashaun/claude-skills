@@ -51,6 +51,7 @@ FENCE = re.compile(r"^[ \t]*```[ \t]*(bash|sh|shell|console|shell-session)[^\n]*
 # anyone executes; a command quoted in a 2026-07 entry describes what was true then, so a syntax
 # error there is not a defect anyone should "fix" by rewriting history. A gate that fails for a
 # reason nobody may act on is a gate people learn to skip.
+# rails-stack's skills/ and setup/ live under plugins/rails-stack/ since #2182, so plugins covers them.
 DEFAULT_ROOTS = ["plugins", ".claude", "docs", "CLAUDE.md", "README.md"]
 
 # A fence inside a blockquote (`> ```bash`) is still shipped shell — CHANGELOG.md quotes one, and

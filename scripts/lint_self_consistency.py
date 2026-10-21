@@ -2425,6 +2425,7 @@ def check_non_hermetic_fixture_git() -> tuple[list[Finding], int]:
 # packaging's binary detection: "never an extension allowlist, which fails open on the first type
 # nobody added". A dot-extension still keeps globs and bare directories out, which is all the
 # allowlist was ever doing.
+_DECLARED_PLUGIN_ROOT = re.compile(r"`\$\{CLAUDE_PLUGIN_ROOT\}` below is \*\*([a-z][a-z0-9-]*)'s\*\* plugin root")
 _PLUGIN_ROOT_POINTER = re.compile(
     r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9._/-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+)")
 _SKILL_POINTER = re.compile(
@@ -2462,6 +2463,12 @@ def check_doc_pointers() -> tuple[list[Finding], int]:
         # describing a plugin's script, a skill quoting a command) it is prose about a variable,
         # not a path this linter can resolve -- and guessing an owner would invent findings.
         owning_plugin = ROOT / parts[0] / parts[1] if len(parts) >= 2 and parts[0] == "plugins" else None
+        # A file another plugin's command runs declares whose root the variable is (#2182: rails-stack's
+        # setup/rails.md is run by rails-flow's setup-flow, so its scripts are rails-flow's). The pointers
+        # are then checked against THAT plugin, so a wrong one is still a finding.
+        declared = _DECLARED_PLUGIN_ROOT.search(body)
+        if owning_plugin is not None and declared and (ROOT / "plugins" / declared.group(1)).is_dir():
+            owning_plugin = ROOT / "plugins" / declared.group(1)
         if owning_plugin is not None:
             for match in _PLUGIN_ROOT_POINTER.finditer(body):
                 examined += 1
@@ -6542,6 +6549,17 @@ def selftest() -> int:
              files={"plugins/rails-flow/commands/setup-flow.md":
                     "Read `${CLAUDE_PLUGIN_ROOT}/reference/agent-instruction-conventions.md`.\n",
                     "plugins/rails-flow/reference/agent-instruction-conventions.md": "# rationale\n"})
+    # #2182: a file in one plugin that another plugin's command runs may declare whose root the variable is.
+    DECL = "`${CLAUDE_PLUGIN_ROOT}` below is **rails-flow's** plugin root.\n\n"
+    scenario("a declared root resolves the pointer against that plugin", rule=P, expect_finding=False,
+             files={"plugins/rails-stack/setup/rails.md": DECL + "Run `${CLAUDE_PLUGIN_ROOT}/scripts/x.py`.\n",
+                    "plugins/rails-flow/scripts/x.py": "pass\n"})
+    scenario("...and a pointer missing from the declared plugin is still a finding", rule=P, expect_finding=True,
+             files={"plugins/rails-stack/setup/rails.md": DECL + "Run `${CLAUDE_PLUGIN_ROOT}/scripts/gone.py`.\n",
+                    "plugins/rails-flow/scripts/x.py": "pass\n"})
+    scenario("...and with no declaration it resolves against the file's own plugin", rule=P, expect_finding=True,
+             files={"plugins/rails-stack/setup/rails.md": "Run `${CLAUDE_PLUGIN_ROOT}/scripts/x.py`.\n",
+                    "plugins/rails-flow/scripts/x.py": "pass\n"})
     scenario("command points at a skill doc that was renamed away", rule=P, expect_finding=True,
              files={"plugins/rails-flow/commands/setup-flow.md":
                     "Before writing Ruby read `plugins/rails-stack/skills/rails-8/references/style.md`.\n"})

@@ -255,6 +255,7 @@ def check_block(code: str, lang: str) -> tuple[str | None, str]:
 # purpose — an append-only history, not instructions anyone runs. Kept in step with the shell
 # linter deliberately; two linters over different halves of the same corpus is a coverage gap
 # waiting to be discovered by whichever file lands in the half nobody scans.
+# rails-stack's skills/ and setup/ live under plugins/rails-stack/ since #2182, so plugins covers them.
 DEFAULT_ROOTS = ["plugins", ".claude", "docs", "CLAUDE.md", "README.md"]
 
 # A fenced block inside a blockquote is still shipped code; the `^[ \t]*` fence anchor cannot
