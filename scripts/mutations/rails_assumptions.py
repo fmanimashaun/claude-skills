@@ -104,5 +104,11 @@ GUARD = Guard(
             "        if False:",
             "a binary file is skipped",
         ),
+        Mutation(
+            "Rails idioms named without the word Rails (`Current.*`, `perform`, `form_with`) are invisible to the scan again",
+            '            r"\\bCurrent\\.(?:\\*|[a-z_]\\w*)|`perform`|',
+            '            r"\\bNEVER_MATCHES_ANYTHING_X\\b|',
+            "`Current.*` and Current.account are Rails idioms",
+        ),
     ),
 )

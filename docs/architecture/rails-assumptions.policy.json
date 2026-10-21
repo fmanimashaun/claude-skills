@@ -458,26 +458,8 @@
   "sections": [
    {
     "lines": [
-     29,
-     176
-    ],
-    "assumes": "diagnoses a CLAUDE.md against the Gemfile, the Rails generator and the Ruby/Rails version; inspects Gemfile, config/application.rb, db/schema.rb and app/ shape; §0 names Rails once, as the example of a stack plugin's project-setup doc, and once to say it is never a fallback",
-    "disposition": "detector",
-    "how": "reads the facts from the detector's descriptor (stack names, versions, directory shape) instead of opening a Gemfile"
-   },
-   {
-    "lines": [
-     177,
-     316
-    ],
-    "assumes": "the CLAUDE.md template: a Rails/Hotwire/Solid Queue/Kamal stack line, the Rails command list (rspec, rubocop, brakeman, bundler-audit), the simple_form forms rule, the bundler.lock preflight line; reads the rails-8 skill's style reference before writing Ruby",
-    "disposition": "detector",
-    "how": "the stack line, command list and forms rule are filled from the stack descriptor; the Rails text becomes the rails-stack template"
-   },
-   {
-    "lines": [
-     317,
-     540
+     308,
+     531
     ],
     "assumes": "path-scoped rules over app/models/**/*.rb and **/*.rb, config/database.yml as the database marker, config/ci.rb and bin/ci, and the one RAILS_ENV=test bin/rails command guard-bash allows",
     "disposition": "detector",
@@ -485,8 +467,8 @@
    },
    {
     "lines": [
-     541,
-     770
+     532,
+     760
     ],
     "assumes": "companion workflows: bundle exec rspec, rubocop, bundler-audit, brakeman, the architecture graph over routes/app/db, derived docs over db/schema.rb and Gemfile.lock, the help registry rake task",
     "disposition": "detector",
@@ -494,8 +476,8 @@
    },
    {
     "lines": [
-     771,
-     1011
+     761,
+     1001
     ],
     "assumes": "what stays of §8 after the Rails-only repairs moved: the CI economy section's 'the Rails 8 default' ci.yml and `bin/ci`, the doctrine gate's Brakeman and 'no Ruby' wording",
     "disposition": "reword",

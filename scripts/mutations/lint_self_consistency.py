@@ -1505,7 +1505,26 @@ GUARD = Guard(
             "the preflight block losing one of its rules stops being a finding",
             '        for needle, what in _PREFLIGHT_NEEDLES:\n',
             "        for needle, what in ():\n",
-            "a preflight block that lost the held-lock check",
+            "a preflight block that lost the load check",
+        ),
+        Mutation(
+            # #2196: the stack's half of the preflight lives in its setup section; losing a check there is the same defect.
+            "a stack section's preflight losing a check stops being a finding",
+            "        for needle, what in _STACK_PREFLIGHT_NEEDLES.get(stack, ()):\n",
+            "        for needle, what in ():\n",
+            "the Rails section's preflight lost the held-lock check",
+        ),
+        Mutation(
+            "a stack section with no CLAUDE.md facts preflight stops being a finding",
+            '        if "## CLAUDE.md facts" not in body or part is None:\n',
+            "        if False:\n",
+            "a stack with no needle list still needs a CLAUDE.md facts preflight",
+        ),
+        Mutation(
+            "the held-lock check counts anywhere in the section, not only in its preflight part",
+            '        part = re.search(r"### Test-run preflight\\n(.*?)(?:\\n#{2,3} |\\Z)", body, re.S)\n',
+            '        part = re.search(r"### Test-run preflight\\n(.*)", body, re.S)\n',
+            "the held-lock check outside the preflight part does not count",
         ),
         Mutation(
             "a second conditional block stops being a finding",

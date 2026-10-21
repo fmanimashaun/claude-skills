@@ -2766,8 +2766,26 @@ SETUP_FLOW_TEMPLATE = "plugins/rails-flow/commands/setup-flow.md"
 _EMIT_IF = re.compile(r"<!--\s*emit-if:\s*database\s*-->\n(.*?)<!--\s*/emit-if\s*-->\n?", re.S)
 # What the preflight block has to say, and the words that prove it says it (#1561): the issue's five rules, each by a phrase a
 # reviewer would look for. A block that lost one of them is a template whose advice quietly got shorter.
-_PREFLIGHT_NEEDLES = (("pg_isready", "the database check"), ("spec path", "the spec-path check"), ("bundler.lock", "the held-lock check"),
+_PREFLIGHT_NEEDLES = (("stack's preflight checks", "the stack's own checks"), ("test path", "the test-path check"),
                       ("uptime", "the load check"), ("swap hooks or config", "the no-swap-mid-sweep rule"), ("Advice, not enforced", "its label as advice"))
+# THE STACK'S HALF OF THE PREFLIGHT (#2196). The template names no stack, so a stack's own checks live in its setup section's
+# `### Test-run preflight`. A section that lost one is advice that quietly got shorter, the same defect, one file over.
+_STACK_PREFLIGHT_NEEDLES = {"rails": (("pg_isready", "the database check"), ("bundler.lock", "the held-lock check"))}
+
+
+def stack_setup_sections() -> list[tuple[str, Path]]:
+    """(stack id, setup section) for every stack a shipped `stacks.json` gives one: the repo root's and each plugin's."""
+    out = []
+    for manifest in [ROOT / "stacks.json", *sorted((ROOT / "plugins").glob("*/stacks.json"))]:
+        try:
+            stacks = json.loads(manifest.read_text(encoding="utf-8")).get("stacks") or []
+        except (OSError, ValueError, AttributeError):
+            continue
+        for stack in stacks:
+            value = (stack.get("descriptor") or {}).get("setup_section") if isinstance(stack, dict) else None
+            if isinstance(value, str) and value:
+                out.append((str(stack.get("id")), manifest.parent / value))
+    return out
 _GUARDRAILS_NEEDLES = (("placeholder SHA", "the placeholder-SHA rule"), ("git rev-parse HEAD", "the command that replaces it"),
                        ("gh pr ready", "the `gh pr ready` rule"), ("&&", "chaining it to the sweep with `&&`"))
 
@@ -2813,6 +2831,20 @@ def check_setup_flow_preflight() -> tuple[list[Finding], int]:
     for needle, what in _GUARDRAILS_NEEDLES:
         if guardrails is None or needle not in guardrails.group(1):
             bad(f"the GUARDRAILS.md section lost {what} (no `{needle}`)")
+    sections = stack_setup_sections()
+    if not sections:
+        bad("no shipped stack names a setup section, so no stack's preflight checks reach the template")
+    for stack, section in sections:
+        rel = section.relative_to(ROOT) if section.is_relative_to(ROOT) else section
+        body = read(section) if section.is_file() else ""
+        part = re.search(r"### Test-run preflight\n(.*?)(?:\n#{2,3} |\Z)", body, re.S)
+        preflight = part.group(1) if part is not None else ""    # read once, so a missing part is a finding, never an AttributeError
+        if "## CLAUDE.md facts" not in body or part is None:
+            bad(f"{rel}: stack {stack!r} has no `## CLAUDE.md facts` with a `### Test-run preflight`, so the template's preflight is empty for it")
+            continue
+        for needle, what in _STACK_PREFLIGHT_NEEDLES.get(stack, ()):
+            if needle not in preflight:
+                bad(f"{rel}: stack {stack!r}'s test-run preflight lost {what} (no `{needle}`)")
     see_also = re.search(r"## See Also\n(.*?)```", text, re.S)
     if see_also is None or "/rails-flow:handoff" not in see_also.group(1):
         bad("the template's See Also line no longer points at `/rails-flow:handoff`")
@@ -4905,21 +4937,29 @@ def selftest() -> int:
 
     # -- setup-flow-preflight ---------------------------------------------
     SP = "setup-flow-preflight"
-    def _setup_flow(*, wrap=True, block=None, guard=None, handoff=True, extra="", second_block=False):
+    _RAILS_SECTION = "# Rails\n## CLAUDE.md facts\n### Test-run preflight\n`pg_isready`; no held `bundler.lock`.\n## Next\n"
+
+    def _setup_flow(*, wrap=True, block=None, guard=None, handoff=True, extra="", second_block=False, rails_section=_RAILS_SECTION, stack_id="rails"):
         """A minimal setup-flow.md carrying everything the rule reads; each scenario breaks exactly one piece."""
-        body = block if block is not None else ("## Test-run preflight\npg_isready; every spec path; no held bundler.lock; uptime; "
+        body = block if block is not None else ("## Test-run preflight\nthe stack's preflight checks pass; every test path; uptime; "
                                                 "never swap hooks or config mid-sweep. Advice, not enforced.\n")
         open_, close = ("<!-- emit-if: database -->\n", "<!-- /emit-if -->\n") if wrap else ("", "")
         git = guard if guard is not None else "Git: never report a placeholder SHA, run `git rev-parse HEAD`; `run_sweep && gh pr ready`, never `;`.\n"
         see = "GUARDRAILS.md" + (" · `/rails-flow:handoff`" if handoff else "")
         return {SETUP_FLOW_TEMPLATE: ("# /rails-flow:setup-flow\n## 2. CLAUDE.md\n```markdown\n# CLAUDE.md\n" + open_ + body + close
                                       + (open_ + "## Another\n" + close if second_block else "")
-                                      + "## See Also\n" + see + "\n```\n## 3. Create `GUARDRAILS.md`\n" + git + "\n## 4. Seed the memory system\n" + extra)}
+                                      + "## See Also\n" + see + "\n```\n## 3. Create `GUARDRAILS.md`\n" + git + "\n## 4. Seed the memory system\n" + extra),
+                "stacks.json": json.dumps({"plugin": "rails-stack", "stacks": [{"id": stack_id, "descriptor": {"setup_section": "setup/rails.md"}}]}),
+                "setup/rails.md": rails_section}
     spf = lambda label, files, expect: scenario(label, rule=SP, expect_finding=expect, files=files, only=check_setup_flow_preflight)
     spf("CONTROL: a template with the conditional preflight, both git rules and the pointer is silent", _setup_flow(), False)
     spf("a preflight written into EVERY project, with no condition around it", _setup_flow(wrap=False), True)
-    spf("a conditional block that is not the preflight, so a project with a database gets none", _setup_flow(block="## Something else\npg_isready; spec path; bundler.lock; uptime; swap hooks or config. Advice, not enforced.\n"), True)
-    spf("a preflight block that lost the held-lock check", _setup_flow(block="## Test-run preflight\npg_isready; spec path; uptime; swap hooks or config. Advice, not enforced.\n"), True)
+    spf("a conditional block that is not the preflight, so a project with a database gets none", _setup_flow(block="## Something else\nthe stack's preflight checks; test path; uptime; swap hooks or config. Advice, not enforced.\n"), True)
+    spf("a preflight block that lost the load check", _setup_flow(block="## Test-run preflight\nthe stack's preflight checks; test path; swap hooks or config. Advice, not enforced.\n"), True)
+    spf("the Rails section's preflight lost the held-lock check", _setup_flow(rails_section="## CLAUDE.md facts\n### Test-run preflight\n`pg_isready`.\n"), True)
+    spf("the Rails section has no CLAUDE.md facts preflight", _setup_flow(rails_section="# Rails\n## Something\n`pg_isready`; `bundler.lock`.\n"), True)
+    spf("a stack with no needle list still needs a CLAUDE.md facts preflight", _setup_flow(stack_id="go", rails_section="# Go\n## Something\n"), True)
+    spf("the held-lock check outside the preflight part does not count", _setup_flow(rails_section="## CLAUDE.md facts\n### Test-run preflight\n`pg_isready`.\n### loop.md checks\nbundler.lock\n"), True)
     spf("two conditional blocks where the template promises one", _setup_flow(second_block=True), True)
     spf("a GUARDRAILS section with no placeholder-SHA rule", _setup_flow(guard="Git: `git rev-parse HEAD`; `run_sweep && gh pr ready`.\n"), True)
     spf("a GUARDRAILS section that chains `gh pr ready` with nothing", _setup_flow(guard="Git: placeholder SHA, `git rev-parse HEAD`; gh pr ready after the sweep.\n"), True)
