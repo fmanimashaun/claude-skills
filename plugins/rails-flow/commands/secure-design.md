@@ -58,6 +58,8 @@ Exit 1 names the row: a missing section, a decision outside the four, an `accept
 
 - Each `mitigate` row becomes an acceptance criterion in the next step (`/rails-flow:feature`'s criteria), tagged `[security]` and citing the row's ID in its citation slot, `(TM-1)` or `covers: TM-1` at the end of the criterion. The ID is the row's own `ID` cell and never changes. Write them as given-when-then like any other. `check_criteria.py` refuses a `mitigate` row no criterion cites.
 - Commit the model with the unit. It is a living document: a later change to the same boundary edits it in the same PR.
+- The model is part of the unit's plan: a security boundary always makes the plan advisory REQUIRED (#2262), and the model is
+  one of the files `advisory_scope.py` hashes, so the `plan-advisor` pass in `/rails-flow:feature` Phase 1 reviews it with the criteria.
 
 ## What follows (not built by this command)
 

@@ -637,6 +637,49 @@ def stop_gate_fixtures() -> None:
     # The criteria pass here (the later exit 2 is the no-spec rule), so the note can only come from the success path.
     check("stop-gate: criteria that pass with no threat model still say the security check was skipped (#2213)",
           "security check skipped" in out and "acceptance criteria do not hold" not in out, f"exit {code}: {out.strip()[:300]!r}")
+    # THE PLAN ADVISORY (#2262): criteria naming a security boundary owe a recorded plan-advisor pass, so the gate blocks without one.
+    def advisory_scenario(record: str | None, plugin_root: Path | None = None) -> tuple[int, str]:
+        with scratch_dir() as td:
+            repo = Path(td) / "repo"
+            _git_repo(repo)
+            _run(["git", "checkout", "-q", "-b", "feature/widgets"], cwd=repo, check=True, capture_output=True)
+            (repo / "spec").mkdir()
+            (repo / "app").mkdir()
+            (repo / "app" / "widget.rb").write_text("class Widget; end\n")
+            acc = repo / "docs/product/acceptance/widgets.md"
+            acc.parent.mkdir(parents=True)
+            acc.write_text("- **AC-1** Given a partner, when it posts to the webhook, then the widget is saved.\n"
+                           "- **AC-2** Given a bad signature, when the partner posts to the webhook, then it is rejected with an error message.\n")
+            # A threat model with a threat row confirms the boundary (plan-advisor A-2): an `accept` row, so no [security] criterion is owed.
+            tm = repo / "docs/security/threat-models/widgets.md"
+            tm.parent.mkdir(parents=True)
+            tm.write_text("# T\n## What we are building\nA partner webhook.\n## Trust boundaries\n- partner -> app: the callback body\n"
+                          "## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n"
+                          "| TM-1 | Replayed callback | R | webhook | accept | the save is idempotent, a replay changes nothing |\n"
+                          "## Security requirements\n- treat a replayed callback as a no-op\n")
+            if record is not None:
+                env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+                _run([sys.executable, str(HOOKS.parents[1] / "scripts" / "advisory_scope.py"), "--begin", "--slug", "widgets", "--root", str(repo)],
+                     check=True, capture_output=True, env=env)
+                rec = repo / "docs/evidence/reviews/plans/widgets/plan-advisor.md"
+                rec.write_text(rec.read_text() + record)
+            stubs = Path(td) / "bin"
+            stubs.mkdir()
+            _stub(stubs, "bundle", passing)
+            return run_hook("stop-gate.sh", cwd=repo, stdin="{}", path_prefix=[stubs],
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(plugin_root or HOOKS.parents[1])})
+
+    with scratch_dir() as broken:
+        (Path(broken) / "scripts").mkdir()
+        code, out = advisory_scenario(None, Path(broken))
+    check("stop-gate: a plugin root missing advisory_scope.py fails closed, never a silent skip (#2267 review)",
+          code == 2 and "advisory_scope.py is missing" in out, f"exit {code}: {out.strip()[:240]!r}")
+    code, out = advisory_scenario(None)
+    check("stop-gate: a plan with a threat model and no plan-advisor record blocks (#2262)",
+          code == 2 and "plan advisory is owed" in out, f"exit {code}: {out.strip()[:240]!r}")
+    code, out = advisory_scenario("- A-1 trusts the body\nVERDICT: PROCEED\nDisposition A-1: accepted | verify the signature before parsing\n")
+    check("stop-gate: a disposed plan-advisor record lets the plan through (#2262)",
+          "plan advisory is owed" not in out, f"exit {code}: {out.strip()[:240]!r}")
     code, out = paths_scenario("docs/acceptance/widgets.md")
     check("stop-gate: criteria at the pre-layout docs/acceptance/<slug>.md still count",
           "no acceptance criteria" not in out, f"exit {code}: {out.strip()[:200]!r}")
@@ -649,6 +692,39 @@ def stop_gate_fixtures() -> None:
 
 
 # ---- guard-lane.sh (#823) -----------------------------------------------------------------------
+def guard_plan_fixtures() -> None:
+    """guard-plan.sh (#2262, plan-advisor A-1 on #2267): a build edit waits for a required plan-advisor pass; docs/ stays free."""
+    def scenario(path: str, branch: str = "feature/widgets", record: str | None = None) -> tuple[int, str]:
+        with scratch_dir() as td:
+            repo = Path(td) / "repo"
+            _git_repo(repo)
+            _run(["git", "checkout", "-q", "-b", branch], cwd=repo, check=True, capture_output=True)
+            acc = repo / "docs/product/acceptance/widgets.md"
+            acc.parent.mkdir(parents=True)
+            acc.write_text("- **AC-1** Given a partner, when it posts to the webhook, then the widget is saved.\n")
+            tm = repo / "docs/security/threat-models/widgets.md"
+            tm.parent.mkdir(parents=True)
+            tm.write_text("## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n"
+                          "| TM-1 | Forged callback | S | webhook | mitigate | signature checked |\n")
+            if record is not None:
+                _run([sys.executable, str(HOOKS.parents[1] / "scripts" / "advisory_scope.py"), "--begin", "--slug", "widgets", "--root", str(repo)],
+                     check=True, capture_output=True)
+                rec = repo / "docs/evidence/reviews/plans/widgets/plan-advisor.md"
+                rec.write_text(rec.read_text() + record)
+            payload = json.dumps({"tool_input": {"file_path": str(repo / path)}})
+            return run_hook("guard-plan.sh", cwd=repo, stdin=payload,
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1]), "CLAUDE_PROJECT_DIR": str(repo)})
+
+    code, out = scenario("app/models/widget.rb")
+    check("guard-plan: a build edit while the plan owes a plan-advisor pass is blocked", code == 2 and "plan guard" in out, f"exit {code}: {out.strip()[:200]!r}")
+    code, out = scenario("docs/evidence/reviews/plans/widgets/plan-advisor.md")
+    check("guard-plan: writing under docs/ (the plan and its record) stays allowed", code == 0, f"exit {code}: {out.strip()[:200]!r}")
+    code, out = scenario("app/models/widget.rb", branch="chore/widgets")  # its slug has a plan, so only the branch rule allows it
+    check("guard-plan: a branch outside the flow is not judged", code == 0, f"exit {code}: {out.strip()[:200]!r}")
+    code, out = scenario("app/models/widget.rb", record="- A-1 trusts the body\nVERDICT: PROCEED\nDisposition A-1: accepted | verify the signature before parsing\n")
+    check("guard-plan: once the pass is recorded and disposed, the build edit is allowed", code == 0, f"exit {code}: {out.strip()[:200]!r}")
+
+
 def guard_lane_fixtures() -> None:
     def write(path: str, lane: str | None) -> tuple[int, str]:
         with scratch_dir() as td:
@@ -6647,7 +6723,7 @@ def normalizer_linear_fixtures() -> None:
 
 
 GROUPS = {
-    "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
+    "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures, "guard_plan": guard_plan_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
     "guard_bash_db_reset": guard_bash_db_reset_fixtures,
@@ -6680,7 +6756,7 @@ GROUPS = {
 # killed before printing. MEASURED alone on an origin/dev export: guard_bash 196 s wall (137 CPU-s), the rest of part a 273 s (115 CPU-s,
 # 623 checks). guard_bash is its own part so each fits its budget; no budget was raised.
 PARTS = {
-    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash_db_reset", "guard_claims", "guard_claims_pipe",
+    "a": ["stop_gate", "guard_lane", "guard_plan", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash_db_reset", "guard_claims", "guard_claims_pipe",
           "ci_verdict_hint", "session_end", "timeout", "hostile_env"],
     "b": ["release_gate", "release_gate_effects", "release_gate_large"],
     "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",

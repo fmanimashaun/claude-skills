@@ -16,7 +16,8 @@ GUARD = Guard(
     # Staged exactly as hook_guard_bash stages it, and in full even though `--only guard_bash_db_reset` drives one hook: the harness resolves every hook from
     # the selftest's own location, and `lint_self_consistency`'s harness-dependency-undeclared refuses a guard on this harness that lists fewer (a trimmed
     # list was tried and refused).
-    needs=("plugins/rails-flow/scripts/fixture_git.py", 
+    needs=("plugins/rails-flow/scripts/advisory_scope.py", "plugins/rails-flow/scripts/security_scope.py", "plugins/rails-flow/scripts/check_threat_model.py", "plugins/rails-flow/scripts/detect_stack.py",  # stop-gate.sh runs advisory_scope.py (#2262)
+           "plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # session-start.sh runs all three (#1581, #1828: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            'plugins/rails-flow/hooks/scripts', 'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
