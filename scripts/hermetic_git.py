@@ -47,7 +47,6 @@ def env(base: Mapping[str, str] | None = None) -> dict[str, str]:
     out = {k: v for k, v in (os.environ if base is None else base).items() if k not in REPO_LOCATORS}
     if "PATH" in out:
         out["PATH"] = without_shim(out["PATH"])
-    out["GIT_CONFIG_NOSYSTEM"] = "1"   # #2208: the machine's system config (Homebrew's core.hooksPath) is not a fixture's
     count = out.get("GIT_CONFIG_COUNT", "")
     # git's rules, not Python's int(): empty means none, ASCII digits are a count, and anything else
     # (`-1`, `abc`, ` 2 `) git itself rejects -- so leave such an environment exactly as it is rather
@@ -59,4 +58,7 @@ def env(base: Mapping[str, str] | None = None) -> dict[str, str]:
         out[f"GIT_CONFIG_KEY_{i}"] = key
         out[f"GIT_CONFIG_VALUE_{i}"] = value
     out["GIT_CONFIG_COUNT"] = str(start + len(SETTINGS))
+    # #2208: the machine's system config (Homebrew's core.hooksPath) is not a fixture's. Set only on the path that repairs the environment:
+    # a count git rejects is left exactly as it was (#1510), and an environment git refuses runs no hook anyway.
+    out["GIT_CONFIG_NOSYSTEM"] = "1"
     return out
