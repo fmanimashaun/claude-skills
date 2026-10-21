@@ -9,7 +9,7 @@ GUARD = Guard(
     subject="scripts/check_mockup_gate.py",
     selftest="scripts/check_mockup_gate.py",   # --selftest lives in the module itself
     # The selftest also reads the scaffolded opt-out from setup-flow.md (#1496 review R8).
-    needs=("scripts/fixture_git.py", "scripts/classify_door.py", "commands/setup-flow.md", "reference/mockup-vocabulary.json", "scripts/mockup_records.py"),
+    needs=("scripts/fixture_git.py", "scripts/classify_door.py", "commands/setup-flow.md", "reference/mockup-vocabulary.json", "scripts/mockup_records.py", "scripts/detect_stack.py"),
     mutations=(
         Mutation(
             "a UI change with no record passes",
@@ -32,8 +32,8 @@ GUARD = Guard(
         # Its control: a JSON template is an API contract, not a screen.
         Mutation(
             "API templates are held as if they were screens",
-            "or not NOT_UI.search(p)",
-            "or True",
+            "or not any(r.search(path) for r in scope.not_paths))",
+            "or True)",
             "CONTROL: a JSON template is read by a client, not seen",
         ),
         Mutation(
@@ -82,8 +82,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the PWA manifest is dropped as an API template",
-            "                  and (SEEN_ANYWAY.match(p) or not NOT_UI.search(p)))",
-            "                  and not NOT_UI.search(p))",
+            "            and (any(r.search(path) for r in scope.seen_anyway) or not any(r.search(path) for r in scope.not_paths)))",
+            "            and not any(r.search(path) for r in scope.not_paths))",
             "the PWA manifest is UI scope although it is JSON",
         ),
         Mutation(
@@ -716,7 +716,7 @@ GUARD = Guard(
         ),
         Mutation(
             'any file is a story',
-            '    if not (STORY_FILE.search(story) or ui_paths([story])):',
+            '    if not (STORY_FILE.search(story) or ui_paths([story], stack_scopes(root)[0])):',
             '    if False:',
             'a backend file is no story',
         ),
@@ -743,6 +743,90 @@ GUARD = Guard(
             'sorted(p for p in changed if p.startswith(RECORD_DIR) and p.endswith(".md")',
             'sorted(p for p in changed + [x.relative_to(root).as_posix() for x in (root / RECORD_DIR).glob("*.md")] if p.startswith(RECORD_DIR) and p.endswith(".md")',
             'an invalid record already on the base is left alone when the branch changes a different record',
+        ),
+        Mutation(
+            "a stack's not_paths are ignored",
+            '            and (any(r.search(path) for r in scope.seen_anyway) or not any(r.search(path) for r in scope.not_paths)))',
+            '            )',
+            'its paths, not_paths and seen_anyway decide',
+        ),
+        Mutation(
+            'seen_anyway no longer overrides not_paths',
+            '            and (any(r.search(path) for r in scope.seen_anyway) or not',
+            '            and (False or not',
+            'its paths, not_paths and seen_anyway decide',
+        ),
+        Mutation(
+            'a file must be user-visible to EVERY stack',
+            '    return sorted(p for p in paths if any(scope_says(s, p) for s in scopes))',
+            '    return sorted(p for p in paths if all(scope_says(s, p) for s in scopes))',
+            'two detected stacks are a union',
+        ),
+        Mutation(
+            "one stack's not_paths bind every stack's paths",
+            '    return sorted(p for p in paths if any(scope_says(s, p) for s in scopes))',
+            '    return sorted(p for p in paths if any(scope_says(s, p) for s in scopes) and not any(r.search(p) for s in scopes for r in s.not_paths))',
+            'two detected stacks are a union',
+        ),
+        Mutation(
+            'the fallback is silent',
+            '    return (scopes, []) if scopes else ([FALLBACK_SCOPE], [FALLBACK_NOTE])',
+            '    return (scopes, []) if scopes else ([FALLBACK_SCOPE], [])',
+            'no detected stack: the built-in fallback, with the exact loud line',
+        ),
+        Mutation(
+            'a detector that cannot judge falls back without saying why',
+            '        return [FALLBACK_SCOPE], [f"stack not judged (',
+            '        return [FALLBACK_SCOPE], [] and [f"stack not judged (',
+            'a detector that cannot judge falls back and says why',
+        ),
+        Mutation(
+            'a detector problem is ignored',
+            '    if code == 2:\n        return [FALLBACK_SCOPE]',
+            '    if False:\n        return [FALLBACK_SCOPE]',
+            'a detector that cannot judge falls back and says why',
+        ),
+        Mutation(
+            "the selftest's fixture plugins are never used for a Story",
+            '    dirs = dirs if dirs is not None else SCOPE_DIRS\n',
+            '    dirs = dirs\n',
+            'a Story naming a file the stack calls user-visible is accepted',
+        ),
+        Mutation(
+            'a Story is judged by the fallback list, not the stack',
+            'ui_paths([story], stack_scopes(root)[0])',
+            'ui_paths([story])',
+            'a Story naming a file the stack calls user-visible is accepted',
+        ),
+        Mutation(
+            'a wrong case is not a failure',
+            '                if scope_says(mine, c["path"]) != c["ui"]:',
+            '                if False:',
+            'a case the patterns get wrong is a failure naming the path',
+        ),
+        Mutation(
+            'cases with no near miss are accepted',
+            '            if not (any(c["ui"] for c in cases) and any(not c["ui"] for c in cases)):',
+            '            if False:',
+            'cases with no near miss prove nothing and are refused',
+        ),
+        Mutation(
+            'a case row of the wrong shape is accepted',
+            '            if not (isinstance(cases, list) and cases and all(',
+            '            if False and (isinstance(cases, list) and cases and all(',
+            'a case row without a boolean',
+        ),
+        Mutation(
+            'run() drops the fallback note',
+            '    return code, lines + notes',
+            '    return code, lines',
+            'the fallback note is printed even when nothing user-visible changed',
+        ),
+        Mutation(
+            'run() classifies with the fallback whatever the stack says',
+            '    code, lines = _run(root, changed, record, base_has_shell, require_story, scopes)',
+            '    code, lines = _run(root, changed, record, base_has_shell, require_story, [FALLBACK_SCOPE])',
+            'a file the stack calls user-visible holds the change',
         ),
     ),
 )

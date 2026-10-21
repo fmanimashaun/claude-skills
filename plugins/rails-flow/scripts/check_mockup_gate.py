@@ -1557,7 +1557,7 @@ def selftest() -> int:
         web = stackplug("fxa", [{"id": "web", "all": [{"file": "web.marker"}], "descriptor": {"ui_scope": {
             "paths": ["^web/"], "not_paths": ["\\.json$", "^web/api/"], "seen_anyway": ["^web/manifest\\.json$"], "cases": "c.json"}}}])
         oth = stackplug("fxb", [{"id": "other", "all": [{"file": "other.marker"}], "descriptor": {"ui_scope": {"paths": ["^other/"], "cases": "c.json"}}}])
-        bare = stackplug("fxc", [{"id": "bare", "all": [{"file": "bare.marker"}], "descriptor": {"security": {"checklist": "x.md", "scanners": ["x"]}}}])
+        bare = stackplug("fxc", [{"id": "bare", "all": [{"file": "bare.marker"}]}])
         broken = stackplug("fxd", [{"id": "broken", "all": [{"file": "broken.marker"}], "descriptor": {"ui_scope": {"paths": ["("], "cases": "c.json"}}}])
 
         def proj(name: str, *markers: str) -> Path:
@@ -1582,7 +1582,10 @@ def selftest() -> int:
                    scopes == [FALLBACK_SCOPE] and notes == ["no installed stack declares ui_scope: used the built-in Rails-shaped list; install rails-stack or nextjs-stack"], (scopes, notes))
         scopes, notes = stack_scopes(p_bare, [bare])
         check_that("#2219: a detected stack that declares no ui_scope falls back too, with the loud line", scopes == [FALLBACK_SCOPE] and notes == [FALLBACK_NOTE], (scopes, notes))
-        scopes, notes = stack_scopes(p_broken, [broken])
+        try:
+            scopes, notes = stack_scopes(p_broken, [broken])
+        except Exception as exc:                  # a crash is a failed check here, not the end of the selftest
+            scopes, notes = [], [f"crashed: {exc!r}"]
         check_that("#2219: a detector that cannot judge falls back and says why",
                    scopes == [FALLBACK_SCOPE] and len(notes) == 1 and notes[0].startswith("stack not judged") and "does not compile" in notes[0], (scopes, notes))
         code, msg = run(p_web, ["web/a.vue"], None, dirs=[web])
@@ -1613,25 +1616,28 @@ def selftest() -> int:
         finally:
             SCOPE_DIRS = saved_dirs
         # The cases file proves the patterns.
-        failures, rows = ui_scope_case_failures([web])
-        check_that("#2219: a stack whose cases agree with its patterns has no failure", failures == [] and rows == 2, (failures, rows))
+        case_bad, case_rows = ui_scope_case_failures([web])
+        check_that("#2219: a stack whose cases agree with its patterns has no failure", case_bad == [] and case_rows == 2, (case_bad, case_rows))
         wrong = stackplug("fxe", [{"id": "web", "all": [{"file": "web.marker"}], "descriptor": {"ui_scope": {"paths": ["^web/"], "cases": "c.json"}}}],
                           cases=[{"path": "web/a.vue", "ui": True}, {"path": "web/api/x.ts", "ui": False}])
-        failures, _ = ui_scope_case_failures([wrong])
-        check_that("#2219: a case the patterns get wrong is a failure naming the path", len(failures) == 1 and "web/api/x.ts" in failures[0], failures)
+        case_bad, _ = ui_scope_case_failures([wrong])
+        check_that("#2219: a case the patterns get wrong is a failure naming the path", len(case_bad) == 1 and "web/api/x.ts" in case_bad[0], case_bad)
         only_hits = stackplug("fxf", [{"id": "web", "all": [{"file": "web.marker"}], "descriptor": {"ui_scope": {"paths": ["^web/"], "cases": "c.json"}}}],
                               cases=[{"path": "web/a.vue", "ui": True}])
-        failures, _ = ui_scope_case_failures([only_hits])
-        check_that("#2219: cases with no near miss prove nothing and are refused", any("near miss" in f for f in failures), failures)
+        case_bad, _ = ui_scope_case_failures([only_hits])
+        check_that("#2219: cases with no near miss prove nothing and are refused", any("near miss" in f for f in case_bad), case_bad)
         bad_shape = stackplug("fxg", [{"id": "web", "all": [{"file": "web.marker"}], "descriptor": {"ui_scope": {"paths": ["^web/"], "cases": "c.json"}}}], cases=[{"path": "x"}])
-        failures, _ = ui_scope_case_failures([bad_shape])
-        check_that("#2219: a case row without a boolean `ui` is refused", any("must be a non-empty list" in f for f in failures), failures)
+        try:
+            case_bad, _ = ui_scope_case_failures([bad_shape])
+        except Exception as exc:
+            case_bad = [f"crashed: {exc!r}"]
+        check_that("#2219: a case row without a boolean `ui` is refused", any("must be a non-empty list" in f for f in case_bad), case_bad)
         # The REAL stacks' cases, when the stack plugins sit beside this one (a guard that stages this gate alone has none, and says so).
         real = _ds.manifest_dirs(here)
-        failures, rows = ui_scope_case_failures(real)
-        check_that("#2219: every installed stack's own cases agree with its patterns", failures == [], failures)
-        if rows:
-            check_that("#2219: the real stacks' cases were actually read", rows >= 20, rows)
+        case_bad, case_rows = ui_scope_case_failures(real)
+        check_that("#2219: every installed stack's own cases agree with its patterns", case_bad == [], case_bad)
+        if case_rows:
+            check_that("#2219: the real stacks' cases were actually read", case_rows >= 20, case_rows)
 
     # #2226: an invalid record already on the base is left alone when the branch changes a different record (history is never re-judged).
     with tempfile.TemporaryDirectory() as tmp:
