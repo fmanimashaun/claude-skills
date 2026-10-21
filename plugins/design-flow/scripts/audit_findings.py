@@ -39,6 +39,8 @@ Exit: 0 every finding is well-formed · 1 a finding is refused · 2 the file is 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import re
 import sys
@@ -373,7 +375,8 @@ def selftest() -> int:
                                                  "source": "WCAG 2.4.1", "rule": "skip link"}]}))
         cases.append(("a registry whose authority disagrees with its basis is refused", _raises(lambda: load_registry(forged))))
         try:
-            main(["check", str(forged), "--registry", str(forged)])
+            with contextlib.redirect_stderr(io.StringIO()):  # argparse prints its refusal; the test wants only the exit
+                main(["check", str(forged), "--registry", str(forged)])
             cli_has_registry_option = True
         except SystemExit:
             cli_has_registry_option = False
