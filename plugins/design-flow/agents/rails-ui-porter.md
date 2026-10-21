@@ -1,5 +1,5 @@
 ---
-name: design-porter
+name: rails-ui-porter
 description: >
   Ports a Claude Design output — React/JSX/TSX, or a `<x-dc>` canvas export with a `:root` token
   block, inline styles and a CDN font — into a Rails 8 + Hotwire app: faithful to the design AND
@@ -28,7 +28,7 @@ You also need `rails-8` (Ruby/ERB/specs/simple_form) and `hotwire` (Turbo/Stimul
 
 ## What you do, in order
 
-**0. Extract the manifest, and treat it as your checklist.** `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/canvas_manifest.py"
+**0. Extract the manifest, and treat it as your checklist.** `python3 "${CLAUDE_PLUGIN_ROOT}/ui/viewcomponent-erb/scripts/canvas_manifest.py"
 extract <canvas>.dc.html --out docs/design/<surface>/<canvas>.manifest.json`. Every item it lists — heading, copy,
 control, repeat, conditional, icon, data label — is something the canvas specifies. You will account for each one
 by id before you say done; an item you decide not to build is `deferred` with a reason the user approved, never

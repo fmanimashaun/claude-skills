@@ -10,8 +10,8 @@ from mutation_types import Guard, Mutation  # noqa: F401
 # given, which is how a checker gets switched off wholesale.
 GUARD = Guard(
     name="variant_conformance",
-    subject="scripts/variant_conformance.py",
-    selftest="scripts/variant_conformance.py",
+    subject="ui/viewcomponent-erb/scripts/variant_conformance.py",
+    selftest="ui/viewcomponent-erb/scripts/variant_conformance.py",
     # It RUNS the #157 detector rather than reimplementing it, and the detector in turn imports
     # `rendered_conformance` for the shared palette-step definition. Without both, every mutant
     # dies at import and reads as "caught" by a traceback instead of by the fixture named below.

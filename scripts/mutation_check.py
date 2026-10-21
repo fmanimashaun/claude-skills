@@ -108,6 +108,10 @@ def discover_all() -> tuple[Guard, ...]:
     found = list(discover(MUTATIONS_DIR))
     for manifest in sorted(REPO.glob("plugins/*/scripts/mutations")):
         found += discover(manifest, base=str(manifest.relative_to(REPO).parents[1]))
+    # A UI adapter (`plugins/<p>/ui/<implementation>/`, #2178) ships its guards inside the plugin too. Its base is the PLUGIN, not the
+    # adapter: an adapter script reaches the neutral core beside `ui/` (`scripts/`, `brands/`), so the staged tree must keep that shape.
+    for manifest in sorted(REPO.glob("plugins/*/ui/*/scripts/mutations")):
+        found += discover(manifest, base=str(manifest.relative_to(REPO).parents[3]))
     # The "every declared path resolves from its base" invariant lives in the SELFTEST, not here.
     # At import time this module is also loaded inside a STAGED tempdir -- `doctrine_map`'s own
     # selftest copies the repo and re-imports it -- where a file a guard legitimately needs (say
