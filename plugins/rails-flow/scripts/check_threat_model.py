@@ -51,6 +51,11 @@ def _is_filler(cell: str) -> bool:
     return all(w in _FILLER_WORDS for w in re.sub(r"[^\w\s]", " ", cell).lower().split())
 
 
+def _tm_number(rid: str) -> int | None:
+    digits = re.sub(r"\D", "", rid)
+    return int(digits) if digits else None
+
+
 def _uncommented(text: str) -> str:
     """Comments removed; an unclosed `<!--` runs to the end of the file, as it does when rendered."""
     return re.sub(r"<!--.*?(?:-->|\Z)", "", text, flags=re.S)
@@ -103,6 +108,8 @@ def check(text: str) -> tuple[list[str], int]:
             bullets = [ln.lstrip("-* ").strip() for ln in lines if ln[:1] in "-*" and len(ln) > 1]
             if not [b for b in bullets if not _is_filler(b)]:
                 findings.append(f"section `## {s}` needs at least one `-` bullet with content")
+    if len(re.findall(r"^##\s+Threats\s*$", _uncommented(text), re.M)) > 1:
+        findings.append("`## Threats` appears more than once: one table, or a reader sees only the first")
     m = re.search(r"^##\s+Threats\s*$(.*?)(?=^##\s|\Z)", _uncommented(text), re.M | re.S)
     rows = 0
     if m:
@@ -112,7 +119,7 @@ def check(text: str) -> tuple[list[str], int]:
         if [h.lower() for h in header[:6]] != want:
             findings.append("`## Threats` table needs the columns ID | Threat | STRIDE | Component | Decision | Reason")
         else:
-            ids: set[str] = set()
+            ids: set[int] = set()
             for ln in lines[1:]:
                 cells = _cells(ln)
                 if all(set(c) <= set("-: ") for c in cells):
@@ -125,10 +132,10 @@ def check(text: str) -> tuple[list[str], int]:
                     findings.append(f"{label}: template placeholder `{ph}` left in a cell")
                 if not ID_RE.fullmatch(rid):
                     findings.append(f"{label}: the ID must look like TM-1, got `{rid}`")
-                elif rid.upper() in ids:
+                elif _tm_number(rid) in ids:  # TM-1 and TM-01 are one number, so one citation would cover both (#2213 adversary)
                     findings.append(f"{label}: the ID {rid} is already used by another row")
                 else:
-                    ids.add(rid.upper())
+                    ids.add(_tm_number(rid))
                 if not threat or _is_filler(threat):
                     findings.append(f"{label}: no threat named")
                 if not component or _is_filler(component):
@@ -188,6 +195,8 @@ A webhook.
         ("the template's own placeholder in a cell is found", ok.replace("signature checked", "<control, or why the risk stays>"), 1, "left in a cell"),
         ("an unclosed comment hides the rest", ok.replace("## Threats", "<!-- draft\n## Threats"), 2, ""),
         ("a heading inside a comment is missing", ok.replace("## Security requirements\n- verify the signature", "<!--\n## Security requirements\n- verify the signature\n-->"), 1, "missing section `## Security requirements`"),
+        ("TM-1 and TM-01 are the same ID", ok.replace("| TM-4 |", "| TM-01 |"), 1, "already used"),
+        ("a second Threats section is found", ok + "## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-9 | x | S | y | mitigate | z |\n", 1, "appears more than once"),
         ("a table with no rows is unusable, not clean", ok.split("|---|---|---|---|---|")[0] + "|---|---|---|---|---|---|\n## Security requirements\n- x\n", 2, ""),
     ]
     bad = 0

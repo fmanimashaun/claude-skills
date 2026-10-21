@@ -154,13 +154,32 @@ class Criterion:
         return rest.strip(" ,.;:`*")
 
 
+def _blank_hidden_blocks(text: str) -> str:
+    """HTML comments (multi-line, or unclosed to the end) and fenced code blocks blanked, line count kept, so a criterion inside one
+    is not live (#2213 adversary). Line-based parsing could not see either."""
+    text = re.sub(r"<!--.*?(?:-->|\Z)", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.S)
+    out, fence = [], ""
+    for line in text.split("\n"):
+        mark = re.match(r"\s{0,3}(`{3,}|~{3,})", line)
+        if fence:
+            if mark and mark.group(1)[0] == fence[0] and len(mark.group(1)) >= len(fence):
+                fence = ""
+            out.append("")
+        elif mark:
+            fence = mark.group(1)
+            out.append("")
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
 def parse(path: Path) -> list[Criterion]:
     if not path.is_file():
         raise Unusable(f"no such file: {path}")
 
     unit = ""
     out: list[Criterion] = []
-    for line_no, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for line_no, raw in enumerate(_blank_hidden_blocks(path.read_text(encoding="utf-8")).splitlines(), start=1):
         heading = UNIT_RE.match(raw)
         if heading:
             unit = heading.group(1)
@@ -334,6 +353,16 @@ def where_of(c: Criterion) -> str:
     return f"{c.cid} (line {c.line_no})"
 
 
+def default_threat_model(criteria_path: Path) -> tuple[Path | None, str]:
+    """`docs/security/threat-models/<slug>.md` at the repository root above the criteria file (the first directory holding `.git`),
+    wherever under the tree the criteria sit; `(None, why)` when there is no repository root."""
+    start = criteria_path.resolve().parent
+    for d in (start, *start.parents):
+        if (d / ".git").exists():
+            return d / "docs" / "security" / "threat-models" / criteria_path.name, ""
+    return None, f"no repository root (a directory holding .git) above {criteria_path}, so no default threat model"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Validate acceptance criteria, and that specs cite them."
@@ -345,7 +374,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--threat-model", metavar="FILE",
-        help="the unit's threat model; default docs/security/threat-models/<slug>.md beside docs/product/acceptance/<slug>.md when it exists",
+        help="the unit's threat model; default docs/security/threat-models/<slug>.md at the repository root above the criteria file; a missing default is reported as a skipped check",
     )
     parser.add_argument("--selftest", action="store_true", help="prove the rules fire AND stay silent")
     args = parser.parse_args(argv)
@@ -365,13 +394,24 @@ def main(argv: list[str] | None = None) -> int:
         print(f"UNUSABLE: {exc}", file=sys.stderr)
         return 2
 
-    model = Path(args.threat_model) if args.threat_model else Path(args.criteria_path).resolve().parent.parent.parent / "security" / "threat-models" / Path(args.criteria_path).name
+    if args.threat_model:
+        model, why = Path(args.threat_model), ""
+    else:
+        model, why = default_threat_model(Path(args.criteria_path))
     rows: list[tuple[int, str, str]] = []
-    if model.is_file():
+    if model is not None and model.is_file():
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import check_threat_model as tm
 
-        rows = tm.threat_rows(model.read_text(encoding="utf-8"))
+        model_text = model.read_text(encoding="utf-8")
+        rows = tm.threat_rows(model_text)
+        # threat_rows skips a row it cannot read; a skipped row would drop its requirement silently, so any table finding refuses (#2213 adversary).
+        table_findings = [f for f in tm.check(model_text)[0] if f.startswith(("threat row", "`## Threats`"))]
+        if rows and table_findings:
+            print(f"UNUSABLE: {model} has threat rows this check cannot trust -- fix them first:", file=sys.stderr)
+            for f in table_findings:
+                print(f"  - {f}", file=sys.stderr)
+            return 2
         if not rows:
             print(f"UNUSABLE: {model} exists but has no readable `## Threats` table (ID | Threat | STRIDE | Component | Decision | Reason) -- "
                   "an unreadable model is not a clean one", file=sys.stderr)
@@ -379,6 +419,11 @@ def main(argv: list[str] | None = None) -> int:
     elif args.threat_model:
         print(f"UNUSABLE: no such threat model: {model}", file=sys.stderr)
         return 2
+    else:
+        # Said out loud (#2213 review): a silent skip reads as "no security criteria owed" when the model was simply not found.
+        others = sorted(p.name for p in model.parent.glob("*.md")) if model is not None and model.parent.is_dir() else []
+        hint = f" ({len(others)} other model(s) there: {', '.join(others[:5])}; is one this unit's?)" if others else ""
+        print(f"security check skipped: {why or f'no threat model at {model}'}{hint}; pass --threat-model FILE if the unit has one", file=sys.stderr)
     findings = check(criteria, Path(args.specs) if args.specs else None, rows)
 
     if findings:

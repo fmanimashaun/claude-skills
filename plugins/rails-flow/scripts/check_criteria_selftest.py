@@ -350,6 +350,54 @@ def run() -> int:
         got = cc.main([str(d / "ac.md"), "--threat-model", str(d / mf)])
         if got != 2:
             FAILURES.append(f"{label}: expected exit 2, got {got}")
+    # The default model is found from the repository root, wherever the criteria file sits (#2213 review), and a miss is said.
+    import contextlib, io
+    repo = Path(_t.mkdtemp(prefix="railsflow-repo-"))
+    (repo / ".git").mkdir()
+    deep = repo / "docs" / "product" / "acceptance" / "2026"
+    deep.mkdir(parents=True)
+    (deep / "unit.md").write_text(GOOD, encoding="utf-8")
+    (repo / "docs" / "security" / "threat-models").mkdir(parents=True)
+    (repo / "docs" / "security" / "threat-models" / "unit.md").write_text(
+        "## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-1 | Forged | S | hook | mitigate | sig |\n", encoding="utf-8")
+    (deep / "other.md").write_text(GOOD, encoding="utf-8")
+    for label, name, want, needle in (
+            ("a criteria file deeper than docs/product/acceptance still finds its model at the repo root", "unit.md", 1, ""),
+            ("no model found says the security check was skipped", "other.md", 0, "security check skipped"),
+            ("a skip names the other models in the directory", "other.md", 0, "1 other model(s) there: unit.md")):
+        _tick()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            got = cc.main([str(deep / name)])
+        if got != want or needle not in err.getvalue():
+            FAILURES.append(f"{label}: expected exit {want} naming {needle!r}, got {got}: {err.getvalue()[:200]}")
+    # A row the reader cannot parse refuses the model instead of dropping its requirement (#2213 adversary).
+    head = "## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-1 | Forged | S | hook | mitigate | sig |\n"
+    for label, row in (("a bolded ID", "| **TM-3** | Leak | I | log | mitigate | filter |"),
+                       ("a suffixed ID", "| TM-3a | Leak | I | log | mitigate | filter |"),
+                       ("a Cyrillic ID", "| \u0422\u041c-3 | Leak | I | log | mitigate | filter |"),
+                       ("a non-breaking hyphen ID", "| TM\u20113 | Leak | I | log | mitigate | filter |"),
+                       ("a blank ID", "|  | Leak | I | log | mitigate | filter |"),
+                       ("a bolded decision", "| TM-3 | Leak | I | log | **mitigate** | filter |"),
+                       ("a past-tense decision", "| TM-3 | Leak | I | log | Mitigated | filter |"),
+                       ("a qualified decision", "| TM-3 | Leak | I | log | mitigate (partial) | filter |"),
+                       ("a blank decision", "| TM-3 | Leak | I | log |  | filter |")):
+        _tick()
+        mf = d / "malformed.md"
+        mf.write_text(head + row + "\n", encoding="utf-8")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            got = cc.main([str(d / "ac.md"), "--threat-model", str(mf)])
+        if got != 2 or "cannot trust" not in err.getvalue():
+            FAILURES.append(f"a model row with {label} is refused, not dropped: expected exit 2, got {got}: {err.getvalue()[:200]}")
+    # A criterion inside a multi-line comment or a fenced block is not live, so it cites nothing (#2213 adversary).
+    ac2 = "- **AC-2** Given a signed callback, when the log is written, then the body is filtered from the log line [security] covers: TM-3\n"
+    sec_check("a criterion inside a multi-line comment does not cite", sec.replace(ac2, "<!--\n" + ac2 + "-->\n"), rows, "TM-3")
+    sec_check("a criterion inside an unclosed comment does not cite", sec.replace(ac2, "<!-- draft\n" + ac2), rows, "TM-3")
+    sec_check("a criterion inside a backtick fence does not cite", sec.replace(ac2, "```\n" + ac2 + "```\n"), rows, "TM-3")
+    sec_check("a criterion inside a tilde fence does not cite", sec.replace(ac2, "~~~md\n" + ac2 + "~~~\n"), rows, "TM-3")
+    sec_check("a tag inside a code span is not a tag", sec.replace("[security] (TM-1)", "`[security]` (TM-1)"), rows, "TM-1")
+    sec_check("a criterion after a closed fence still cites", sec.replace(ac2, "```\nx\n```\n" + ac2), rows, None)
     sec_check("a model with only accept rows asks for nothing", GOOD, [(1, "Replay", "accept")], None)
     sec_check("no model, no security rule", GOOD, [], None)
 
