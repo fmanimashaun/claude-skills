@@ -131,7 +131,8 @@ hypothesis that turned out to be the cause, so the next reader learns it.
 1. BRANCH:    git checkout <base> && git pull && git checkout -b fix/<phase-or-slug>
 1b. MOCK-UP:  a fix that changes what a user sees waits for an approved mock-up (#1376):
               check_mockup_gate.py --paths <files the fix will touch>; exit 1 → the mock-up
-              gate in /rails-flow:feature Phase 1 (build, publish, STOP for approval, record)
+              gate in /rails-flow:feature Phase 1 (build it inside the app's shell, publish, STOP for
+              approval, record; no recorded shell yet: the first change is the shell, #2211)
 2. IMPLEMENT: the loop above, one issue per commit; the spec that FAILS without the fix comes first (#1858). Run it on the pre-fix tree (RED), then
               with the fix (GREEN), and record both under `## Red/green proof` in the PR body. A project with a QA catalogue also adds or updates the
               manual case that proves the fix, with the issue in its Source (owner rule, #1853; reference/case-per-change.md); delegate big items to the `developer` role,

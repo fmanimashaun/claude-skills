@@ -15,8 +15,8 @@
   },
   "plugins": {
     "design-flow": {
-      "chars": 4435,
-      "est_tokens": 1478
+      "chars": 4476,
+      "est_tokens": 1492
     },
     "flow-suite": {
       "chars": 0,

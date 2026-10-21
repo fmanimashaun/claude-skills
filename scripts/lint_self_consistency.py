@@ -48,8 +48,9 @@ WHAT IT CHECKS
                               or one is missing -- qa-reporter runs its own copy (#1680)
   vendored-copy-drift         a file rails-stack vendors from rails-flow (triage_failures.py, dev_baseline.py,
                               agent-output-contract.md) differs from its canonical copy, or one is missing (#2173)
-  detect-stack-drift          the two shipped copies of scripts/detect_stack.py (rails-flow, pipeline) differ,
-                              or one is missing -- pipeline's deploy_target.py imports its own copy (#2179)
+  detect-stack-drift          the three shipped copies of scripts/detect_stack.py (rails-flow, pipeline, design-flow)
+                              differ, or one is missing -- pipeline's deploy_target.py and design-flow's ui_adapter.py
+                              import their own copy (#2179, #2185)
   cross-plugin-relative-path  shipped markdown that runs `../<other-plugin>/...`, which resolves in the
                               clone and not in an install's per-plugin cache directories (#1680)
   fixture-git-bypass          a git call with the fixture identity (`t@t`) outside fixture_git -- a fixture's git
@@ -879,8 +880,11 @@ def check_vendored_copy_drift() -> tuple[list[Finding], int]:
 # detector, which rails-flow owns. A plugin installs alone and cannot import another's code, so pipeline ships a copy and
 # `deploy_target.py` imports it (the sibling-plugin discovery is the detector's own, called once, not a third copy of it).
 # A fix to the detector that misses the copy would route a deploy by a stale reading of the descriptor.
+# design-flow's `ui_adapter.py` (#2185) reads the project's `descriptor.ui` through the same kind of copy: a stale one rejected the current
+# rails-stack manifest and made every project unresolvable, with nothing to say so.
 DETECT_STACK_COPIES = ("plugins/rails-flow/scripts/detect_stack.py",
-                       "plugins/pipeline/scripts/detect_stack.py")
+                       "plugins/pipeline/scripts/detect_stack.py",
+                       "plugins/design-flow/scripts/detect_stack.py")
 
 
 def check_detect_stack_drift() -> tuple[list[Finding], int]:
@@ -891,7 +895,7 @@ def check_detect_stack_drift() -> tuple[list[Finding], int]:
         p = ROOT / rel
         if not p.is_file():
             findings.append(Finding("detect-stack-drift", rel, 0,
-                                    "missing -- pipeline's deploy_target.py has no detector to import (#2179); "
+                                    "missing -- the plugin's own script that imports or runs it has no detector (#2179, #2185); "
                                     "copy it from plugins/rails-flow/scripts/detect_stack.py"))
             continue
         texts[rel] = p.read_bytes()
@@ -899,7 +903,7 @@ def check_detect_stack_drift() -> tuple[list[Finding], int]:
     for rel in DETECT_STACK_COPIES[1:]:
         if canonical is not None and texts.get(rel, canonical) != canonical:
             findings.append(Finding("detect-stack-drift", rel, 0,
-                                    f"differs from {DETECT_STACK_COPIES[0]} -- one stack detector, two copies: a deploy "
+                                    f"differs from {DETECT_STACK_COPIES[0]} -- one stack detector, several copies: a deploy "
                                     "would be routed by a different reading of the descriptors than every other flow's. "
                                     "Copy the canonical file over it (cp) and re-run"))
     return findings, len(DETECT_STACK_COPIES)
@@ -3601,9 +3605,9 @@ def check_ui_adapter_unresolved() -> tuple[list[Finding], int]:
                 continue
             try:
                 spec = json.loads(read(adapter))
-            except json.JSONDecodeError as exc:
+            except (OSError, json.JSONDecodeError) as exc:
                 findings.append(Finding("ui-adapter-unresolved", adapter.relative_to(ROOT).as_posix(), 1,
-                                        f"adapter.json is not valid JSON: {exc}"))
+                                        f"adapter.json cannot be read as JSON: {exc}"))
                 continue
             arel = adapter.relative_to(ROOT).as_posix()
             if spec.get("id") != impl:
@@ -3633,6 +3637,17 @@ def check_ui_adapter_unresolved() -> tuple[list[Finding], int]:
                     findings.append(Finding(
                         "ui-adapter-unresolved", arel, 1,
                         f"adapter check {check_id!r} is not an id in plugins/design-flow/checks.json."))
+    # A command that dispatches through `ui_adapter.py` reads `<adapter>/<command>.md` (#2185): an adapter without that file leaves the command
+    # telling an agent to read a file that is not there.
+    dispatching = sorted(c.stem for c in (ROOT / "plugins/design-flow/commands").glob("*.md") if "scripts/ui_adapter.py" in read(c)) \
+        if (ROOT / "plugins/design-flow/commands").is_dir() else []
+    for adapter in sorted((ROOT / "plugins/design-flow/ui").glob("*/adapter.json")):
+        examined += 1
+        for command in dispatching:
+            if not (adapter.parent / f"{command}.md").is_file():
+                findings.append(Finding(
+                    "ui-adapter-unresolved", adapter.relative_to(ROOT).as_posix(), 1,
+                    f"the command /design-flow:{command} dispatches through ui_adapter.py and reads {adapter.parent.name}/{command}.md, which does not exist."))
     return findings, examined
 
 
@@ -4696,7 +4711,7 @@ def selftest() -> int:
     checks = 0
 
     def scenario(label: str, files: dict[str, str], *, rule: str, expect_finding: bool, only=None,
-                 line: int | None = None) -> None:
+                 line: int | None = None, says: str | None = None) -> None:
         # `only`: one rule's check, instead of every rule over the fixture tree. `run()` is ~0.2s a
         # scenario, and this module is its own mutation guard's selftest -- run once per mutation.
         nonlocal checks
@@ -4719,6 +4734,8 @@ def selftest() -> int:
             want = "a finding" if expect_finding else "silence"
             detail = "; ".join(str(f) for f in got) or "(none)"
             failures.append(f"{rule} / {label}: expected {want}, got {detail}")
+        elif says is not None and got and not any(says in str(f) for f in got):
+            failures.append(f"{rule} / {label}: expected a finding saying {says!r}, got " + "; ".join(str(f) for f in got))
 
     # -- clone-shaped-doctrine-path (#777) --------------------------------
     CSD = "clone-shaped-doctrine-path"
@@ -5150,7 +5167,7 @@ def selftest() -> int:
               "plugins/design-flow/agents/rails-ui-porter.md": "---\nname: rails-ui-porter\n---\n",
               "plugins/design-flow/checks.json": '{"checks":[{"id":"token-drift"}]}'}
     scenario("a descriptor whose ui.implementation has no adapter.json", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
-             files={"plugins/rails-stack/stacks.json": UAU_STACKS})
+             says="does not exist", files={"plugins/rails-stack/stacks.json": UAU_STACKS})
     scenario("...an adapter naming an agent that does not exist", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
              files={k: v for k, v in UAU_OK.items() if not k.endswith("rails-ui-porter.md")})
     scenario("...a descriptor porter that disagrees with the adapter", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
@@ -5161,6 +5178,11 @@ def selftest() -> int:
              files={**UAU_OK, "plugins/design-flow/checks.json": '{"checks":[]}'})
     scenario("...silent when the adapter, its agent and its checks all resolve", rule=UAU, expect_finding=False, only=check_ui_adapter_unresolved,
              files=UAU_OK)
+    UAU_CMD = {"plugins/design-flow/commands/port.md": "Run `python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/ui_adapter.py\"` and read <dir>/port.md.\n"}
+    scenario("a dispatching command whose adapter ships no procedure file for it", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
+             files={**UAU_OK, **UAU_CMD})
+    scenario("...silent once the adapter ships it", rule=UAU, expect_finding=False, only=check_ui_adapter_unresolved,
+             files={**UAU_OK, **UAU_CMD, "plugins/design-flow/ui/viewcomponent-erb/port.md": "# port\n"})
     scenario("...silent on a stack with no ui block", rule=UAU, expect_finding=False, only=check_ui_adapter_unresolved,
              files={"plugins/x-stack/stacks.json": '{"stacks":[{"id":"x","descriptor":{}}]}'})
 
@@ -5906,8 +5928,10 @@ def selftest() -> int:
     scenario("identical detect_stack copies are silent", rule="detect-stack-drift", expect_finding=False,
              files={c: DS for c in DETECT_STACK_COPIES}, only=check_detect_stack_drift)
     scenario("a detect_stack copy that differs by one byte is a finding", rule="detect-stack-drift",
-             expect_finding=True, files={DETECT_STACK_COPIES[0]: DS, DETECT_STACK_COPIES[1]: DS + "\n"},
-             only=check_detect_stack_drift)
+             expect_finding=True, says="differs from",   # every copy present, so only the compare branch can fire (a missing one would also be a finding)
+             files={**{c: DS for c in DETECT_STACK_COPIES}, DETECT_STACK_COPIES[1]: DS + "\n"}, only=check_detect_stack_drift)
+    scenario("a stale design-flow detect_stack copy is a finding", rule="detect-stack-drift", expect_finding=True, says="differs from",
+             files={**{c: DS for c in DETECT_STACK_COPIES}, DETECT_STACK_COPIES[2]: DS + "\n"}, only=check_detect_stack_drift)
     scenario("a missing pipeline detect_stack is a finding", rule="detect-stack-drift", expect_finding=True,
              files={DETECT_STACK_COPIES[0]: DS}, only=check_detect_stack_drift)
     XP = "cross-plugin-relative-path"

@@ -1,15 +1,26 @@
 ---
-description: Scaffold Hotwire Native parity (Phase 2) into a Rails 8 + Hotwire app — native-app detection + body flags, JSON path configuration, bridge components (button/menu/tab-bar), safe-area + min-h-touch wiring, and table->summary cards. Reuses the existing design system; the native shells stay in their own repos.
+description: Scaffold native-shell parity (Phase 2) into the app through its UI adapter — native-app detection + body flags, JSON path configuration, bridge components, safe-area + min-h-touch wiring, and table->summary cards. Reuses the existing design system; the native shells stay in their own repos.
 argument-hint: "[surface: ios | android | both]"
 disable-model-invocation: true
 ---
 
 # /design-flow:mobile — $ARGUMENTS
 
-Add the **web side** of Hotwire Native parity so the same UI runs in the native shells with
-correct chrome. Delegate to **rails-ui-composer**; follow rails-stack's `skills/design-system/references/mobile.md`
-(doctrine) + `mobile-reference-implementation.md` (code). This is Phase 2 — web is already done;
-this does NOT modify any native app repo (Kotlin/Swift shells live there).
+Add the **web side** of native-shell parity so the same UI runs in the native shells with correct chrome. This is Phase 2 — web is
+already done; this does NOT modify any native app repo (Kotlin/Swift shells live there).
+
+## Which stack renders this
+
+Native parity is built from the stack's own mechanisms, so it is the adapter's. Resolve it from the project's stack descriptor:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ui_adapter.py"
+```
+
+It prints JSON: `dir` (the adapter directory) and `agents.composer`. **Exit 2 means it cannot say** (no recognised stack, or a stack whose
+adapter ships no `mobile.md`): quote its message and stop; never fall back to another stack. Read **`<dir>/mobile.md`**, follow its scaffold,
+and delegate to the **`design-flow:<agents.composer>`** agent. Doctrine: rails-stack's `skills/design-system/references/mobile.md`;
+code: `mobile-reference-implementation.md`.
 
 ## Preconditions
 
@@ -20,36 +31,18 @@ this one, and no `plugin.json` can declare that — there is no `requires` field
 this command's own agents call that doctrine *"the law"*, and improvising it is how a scaffold invents
 tokens and components that no gate will recognise (#513).
 
-A Rails 8 + Hotwire app already set up with `/design-flow:setup` (tokens, primitives,
-components). `$ARGUMENTS` = which native surface(s) to configure paths for (`ios | android |
-both`; default `both`). Idempotent; marker-guarded; stage only files you author.
-
-## Scaffold (per mobile-reference-implementation.md)
-
-1. **Native detection** — a `NativeApp` controller concern (`native_app?` from the UA) + set
-   `body.mobile-app` and the `turbo-native:tabs` meta in the layout; hide web-only chrome
-   (`[data-web-chrome]`) under `.mobile-app`.
-2. **Path configuration** — routes + JSON views (`/configurations/ios`, `/configurations/android`)
-   mapping URL patterns to native presentation (modal for `new`/`edit`, default + pull-to-refresh
-   otherwise). Keep iOS/Android parallel.
-3. **Bridge components** — `app/javascript/bridge/`: base usage + `button` (nav-bar action) and
-   `menu` (action sheet) controllers extending `BridgeComponent`, wired as **progressive
-   enhancement** (the web control works without the shell). Plus the native tab-bar config.
-4. **Safe-area + touch** — apply `pt-safe`/`pb-safe`/… to fixed chrome and `min-h-touch` (44px)
-   to every interactive control.
-5. **Table → summary cards** — below 768px render each row as a designed summary card (name,
-   reference, status; 2–3 facts; one action and a chevron), per the design-system skill's
-   `mobile-reference-implementation.md` §5. No horizontal scroll at any width.
+The app is already set up with `/design-flow:setup` (tokens, primitives, components). `$ARGUMENTS` = which native surface(s) to
+configure paths for (`ios | android | both`; default `both`). Idempotent; marker-guarded; stage only files you author.
 
 ## Guardrails
 
 - **Never gate core functionality on the native app** — bridges only enhance.
-- No mobile token fork — reuse the same `@theme`; the fluid scale handles the viewport.
-- The native shell/UI (Kotlin/Swift) is out of scope — this is the Rails/Hotwire/JS contract
-  the shells consume. Native visual parity comes later via Phase 3 token export.
+- No mobile token fork — reuse the same tokens; the fluid scale handles the viewport.
+- The native shell/UI (Kotlin/Swift) is out of scope — this is the web contract the shells consume. Native visual parity comes later via
+  Phase 3 token export.
 
 ## Report
 
 Files created (concern, path configs, bridge controllers, updated layout), the surfaces
-configured, and a reminder to verify the bridges in a real Hotwire Native build (this scaffolds
+configured, and a reminder to verify the bridges in a real native-shell build (this scaffolds
 the web contract; the native side is exercised in the app repos).

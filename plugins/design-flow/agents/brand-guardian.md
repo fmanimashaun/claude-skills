@@ -46,8 +46,8 @@ there for the rest of the session** — it is charged on every later request, no
 `reference/agent-output-contract.md`.
 
 ```
-OFF-BRAND  app/views/marketing/_hero.html.erb:8 — logo below the 24px clear-space floor
-OFF-BRAND  app/components/ui/badge_component.rb:12 — brand colour hardcoded; use `accent`
+OFF-BRAND  src/marketing/hero.html:8 — logo below the 24px clear-space floor
+OFF-BRAND  src/components/ui/badge:12 — brand colour hardcoded; use `accent`
 2 findings across the marketing surfaces.
 ```
 

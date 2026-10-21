@@ -1,13 +1,7 @@
 ---
 name: interface-auditor
 description: >
-  Audits a RUNNING app's screens against the interface architecture framework (shell, navigation,
-  page templates, regions, the state contract, the cross-cutting contracts): drives a browser,
-  measures each screen with a collector, and hands the measurements to scripts that decide. Every
-  finding names its rule id, and its authority (a standard, or a house rule) is computed from the
-  rule's basis, never written by the auditor. Ranked by script. Proposes improvements as a mock-up
-  first, never as code. Use via /design-flow:interface-audit. Complements design-auditor, which
-  reads source files.
+  Audits a running app against the interface architecture rules. Use via /design-flow:interface-audit.
 tools: Read, Grep, Glob, Write, Bash, Skill
 model: inherit
 ---
@@ -82,3 +76,11 @@ carry `unverified`; the judges and `from-judge` and `merge` set them.
 - edit the app, or write a finding you did not measure;
 - turn a count into a verdict ("the nav is confusing"): that is a judgement rule with no channel yet;
 - report a page you did not reach (a redirect to sign-in is a skipped page, and the judge counts it).
+
+## Output
+
+Write everything to `docs/evidence/design/<date>-interface-audit/` (`snapshots.json`, `findings.json`,
+`report.md`, the screenshots) and **return only**: the directory path, the findings count by authority
+(standard / house rule), the top three ranked findings as one line each (`rank, rule, screen`), and
+the list of rules not audited as a count. Never paste the report back: the parent reads `report.md`
+if it needs the detail.

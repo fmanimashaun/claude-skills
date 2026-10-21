@@ -1,5 +1,6 @@
 ---
-description: Audit a running app's screens against the interface architecture framework (shell, navigation, state contract, cross-cutting contracts). Every finding cites its rule and authority; ranked; improvements proposed as a mock-up first.
+description: Audit a running app's screens against the interface architecture rules; findings cite rule and authority.
+disable-model-invocation: true
 argument-hint: "<app url> [routes or screens to audit; default: the app's own navigation]"
 ---
 

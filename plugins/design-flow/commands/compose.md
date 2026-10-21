@@ -74,7 +74,7 @@ tool that dropped one to satisfy a count would be making it.
 
 The catalogue carries **one** structured band sequence — *"How a page is paced"* — and that block
 scopes itself in its own words: *"6–8 bands sit between the marketing header and the footer, **for a
-product landing page**."* Pricing, About, Error and Auth are prose and ERB with **no band table at
+product landing page**."* Pricing, About, Error and Auth are prose and markup with **no band table at
 all**.
 
 So every surface composes from the landing spine. That is the best available answer; **saying so is
@@ -83,7 +83,7 @@ elsewhere now opens with it:
 
 > **Composed from _How a page is paced — the product-landing spine_, which is borrowed here.** The
 > catalogue governs this surface in **§Pricing** of `page-anatomies.md`, and that section carries no
-> band table — it is prose and ERB. […] read §Pricing for what this page actually owes, because this
+> band table — it is prose and markup. […] read §Pricing for what this page actually owes, because this
 > brief does not encode it.
 
 **Band tables are not invented for the other archetypes.** `/design-flow:component` step 1 forbids
