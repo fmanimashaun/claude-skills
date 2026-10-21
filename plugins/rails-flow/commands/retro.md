@@ -10,7 +10,7 @@ says which ones recur, in how many PRs, and which kind of fix each deserves. It 
 
 ## What it reads
 
-`docs/evidence/reviews/**/*findings.jsonl`: the per-PR reviewers (`code-reviewer`, `pr-reviewer`, `spec-reviewer`) write
+`docs/evidence/reviews/**/*findings.jsonl`: the per-PR reviewers (the `reviewer` role, `pr-reviewer`, `spec-reviewer`) write
 `docs/evidence/reviews/prs/<branch-slug>/<agent>-findings.jsonl`, and `/rails-flow:review` writes a dated
 `docs/evidence/reviews/<date>/findings.jsonl`. A **source** is a PR directory or a dated review: a group recurs when its records come from
 `--min-prs` (default 3) or more sources, not when it has many records, because five findings in one review are one review's thoroughness,

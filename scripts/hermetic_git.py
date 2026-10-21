@@ -58,4 +58,7 @@ def env(base: Mapping[str, str] | None = None) -> dict[str, str]:
         out[f"GIT_CONFIG_KEY_{i}"] = key
         out[f"GIT_CONFIG_VALUE_{i}"] = value
     out["GIT_CONFIG_COUNT"] = str(start + len(SETTINGS))
+    # #2208: the machine's system config (Homebrew's core.hooksPath) is not a fixture's. Set only on the path that repairs the environment:
+    # a count git rejects is left exactly as it was (#1510), and an environment git refuses runs no hook anyway.
+    out["GIT_CONFIG_NOSYSTEM"] = "1"
     return out

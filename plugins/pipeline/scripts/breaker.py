@@ -11,7 +11,7 @@ Run:  python3 breaker.py start  --stages verify,certify,release
 WHY (#128, the `comp:pipeline` half). rails-flow's half shipped stop conditions inside the work
 order `/rails-flow:handoff` writes, enforced by `check_handoff.py`. Pipeline has no work order: it
 runs a **gated chain of stages**, sometimes unattended ("run the whole pipeline"), and its most
-autonomous agent -- `kamal-configurator`, whose blast radius is a production environment -- was
+autonomous agent -- the stack's deploy agent (e.g. rails-stack's `kamal-configurator`), whose blast radius is a production environment -- was
 told to *"troubleshoot autonomously"* and *"re-run idempotently"* with no bound of any kind. Each
 plugin resolves its own `${CLAUDE_PLUGIN_ROOT}`, so pipeline cannot borrow rails-flow's checker; it
 needs its own, and the shape is different because the failure is different.
