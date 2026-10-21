@@ -73,7 +73,7 @@
  },
  {
   "path": "app/api/hello/page.tsx",
-  "ui": false
+  "ui": true
  },
  {
   "path": "lib/db.ts",
@@ -117,6 +117,10 @@
  },
  {
   "path": "app/views/a.html.erb",
+  "ui": false
+ },
+ {
+  "path": "app/api/hello/route.tsx",
   "ui": false
  }
 ]

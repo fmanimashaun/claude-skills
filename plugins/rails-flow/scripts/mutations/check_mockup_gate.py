@@ -716,7 +716,7 @@ GUARD = Guard(
         ),
         Mutation(
             'any file is a story',
-            '    if not (STORY_FILE.search(story) or ui_paths([story], stack_scopes(root)[0])):',
+            '    if not (STORY_FILE.search(story) or ui_paths([story], scopes if scopes is not None else stack_scopes(root)[0])):',
             '    if False:',
             'a backend file is no story',
         ),
@@ -794,7 +794,7 @@ GUARD = Guard(
         ),
         Mutation(
             'a Story is judged by the fallback list, not the stack',
-            'ui_paths([story], stack_scopes(root)[0])',
+            'ui_paths([story], scopes if scopes is not None else stack_scopes(root)[0])',
             'ui_paths([story])',
             'a Story naming a file the stack calls user-visible is accepted',
         ),
@@ -827,6 +827,18 @@ GUARD = Guard(
             '    code, lines = _run(root, changed, record, base_has_shell, require_story, scopes)',
             '    code, lines = _run(root, changed, record, base_has_shell, require_story, [FALLBACK_SCOPE])',
             'a file the stack calls user-visible holds the change',
+        ),
+        Mutation(
+            "the run's stacks are not given to the Story check",
+            'record_problems(root, r, require_story, scopes)',
+            'record_problems(root, r, require_story)',
+            'through run(dirs=...), Story web/Bell.vue is judged by the same stacks',
+        ),
+        Mutation(
+            'story_problems ignores the scopes it is given',
+            'scopes if scopes is not None else stack_scopes(root)[0]',
+            'stack_scopes(root)[0]',
+            'story_problems takes the scopes it is given',
         ),
     ),
 )

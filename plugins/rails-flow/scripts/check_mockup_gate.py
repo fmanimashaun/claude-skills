@@ -789,7 +789,7 @@ def screen_nav_problems(root: Path, rel: str, fields: dict[str, str], vocab: dic
     return out
 
 
-def story_problems(root: Path, rel: str, fields: dict[str, str]) -> list[str]:
+def story_problems(root: Path, rel: str, fields: dict[str, str], scopes: list[Scope] | None = None) -> list[str]:
     """Pre-merge only: the built screen's `Story:`, a repo path to a story file or a user-visible file. A route cannot be checked here: the stack's
     route list comes with the stack descriptor (#2219), so a project with no Storybook and no view path cannot satisfy this until then."""
     story = fields.get("Story", "")
@@ -800,12 +800,12 @@ def story_problems(root: Path, rel: str, fields: dict[str, str]) -> list[str]:
     target = root / story
     if not target.is_file():
         return [f"{rel}: Story {story!r} is not a file in the repo"]
-    if not (STORY_FILE.search(story) or ui_paths([story], stack_scopes(root)[0])):
+    if not (STORY_FILE.search(story) or ui_paths([story], scopes if scopes is not None else stack_scopes(root)[0])):
         return [f"{rel}: Story {story!r} is neither a story file (*.stories.*) nor a user-visible file the stack's UI paths name"]
     return []
 
 
-def record_problems(root: Path, rel: str, require_story: bool = False) -> list[str]:
+def record_problems(root: Path, rel: str, require_story: bool = False, scopes: list[Scope] | None = None) -> list[str]:
     path = root / rel
     if not path.is_file():
         return [f"{rel}: no such mock-up record"]
@@ -854,7 +854,7 @@ def record_problems(root: Path, rel: str, require_story: bool = False) -> list[s
             out += states_problems(rel, fields, vocab)
             out += screen_nav_problems(root, rel, fields, vocab)
         if require_story:
-            out += story_problems(root, rel, fields)
+            out += story_problems(root, rel, fields, scopes)
         out += shell_reference_problems(root, rel, fields)
     return out
 
@@ -890,7 +890,7 @@ def _run(root: Path, changed: list[str], record: str | None, base_has_shell: boo
         return 1, [f"{len(ui)} user-visible file(s) ({', '.join(ui[:5])}{' …' if len(ui) > 5 else ''}) and no "
                    f"approved mock-up: publish one, stop for the owner's approval, then record it in "
                    f"{RECORD_DIR}<slug>.md"]
-    problems = [p for r in records for p in record_problems(root, r, require_story)]
+    problems = [p for r in records for p in record_problems(root, r, require_story, scopes)]
     if problems:
         return 1, problems
     if ui and base_has_shell and all(r == SHELL_RECORD for r in records):
@@ -1615,6 +1615,32 @@ def selftest() -> int:
                        story_problems(p_web, "r.md", {"Story": "web/Bell.vue"}) != [])
         finally:
             SCOPE_DIRS = saved_dirs
+        # Story and the change's own classification use the SAME stacks: the ones run() was given, not whatever is installed.
+        for name, text in (("shell-a.html", SHELL_A), ("shell-b.html", SHELL_B)):
+            (p_web / "docs/product/mockups").mkdir(parents=True, exist_ok=True)
+            (p_web / "docs/product/mockups" / name).write_text(text)
+        code, msg = adopt_shell(p_web, ["docs/product/mockups/shell-a.html", "docs/product/mockups/shell-b.html"], APPROVAL, "@owner", "#1", "1280, 390", "default")
+        check_that("#2219 CONTROL: the shell is adopted in the fixture project", code == 0, msg)
+        for story, want in (("web/Bell.vue", 0), ("README.md", 1)):
+            (p_web / "docs/product/mockups/x.md").write_text(as_screen(GOOD, "x screen") + f"Story: {story}\n")
+            code, msg = run(p_web, ["web/a.vue", "docs/product/mockups/x.md"], None, require_story=True, dirs=[web])
+            check_that(f"#2219: through run(dirs=...), Story {story} is judged by the same stacks as the change itself (exit {want})", code == want, msg)
+        check_that("#2219: story_problems takes the scopes it is given, not the installed stacks",
+                   story_problems(p_web, "r.md", {"Story": "web/Bell.vue"}, stack_scopes(p_web, [web])[0]) == [])
+        # The REAL Rails and Next.js stacks, detected together (staged alone there are none, so this reads nothing).
+        real_pair = [d for d in _ds.manifest_dirs(here) if d.name in ("rails-stack", "nextjs-stack")]
+        if len(real_pair) == 2:
+            both = proj("real-both", "Gemfile", "package.json")
+            (both / "config").mkdir()
+            (both / "config/application.rb").write_text("")
+            (both / "package.json").write_text('{"dependencies": {"next": "14.0.0"}}')
+            scopes, notes = stack_scopes(both, real_pair)
+            check_that("#2219: a project with a Gemfile and next in package.json detects BOTH real stacks", sorted(s_.label for s_ in scopes) == ["nextjs-stack:nextjs", "rails-stack:rails"] and notes == [], ([s_.label for s_ in scopes], notes))
+            mixed = ["messages/en.json", "app/views/pwa/manifest.json.erb", "app/views/api/x.json.jbuilder", "app/page.tsx", "app/views/a.html.erb",
+                     "app/api/users/route.ts", "components/Nav.test.tsx", "config/routes.rb"]
+            check_that("#2219: with both real stacks, Rails' not_paths do not drop a Next.js messages file, and Next.js' do not drop a Rails .json.erb",
+                       ui_paths(mixed, scopes) == ["app/page.tsx", "app/views/a.html.erb", "app/views/pwa/manifest.json.erb", "messages/en.json"], ui_paths(mixed, scopes))
+
         # The cases file proves the patterns.
         case_bad, case_rows = ui_scope_case_failures([web])
         check_that("#2219: a stack whose cases agree with its patterns has no failure", case_bad == [] and case_rows == 2, (case_bad, case_rows))

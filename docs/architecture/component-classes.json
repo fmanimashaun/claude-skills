@@ -5331,11 +5331,11 @@
   {
    "class": "mixed",
    "issue": 2274,
-   "nextjs_lines": 2,
+   "nextjs_lines": 4,
    "path": "plugins/rails-flow/scripts/check_mockup_gate.py",
    "plugin": "rails-flow",
    "proven": false,
-   "rails_lines": 50,
+   "rails_lines": 58,
    "registered": [],
    "seam": "asks the stack detector (#2163) which paths a person sees: `ui_scope.paths`, `not_paths`, `seen_anyway`",
    "type": "script",
