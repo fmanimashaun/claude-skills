@@ -253,7 +253,10 @@ DESCRIPTOR_SCHEMA: dict = {
     # THE STACK'S SECURITY SURFACE (#2117). The secure-design PROCESS is neutral (when to threat-model, the template, TM-n
     # ids, the audit before ready); what to look for is per stack: its checklist, its scanners, and the spellings in a plan
     # or a planned path that mean a boundary in that stack (security_scope.py reads both).
-    "security": {"checklist": STR, "scanners": STRS, "cases": STR,
+    # code_syntax (#2119): what in this stack's files is not code (a block comment, a heredoc), so a security-review citation
+    # `file:line` can be refused when it points inside one; scoped by extension. syntax_cases proves it.
+    "security": {"checklist": STR, "scanners": STRS, "cases": STR, "syntax_cases": STR,
+                 "code_syntax": [{"extensions": STRS, "block_comments": [{"open": STR, "close": STR}], "heredoc": STR}],
                  "boundary_text": [{"boundary": STR, "pattern": STR}],
                  "boundary_paths": [{"boundary": STR, "pattern": STR}]},
     "scripts": {"*": STR},
@@ -327,7 +330,7 @@ def security_problems(manifest: dict, stack: dict, where: str) -> list[str]:
     if not isinstance(value, dict):
         return []                               # absent, or a shape problem shape_problems already reports
     found = []
-    for key in ("checklist", "cases"):
+    for key in ("checklist", "cases", "syntax_cases"):
         named = value.get(key)
         if isinstance(named, str) and named:
             if escapes(named):
@@ -341,6 +344,12 @@ def security_problems(manifest: dict, stack: dict, where: str) -> list[str]:
                     re.compile(row["pattern"])
                 except re.error as err:
                     found.append(f"{where}.security.{key}[{i}].pattern does not compile: {err}")
+    for i, row in enumerate(value.get("code_syntax") or []):
+        if isinstance(row, dict) and isinstance(row.get("heredoc"), str):
+            try:
+                re.compile(row["heredoc"])
+            except re.error as err:
+                found.append(f"{where}.security.code_syntax[{i}].heredoc does not compile: {err}")
     return found
 
 
