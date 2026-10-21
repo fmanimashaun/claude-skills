@@ -6875,7 +6875,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/agents/kamal-configurator.md",
    "plugin": "rails-stack",
-   "rails_lines": 16,
+   "rails_lines": 17,
    "registered": [],
    "seam": "",
    "type": "agent",

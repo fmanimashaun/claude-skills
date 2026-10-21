@@ -131,7 +131,7 @@ python3 "$APM_ADVISORY" Gemfile.lock
 
 It always exits `0`. Silence means a monitoring gem is present; one `apm advisory:` line means none is, and
 goes into the plan verbatim. It is a reminder, not a precondition: never refuse or delay the deploy on it, and
-never install a gem from here (the install steps live in the `rails-8` skill's `references/observability.md` §7).
+never install a gem from here (the install steps are the developer's: `observability.md` §7 in the Rails 8 doctrine's references).
 
 First deploy → the plan's `setup`; subsequent → its `deploy`. Each carries `-d <destination>`
 when there is one; without it Kamal reads the base config and `.kamal/secrets`. Both need explicit user
