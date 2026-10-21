@@ -184,7 +184,7 @@ CLI vs MCP vs both; one service layer
   testing/annotation/revision details. SDK version this session: NOT established (our file says 1.6.0,
   2026-09-24; not re-verified here).
 
-## Gaps vs skills/rails-8/references/mcp-server.md
+## Gaps vs plugins/rails-stack/skills/rails-8/references/mcp-server.md
 
 Read the file first (96 lines). It is reporting-only, read-only first, #1277. Compared with what was
 verified above:

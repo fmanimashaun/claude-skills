@@ -174,7 +174,7 @@ CONCERN_GLOBS = ("app/models/concerns/**/*.rb",)
 # Rule: scoped-index
 # --------------------------------------------------------------------------
 
-# Doctrine: skills/rails-8/references/auth-security.md:121-122
+# Doctrine: plugins/rails-stack/skills/rails-8/references/auth-security.md:121-122
 #   "# scoping IS authorization for ownership:
 #    def set_project = @project = Current.user.projects.find(params[:id])  # 404s strangers"
 #
@@ -242,8 +242,8 @@ def check_scoped_index(workspace: Path) -> list[Finding]:
 # Rule: simple-form-convention
 # --------------------------------------------------------------------------
 
-# Doctrine: skills/design-system/references/forms.md:3 ("Use `simple_form`")
-#           skills/rails-8/references/ecosystem-gems.md:29
+# Doctrine: plugins/rails-stack/skills/design-system/references/forms.md:3 ("Use `simple_form`")
+#           plugins/rails-stack/skills/rails-8/references/ecosystem-gems.md:29
 #             "| Forms | `form_with` + partials | Dozens of uniform CRUD forms
 #              -> **simple_form** |"
 #
@@ -302,7 +302,7 @@ def check_simple_form_convention(workspace: Path) -> list[Finding]:
 # Rule: no-inline-dark
 # --------------------------------------------------------------------------
 
-# Doctrine: skills/design-system/references/foundations-tokens.md:205
+# Doctrine: plugins/rails-stack/skills/design-system/references/foundations-tokens.md:205
 #   "fidara's role layer needs **zero**: `--primary` is re-pointed once under
 #    `.dark` and every component follows."
 #           foundations-tokens.md:247
@@ -335,7 +335,7 @@ def check_no_inline_dark(workspace: Path) -> list[Finding]:
 # Rule: no-literal-color
 # --------------------------------------------------------------------------
 
-# Doctrine: skills/design-system/references/brand.md:87
+# Doctrine: plugins/rails-stack/skills/design-system/references/brand.md:87
 #   "mark is not themeable. `Ui::Logo` is the only component permitted to carry
 #    literal colors."
 #
@@ -379,7 +379,7 @@ def check_no_literal_color(workspace: Path) -> list[Finding]:
 # Rule: ui-component-present
 # --------------------------------------------------------------------------
 
-# Doctrine: skills/design-system/references/components.md:168
+# Doctrine: plugins/rails-stack/skills/design-system/references/components.md:168
 #   "# app/components/ui/button_component.rb (shape for every catalog component)"
 #
 # A PRECONDITION, NOT A STYLE RULE. no-literal-color and no-inline-dark are
@@ -408,7 +408,7 @@ def check_ui_component_present(workspace: Path) -> list[Finding]:
 # Rule: job-idempotent
 # --------------------------------------------------------------------------
 
-# Doctrine: skills/rails-8/references/jobs-and-realtime.md:176
+# Doctrine: plugins/rails-stack/skills/rails-8/references/jobs-and-realtime.md:176
 #   "- **Idempotent always** -- retries and continuations both re-run code."
 #
 # WHAT THIS RULE DELIBERATELY DOES NOT CHECK
@@ -462,7 +462,7 @@ def check_job_idempotent(workspace: Path) -> list[Finding]:
 # Rule: spec-accompanies-behavior
 # --------------------------------------------------------------------------
 
-# Doctrine: skills/rails-8/SKILL.md -- pure RSpec is a non-negotiable of the
+# Doctrine: plugins/rails-stack/skills/rails-8/SKILL.md -- pure RSpec is a non-negotiable of the
 # stack, and rails-flow's whole premise is spec-proven change. A concern that
 # ships without a spec is behaviour nobody proved.
 
@@ -576,37 +576,37 @@ RULES: dict[str, Rule] = {
     r.name: r
     for r in (
         Rule("stimulus-discipline",
-             "skills/hotwire/references/stimulus.md:314-322",
+             "plugins/rails-stack/skills/hotwire/references/stimulus.md:314-322",
              "a Stimulus controller declares targets and stays out of the document, the "
              "server's markup job, and global lifecycle events",
              check_stimulus_discipline),
         Rule("scoped-index",
-             "skills/rails-8/references/auth-security.md:121",
+             "plugins/rails-stack/skills/rails-8/references/auth-security.md:121",
              "index/collection reads scope through Current, not the global model",
              check_scoped_index),
         Rule("simple-form-convention",
-             "skills/design-system/references/forms.md:3",
+             "plugins/rails-stack/skills/design-system/references/forms.md:3",
              "forms use simple_form_for where the project has adopted it",
              check_simple_form_convention),
         Rule("no-inline-dark",
-             "skills/design-system/references/foundations-tokens.md:247",
+             "plugins/rails-stack/skills/design-system/references/foundations-tokens.md:247",
              "zero inline dark: utilities in components/views",
              check_no_inline_dark),
         Rule("no-literal-color",
-             "skills/design-system/references/brand.md:87",
+             "plugins/rails-stack/skills/design-system/references/brand.md:87",
              "no literal colours outside Ui::Logo",
              check_no_literal_color),
         Rule("ui-component-present",
-             "skills/design-system/references/components.md:168",
+             "plugins/rails-stack/skills/design-system/references/components.md:168",
              "the component was written under app/components/ui/ (precondition for "
              "the absence rules)",
              check_ui_component_present),
         Rule("job-idempotent",
-             "skills/rails-8/references/jobs-and-realtime.md:176",
+             "plugins/rails-stack/skills/rails-8/references/jobs-and-realtime.md:176",
              "jobs guard against re-running (NOT ids-only: doctrine passes records)",
              check_job_idempotent),
         Rule("spec-accompanies-behavior",
-             "skills/rails-8/SKILL.md",
+             "plugins/rails-stack/skills/rails-8/SKILL.md",
              "a concern ships with a spec that proves it",
              check_spec_accompanies_behavior),
     )

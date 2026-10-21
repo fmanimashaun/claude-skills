@@ -24,7 +24,7 @@ row, so address a session exactly as its row prints it:
   {"name": "claude-skills-6b", "state": "busy", "repo": "claude-skills",
    "paths": ["plugins/rails-flow/scripts/session_coordinator.py", "CHANGELOG.md"]},
   {"name": "claude-skills-da", "state": "idle", "repo": "claude-skills",
-   "paths": ["skills/parallel-session-lane/SKILL.md", "CHANGELOG.md"]}
+   "paths": ["plugins/rails-stack/skills/parallel-session-lane/SKILL.md", "CHANGELOG.md"]}
 ]
 ```
 

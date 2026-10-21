@@ -22,7 +22,7 @@
     "real": {
       "label": "rails-stack",
       "plugin_dir": "__staged__",
-      "why": "Staged at run time from skills/{rails-8,hotwire,design-system} plus a plugin.json -- i.e. exactly what `/plugin marketplace add` gives a user, and deliberately NOT this repo's maintainer .claude/, which is not distributed."
+      "why": "Staged at run time from plugins/rails-stack/skills/{rails-8,hotwire,design-system} plus a plugin.json -- i.e. exactly what `/plugin marketplace add` gives a user, and deliberately NOT this repo's maintainer .claude/, which is not distributed."
     }
   },
   "$comment_defaults": [

@@ -9,7 +9,7 @@ tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 model: inherit
 ---
 
-You implement UI to the **design-system** doctrine (`skills/design-system/SKILL.md` +
+You implement UI to the **design-system** doctrine (`plugins/rails-stack/skills/design-system/SKILL.md` +
 references). Read it first; it is the law. You compose — you never invent ad-hoc CSS or
 one-off colors.
 

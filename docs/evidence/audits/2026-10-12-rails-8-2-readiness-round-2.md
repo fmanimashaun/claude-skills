@@ -3,7 +3,7 @@
 Three read-only `doctrine-verifier` runs (A: floors, routing, Active Record, QUERY, `bin/rails query`; B: 8.2 defaults and
 `ActiveJob::Attributes`; C: security recipes, Active Record encryption keys, CHANGELOG-only items, `Rails.app`), all
 against rails/rails `main` at `d05a45b41edf679d2dfba4e40366af80628626ff` and the `v8.1.4` tag / `8-1-stable`. Edits in
-`skills/rails-8/references/rails-8-2-readiness.md` follow CONFIRMED rows only. Rails 8.2 is **unreleased**; every 8.2
+`plugins/rails-stack/skills/rails-8/references/rails-8-2-readiness.md` follow CONFIRMED rows only. Rails 8.2 is **unreleased**; every 8.2
 row is `[On main, unreleased]`. Two rows corrected what the issue implied, and the doctrine states the corrected form:
 B7 and B8 (`shuffle_unordered_selects`, `draw_direct_upload_route`) are not `load_defaults "8.2"` values; C1b (the
 `message_verifiers.rotate(secret_key_base:)` API) is REFUTED as main-only, it is in 8.1.4, only the guide section is new.

@@ -120,10 +120,10 @@ plugins, the licensed corpora — so a user installing it would receive doctrine
 not have.
 
 **Two skills that started here now ship**, because nothing in them was about this repo:
-`skills/derived-artifacts` (anything whose numbers come from somewhere else — read the generator's
+`plugins/rails-stack/skills/derived-artifacts` (anything whose numbers come from somewhere else — read the generator's
 **structured source** rather than regex-parsing its generated prose, and assert every derived total
 against the source's own declared totals; `build_coverage_artifact.py` is the worked case) and
-`skills/parallel-session-lane` (the protocol when several agent sessions run against one repo at
+`plugins/rails-stack/skills/parallel-session-lane` (the protocol when several agent sessions run against one repo at
 once — confirm your worktree, take one coherent slice, stay in your assigned subtree, review your
 own diff first). They are read as files here, exactly like `code-review` and `quality-pass`, rather
 than being invocable — that is the standing trade for shipping them, and `plugin-boundaries` rule 2
@@ -551,7 +551,7 @@ python3 scripts/lint_self_consistency.py --selftest  # prove both rules fire AND
 ```
 
 The judgement-free half is that linter. **The rest is the `code-review` skill**
-(`skills/code-review/SKILL.md`) — `carve-out-without-negative-test`, `coverage-gap`,
+(`plugins/rails-stack/skills/code-review/SKILL.md`) — `carve-out-without-negative-test`, `coverage-gap`,
 `doctrine-contradiction`, `unverified-negative`, `gate-that-cannot-fail`. It lives in
 `skills/` rather than in `docs/` deliberately, for two reasons: rules a reviewer must find
 belong where reviewers already look, and it is **shipped doctrine** — the same rules a
@@ -560,7 +560,7 @@ before asking anyone else to.
 
 ### The quality half is a SECOND pass, and it is advisory on purpose
 
-`skills/quality-pass/SKILL.md` (#360) covers what `code-review` deliberately does not: **reuse,
+`plugins/rails-stack/skills/quality-pass/SKILL.md` (#360) covers what `code-review` deliberately does not: **reuse,
 simplification, efficiency, altitude**. It is shipped doctrine like the rest, and two properties
 are load-bearing rather than stylistic.
 
@@ -574,7 +574,7 @@ are load-bearing rather than stylistic.
   `plugins/rails-flow/scripts/check_handoff.py` reconciling a tier table against the agents it describes. Do not "strengthen"
   it into refusing copies; that would contradict the doctrine it guards.
 
-The worked example (`skills/quality-pass/references/worked-example.md`) records the pass's first
+The worked example (`plugins/rails-stack/skills/quality-pass/references/worked-example.md`) records the pass's first
 real run and the decision it produced — **not to extract**, with the measurement behind it. Read it
 before proposing a de-duplication here: the textual overlap across those four files was 29% and the
 extractable mechanism about 6%, and the gap between those two numbers is the whole lesson.

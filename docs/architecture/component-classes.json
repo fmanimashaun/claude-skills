@@ -6873,8 +6873,8 @@
    "class": "mixed",
    "issue": 2186,
    "nextjs_lines": 0,
-   "path": "skills/code-review",
-   "plugin": "rails-stack (skills)",
+   "path": "plugins/rails-stack/skills/code-review",
+   "plugin": "rails-stack",
    "rails_lines": 2,
    "registered": [],
    "seam": "stack-neutral doctrine whose examples name Rails; the Rails examples move out when core-skills is split (step 8)",
@@ -6885,8 +6885,8 @@
    "class": "neutral",
    "issue": null,
    "nextjs_lines": 0,
-   "path": "skills/derived-artifacts",
-   "plugin": "rails-stack (skills)",
+   "path": "plugins/rails-stack/skills/derived-artifacts",
+   "plugin": "rails-stack",
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -6897,8 +6897,8 @@
    "class": "mixed",
    "issue": 2185,
    "nextjs_lines": 0,
-   "path": "skills/design-system",
-   "plugin": "rails-stack (skills)",
+   "path": "plugins/rails-stack/skills/design-system",
+   "plugin": "rails-stack",
    "rails_lines": 482,
    "registered": [],
    "seam": "neutral catalog plus Rails implementation references; the Rails half moves to a rails-stack skill",
@@ -6909,8 +6909,8 @@
    "class": "rails",
    "issue": 2182,
    "nextjs_lines": 0,
-   "path": "skills/hotwire",
-   "plugin": "rails-stack (skills)",
+   "path": "plugins/rails-stack/skills/hotwire",
+   "plugin": "rails-stack",
    "rails_lines": 341,
    "registered": [],
    "seam": "",
@@ -6921,8 +6921,8 @@
    "class": "mixed",
    "issue": 2186,
    "nextjs_lines": 0,
-   "path": "skills/parallel-session-lane",
-   "plugin": "rails-stack (skills)",
+   "path": "plugins/rails-stack/skills/parallel-session-lane",
+   "plugin": "rails-stack",
    "rails_lines": 11,
    "registered": [],
    "seam": "stack-neutral doctrine whose examples name Rails; the Rails examples move out when core-skills is split (step 8)",
@@ -6933,8 +6933,8 @@
    "class": "neutral",
    "issue": null,
    "nextjs_lines": 0,
-   "path": "skills/quality-pass",
-   "plugin": "rails-stack (skills)",
+   "path": "plugins/rails-stack/skills/quality-pass",
+   "plugin": "rails-stack",
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -6945,12 +6945,48 @@
    "class": "rails",
    "issue": 2182,
    "nextjs_lines": 0,
-   "path": "skills/rails-8",
-   "plugin": "rails-stack (skills)",
+   "path": "plugins/rails-stack/skills/rails-8",
+   "plugin": "rails-stack",
    "rails_lines": 1395,
    "registered": [],
    "seam": "",
    "type": "skill",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2182,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/.claude-plugin/plugin.json",
+   "plugin": "rails-stack",
+   "rails_lines": 1,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2182,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/setup/rails.md",
+   "plugin": "rails-stack",
+   "rails_lines": 74,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2182,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/stacks.json",
+   "plugin": "rails-stack",
+   "rails_lines": 12,
+   "registered": [],
+   "seam": "",
+   "type": "support",
    "via": "declared"
   }
  ],
@@ -6960,7 +6996,7 @@
    "mixed": 199,
    "neutral": 268,
    "nextjs": 3,
-   "rails": 106
+   "rails": 109
   },
   "by_plugin": {
    "design-flow": {
@@ -7005,12 +7041,12 @@
     "rails": 73,
     "total": 291
    },
-   "rails-stack (skills)": {
+   "rails-stack": {
     "mixed": 3,
     "neutral": 2,
     "nextjs": 0,
-    "rails": 2,
-    "total": 7
+    "rails": 5,
+    "total": 10
    }
   },
   "by_type": {
@@ -7060,8 +7096,8 @@
     "mixed": 15,
     "neutral": 34,
     "nextjs": 3,
-    "rails": 2,
-    "total": 54
+    "rails": 5,
+    "total": 57
    },
    "test": {
     "mixed": 59,
@@ -7071,6 +7107,6 @@
     "total": 185
    }
   },
-  "components": 576
+  "components": 579
  }
 }

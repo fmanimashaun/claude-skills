@@ -1,7 +1,7 @@
 # doctrine-verifier verdicts for #2057 (the rails-8 doctrine moves to PostgreSQL 18), 2026-10-16
 
 Two read-only verifier runs (the `doctrine-verifier` protocol, `WebFetch` of the pages below on 2026-10-16). The owner decided on 2026-10-14 that everything runs on
-PostgreSQL 18. Edits in `skills/rails-8/references/deployment-kamal.md`, `observability.md` and `models.md` follow CONFIRMED rows only; INCONCLUSIVE rows were
+PostgreSQL 18. Edits in `plugins/rails-stack/skills/rails-8/references/deployment-kamal.md`, `observability.md` and `models.md` follow CONFIRMED rows only; INCONCLUSIVE rows were
 left as they were or labelled, and the REFUTED row corrected a sentence that #2047 had written. Pages were read through a summarising fetch tool, so quotes are as
 returned, not checked against raw page text.
 

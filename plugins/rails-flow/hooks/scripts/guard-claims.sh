@@ -200,7 +200,8 @@ fi
 # in principle ... but it would live in CI against the PR body, WHICH NO GATE IN THIS REPO READS."
 # This hook reads the PR body, so that blocker is gone.
 #
-# Scoped to a PR that touches `skills/**`, because that is where the rule bites: skills are doctrine
+# Scoped to a PR that touches the shipped skills (`plugins/rails-stack/skills/**`, `skills/**` before #2182),
+# because that is where the rule bites: skills are doctrine
 # other people's agents follow verbatim, and a framework claim carried through unverified is the
 # defect the whole gate exists for.
 # Read in the repository the command RUNS in, not the session's (#1509 review): a session with a staged
@@ -224,14 +225,15 @@ skills_in_diff() {
   else
     names="$(GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only --cached HEAD 2>/dev/null)"  # submodule-safe: --cached reads the index, never the worktree (measured, #1919)
   fi
-  case $'\n'"$names" in *$'\n'skills/*) return 0 ;; esac
+  # The shipped skills live in plugins/rails-stack/skills/ since #2182; skills/ is the layout before it.
+  case $'\n'"$names" in *$'\n'plugins/rails-stack/skills/*|*$'\n'skills/*) return 0 ;; esac
   return 1
 }
 if [ "$cwd_rc" -eq 3 ]; then
   echo "rails-flow: change-type declaration NOT checked (the directory gh runs in could not be resolved)." >&2
 elif skills_in_diff; then
   if ! grep -qiE 'framework claim|architecture decision|change type|our own (design|doctrine|architecture)' "$body"; then
-    echo "BLOCKED by rails-flow claim guard: this PR touches skills/** and names no CHANGE TYPE." >&2
+    echo "BLOCKED by rails-flow claim guard: this PR touches the shipped skills (plugins/rails-stack/skills/**) and names no CHANGE TYPE." >&2
     echo "" >&2
     echo "Say which it is, in the body, before editing doctrine:" >&2
     echo "  * a FRAMEWORK CLAIM      -> needs a doctrine-verifier verdict and a citation" >&2

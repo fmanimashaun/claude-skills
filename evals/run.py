@@ -135,7 +135,7 @@ def stage_rails_stack(destination: Path) -> Path:
     )
 
     for skill in RAILS_STACK_SKILLS:
-        source = REPO_ROOT / "skills" / skill
+        source = REPO_ROOT / "plugins" / "rails-stack" / "skills" / skill
         if not source.is_dir():
             raise FileNotFoundError(f"expected skill directory missing: {source}")
         shutil.copytree(source, plugin_root / "skills" / skill)

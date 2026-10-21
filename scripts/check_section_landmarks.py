@@ -41,7 +41,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SKILL = ROOT / "skills" / "design-system" / "references"
+SKILL = ROOT / "plugins" / "rails-stack" / "skills" / "design-system" / "references"
 
 # `<section` up to its closing `>`, tolerating newlines inside the tag.
 SECTION = re.compile(r"<section\b[^>]*>", re.S)

@@ -19,7 +19,6 @@ GUARD = Guard(
         ".claude/",
         "plugins/",
         "scripts/",
-        "skills/",
         "evals/",
         "docs/wiki/",
         "CHANGELOG.md",

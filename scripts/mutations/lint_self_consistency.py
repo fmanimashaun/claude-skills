@@ -6,6 +6,32 @@ GUARD = Guard(
     subject="scripts/lint_self_consistency.py",
     selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
     mutations=(
+        Mutation(
+            # #2182: only a stack's setup_section may declare whose ${CLAUDE_PLUGIN_ROOT} it means.
+            "a declaration is honoured in any file, so any command can silence a wrong-plugin pointer",
+            "_without_fences(body)) if rel(path) in setup_sections else None\n",
+            "_without_fences(body))\n",
+            "broken-doc-pointer / ...but a declaration in a file no setup_section names is ignored",
+        ),
+        Mutation(
+            "a declaration inside a fenced example is honoured",
+            "declared = _DECLARED_PLUGIN_ROOT.search(_without_fences(body))",
+            "declared = _DECLARED_PLUGIN_ROOT.search((body))",
+            "broken-doc-pointer / ...and a declaration only inside a fence is ignored",
+        ),
+        Mutation(
+            "the declaration is never honoured, so a setup section is checked against its own plugin",
+            "        if owning_plugin is not None and declared and (ROOT / \"plugins\" / declared.group(1)).is_dir():\n",
+            "        if False:\n",
+            "broken-doc-pointer / a declared root resolves the pointer against that plugin",
+        ),
+        Mutation(
+            # #2182 review: released CHANGELOG blocks are history, as shipped.
+            "released CHANGELOG blocks are checked as live pointers again",
+            "            body = _unreleased_only(body)\n",
+            "            pass\n",
+            "broken-doc-pointer / a released CHANGELOG block's old path is history, not a pointer",
+        ),
         # #1109. Six hook_* guards went INERT at once because a driven hook gained a script
         # dependency nothing declared -- the unmutated selftest already failed in the staged
         # tempdir, so every mutation read as caught, and dev's full sweep was red for an hour.
@@ -282,7 +308,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the rule matches nothing, so every clone-shaped path passes",
-            '            if node.value != "design-system" and "skills/design-system" not in node.value:',
+            '            if node.value != "design-system" and "plugins/rails-stack/skills/design-system" not in node.value:',
             '            if id(node) in docstrings or "zzz-never" not in node.value:',
             "__file__.parents reaching a sibling plugin's doctrine",
         ),
@@ -1354,13 +1380,6 @@ GUARD = Guard(
             '            if match.group(1) == own:\n                continue\n',
             '',
             'cross-plugin-relative-path / a relative path inside the same plugin is silent',
-        ),
-        Mutation(
-            # #1680
-            "cross-plugin-relative-path skips rails-stack's skills/, which the marketplace ships",
-            '    docs += [(p, "rails-stack") for p in sorted((ROOT / "skills").glob("**/*.md"))]\n',
-            '',
-            'cross-plugin-relative-path / a rails-stack skill reaching ../rails-flow/ is a finding',
         ),
         Mutation(
             # #1680

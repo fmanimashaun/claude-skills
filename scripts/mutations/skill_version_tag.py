@@ -60,8 +60,8 @@ GUARD = Guard(
         # A missing tree echoed by rev-parse compares as different: every multi-tag version warns.
         Mutation(
             "rev-parse without --verify echoes an unresolvable tree, so absent trees differ",
-            '        return got.stdout.strip() if got.returncode == 0 else ""',
-            "        return got.stdout.strip() or tag",
+            '                return got.stdout.strip()\n        return ""',
+            '                return got.stdout.strip()\n        return tag',  # #2182: tree_id tries both layouts, then falls back
             "tags that agree on the skills tree warn about nothing",
         ),
         # #1427 item 6: an unreadable repo must not read as "no release carries it".

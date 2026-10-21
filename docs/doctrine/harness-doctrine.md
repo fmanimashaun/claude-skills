@@ -32,8 +32,8 @@ Ask of every rule you are about to write:
 - **Something stops** → it is a *guarantee*. Name the thing that stops it, in the same breath.
 
 The defect this prevents is not "the rule was wrong". It is someone reading a preference as a
-guarantee. `skills/code-review/SKILL.md` names that class first, as
-[`claims-vs-enforcement`](../../skills/code-review/SKILL.md) — *a guarantee stated in prose that nothing
+guarantee. `plugins/rails-stack/skills/code-review/SKILL.md` names that class first, as
+[`claims-vs-enforcement`](../../plugins/rails-stack/skills/code-review/SKILL.md) — *a guarantee stated in prose that nothing
 makes true* — and calls it the class an author is structurally blind to, because the author read the
 claim and the code as one intention.
 
@@ -532,7 +532,7 @@ doctrine is followed.
 
 ## Related
 
-- `skills/code-review/SKILL.md` — the defect classes a reviewer applies, `claims-vs-enforcement` and
+- `plugins/rails-stack/skills/code-review/SKILL.md` — the defect classes a reviewer applies, `claims-vs-enforcement` and
   `gate-that-cannot-fail` first among them. Shipped doctrine, so we are held to it.
 - `CLAUDE.md` — the maintenance flow, the doctrine gate, git flow, and the two markdown linters. Note
   §5's discrepancy about its *Platform* sentence.

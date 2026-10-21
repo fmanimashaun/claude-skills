@@ -88,7 +88,7 @@ locale"* and *"nobody thought about it"*, and only the first can be checked.
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_i18n_setup.py"
 ```
 
-On a multi-locale answer, propose `skills/rails-8/references/i18n.md` §1–§2 — `available_locales`,
+On a multi-locale answer, propose `plugins/rails-stack/skills/rails-8/references/i18n.md` §1–§2 — `available_locales`,
 `rails-i18n`, and the `around_action` wrapper. **Never a `before_action`**: Rails' guide says
 `I18n.locale` *"can leak into subsequent requests served by the same thread/process"*, and Puma is
 threaded, so a locale set and never reset is served to whoever gets that thread next.
@@ -102,7 +102,7 @@ so every app we build gets the **baseline**:
 - a reachable `/robots.txt` that says what the project decided about search engines;
 - a privacy policy and terms, drafted as below;
 - a rate limit plus a bot check on **every unauthenticated endpoint**: sign-in, password reset,
-  sign-up, contact (`skills/rails-8/references/auth-security.md` → *Unauthenticated endpoints*).
+  sign-up, contact (`plugins/rails-stack/skills/rails-8/references/auth-security.md` → *Unauthenticated endpoints*).
   The `unauthenticated-writes` gate enforces the rate-limit half (#1300);
 - cookie consent **only if** the app sets a cookie that is not strictly necessary.
 
@@ -312,7 +312,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mandated_gems.py"
 
 On exit **1**, propose whatever it names. Two shapes come out of it:
 
-**The prescribed testing stack** (#797). `skills/rails-8/references/testing.md` declares a complete
+**The prescribed testing stack** (#797). `plugins/rails-stack/skills/rails-8/references/testing.md` declares a complete
 Gemfile block and that file is this stack's testing doctrine, not a menu — yet nothing installed it
 and nothing checked it, so a scaffold could hold `rspec-rails` and no `simplecov`, `webmock` or
 `vcr` and report clean everywhere. The check names each missing gem and the exact command:

@@ -26,10 +26,10 @@ with no markers (it would match every project), two manifests for one plugin at 
 `package.json` is simply no dependency.
 
 WHERE MANIFESTS ARE FOUND. Only at PLUGIN ROOTS -- a directory carrying `.claude-plugin/plugin.json`,
-or `.claude-plugin/marketplace.json` for a marketplace whose plugin is its own root (`rails-stack`'s
-source is `./`) -- so a stray `stacks.json` in any other directory is never read. The same two shapes
-`project_gates.plugin_roots` handles (sibling `plugins/*` in a checkout, `<plugin>/<version>/` in the
-installed cache) plus the repo root. Several versions of one plugin collapse to the highest, by the
+or `.claude-plugin/marketplace.json` for a marketplace whose plugin is its own root -- so a stray
+`stacks.json` in any other directory is never read. The two shapes `project_gates.plugin_roots` handles:
+sibling `plugins/*` in a checkout, `<plugin>/<version>/` in the installed cache. The repo root is not
+searched: since #2182 rails-stack is `plugins/rails-stack/` and ships its `stacks.json` there. Several versions of one plugin collapse to the highest, by the
 manifest's own `plugin` and `version`, not by directory names.
 
 THE DESCRIPTOR (#2181, plan step 2 of #2162). Each stack may carry a `descriptor`: how that stack tests,
@@ -105,8 +105,7 @@ def manifest_dirs(start: Path) -> list[Path]:
 
     take(own)
     scan(own.parent)                          # sibling plugins (checkout) or sibling versions (cache)
-    grandparent = own.parent.parent
-    take(grandparent)                         # the repo root in a checkout: rails-stack's source is "./"
+    grandparent = own.parent.parent           # the repo root is NOT taken (#2182): rails-stack is a plugin dir now
     try:
         peers = sorted(grandparent.iterdir())
     except OSError:
@@ -602,23 +601,25 @@ def selftest() -> int:
             (d / MANIFEST).write_text(json.dumps({"plugin": "twin-stack", "stacks": []}), encoding="utf-8")
         case(bool(load_manifests([twin_a, twin_b])[1]), "two manifests for one plugin at the same version are a problem")
 
-        # DISCOVERY, in the checkout shape: a sibling plugin and the repo root are found; a stray stacks.json is not.
+        # DISCOVERY, in the checkout shape: sibling plugins are found; a stray stacks.json is not, and since #2182
+        # neither is one at the repo root (rails-stack ships it from plugins/rails-stack/).
         repo = root / "repo"
         (repo / "plugins" / "rails-flow" / "scripts").mkdir(parents=True)
         plugin_dir(repo, ".claude-plugin/marketplace.json")
         plugin_dir(repo / "plugins" / "nextjs-stack")
+        plugin_dir(repo / "plugins" / "rails-stack")
         (repo / "docs" / "notes").mkdir(parents=True)
-        for d in (repo, repo / "plugins" / "nextjs-stack", repo / "docs" / "notes"):
+        for d in (repo, repo / "plugins" / "nextjs-stack", repo / "plugins" / "rails-stack", repo / "docs" / "notes"):
             (d / MANIFEST).write_text(json.dumps({"plugin": d.name, "stacks": []}), encoding="utf-8")
         (repo / "plugins" / "loose").mkdir()
         (repo / "plugins" / "loose" / MANIFEST).write_text("{}", encoding="utf-8")
         seen = {p.name for p in manifest_dirs(repo / "plugins" / "rails-flow" / "scripts" / "detect_stack.py")}
-        case(seen == {"repo", "nextjs-stack"}, f"discovery reads plugin roots only (the repo root and a sibling, not a stray stacks.json): {sorted(seen)}")
+        case(seen == {"rails-stack", "nextjs-stack"}, f"discovery reads plugin roots only (siblings, not the repo root or a stray stacks.json): {sorted(seen)}")
 
         # AND IN THE CACHE SHAPE: <plugin>/<version>/ under one marketplace directory.
         cache = root / "installed" / "claude-skills"
         (cache / "rails-flow" / "1.64.0" / "scripts").mkdir(parents=True)
-        plugin_dir(cache / "rails-stack" / "1.76.0", ".claude-plugin/marketplace.json")
+        plugin_dir(cache / "rails-stack" / "1.76.0")
         (cache / "rails-stack" / "1.76.0" / MANIFEST).write_text(json.dumps({"plugin": "rails-stack", "stacks": []}), encoding="utf-8")
         seen_cache = [p.parent.name for p in manifest_dirs(cache / "rails-flow" / "1.64.0" / "scripts" / "detect_stack.py")]
         case(seen_cache == ["rails-stack"], f"discovery finds a stack plugin in the installed cache: {seen_cache}")

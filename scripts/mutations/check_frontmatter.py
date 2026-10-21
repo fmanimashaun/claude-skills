@@ -9,6 +9,13 @@ GUARD = Guard(
     subject="scripts/check_frontmatter.py",
     selftest="scripts/check_frontmatter.py",   # --selftest lives in the module itself
     mutations=(
+        Mutation(
+            # #2182: the shipped skills moved to plugins/rails-stack/skills/; the old skills/*/SKILL.md glob matched nothing.
+            "shipped skills under plugins/<stack>/skills/ are no longer read",
+            '"plugins/*/skills/*/SKILL.md",',
+            '"skills/*/SKILL.md",',
+            "a shipped skill under plugins/<stack>/skills/ with broken frontmatter is named",
+        ),
         # #1335: the user-only declaration drifts in either direction.
         Mutation(
             "a declared user-only command may drop its flag",

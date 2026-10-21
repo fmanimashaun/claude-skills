@@ -91,7 +91,7 @@ MUST_NOT_IGNORE = (
     "scripts/build_coverage.py",                    # not everything is ignored
     f"{CORPORA_DIR}-notes/README.md",               # exact name, not a prefix
     "docs/flowbite-notes.md",                       # `/flowbite*` is root-anchored
-    "skills/design-system/references/coverage.md",   # the drift guard needs this committed
+    "plugins/rails-stack/skills/design-system/references/coverage.md",   # the drift guard needs this committed
 )
 
 GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -128,7 +128,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # which is exactly how the README came to name version 1.3.1 while the marketplace shipped 1.80.
     ("wiki reference drift", ("python3", "scripts/build_wiki.py", "--check")),
     ("wiki reference selftest", ("python3", "scripts/build_wiki.py", "--selftest")),
-    # #1004: `.claude/skills/**` is DERIVED from `skills/**`, because this repository's own sessions
+    # #1004: `.claude/skills/**` is DERIVED from `plugins/rails-stack/skills/**`, because this repository's own sessions
     # load `remember` and nothing else — so the parallel-session doctrine reached every consumer
     # except the maintainers who then collided over it four times in a day. One source, one derived
     # copy, and a gate so the copy cannot quietly stop matching: two homes for one rule is the
@@ -658,6 +658,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("sweep proof wiring", ("python3", "scripts/sweep_proof.py", "check-wiring")),
     ("vendored alone", ("python3", "scripts/check_vendored_alone.py")),
     ("vendored alone selftest", ("python3", "scripts/check_vendored_alone.py", "--selftest")),
+    ("plugin install shape", ("python3", "scripts/check_plugin_install_shape.py")),
+    ("plugin install shape selftest", ("python3", "scripts/check_plugin_install_shape.py", "--selftest")),
     # #1556. How a process-group fixture learns its gate's pids: atomically, and waited for.
     ("pid record selftest", ("python3", "scripts/pid_record_selftest.py")),
 )
@@ -1190,7 +1192,7 @@ class Doctor:
         git stores a symlink as mode 120000 — so none of the three matched, and all three sat
         UNTRACKED in the guard written to hide them, directly under doctrine warning about
         656 MB of licensed blobs the rule could not actually stop. That is
-        `claims-vs-enforcement` from skills/code-review/SKILL.md, so it is re-checked by script
+        `claims-vs-enforcement` from plugins/rails-stack/skills/code-review/SKILL.md, so it is re-checked by script
         rather than remembered.
 
         Asserted in a THROWAWAY repo seeded with our `.gitignore`, against paths that DO NOT

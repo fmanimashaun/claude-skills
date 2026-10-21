@@ -15,7 +15,7 @@ divergences**.
 
 ## Preconditions
 
-**`skills/design-system/references/` must be readable.** It ships in **`rails-stack`**, not this
+**`plugins/rails-stack/skills/design-system/references/` must be readable.** It ships in **`rails-stack`**, not this
 plugin, and no `plugin.json` can declare that — there is no `requires` field. The catalog and the band
 sequence come from there. **If you cannot read it, name what is missing
 (`/plugin install rails-stack@claude-skills`) and stop.** A prompt composed from memory of the catalog

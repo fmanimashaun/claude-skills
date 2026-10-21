@@ -16,7 +16,7 @@ GUARD = Guard(
     # selftest dies of FileNotFoundError, and every mutation below reads as "caught" whether or not
     # it broke anything. The runner refused the guard as INERT on the first run, which is the
     # harness catching exactly the defect this guard exists to catch.
-    needs=("skills/design-system/references/components.md",),
+    needs=("plugins/rails-stack/skills/design-system/references/components.md",),
     mutations=(
         # The completeness half. Without it a row may name one state and stop.
         Mutation(

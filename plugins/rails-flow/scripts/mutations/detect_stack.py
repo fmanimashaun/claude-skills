@@ -111,9 +111,10 @@ GUARD = Guard(
             "discovery reads plugin roots only",
         ),
         Mutation(
-            "the repo root is not looked at, so rails-stack's manifest is never found in a checkout",
-            "    take(grandparent)",
-            "    pass",
+            # #2182: rails-stack ships stacks.json from plugins/rails-stack/; a root stacks.json is now stray.
+            "the repo root is read again, so a stray root stacks.json becomes a plugin",
+            "    grandparent = own.parent.parent           # the repo root is NOT taken (#2182): rails-stack is a plugin dir now\n",
+            "    grandparent = own.parent.parent\n    take(grandparent)\n",
             "discovery reads plugin roots only",
         ),
         Mutation(

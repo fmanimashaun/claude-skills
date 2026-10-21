@@ -18,7 +18,7 @@ what read as the guard for the covered axis:
 It passed **vacuously**. The fixture's evidence held `/users/42/edit` and `/users`; neither matches
 `/users/:id`, so the route was uncovered because it was never a *candidate*, not because its verb
 was weighed. It read identically before and after the fix, while the real defect credited 78 of 201
-routes on a live app. `skills/code-review/SKILL.md` already names the class --
+routes on a live app. `plugins/rails-stack/skills/code-review/SKILL.md` already names the class --
 `gate-that-cannot-fail` -- but only as something a human reviewer should notice.
 
 HOW REACHABILITY IS DECIDED, AND THE TRAP THAT SHAPED IT. The first attempt at this asked, for each

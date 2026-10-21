@@ -100,7 +100,7 @@ an edit, per the guarantee-vs-advice test in `docs/doctrine/harness-doctrine.md`
 
 ## The doctrine
 
-Everything follows the **design-system** skill (`skills/design-system/`): foundations/tokens,
+Everything follows the **design-system** skill (`plugins/rails-stack/skills/design-system/`): foundations/tokens,
 layout primitives, component catalog, forms, Stimulus interaction, responsive doctrine, brand.
 Read it first — this plugin is the *applier*, that skill is the *law*.
 
