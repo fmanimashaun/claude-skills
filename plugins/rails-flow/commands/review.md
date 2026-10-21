@@ -9,6 +9,8 @@ description: Full parallel codebase review — seven specialist passes producing
 
 # /rails-flow:review
 
+Agents are named by **role** (`developer`, `migrations`, `test_runner`, `reviewer`, `security`, `design_auditor`), resolved from the project's stack: see `reference/stack-roles.md`. When the stack names no agent for a role, STOP and ask; never use a Rails agent by default.
+
 Run a thorough review of this Rails project and write a phased fix plan.
 
 ## Pre-review context
@@ -29,15 +31,15 @@ P3 = quality/conventions):
 2. **Controllers & routes** (general-purpose): authentication and authorization on every
    action, tenancy/ownership scoping, IDOR via user-supplied ids, statuses (422/303),
    unpermitted params, error handling on lookups, RESTful shape.
-3. **Views & frontend** → `design-auditor` across `app/views` and Stimulus controllers.
+3. **Views & frontend** → the `design_auditor` role across `app/views` and Stimulus controllers.
 4. **Services & jobs** (general-purpose): result-object contract, idempotent `perform`,
    id-only job arguments, transactional boundaries, `_later` broadcasts.
 5. **Specs quality** (general-purpose): do specs assert behavior or merely execute code?
    factories minimal-valid? request specs over controller specs? system specs on money
    paths? fixtures of known pitfalls covered?
-6. **Migrations & schema** → `migration-writer` in review mode: reversibility, unsafe
+6. **Migrations & schema** → the `migrations` role in review mode: reversibility, unsafe
    operations, missing indexes on FKs and frequent WHEREs, money column types.
-7. **Security** → `security-auditor` over the whole app surface.
+7. **Security** → the `security` role over the whole app surface.
 
 ## Teams mode (optional, experimental)
 
@@ -62,7 +64,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" order    docs/evidence/revie
 ```
 
 ```json
-{"id":"sec-001","pass":"security-auditor","severity":"P1","category":"authz",
+{"id":"sec-001","pass":"the `security` role","severity":"P1","category":"authz",
  "file":"app/controllers/invoices_controller.rb","line":42,
  "signature":"missing-tenant-scope:InvoicesController#show","issue":"…","repro":"…",
  "fix_options":["…"],"caused_by":null,"blocks":["perf-003"],"duplicate_of":null}
