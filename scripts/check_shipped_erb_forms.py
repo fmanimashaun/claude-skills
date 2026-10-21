@@ -4,7 +4,7 @@
 Run:  python3 scripts/check_shipped_erb_forms.py            # exit 0 clean, 1 findings
       python3 scripts/check_shipped_erb_forms.py --selftest
 
-WHY. `plugins/rails-flow/scripts/check_simple_form_only.py` refuses a hand-built form or field in a
+WHY. `plugins/rails-stack/scripts/check_simple_form_only.py` refuses a hand-built form or field in a
 project. The independent pre-release review ran its scanner over our own doctrine and found nine
 ```erb blocks that fail it: a downstream app that copies our filter panel, billing radio group or
 checkbox exactly as the design-system shows would go red with no exemption on file. The gate had been
@@ -32,7 +32,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "plugins/rails-flow/scripts"))
+sys.path.insert(0, str(ROOT / "plugins/rails-stack/scripts"))
 from check_simple_form_only import scan  # noqa: E402 -- the project gate's own scanner
 
 # A ```erb block, or ~~~erb, or a longer fence, closed by a run of the SAME character at least as long
