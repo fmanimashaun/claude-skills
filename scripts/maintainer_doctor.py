@@ -324,23 +324,23 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #779 / #778. Two claims the doctrine stated, nothing performed and nothing checked. Both
     # landed missing on two unrelated greenfield apps from clean runs of the documented path --
     # the recurrence is what made them structural rather than user error.
-    ("rails-flow ci runs tests",
-     ("python3", "plugins/rails-flow/scripts/check_ci_runs_tests.py", "--selftest")),
+    ("rails-stack ci runs tests",
+     ("python3", "plugins/rails-stack/scripts/check_ci_runs_tests.py", "--selftest")),
     ("rails-flow mandated gems",
      ("python3", "plugins/rails-flow/scripts/check_mandated_gems.py", "--selftest")),
     # #803. Rails generates the spec/support auto-loader COMMENTED and testing.md:99 says to
     # uncomment it; left as generated, every support file is dead with no error and no output.
-    ("rails-flow spec support wired",
-     ("python3", "plugins/rails-flow/scripts/check_spec_support.py", "--selftest")),
+    ("rails-stack spec support wired",
+     ("python3", "plugins/rails-stack/scripts/check_spec_support.py", "--selftest")),
     # #800. Maintainer decision: "gate is the key, advise can be ignored." A coverage DROP is a
     # measured regression against a recorded baseline, not judgement, so it gates honestly where a
     # fixed threshold never could.
-    ("rails-flow coverage ratchets",
-     ("python3", "plugins/rails-flow/scripts/check_coverage_ratchet.py", "--selftest")),
+    ("rails-stack coverage ratchets",
+     ("python3", "plugins/rails-stack/scripts/check_coverage_ratchet.py", "--selftest")),
     # #799. Situational, resolved by asking at setup and RECORDING the answer — which is what lets
     # the check have a real not-applicable state instead of gating everyone or nobody.
-    ("rails-flow i18n wired",
-     ("python3", "plugins/rails-flow/scripts/check_i18n_setup.py", "--selftest")),
+    ("rails-stack i18n wired",
+     ("python3", "plugins/rails-stack/scripts/check_i18n_setup.py", "--selftest")),
     # #797. The list rails-flow enforces is DERIVED from the rails-8 doctrine that declares it, and
     # committed beside the checker -- a runtime read would cross a plugin boundary, which is #617's
     # class and has already recurred twice. This proves the artifact still matches its source.
@@ -354,10 +354,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/derive_tenancy_cop.py", "--check")),
     ("tenancy cop derived selftest",
      ("python3", "scripts/derive_tenancy_cop.py", "--selftest")),
-    ("rails-flow tenancy cop",
-     ("python3", "plugins/rails-flow/scripts/check_tenancy_cop.py", "--selftest")),
-    ("rails-flow mcp end to end",                                                    # #1930
-     ("python3", "plugins/rails-flow/scripts/check_mcp_end_to_end.py", "--selftest")),
+    ("rails-stack tenancy cop",
+     ("python3", "plugins/rails-stack/scripts/check_tenancy_cop.py", "--selftest")),
+    ("rails-stack mcp end to end",                                                    # #1930
+     ("python3", "plugins/rails-stack/scripts/check_mcp_end_to_end.py", "--selftest")),
     ("rails-flow mcp personal fields",                                               # #1931
      ("python3", "plugins/rails-flow/scripts/check_mcp_personal_fields.py", "--selftest")),
     # #762's neighbour. The curated-doc drift signal is ADVISORY -- it blocks nothing -- and that is
@@ -477,7 +477,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1639. Where a worktree stopped: the facts file, HEAD drift, unknown-not-clean, the overall git deadline (#1643 R1).
     ("rails-flow where-stopped helper", ("python3", "plugins/rails-flow/hooks/scripts/lib/where_stopped.py", "--selftest")),
     ("rails-flow technical spec", ("python3", "plugins/rails-flow/scripts/check_spec.py", "--selftest")),
-    ("rails-flow simple-form-only gate", ("python3", "plugins/rails-flow/scripts/check_simple_form_only.py", "--selftest")),
+    ("rails-stack simple-form-only gate", ("python3", "plugins/rails-stack/scripts/check_simple_form_only.py", "--selftest")),
     ("shipped ERB passes simple-form-only", ("python3", "scripts/check_shipped_erb_forms.py")),
     ("shipped ERB forms selftest", ("python3", "scripts/check_shipped_erb_forms.py", "--selftest")),
     ("rails-flow mock-up gate", ("python3", "plugins/rails-flow/scripts/check_mockup_gate.py", "--selftest")),
