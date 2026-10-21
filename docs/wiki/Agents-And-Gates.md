@@ -6,13 +6,13 @@
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
-| `design-flow` | 1.46.2 | 5 | 12 | 5 |
+| `design-flow` | 1.46.3 | 5 | 12 | 5 |
 | `flow-suite` | 1.0.0 | — | — | — |
 | `nextjs-stack` | 0.1.0 | — | — | — |
 | `pipeline` | 1.5.2 | 2 | 9 | 2 |
-| `qa-flow` | 1.38.1 | 11 | 8 | 11 |
-| `rails-flow` | 1.64.0 | 13 | 25 | 13 |
-| `rails-stack` | 1.76.0 | — | — | — |
+| `qa-flow` | 1.39.0 | 11 | 8 | 11 |
+| `rails-flow` | 1.65.0 | 13 | 25 | 13 |
+| `rails-stack` | 1.76.1 | — | — | — |
 
 ## Agents
 

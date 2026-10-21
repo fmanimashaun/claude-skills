@@ -2,15 +2,15 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Plugin reference
-Marketplace **1.157.6**.
+Marketplace **1.158.0**.
 
 | plugin | version | commands | what it does |
 |---|---|---|---|
-| `rails-stack` | 1.76.0 | — | Rails 8.1 + Hotwire development doctrine: vanilla-first stack, pure RSpec testing, Turbo |
-| `rails-flow` | 1.64.0 | 25 | Agentic development flow for Rails 8 projects |
-| `qa-flow` | 1.38.1 | 8 | Independent, stack-agnostic QA engineering flow. The QA engineer picks the stack in qa/q |
+| `rails-stack` | 1.76.1 | — | Rails 8.1 + Hotwire development doctrine: vanilla-first stack, pure RSpec testing, Turbo |
+| `rails-flow` | 1.65.0 | 25 | Agentic development flow for Rails 8 projects |
+| `qa-flow` | 1.39.0 | 8 | Independent, stack-agnostic QA engineering flow. The QA engineer picks the stack in qa/q |
 | `pipeline` | 1.5.2 | 9 | Lifecycle orchestrator over rails-flow and qa-flow |
-| `design-flow` | 1.46.2 | 12 | Agentic UI/design flow for Rails 8 + Hotwire + Tailwind v4 |
+| `design-flow` | 1.46.3 | 12 | Agentic UI/design flow for Rails 8 + Hotwire + Tailwind v4 |
 | `flow-suite` | 1.0.0 | — | One install for rails-flow, qa-flow and pipeline: a bundle whose manifest declares the t |
 | `nextjs-stack` | 0.1.0 | — | Next.js + Supabase + Vercel stack, 0.1.0, an early release: conventions for how the thre |
 
