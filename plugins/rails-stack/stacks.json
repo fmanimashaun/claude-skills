@@ -41,6 +41,11 @@
                       "column0": false
                     },
                     {
+                      "open": "<%-#",
+                      "close": "%>",
+                      "column0": false
+                    },
+                    {
                       "open": "<!--",
                       "close": "-->",
                       "column0": false

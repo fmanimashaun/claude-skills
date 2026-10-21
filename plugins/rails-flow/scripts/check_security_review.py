@@ -62,6 +62,20 @@ EVIDENCE_RE = re.compile(r"([\w./@+-]+\.\w+):(\d+)")
 NEUTRAL_BLOCKS: tuple[tuple[str, str, bool], ...] = (("/*", "*/", False),)
 
 
+def _open_after(text: str, blocks: tuple[tuple[str, str, bool], ...], pos: int = 0) -> str | None:
+    """The closer of the span `text` leaves open, walking every opener and closer pair from `pos` (#2214 adversary: `<%# a %> t <%# b`
+    closes the first comment and leaves the second open); None when every span on the line closes. Column0 blocks are not looked for."""
+    while True:
+        hits = [(text.find(o, pos), o, c) for o, c, col0 in blocks if not col0 and text.find(o, pos) >= 0]
+        if not hits:
+            return None
+        at, o, c = min(hits)
+        end = text.find(c, at + len(o))
+        if end < 0:
+            return c
+        pos = end + len(c)
+
+
 def non_code_lines(lines: list[str], blocks: tuple[tuple[str, str, bool], ...] = NEUTRAL_BLOCKS, heredoc: "re.Pattern | None" = None,
                    end_markers: tuple[str, ...] = ()) -> set[int]:
     """1-based numbers of lines that are not code: blank, a `#` or `//` comment, inside a block comment (`blocks`: open, close, column0),
@@ -91,25 +105,30 @@ def non_code_lines(lines: list[str], blocks: tuple[tuple[str, str, bool], ...] =
         if closing is not None:
             out.add(n)
             close, col0 = closing
-            if (raw.startswith(close) if col0 else close in raw):
-                closing = None
+            if col0:
+                if raw.startswith(close):
+                    closing = None
+            elif close in raw:
+                again = _open_after(raw, blocks, raw.find(close) + len(close))  # a span can reopen on the line that closed one
+                closing = (again, False) if again else None
             continue
         opened = next(((o, c, col0) for o, c, col0 in blocks if (raw if col0 else t).startswith(o)), None)
         if opened:
             out.add(n)
             o, c, col0 = opened
-            if col0 or c not in t[len(o):]:
-                closing = (c, col0)
+            if col0:
+                closing = (c, True)
+            else:
+                left = _open_after(t, blocks)
+                closing = (left, False) if left else None
             continue
         if not t or t.startswith(("#", "//")):
             out.add(n)
             continue
-        # This line is code; a non-column0 opener later on it still opens a span for the lines below.
-        for o, c, col0 in blocks:
-            at = raw.find(o)
-            if not col0 and at > 0 and c not in raw[at + len(o):]:
-                closing = (c, False)
-                break
+        # This line is code; a span it leaves open, after any number of closed ones, still covers the lines below.
+        left = _open_after(raw, blocks)
+        if left:
+            closing = (left, False)
         if closing is None and heredoc is not None:
             heredocs = [(m.group("id"), bool(re.match(r"<<[~-]", m.group(0)))) for m in heredoc.finditer(raw)]
     return out
@@ -341,8 +360,15 @@ def selftest() -> int:
         (root / "src/e.js").write_text("const a = 1;\n")
         (root / "src/dir.x").mkdir()
         (root / "src/dir.x/inner.x").write_text("x\n")
-        git("add", "src/c.x", "src/d.x", "src/e.js", "src/dir.x/inner.x")
+        # #2214 adversary pass 4: a line that closes one span and opens another, and a closing line that reopens one.
+        F_X = ["a /* x */ b /* begin", "hidden", "end */ y /* again", "hidden2", "*/", "code"]
+        (root / "src/f.x").write_text("\n".join(F_X) + "\n")
+        git("add", "src/c.x", "src/d.x", "src/e.js", "src/dir.x/inner.x", "src/f.x")
         git("commit", "-q", "-m", "base")
+        got_f = non_code_lines(F_X, *rules_for("src/f.x", _SYNTAX[str(root)], _MARKERS[str(root)]))
+        if got_f != {2, 3, 4, 5}:
+            bad += 1
+            print(f"FAIL every span on a line is walked: got {sorted(got_f)}, expected [2, 3, 4, 5]")
         want_d = {2, 3, 4, 5, 6, 7, 10, 11, 14, 15, 17, 18, 20, 21}
         got_d = non_code_lines(D_X, *rules_for("src/d.x", _SYNTAX[str(root)], _MARKERS[str(root)]))
         if got_d != want_d:
@@ -408,7 +434,10 @@ def selftest() -> int:
                 ("code after a column0 block closes at column 0 passes", "src/d.x:8", 0), ("a line opening a span after code is itself code", "src/d.x:9", 0),
                 ("a span opened after code hides the lines below", "src/d.x:10", 1), ("a lowercase `~` heredoc body is not code", "src/d.x:14", 1),
                 ("an indented line is not a bare heredoc's terminator", "src/d.x:18", 1), ("code after a bare heredoc passes", "src/d.x:19", 0),
-                ("lines after a data marker are not code", "src/d.x:21", 1)):
+                ("lines after a data marker are not code", "src/d.x:21", 1),
+                ("a second span opened after a closed one hides the next line", "src/f.x:2", 1),
+                ("a span reopened on its closing line hides the next line", "src/f.x:4", 1),
+                ("code after every span closes passes", "src/f.x:6", 0)):
             case(label, good.replace("src/c.x:2", cite), want, NOT_CODE if want else "answered")
         case("a directory is never read as a cited file", good.replace("src/c.x:2", "src/dir.x:1"), 1, "a regular file committed at HEAD")
         case("a file type no stack declares is refused, not read with neutral rules", good.replace("src/c.x:2", "src/e.js:1"), 1,

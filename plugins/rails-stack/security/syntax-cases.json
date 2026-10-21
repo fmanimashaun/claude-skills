@@ -160,5 +160,35 @@
       4,
       5
     ]
+  },
+  {
+    "name": "a second `<%#` after a closed one leaves a comment open",
+    "file": "app/views/h.html.erb",
+    "lines": [
+      "<p><%# a %> t <%# begin",
+      "hidden",
+      "%>",
+      "<%= raw x %>"
+    ],
+    "non_code": [
+      2,
+      3
+    ]
+  },
+  {
+    "name": "`<%-#` is an ERB comment, on one line or several",
+    "file": "app/views/i.html.erb",
+    "lines": [
+      "<%-# hidden -%>",
+      "<%= raw y %>",
+      "<%-# a",
+      "b -%>",
+      "<%= raw z %>"
+    ],
+    "non_code": [
+      1,
+      3,
+      4
+    ]
   }
 ]

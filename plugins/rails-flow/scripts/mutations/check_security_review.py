@@ -65,9 +65,9 @@ GUARD = Guard(
         ),
         Mutation(
             "a block comment never closes, so the code after it reads as comment",
-            "            if (raw.startswith(close) if col0 else close in raw):\n                closing = None",
-            "            if False:\n                closing = None",
-            "evidence on code after a block comment passes",
+            "            elif close in raw:\n                again",
+            "            elif False:\n                again",
+            "code after every span closes passes",
         ),
         Mutation(
             "a heredoc body counts as code",
@@ -115,14 +115,14 @@ GUARD = Guard(
         Mutation(
             # #2214 adversary: a mid-line or indented closer closed a column0 block.
             "a column0 block closes anywhere on a line again",
-            "            if (raw.startswith(close) if col0 else close in raw):",
-            "            if close in raw:",
+            "            if col0:\n                if raw.startswith(close):\n                    closing = None",
+            "            if col0:\n                if close in raw:\n                    closing = None",
             "an indented closer does not close a column0 block",
         ),
         Mutation(
             "a span opener after code on the same line is ignored again",
-            "            if not col0 and at > 0 and c not in raw[at + len(o):]:",
-            "            if False:",
+            "        left = _open_after(raw, blocks)\n        if left:\n            closing = (left, False)",
+            "        left = None",
             "a span opened after code hides the lines below",
         ),
         Mutation(
@@ -154,6 +154,25 @@ GUARD = Guard(
             "            if n in answers:",
             "            if False:",
             "a row answered twice is refused",
+        ),
+        Mutation(
+            # #2214 adversary pass 4: only the first opener on a line was seen, so `<%# a %> t <%# b` left the next line as code.
+            "only the first span on a line is walked again",
+            "        pos = end + len(c)",
+            "        return None",
+            "a second span opened after a closed one hides the next line",
+        ),
+        Mutation(
+            "a span reopened on its closing line is missed again",
+            "                again = _open_after(raw, blocks, raw.find(close) + len(close))",
+            "                again = None",
+            "a span reopened on its closing line hides the next line",
+        ),
+        Mutation(
+            "a column0 block never closes, so the code after it reads as comment",
+            "                if raw.startswith(close):\n                    closing = None",
+            "                if False:\n                    closing = None",
+            "evidence on code after a block comment passes",
         ),
     ),
 )
