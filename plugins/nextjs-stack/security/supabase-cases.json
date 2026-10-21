@@ -21,5 +21,12 @@
  {"name": "getSession() in prose is a boundary", "plan": "Read the user from getSession() in the layout.", "paths": [], "boundary": true},
  {"name": "a select policy is a boundary", "plan": "Add a select policy on invoices.", "paths": [], "boundary": true},
  {"name": "verify-jwt disabled is a boundary", "plan": "Deploy with verify-jwt disabled.", "paths": [], "boundary": true},
- {"name": "a role column is not the service role", "plan": "Show each member's role in the list.", "paths": [], "boundary": false}
+ {"name": "a role column is not the service role", "plan": "Show each member's role in the list.", "paths": [], "boundary": false},
+ {"name": "a monorepo edge function is a boundary", "plan": "Tidy.", "paths": ["apps/web/supabase/functions/f/index.ts"], "boundary": true},
+ {"name": "a monorepo migration is a boundary", "plan": "Tidy.", "paths": ["packages/db/supabase/migrations/x.sql"], "boundary": true},
+ {"name": "a grant to anon is a boundary", "plan": "Grant select on invoices to anon.", "paths": [], "boundary": true},
+ {"name": "allowing anon is a boundary", "plan": "Allow anon to read invoices.", "paths": [], "boundary": true},
+ {"name": "a bare policy is a boundary", "plan": "Add a policy on invoices for members.", "paths": [], "boundary": true},
+ {"name": "the anon key is a boundary", "plan": "Put the anon key in the client.", "paths": [], "boundary": true},
+ {"name": "an anonymous survey is not anon access", "plan": "Make the survey anonymous for respondents.", "paths": [], "boundary": false}
 ]

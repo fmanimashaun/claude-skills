@@ -790,7 +790,8 @@
      "plugins/nextjs-stack/stacks.json",
      "plugins/nextjs-stack/checks.json",
      "plugins/nextjs-stack/scripts/*",
-     "plugins/nextjs-stack/scripts/mutations/*"
+     "plugins/nextjs-stack/scripts/mutations/*",
+     "plugins/nextjs-stack/security/*"
     ],
     "class": "nextjs",
     "issue": 2165,

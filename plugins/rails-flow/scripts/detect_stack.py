@@ -328,7 +328,7 @@ def setup_section_problems(manifest: dict, stack: dict, where: str) -> list[str]
 # character, a Cyrillic C, a non-ASCII dash) or a line break only Python sees (U+0085, U+001C) is refused, not normalised.
 CHECKLIST_EXTRA_CHARS = "—§"
 CITATION_SLOT = re.compile(r"\((C-\d+(?:, C-\d+)*)\)$")
-CLAIM_LIKE = re.compile(r"c\s*-\s*\d", re.I)
+CLAIM_LIKE = re.compile(r"c\s*[-\u2014]\s*\d", re.I)   # the em dash is in the alphabet, so it is a citation dash too
 AUDIT_PATH = re.compile(r"`(docs/evidence/audits/[\w.-]+\.md)`")
 
 
@@ -345,6 +345,10 @@ def checklist_format_problems(text: str) -> list[str]:
             found.append(f"{n}: an HTML comment hides text from the reader; delete it, don't hide it")
         elif re.search(r"<[A-Za-z/!?]", line):
             found.append(f"{n}: raw HTML; a renderer can hide or reshape it (`<details>`, `hidden`), so a checklist holds none")
+        if re.search(r"&(?:#\d+|#x[0-9a-f]+|[a-z][a-z0-9]*);", line, re.I):
+            found.append(f"{n}: an HTML entity; it renders as a character the check never sees (`&#67;` is C)")
+        if "![" in line or re.search(r"\]\([^)]*\s[\"'(]", line):
+            found.append(f"{n}: an image or a link title; a rendered page hides its text")
         if re.match(r"\s*(?:`{3,}|~{3,})", line):
             found.append(f"{n}: a code fence; a checklist asks questions in prose and holds no fenced block")
         if prev_blank and re.match(r" {4,}\S", line):
@@ -374,11 +378,12 @@ def checklist_citations(text: str) -> set[str]:
 
 
 def confirmed_claims(audit: str) -> set[str]:
-    """The `C-n` rows of an audit whose own section (`## C-n — ...` up to the next `## `) says `Verdict: CONFIRMED`."""
+    """The `C-n` rows of an audit whose own section (`## C-n — ...` up to the next heading) has `Verdict: CONFIRMED` as its first verdict line."""
     out: set[str] = set()
-    for section in re.split(r"(?m)^(?=## )", audit):
+    for section in re.split(r"(?m)^(?=#+ )", audit):              # any heading ends a section, so a nested one cannot lend its verdict
         head = re.match(r"## (C-\d+) ", section)
-        if head and re.search(r"(?m)^Verdict: CONFIRMED\b", section):
+        verdict = re.search(r"(?m)^Verdict:(.*)$", section)       # the section's FIRST verdict line is its verdict
+        if head and verdict and re.fullmatch(r" CONFIRMED(?: \[(?:quotes|waived):[^\]]*\])?", verdict.group(1)):
             out.add(head.group(1))
     return out
 
@@ -989,17 +994,24 @@ def selftest() -> int:
                 ("an indented code block is refused", "- Ask.\n\n    const x = secret();\n", False),
                 ("a list continuation is not a code block", "- Ask a long\n    question here.\n", True),
                 ("a pipeless table is refused", "a | b\n--- | ---\n", False),
-                ("a zero-width character in a citation is refused", "- Per C​-1 ask\n", False),
-                ("a non-ASCII hyphen in the slot is refused", "- Ask (C‑1)\n", False),
-                ("a Cyrillic C in the slot is refused", "- Ask (С1)\n- Ask (С-1)\n", False),
+                ("a zero-width character in a citation is refused", "- Per C\u200b-1 ask\n", False),
+                ("a non-ASCII hyphen in the slot is refused", "- Ask (C\u20111)\n", False),
+                ("a Cyrillic C in the slot is refused", "- Ask (\u04211)\n- Ask (\u0421-1)\n", False),
                 ("a spaced claim id outside the slot is refused", "- Per C - 1, ask\n", False),
                 ("a suffixed id in the slot is refused", "- Ask (C-1a)\n", False),
                 ("a break only Python sees is refused", "- Ask (C-1)\x1c then more\n", False),
                 ("a NEL is refused", "- Ask (C-1)\x85 then more\n", False),
                 ("a CRLF line ending is a line end, as in CommonMark", "- Ask. (C-1)\r\n- More. (C-2)\r\n", True),
                 ("a tab is refused", "-\tAsk.\n", False),
-                ("a BOM is refused", "﻿# C\n", False),
-                ("the marks the checklists use pass", "# Spoofing — who? (rails-8 §2b)\n", True)):
+                ("a BOM is refused", "\ufeff# C\n", False),
+                ("the marks the checklists use pass", "# Spoofing — who? (rails-8 §2b)\n", True),
+                ("an em-dash claim id outside the slot is refused", "- Per C\u20141 the proxy is bypassed\n", False),
+                ("an HTML entity is refused", "- see &#67;-9 too\n", False),
+                ("a named entity is refused", "- Ask&nbsp;now.\n", False),
+                ("a link title is refused", "- [why](https://x \"hidden\") (C-1)\n", False),
+                ("an image is refused", "- ![hidden](x.png)\n", False),
+                ("a plain link passes", "- See [the guide](https://x/y) first.\n", True),
+                ("an ampersand in prose passes", "- Read & write: who? (C-1)\n", True)):
             # every fixture names its audit, so a refusal is the format rule's and never the "names 0 audits" one
             audit_line = "" if "docs/evidence/audits/" in body else "Rows of `docs/evidence/audits/a.md`.\n"
             (sec_dir / "sec.md").write_text(audit_line + body, encoding="utf-8")
@@ -1022,13 +1034,21 @@ def selftest() -> int:
         case(any("cannot be read" in p for p in got), f"a named audit that is missing is a problem: {got}")
         (root / "docs" / "evidence" / "audits").mkdir(parents=True)
         (root / "docs" / "evidence" / "audits" / "a.md").write_text(
-            "# A\n\n## C-1 — x\n\nVerdict: CONFIRMED [quotes: C-1]\n\n## C-2 — y\n\nVerdict: CONFIRMED\n\n## C-3 — z\n\nVerdict: REFUTED\n",
+            "# A\n\n## C-1 — x\n\nVerdict: CONFIRMED [quotes: C-1]\n\n## C-2 — y\n\nVerdict: CONFIRMED\n\n## C-3 — z\n\nVerdict: REFUTED\n"
+            "\n## C-4 — w\n\nVerdict: CONFIRMED-ish\n\n## C-5 — v\n\nVerdict: REFUTED\n\n### C-9 — nested\n\nVerdict: CONFIRMED\n"
+            "\n## C-6 — u\n\nVerdict: REFUTED\nVerdict: CONFIRMED\n\n## C-7 — t\n\n### detail\n\nVerdict: CONFIRMED\n",
             encoding="utf-8")
         got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
         case(any("cites C-3, not a CONFIRMED row" in p for p in got), f"a citation of a REFUTED row is refused: {got}")
         (sec_dir / "sec.md").write_text(named + "- Ask. (C-99)\n", encoding="utf-8")
         got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
         case(any("cites C-99" in p for p in got), f"a citation of a row the audit lacks is refused: {got}")
+        for cid, why in (("C-4", "a verdict that only starts CONFIRMED"), ("C-5", "a REFUTED row with a nested CONFIRMED heading"),
+                         ("C-6", "a row whose first verdict is REFUTED"),
+                         ("C-7", "a row with no verdict of its own, only a nested heading's")):
+            (sec_dir / "sec.md").write_text(named + f"- Ask. ({cid})\n", encoding="utf-8")
+            got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+            case(any(f"cites {cid}," in p for p in got), f"{why} is not CONFIRMED: {got}")
         (sec_dir / "sec.md").write_text(named + "- Ask. (C-1, C-2)\n", encoding="utf-8")
         got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
         case(not got, f"citations of CONFIRMED rows pass: {got}")

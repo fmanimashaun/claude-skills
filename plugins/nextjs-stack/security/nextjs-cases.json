@@ -45,5 +45,8 @@
  {"name": "a utils file outside supabase is not auth", "plan": "Tidy.", "paths": ["utils/format-date.ts"], "boundary": false},
  {"name": "an API route in prose is a boundary", "plan": "Add an API route that returns the invoice.", "paths": [], "boundary": true},
  {"name": "a backticked use server is a boundary", "plan": "Add a `use server` function.", "paths": [], "boundary": true},
- {"name": "a config.matcher change is a boundary", "plan": "Change config.matcher to skip /api.", "paths": [], "boundary": true}
+ {"name": "a config.matcher change is a boundary", "plan": "Change config.matcher to skip /api.", "paths": [], "boundary": true},
+ {"name": "a split NextAuth config is a boundary", "plan": "Tidy.", "paths": ["auth.config.ts"], "boundary": true},
+ {"name": "a lib/auth module is a boundary", "plan": "Tidy.", "paths": ["lib/auth/index.ts"], "boundary": true},
+ {"name": "a transactions module is not auth", "plan": "Tidy.", "paths": ["lib/transactions.ts"], "boundary": false}
 ]

@@ -420,8 +420,8 @@ GUARD = Guard(
         ),
         Mutation(
             'any row counts as confirmed, so a REFUTED row can be cited',
-            '        if head and re.search(r"(?m)^Verdict: CONFIRMED\\b", section):',
-            '        if head:',
+            're.fullmatch(r" CONFIRMED(?: \\[(?:quotes|waived):[^\\]]*\\])?", verdict.group(1))',
+            're.fullmatch(r".*", verdict.group(1))',
             'a citation of a REFUTED row is refused',
         ),
         Mutation(
@@ -429,6 +429,54 @@ GUARD = Guard(
             '    if len(audits) != 1:',
             '    if len(audits) > 1:',
             'a citation with no audit named is refused',
+        ),
+        Mutation(
+            'an em dash is not a citation dash',
+            'CLAIM_LIKE = re.compile(r"c\\s*[-\\u2014]\\s*\\d", re.I)',
+            'CLAIM_LIKE = re.compile(r"c\\s*[-]\\s*\\d", re.I)',
+            'an em-dash claim id outside the slot is refused',
+        ),
+        Mutation(
+            'an HTML entity passes',
+            '        if re.search(r"&(?:#\\d+|#x[0-9a-f]+|[a-z][a-z0-9]*);", line, re.I):',
+            '        if False:',
+            'an HTML entity is refused',
+        ),
+        Mutation(
+            'only numeric entities are refused',
+            '        if re.search(r"&(?:#\\d+|#x[0-9a-f]+|[a-z][a-z0-9]*);", line, re.I):',
+            '        if re.search(r"&(?:#\\d+|#x[0-9a-f]+);", line, re.I):',
+            'a named entity is refused',
+        ),
+        Mutation(
+            'an image passes',
+            '        if "![" in line or re.search(',
+            '        if re.search(',
+            'an image is refused',
+        ),
+        Mutation(
+            'a link title passes',
+            ' or re.search(r"\\]\\([^)]*\\s[\\"\'(]", line):',
+            ':',
+            'a link title is refused',
+        ),
+        Mutation(
+            'a nested heading lends its verdict to the row above',
+            '    for section in re.split(r"(?m)^(?=#+ )", audit):',
+            '    for section in re.split(r"(?m)^(?=## )", audit):',
+            "a row with no verdict of its own, only a nested heading's is not CONFIRMED",
+        ),
+        Mutation(
+            'a verdict that only starts CONFIRMED counts',
+            're.fullmatch(r" CONFIRMED(?: \\[(?:quotes|waived):[^\\]]*\\])?", verdict.group(1))',
+            'verdict.group(1).startswith(" CONFIRMED")',
+            'a verdict that only starts CONFIRMED is not CONFIRMED',
+        ),
+        Mutation(
+            'any verdict line counts, not the first',
+            '        verdict = re.search(r"(?m)^Verdict:(.*)$", section)',
+            '        verdict = ([m for m in re.finditer(r"(?m)^Verdict:(.*)$", section)] or [None])[-1]',
+            'a row whose first verdict is REFUTED is not CONFIRMED',
         ),
     ),
 )
