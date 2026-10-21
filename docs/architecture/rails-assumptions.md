@@ -6,34 +6,14 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 
 ## Decisions
 
-| decision | what it means | files | lines |
-|---|---|---:|---:|
-| `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 84 | 1764 |
-| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 90 | 1246 |
-| `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 47 | 173 |
-| `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change | 11 | 35 |
-| **all** | | **232** | **3218** |
+| decision | what it means |
+|---|---|
+| `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest |
+| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) |
+| `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched |
+| `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change |
 
-## By flow
-
-| flow | files | lines | `rails-stack` | `detector` | `reword` | `neutral` |
-|---|---:|---:|---:|---:|---:|---:|
-| `rails-flow` | 137 | 2249 | 47 | 50 | 37 | 3 |
-| `qa-flow` | 36 | 275 | 0 | 29 | 6 | 1 |
-| `pipeline` | 19 | 89 | 3 | 9 | 4 | 3 |
-| `design-flow` | 40 | 605 | 34 | 2 | 0 | 4 |
-
-## By what is named
-
-| category | lines naming it |
-|---|---:|
-| tool | 876 |
-| gem | 130 |
-| path | 1237 |
-| concept | 2021 |
-| hotwire | 87 |
-
-A line that names two things counts once per category it names in this table and once overall in the totals above.
+The counts (files and lines per decision, per flow, per thing named) are not stored in this page or in `rails-assumptions.json`: a stored total is a line every pull request rewrites. `python3 scripts/rails_assumptions.py --status` computes them from the inventory below. A line that names two things counts once per category it names there and once overall.
 
 ## The moves (each is an issue under #2162)
 
@@ -41,43 +21,115 @@ A line that names two things counts once per category it names in this table and
 
 Agents whose whole job is a Rails task (implement in Rails, write migrations, run RSpec, audit with Brakeman, review against Rails practice). They are loaded by every rails-flow install; a Next.js project would see agents it can never use.
 
-Files: `agents/code-reviewer.md` (rails-flow), `agents/design-auditor.md` (rails-flow), `agents/migration-writer.md` (rails-flow), `agents/rails-developer.md` (rails-flow), `agents/security-auditor.md` (rails-flow), `agents/test-runner.md` (rails-flow)
+Files:
 
-### rails-hooks: The Rails-only hooks (#2174)
-
-Hooks that fire on a Rails artifact: guard-migrate.sh on a new db/migrate file, lint-ruby.sh on a .rb edit. They register through the plugin's hooks.json, so the stack plugin must register them instead.
-
-Files: `hooks/scripts/guard-migrate.sh` (rails-flow), `hooks/scripts/lint-ruby.sh` (rails-flow)
+- `agents/code-reviewer.md` (rails-flow)
+- `agents/design-auditor.md` (rails-flow)
+- `agents/migration-writer.md` (rails-flow)
+- `agents/rails-developer.md` (rails-flow)
+- `agents/security-auditor.md` (rails-flow)
+- `agents/test-runner.md` (rails-flow)
 
 ### rails-gates: The Rails project gates (#2175)
 
 Gate scripts that read a Rails project (simple_form, migrations order, tenancy cop, privacy inventory, production config, MCP checks, i18n, CI-runs-tests, coverage ratchet, spec support, layer structure, herb) and their checks.json registrations. project_gates.py already discovers checks.json from sibling plugins, so this is a move, not new machinery.
 
-Files: `scaffold/tenancy/scoped_lookup.rb` (rails-flow), `scripts/check_ci_runs_tests.py` (rails-flow), `scripts/check_coverage_ratchet.py` (rails-flow), `scripts/check_i18n_setup.py` (rails-flow), `scripts/check_layer_structure.py` (rails-flow), `scripts/check_mcp_annotations.py` (rails-flow), `scripts/check_mcp_end_to_end.py` (rails-flow), `scripts/check_mcp_personal_fields.py` (rails-flow), `scripts/check_migration_order.py` (rails-flow), `scripts/check_privacy_inventory.py` (rails-flow), `scripts/check_production_config.py` (rails-flow), `scripts/check_simple_form_only.py` (rails-flow), `scripts/check_spec_support.py` (rails-flow), `scripts/check_tenancy_cop.py` (rails-flow), `scripts/check_unauthenticated_writes.py` (rails-flow), `scripts/herb_lint.py` (rails-flow), `scripts/mutations/check_ci_runs_tests.py` (rails-flow), `scripts/mutations/check_coverage_ratchet.py` (rails-flow), `scripts/mutations/check_i18n_setup.py` (rails-flow), `scripts/mutations/check_layer_structure.py` (rails-flow), `scripts/mutations/check_mcp_annotations.py` (rails-flow), `scripts/mutations/check_mcp_end_to_end.py` (rails-flow), `scripts/mutations/check_migration_order.py` (rails-flow), `scripts/mutations/check_privacy_inventory.py` (rails-flow), `scripts/mutations/check_production_config.py` (rails-flow), `scripts/mutations/check_simple_form_only.py` (rails-flow), `scripts/mutations/check_spec_support.py` (rails-flow), `scripts/mutations/check_tenancy_cop.py` (rails-flow), `scripts/mutations/herb_lint.py` (rails-flow), `scripts/structure_ratchet.py` (rails-flow)
+Files:
+
+- `scaffold/tenancy/scoped_lookup.rb` (rails-flow)
+- `scripts/check_ci_runs_tests.py` (rails-flow)
+- `scripts/check_coverage_ratchet.py` (rails-flow)
+- `scripts/check_i18n_setup.py` (rails-flow)
+- `scripts/check_layer_structure.py` (rails-flow)
+- `scripts/check_mcp_annotations.py` (rails-flow)
+- `scripts/check_mcp_end_to_end.py` (rails-flow)
+- `scripts/check_mcp_personal_fields.py` (rails-flow)
+- `scripts/check_migration_order.py` (rails-flow)
+- `scripts/check_privacy_inventory.py` (rails-flow)
+- `scripts/check_production_config.py` (rails-flow)
+- `scripts/check_simple_form_only.py` (rails-flow)
+- `scripts/check_spec_support.py` (rails-flow)
+- `scripts/check_tenancy_cop.py` (rails-flow)
+- `scripts/check_unauthenticated_writes.py` (rails-flow)
+- `scripts/herb_lint.py` (rails-flow)
+- `scripts/mutations/check_ci_runs_tests.py` (rails-flow)
+- `scripts/mutations/check_coverage_ratchet.py` (rails-flow)
+- `scripts/mutations/check_i18n_setup.py` (rails-flow)
+- `scripts/mutations/check_layer_structure.py` (rails-flow)
+- `scripts/mutations/check_mcp_annotations.py` (rails-flow)
+- `scripts/mutations/check_mcp_end_to_end.py` (rails-flow)
+- `scripts/mutations/check_migration_order.py` (rails-flow)
+- `scripts/mutations/check_privacy_inventory.py` (rails-flow)
+- `scripts/mutations/check_production_config.py` (rails-flow)
+- `scripts/mutations/check_simple_form_only.py` (rails-flow)
+- `scripts/mutations/check_spec_support.py` (rails-flow)
+- `scripts/mutations/check_tenancy_cop.py` (rails-flow)
+- `scripts/mutations/herb_lint.py` (rails-flow)
+- `scripts/structure_ratchet.py` (rails-flow)
 
 ### rails-mandated-gems: The mandated-gems policy (#2176)
 
 mandated_gems.json and the scripts that read or derive it. The list is Rails doctrine by definition; a Node stack needs a different list under its own name.
 
-Files: `mandated_gems.json` (rails-flow), `scripts/check_mandated_gems.py` (rails-flow), `scripts/mutations/check_mandated_gems.py` (rails-flow)
+Files:
+
+- `mandated_gems.json` (rails-flow)
+- `scripts/check_mandated_gems.py` (rails-flow)
+- `scripts/mutations/check_mandated_gems.py` (rails-flow)
 
 ### rails-docs-generators: The Rails documentation generators (#2177)
 
 architecture_graph.py (routes/app/db graph, /rails-flow:graph) and build_project_wiki.py read Rails sources to draw the architecture and the wiki.
 
-Files: `commands/graph.md` (rails-flow), `scripts/architecture_graph.py` (rails-flow), `scripts/build_help.py` (rails-flow), `scripts/build_project_wiki.py` (rails-flow), `scripts/mutations/architecture_graph.py` (rails-flow), `scripts/mutations/build_project_wiki.py` (rails-flow)
+Files:
+
+- `commands/graph.md` (rails-flow)
+- `scripts/architecture_graph.py` (rails-flow)
+- `scripts/build_help.py` (rails-flow)
+- `scripts/build_project_wiki.py` (rails-flow)
+- `scripts/mutations/architecture_graph.py` (rails-flow)
+- `scripts/mutations/build_project_wiki.py` (rails-flow)
 
 ### design-flow-erb: The design-flow Rails UI adapter (ERB / ViewComponent gates and porter) (#2178)
 
 The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (rails-ui-porter, rails-ui-composer). They do NOT move to rails-stack: they live in design-flow's own Rails UI adapter, plugins/design-flow/ui/viewcomponent-erb/, which a stack descriptor selects with ui.implementation, so design stays neutral (owner, via the coordinator, 2026-10-21). Next.js gets its own adapter under #2171.
 
-Files: `agents/rails-ui-composer.md` (design-flow), `agents/rails-ui-porter.md` (design-flow), `checks.json` (design-flow), `ui/viewcomponent-erb/README.md` (design-flow), `ui/viewcomponent-erb/adapter.json` (design-flow), `ui/viewcomponent-erb/audit.md` (design-flow), `ui/viewcomponent-erb/component.md` (design-flow), `ui/viewcomponent-erb/mobile.md` (design-flow), `ui/viewcomponent-erb/port.md` (design-flow), `ui/viewcomponent-erb/scripts/canvas_manifest.py` (design-flow), `ui/viewcomponent-erb/scripts/check_component_contract.py` (design-flow), `ui/viewcomponent-erb/scripts/check_layout_composition.py` (design-flow), `ui/viewcomponent-erb/scripts/check_modal_fit.py` (design-flow), `ui/viewcomponent-erb/scripts/check_surface_layout.py` (design-flow), `ui/viewcomponent-erb/scripts/check_table_layout.py` (design-flow), `ui/viewcomponent-erb/scripts/check_token_drift.py` (design-flow), `ui/viewcomponent-erb/scripts/content_floors.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/canvas_manifest.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_component_contract.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_layout_composition.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_modal_fit.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_surface_layout.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_table_layout.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/content_floors.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/port_fidelity_gate.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/setup_doctrine_crosscheck.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/source_text.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/variant_conformance.py` (design-flow), `ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py` (design-flow), `ui/viewcomponent-erb/scripts/source_text.py` (design-flow), `ui/viewcomponent-erb/scripts/variant_conformance.py` (design-flow), `ui/viewcomponent-erb/setup.md` (design-flow), `ui/viewcomponent-erb/tokens.md` (design-flow), `ui/viewcomponent-erb/variants.md` (design-flow)
+Files:
 
-### rails-deploy: The Kamal-on-Rails deploy path (#2179)
-
-kamal-configurator and kamal_destination.py route values into Rails credentials and deploy.yml; Vercel deploy (#2167) is its own path.
-
-Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py` (pipeline), `scripts/mutations/kamal_destination.py` (pipeline)
+- `agents/rails-ui-composer.md` (design-flow)
+- `agents/rails-ui-porter.md` (design-flow)
+- `checks.json` (design-flow)
+- `ui/viewcomponent-erb/README.md` (design-flow)
+- `ui/viewcomponent-erb/adapter.json` (design-flow)
+- `ui/viewcomponent-erb/audit.md` (design-flow)
+- `ui/viewcomponent-erb/component.md` (design-flow)
+- `ui/viewcomponent-erb/mobile.md` (design-flow)
+- `ui/viewcomponent-erb/port.md` (design-flow)
+- `ui/viewcomponent-erb/scripts/canvas_manifest.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_component_contract.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_layout_composition.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_modal_fit.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_surface_layout.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_table_layout.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_token_drift.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/content_floors.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/canvas_manifest.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/check_component_contract.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/check_layout_composition.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/check_modal_fit.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/check_surface_layout.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/check_table_layout.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/content_floors.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/port_fidelity_gate.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/setup_doctrine_crosscheck.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/source_text.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/variant_conformance.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/source_text.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/variant_conformance.py` (design-flow)
+- `ui/viewcomponent-erb/setup.md` (design-flow)
+- `ui/viewcomponent-erb/tokens.md` (design-flow)
+- `ui/viewcomponent-erb/variants.md` (design-flow)
 
 ## setup-flow, section by section (issue #2180)
 
@@ -119,7 +171,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `commands/brief.md:62`<br>L62, 151 | command | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `commands/coordinate.md:51`<br>L51 | command | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `commands/explain.md:34`<br>L34, 71, 148 | command | 3 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
-| `commands/feature.md:12`<br>L12, 227, 239 | command | 3 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
+| `commands/feature.md:12`<br>L12, 228, 240 | command | 3 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
 | `commands/fix.md:8`<br>L8, 53, 81, 88 | command | 4 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
 | `commands/graph.md:2`<br>L2, 44, 63 | command | 3 | reads routes, app/**, db/schema.rb to draw the architecture, wiki and help | `rails-stack` (rails-docs-generators) | moves with /rails-flow:graph (commands/graph.md names it) |
 | `commands/handoff.md:8`<br>L8, 56, 57, 59, 60 +2 more | command | 7 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
@@ -128,14 +180,11 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `commands/retro.md:54`<br>L54 | command | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `commands/review.md:12`<br>L12, 14, 34, 35, 68 | command | 5 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `commands/setup-flow.md:348`<br>L348, 351, 366, 367, 382 +18 more | command | 23 | the scaffold, Gemfile, Rails config and gem doctrine it writes into CLAUDE.md | `detector` | asks the detector which stack descriptor to scaffold; the Rails sections move with the rails-stack scaffold |
-| `commands/spec.md:29`<br>L29, 73 | command | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `hooks/hooks.json:73`<br>L73 | hook | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
+| `commands/spec.md:29`<br>L29, 75 | command | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `hooks/scripts/guard-bash.sh:93`<br>L93, 96, 100, 103, 104 +19 more | hook | 24 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `hooks/scripts/guard-lane.sh:33`<br>L33, 54 | hook | 2 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
-| `hooks/scripts/guard-migrate.sh:2`<br>L2, 7, 8, 14, 15 +17 more | hook | 22 | fires on db/migrate files and .rb edits; runs bin/rails and rubocop | `rails-stack` (rails-hooks) | its hooks.json entry moves to the stack plugin |
 | `hooks/scripts/lib/issue_labels.py:1300`<br>L1300, 1303 | hook | 2 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `hooks/scripts/lib/trusted-env.sh:13`<br>L13, 18, 29, 37, 45 +2 more | hook | 7 | a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others | `detector` | the env scrub keeps working exactly as today; only its stack facts (the repo-root markers and the RUBY*/GEM_*/BUNDLE_* names) move to a per-stack list the stack descriptor provides |
-| `hooks/scripts/lint-ruby.sh:2`<br>L2, 9, 14, 16, 17 +5 more | hook | 10 | fires on db/migrate files and .rb edits; runs bin/rails and rubocop | `rails-stack` (rails-hooks) | its hooks.json entry moves to the stack plugin |
 | `hooks/scripts/self-consistency.sh:21`<br>L21 | hook | 1 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `hooks/scripts/stop-gate.sh:26`<br>L26, 31, 32, 44, 178 +12 more | hook | 17 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
 | `hooks/scripts/test-preflight.sh:4`<br>L4, 5, 14, 21 | hook | 4 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
@@ -162,7 +211,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `scripts/check_guide_selftest.py:23`<br>L23, 79, 229, 238, 256 +32 more ↳ | selftest | 37 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/check_handoff.py:99`<br>L99, 184, 258 | script | 3 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/check_handoff_selftest.py:11`<br>L11, 18, 24, 59, 60 +18 more ↳ | selftest | 23 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `scripts/check_hook_gates.py:12`<br>L12, 20, 21, 57, 62 +200 more | script | 205 | the harness that drives every hook, including the Rails ones, with Rails command fixtures (bin/rails, rspec) | `detector` | learns the sibling stack plugin's hooks directory (step 3d of the plan) and drives each stack's hooks with that stack's fixtures |
+| `scripts/check_hook_gates.py:12`<br>L12, 20, 21, 49, 59 +201 more | script | 206 | the harness that drives every hook, including the Rails ones, with Rails command fixtures (bin/rails, rspec) | `detector` | learns the sibling stack plugin's hooks directory (step 3d of the plan) and drives each stack's hooks with that stack's fixtures |
 | `scripts/check_i18n_setup.py:15`<br>L15, 33, 34, 80, 82 +19 more | script | 24 | parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project | `rails-stack` (rails-gates) | moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin |
 | `scripts/check_issue_mockup.py:47`<br>L47, 51, 206 | script | 3 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/check_issue_ready.py:27`<br>L27, 297, 298 | script | 3 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
@@ -185,9 +234,9 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `scripts/ci_verdict_hint.py:193`<br>L193, 195 | script | 2 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
 | `scripts/classify_door.py:15`<br>L15, 18, 20, 42, 43 +29 more | script | 34 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/claude_md_structure.py:115`<br>L115, 116, 117, 118, 119 +12 more | script | 17 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
-| `scripts/detect_stack.py:14`<br>L14, 15, 37, 290, 519 +18 more | script | 23 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
+| `scripts/detect_stack.py:14`<br>L14, 15, 37, 303, 574 +18 more | script | 23 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/dev_baseline.py:4`<br>L4, 10, 26, 53, 54 +25 more | script | 30 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
-| `scripts/docs_layout.py:54`<br>L54, 76, 84, 460, 465 +24 more | script | 29 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
+| `scripts/docs_layout.py:55`<br>L55, 77, 85, 461, 466 +24 more | script | 29 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/extract_claims.py:232`<br>L232 | script | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/findings.py:354`<br>L354 | script | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/generated_docs.py:177`<br>L177, 185 | script | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
@@ -217,7 +266,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `scripts/mutations/ci_verdict_hint.py:28`<br>L28 ↳ | mutation | 1 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
 | `scripts/mutations/classify_door.py:27`<br>L27, 45, 46, 62, 65 ↳ | mutation | 5 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/mutations/claude_md_structure.py:50`<br>L50 ↳ | mutation | 1 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
-| `scripts/mutations/detect_stack.py:12`<br>L12, 193 ↳ | mutation | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
+| `scripts/mutations/detect_stack.py:12`<br>L12, 200 ↳ | mutation | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/mutations/dev_baseline.py:27`<br>L27, 28, 29, 30 ↳ | mutation | 4 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
 | `scripts/mutations/herb_lint.py:13`<br>L13, 15, 18, 29, 30 +9 more ↳ | mutation | 14 | parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project | `rails-stack` (rails-gates) | moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin |
 | `scripts/mutations/risky_diff.py:16`<br>L16, 18, 22, 28, 29 ↳ | mutation | 5 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
@@ -287,8 +336,6 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 
 | file | kind | lines | what it assumes | decision | how |
 |---|---|---:|---|---|---|
-| `agents/kamal-configurator.md:15`<br>L15, 30, 34, 37, 38 +7 more | agent | 12 | routes deploy values into Rails credentials and config/deploy.yml | `rails-stack` (rails-deploy) | the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector |
-| `commands/deploy-cloud.md:10`<br>L10, 37, 43, 55, 57 +2 more | command | 7 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
 | `commands/release.md:26`<br>L26, 76, 136 | command | 3 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
 | `commands/setup-cloud.md:25`<br>L25, 37 | command | 2 | text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec) | `detector` | the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example |
 | `commands/setup-pipeline.md:45`<br>L45 | command | 1 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
@@ -298,10 +345,9 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `scripts/apm_advisory.py:4`<br>L4, 17, 45, 63, 77 +3 more | script | 8 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
 | `scripts/breaker.py:6`<br>L6 | script | 1 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
 | `scripts/breaker_selftest.py:146`<br>L146, 153, 158, 159 ↳ | selftest | 4 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
+| `scripts/detect_stack.py:14`<br>L14, 15, 37, 303, 574 +18 more | script | 23 | the stack detector's own prose and fixtures name Rails and Next.js; the markers it reads are data in each plugin's stacks.json | `detector` | a byte-identical mirror of plugins/rails-flow/scripts/detect_stack.py, held by the detect-stack-drift rule (a plugin installs alone and cannot import another's code); reworded only in the canonical copy |
 | `scripts/git_guard_selftest.py:308`<br>L308, 330, 331, 332, 443 +1 more | selftest | 6 | fixture repositories use Rails-shaped sample paths (app/models/user.rb) to exercise a stack-neutral guard, board or hook | `neutral` | nothing to change: the guard under test is neutral and the sample path is arbitrary |
-| `scripts/kamal_destination.py:13`<br>L13, 23, 24, 28, 92 +16 more | script | 21 | routes deploy values into Rails credentials and config/deploy.yml | `rails-stack` (rails-deploy) | the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector |
 | `scripts/mutations/git_guard_pre_commit.py:134`<br>L134, 135, 141 | mutation | 3 | fixture repositories use Rails-shaped sample paths (app/models/user.rb) to exercise a stack-neutral guard, board or hook | `neutral` | nothing to change: the guard under test is neutral and the sample path is arbitrary |
-| `scripts/mutations/kamal_destination.py:58`<br>L58, 59 ↳ | mutation | 2 | routes deploy values into Rails credentials and config/deploy.yml | `rails-stack` (rails-deploy) | the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector |
 | `scripts/release_build.py:307`<br>L307 | script | 1 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
 | `scripts/scan_committed_secrets.py:13`<br>L13, 128 | script | 2 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
 | `scripts/status_board_selftest.py:376`<br>L376 | selftest | 1 | fixture repositories use Rails-shaped sample paths (app/models/user.rb) to exercise a stack-neutral guard, board or hook | `neutral` | nothing to change: the guard under test is neutral and the sample path is arbitrary |

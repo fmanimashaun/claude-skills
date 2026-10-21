@@ -104,15 +104,22 @@ def manifest_dirs(start: Path) -> list[Path]:
                 take(child)
 
     take(own)
+    # ONLY IN A RECOGNISED LAYOUT (#2117, the #1475 lesson): anywhere else -- a copy staged under the system temp directory -- the
+    # parent is the temp root, and scanning it walked every other process's tempdir (measured: one selftest over ten minutes).
+    in_checkout = own.parent.name == "plugins"                    # <repo>/plugins/<plugin>
+    in_cache = own.parent.parent.parent.name == "cache"           # <plugins>/cache/<marketplace>/<plugin>/<version>
+    if not (in_checkout or in_cache):
+        return sorted(found)
     scan(own.parent)                          # sibling plugins (checkout) or sibling versions (cache)
-    grandparent = own.parent.parent           # the repo root is NOT taken (#2182): rails-stack is a plugin dir now
-    try:
-        peers = sorted(grandparent.iterdir())
-    except OSError:
-        peers = []
-    for peer in peers:
-        if peer.is_dir() and peer != own.parent:
-            scan(peer)                        # every plugin's every version in the cache
+    if in_cache:
+        grandparent = own.parent.parent       # the marketplace directory; a checkout's repo root is NOT taken (#2182)
+        try:
+            peers = sorted(grandparent.iterdir())
+        except OSError:
+            peers = []
+        for peer in peers:
+            if peer.is_dir() and peer != own.parent:
+                scan(peer)                    # every plugin's every version in the cache
     return sorted(found)
 
 
@@ -243,6 +250,12 @@ DESCRIPTOR_SCHEMA: dict = {
     "ui": {"implementation": STR, "tokens_file": STR, "porter": STR, "composer": STR},
     "dangerous_commands": [{"pattern": STR, "allowed": STR}],
     "setup_section": STR,
+    # THE STACK'S SECURITY SURFACE (#2117). The secure-design PROCESS is neutral (when to threat-model, the template, TM-n
+    # ids, the audit before ready); what to look for is per stack: its checklist, its scanners, and the spellings in a plan
+    # or a planned path that mean a boundary in that stack (security_scope.py reads both).
+    "security": {"checklist": STR, "scanners": STRS, "cases": STR,
+                 "boundary_text": [{"boundary": STR, "pattern": STR}],
+                 "boundary_paths": [{"boundary": STR, "pattern": STR}]},
     "scripts": {"*": STR},
     "review_checklist": STRS,
 }
@@ -289,7 +302,7 @@ def shape_problems(value: object, shape: object, where: str) -> list[str]:
 
 # KEYS THAT BELONG TO ONE STACK, NOT TO THE PROJECT (#2180). A Rails app with a Next.js front end runs BOTH stacks' setup
 # sections, so a setup section is never merged (two plugins declaring it is no conflict); each detected stack's is listed.
-PER_STACK_KEYS = ("setup_section",)
+PER_STACK_KEYS = ("setup_section", "security")  # security: #2117, each stack reports its own surface
 
 
 def plugin_root(manifest: dict) -> Path:
@@ -306,6 +319,45 @@ def setup_section_problems(manifest: dict, stack: dict, where: str) -> list[str]
     if not (plugin_root(manifest) / value).is_file():
         return [f"{where}.setup_section {value!r} names no file in {plugin_root(manifest)}"]
     return []
+
+
+def security_problems(manifest: dict, stack: dict, where: str) -> list[str]:
+    """A security checklist is a file inside its own plugin, and every boundary pattern compiles (#2117)."""
+    value = (stack.get("descriptor") or {}).get("security") if isinstance(stack.get("descriptor"), dict) else None
+    if not isinstance(value, dict):
+        return []                               # absent, or a shape problem shape_problems already reports
+    found = []
+    for key in ("checklist", "cases"):
+        named = value.get(key)
+        if isinstance(named, str) and named:
+            if escapes(named):
+                found.append(f"{where}.security.{key} {named!r} must stay inside its plugin (no absolute path, no `..`)")
+            elif not (plugin_root(manifest) / named).is_file():
+                found.append(f"{where}.security.{key} {named!r} names no file in {plugin_root(manifest)}")
+    for key in ("boundary_text", "boundary_paths"):
+        for i, row in enumerate(value.get(key) or []):
+            if isinstance(row, dict) and isinstance(row.get("pattern"), str):
+                try:
+                    re.compile(row["pattern"])
+                except re.error as err:
+                    found.append(f"{where}.security.{key}[{i}].pattern does not compile: {err}")
+    return found
+
+
+def security_surfaces(manifests: list[dict], matched: list[dict]) -> list[dict]:
+    """Each matched stack's security block, its checklist as a readable path, in detection order (#2117)."""
+    by_plugin = {m["plugin"]: m for m in manifests}
+    out = []
+    for found in matched:
+        manifest = by_plugin[found["plugin"]]
+        stack = next(s for s in manifest["stacks"] if isinstance(s, dict) and s.get("id") == found["id"])
+        value = (stack.get("descriptor") or {}).get("security")
+        if isinstance(value, dict):
+            entry = {"stack": found["id"], "plugin": found["plugin"], **json.loads(json.dumps(value))}
+            if isinstance(value.get("checklist"), str):
+                entry["checklist"] = str(plugin_root(manifest) / value["checklist"])
+            out.append(entry)
+    return out
 
 
 def leaves(value: object, path: str = "") -> dict[str, object]:
@@ -353,9 +405,11 @@ def descriptor_problems(manifest: dict, roots: list[Path] | None = None) -> list
             where = f"{manifest['_path']}: stack {stack.get('id')!r} descriptor"
             found.extend(shape_problems(stack["descriptor"], DESCRIPTOR_SCHEMA, where))
             found.extend(setup_section_problems(manifest, stack, where))
+            found.extend(security_problems(manifest, stack, where))
             values = leaves(stack["descriptor"]) if isinstance(stack["descriptor"], dict) else {}
             found.extend(agent_problems(values, where, roots))
-            declared |= set(values) - set(PER_STACK_KEYS)   # a setup section alone is no flow-facing descriptor
+            # a setup section or a security block alone is no flow-facing descriptor; leaves are dotted (`security.checklist`)
+            declared |= {k for k in values if k.split(".")[0] not in PER_STACK_KEYS}
     if declared:
         missing = [key for key in REQUIRED if key not in declared]
         if missing:
@@ -467,6 +521,7 @@ def run(project: Path, dirs: list[Path], stacks: list[str] | None = None, roots:
     problems += conflicts
     report = {"project": str(project), "stacks": matched, "manifests": [m["_path"] for m in manifests], "problems": problems,
               "descriptor": descriptor, "descriptor_sources": sources, "setup_sections": setup_sections(manifests, matched),
+              "security": security_surfaces(manifests, matched),
               "available": available(manifests), "fresh": fresh(project)}
     if problems:
         return 2, report
@@ -617,12 +672,22 @@ def selftest() -> int:
         case(seen == {"rails-stack", "nextjs-stack"}, f"discovery reads plugin roots only (siblings, not the repo root or a stray stacks.json): {sorted(seen)}")
 
         # AND IN THE CACHE SHAPE: <plugin>/<version>/ under one marketplace directory.
-        cache = root / "installed" / "claude-skills"
+        cache = root / "installed" / "cache" / "claude-skills"   # Claude Code's shape: <plugins>/cache/<marketplace>/<plugin>/<version>
         (cache / "rails-flow" / "1.64.0" / "scripts").mkdir(parents=True)
         plugin_dir(cache / "rails-stack" / "1.76.0")
         (cache / "rails-stack" / "1.76.0" / MANIFEST).write_text(json.dumps({"plugin": "rails-stack", "stacks": []}), encoding="utf-8")
         seen_cache = [p.parent.name for p in manifest_dirs(cache / "rails-flow" / "1.64.0" / "scripts" / "detect_stack.py")]
         case(seen_cache == ["rails-stack"], f"discovery finds a stack plugin in the installed cache: {seen_cache}")
+
+        # A COPY STAGED OUTSIDE BOTH LAYOUTS (#2117, the #1475 lesson): only its own plugin is read, never its parent directory,
+        # so a sibling tempdir's stacks.json is not found (and the system temp root is never walked).
+        staged = root / "tmp" / "stage-a"
+        (staged / "scripts").mkdir(parents=True)
+        stranger = root / "tmp" / "stage-b"
+        plugin_dir(stranger)
+        (stranger / MANIFEST).write_text(json.dumps({"plugin": "stranger", "stacks": []}), encoding="utf-8")
+        seen_staged = manifest_dirs(staged / "scripts" / "detect_stack.py")
+        case(seen_staged == [], f"a staged copy reads no sibling directory's stacks.json: {seen_staged}")
 
         # THE COMMAND LINE: --json is the report, and the exit code is the run's.
         out = io.StringIO()

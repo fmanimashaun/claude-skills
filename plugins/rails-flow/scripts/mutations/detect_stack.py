@@ -113,15 +113,22 @@ GUARD = Guard(
         Mutation(
             # #2182: rails-stack ships stacks.json from plugins/rails-stack/; a root stacks.json is now stray.
             "the repo root is read again, so a stray root stacks.json becomes a plugin",
-            "    grandparent = own.parent.parent           # the repo root is NOT taken (#2182): rails-stack is a plugin dir now\n",
-            "    grandparent = own.parent.parent\n    take(grandparent)\n",
+            "    scan(own.parent)                          # sibling plugins (checkout) or sibling versions (cache)\n",
+            "    scan(own.parent)                          # sibling plugins (checkout) or sibling versions (cache)\n    take(own.parent.parent)\n",
             "discovery reads plugin roots only",
         ),
         Mutation(
             "the installed cache is not scanned, so no stack plugin is found where the toolchain runs",
-            "            scan(peer)                        # every plugin's every version in the cache",
-            "            pass",
+            "                scan(peer)                    # every plugin's every version in the cache",
+            "                pass",
             "discovery finds a stack plugin in the installed cache",
+        ),
+        Mutation(
+            # #2117, the #1475 lesson: outside a recognised layout the parent directory is not scanned.
+            "a staged copy scans its parent again, so the system temp root is walked and a stranger's stacks.json is read",
+            "    if not (in_checkout or in_cache):\n        return sorted(found)\n",
+            "",
+            "a staged copy reads no sibling directory's stacks.json",
         ),
         Mutation(
             "a descriptor key two plugins declare is merged silently, so one stack's test command overwrites another's",
@@ -275,7 +282,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a plugin declaring only a setup section is held to the required keys, so a section-only plugin can never pass",
-            "            declared |= set(values) - set(PER_STACK_KEYS)",
+            '            declared |= {k for k in values if k.split(".")[0] not in PER_STACK_KEYS}',
             "            declared |= set(values)",
             "two plugins' setup sections are both listed",
         ),
