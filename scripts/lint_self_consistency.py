@@ -623,7 +623,10 @@ def check_hook_lib_drift() -> tuple[list[Finding], int]:
 # rails-flow copy. A fix to one copy that misses another reopens #1588 in that plugin.
 FIXTURE_GIT_COPIES = ("plugins/rails-flow/scripts/fixture_git.py",
                       "plugins/qa-flow/scripts/fixture_git.py",
-                      "plugins/pipeline/scripts/fixture_git.py")
+                      "plugins/pipeline/scripts/fixture_git.py",
+                      # #2173: rails-stack's vendored dev_baseline.py imports it (test-runner -> triage_failures -> dev_baseline -> fixture_git).
+                      # TEMPORARY with dev_baseline's copy: it leaves when rails-stack owns the triage originals (#2183).
+                      "plugins/rails-stack/scripts/fixture_git.py")
 
 
 def check_fixture_git_drift() -> tuple[list[Finding], int]:
@@ -642,7 +645,7 @@ def check_fixture_git_drift() -> tuple[list[Finding], int]:
     for rel in FIXTURE_GIT_COPIES[1:]:
         if canonical is not None and rel in texts and texts[rel] != canonical:
             findings.append(Finding("fixture-git-drift", rel, 0,
-                                    f"differs from {FIXTURE_GIT_COPIES[0]} -- one fixture-git lock, three copies: a fix "
+                                    f"differs from {FIXTURE_GIT_COPIES[0]} -- one fixture-git lock, several copies: a fix "
                                     "landed in one and not the others. Copy the canonical file over it (cp) and re-run"))
     return findings, len(FIXTURE_GIT_COPIES)
 
@@ -841,6 +844,8 @@ def check_findings_script_drift() -> tuple[list[Finding], int]:
 VENDORED_COPIES = (
     ("plugins/rails-flow/scripts/triage_failures.py", "plugins/rails-stack/scripts/triage_failures.py",
      "rails-stack's test-runner runs it; it leaves when the flows' triage reads the descriptor and rails-stack owns the original"),
+    ("plugins/rails-flow/scripts/dev_baseline.py", "plugins/rails-stack/scripts/dev_baseline.py",
+     "the vendored triage_failures.py imports it; it leaves with that copy, when the flows' triage reads the descriptor (#2183)"),
     ("plugins/rails-flow/scripts/check_simple_form_only.py", "plugins/rails-stack/scripts/check_simple_form_only.py",
      "rails-stack's design-auditor runs it; step 4 (#2175) moves the original and its checks.json row and deletes this copy"),
     ("plugins/rails-flow/reference/agent-output-contract.md", "plugins/rails-stack/reference/agent-output-contract.md",
@@ -5643,9 +5648,11 @@ def selftest() -> int:
     scenario("identical fixture_git copies are silent", rule="fixture-git-drift", expect_finding=False,
              files={c: FG for c in FIXTURE_GIT_COPIES})
     scenario("a fixture_git copy that differs by one byte is a finding", rule="fixture-git-drift", expect_finding=True,
-             files={FIXTURE_GIT_COPIES[0]: FG, FIXTURE_GIT_COPIES[1]: FG, FIXTURE_GIT_COPIES[2]: FG + "\n"})
+             files={**{c: FG for c in FIXTURE_GIT_COPIES}, FIXTURE_GIT_COPIES[2]: FG + "\n"})
+    scenario("a rails-stack fixture_git copy that differs by one byte is a finding", rule="fixture-git-drift", expect_finding=True,
+             files={**{c: FG for c in FIXTURE_GIT_COPIES}, FIXTURE_GIT_COPIES[3]: FG + "\n"})
     scenario("a missing fixture_git copy is a finding", rule="fixture-git-drift", expect_finding=True,
-             files={FIXTURE_GIT_COPIES[0]: FG, FIXTURE_GIT_COPIES[1]: FG})
+             files={c: FG for c in FIXTURE_GIT_COPIES if c != FIXTURE_GIT_COPIES[2]})
     FS = "REQUIRED = ('id',)\n"
     scenario("identical findings.py copies are silent", rule="findings-script-drift", expect_finding=False,
              files={c: FS for c in FINDINGS_COPIES}, only=check_findings_script_drift)

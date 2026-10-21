@@ -7075,6 +7075,18 @@
   },
   {
    "class": "mixed",
+   "issue": 2183,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/dev_baseline.py",
+   "plugin": "rails-stack",
+   "rails_lines": 30,
+   "registered": [],
+   "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "mixed",
    "issue": 2186,
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/scripts/findings.py",
@@ -7082,6 +7094,18 @@
    "rails_lines": 1,
    "registered": [],
    "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "neutral",
+   "issue": 2186,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/fixture_git.py",
+   "plugin": "rails-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
    "type": "script",
    "via": "declared"
   },
@@ -7173,8 +7197,8 @@
  "generated_by": "scripts/component_classes.py",
  "summary": {
   "by_class": {
-   "mixed": 203,
-   "neutral": 269,
+   "mixed": 204,
+   "neutral": 270,
    "nextjs": 3,
    "rails": 119
   },
@@ -7222,11 +7246,11 @@
     "total": 290
    },
    "rails-stack": {
-    "mixed": 6,
-    "neutral": 3,
+    "mixed": 7,
+    "neutral": 4,
     "nextjs": 0,
     "rails": 17,
-    "total": 26
+    "total": 28
    }
   },
   "by_type": {
@@ -7259,11 +7283,11 @@
     "total": 51
    },
    "script": {
-    "mixed": 59,
-    "neutral": 53,
+    "mixed": 60,
+    "neutral": 54,
     "nextjs": 0,
     "rails": 32,
-    "total": 144
+    "total": 146
    },
    "skill": {
     "mixed": 3,
@@ -7287,6 +7311,6 @@
     "total": 185
    }
   },
-  "components": 594
+  "components": 596
  }
 }
