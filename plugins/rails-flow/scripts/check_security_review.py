@@ -30,11 +30,11 @@ STRICT (#2214 adversary). A cited file must be a regular file (mode 100644 or 10
 answered twice is refused, never "last wins".
 
 A ROW MAY ALSO DECLARE (#2260) `line_comments` (markers that make a line that STARTS with them a comment, such as JavaScript's `<!--` and `-->`) and `refuse_when`
-(a pattern which, on any line of the file, means a line-by-line reader cannot tell code from non-code, such as a template literal spanning lines: the WHOLE file is
-refused, never guessed at). A file type is read only when a stack declares it: `.ts`, `.jsx` and `.tsx` stay refused until a verified source says their comments match.
+(a pattern which, on any line of the file, means a line-by-line reader cannot tell code from non-code: the WHOLE file is refused, never guessed at). For
+JavaScript any backtick refuses the file, because a template literal's body lines look like code and no count of backticks proves where one ends. A file type is read only when a stack declares it: `.ts`, `.jsx` and `.tsx` stay refused until a verified source says their comments match.
 
 LIMITS. It proves the record is current, complete and cites a line of code that exists, not that the cited line implements the control. The
-code-line reading is line-by-line, not a parser: a `<<ID` or a comment marker inside a string is misread (a `/*` inside a JavaScript string opens a span, so the lines after it are refused: a false refusal, never a false accept); a language's multi-line string
+code-line reading is line-by-line, not a parser: a `<<ID` or a comment marker inside a string is misread (a `/*` inside a JavaScript string opens a span, so the lines after it are refused: a false refusal, never a false accept; a JavaScript line ending in a backslash continues a string onto the next line, and JSON saved as `.js` is read as code, both unhandled and stated); a language's multi-line string
 literals (a percent-literal, a quoted string spanning lines) read as code; dead code (`if false`) reads as code; a byte-order mark before line 1
 makes a column-0 opener on line 1 not count. That is the auditor's work and the reviewer's. Nothing stops a session that writes the record by hand, as with `risky_diff.py`. The model is found only
 when the change adds or edits it, so a unit that has a boundary and no model is `security_scope.py`'s concern, not this check's.
@@ -96,6 +96,8 @@ def non_code_lines(lines: list[str], blocks: tuple[tuple[str, str, bool], ...] =
     heredocs: list[tuple[str, bool]] = []
     for n, raw in enumerate(lines, 1):
         raw = raw.rstrip("\r\n")
+        if n == 1:
+            raw = raw.lstrip("\ufeff")        # a byte-order mark is not part of line 1 (#2260 adversary: `\ufeff// comment` read as code)
         t = raw.strip()
         if raw in end_markers:
             out.update(range(n, len(lines) + 1))
@@ -190,7 +192,7 @@ def refusal_for(path: str, lines: list[str], rows: list[dict]) -> str | None:
             for refusal in row.get("refuse_when") or []:
                 pattern = re.compile(refusal["pattern"])
                 for n, line in enumerate(lines, 1):
-                    if pattern.search(line):
+                    if pattern.search(line.lstrip("\ufeff") if n == 1 else line):
                         return f"line {n} {refusal['why']}"
     return None
 
@@ -207,7 +209,7 @@ def file_at_head(root: Path, path: str) -> list[str] | None:
     if tree.returncode != 0 or not tree.stdout.strip() or tree.stdout.split()[0] not in ("100644", "100755"):
         return None  # not in HEAD, a symlink (`git show` prints its target, which would read as code), a directory or a submodule
     proc = subprocess.run(["git", "-C", str(root), "show", f"HEAD:{p.as_posix()}"], capture_output=True)
-    return proc.stdout.decode("utf-8", errors="replace").splitlines() if proc.returncode == 0 else None
+    return proc.stdout.decode("utf-8-sig", errors="replace").splitlines() if proc.returncode == 0 else None
 
 
 def record_path(slug: str) -> Path:
@@ -391,12 +393,13 @@ def selftest() -> int:
         (root / "src/h.y").write_text("code(1)\nx = `a\nb`\ncode(2)\n")
         (root / "src/i.x").write_text("%% this marker belongs to .y files, not .x\ncode(1)\n")
         (root / "src/j.x").write_text("x = `a\ncode(2)\n")
+        (root / "src/k.x").write_bytes("\ufeff# a comment after a byte-order mark\ncode(1)\n".encode("utf-8"))
         (root / "src/dir.x").mkdir()
         (root / "src/dir.x/inner.x").write_text("x\n")
         # #2214 adversary pass 4: a line that closes one span and opens another, and a closing line that reopens one.
         F_X = ["a /* x */ b /* begin", "hidden", "end */ y /* again", "hidden2", "*/", "code"]
         (root / "src/f.x").write_text("\n".join(F_X) + "\n")
-        git("add", "src/c.x", "src/d.x", "src/e.js", "src/dir.x/inner.x", "src/f.x", "src/g.y", "src/h.y", "src/i.x", "src/j.x")
+        git("add", "src/c.x", "src/d.x", "src/e.js", "src/dir.x/inner.x", "src/f.x", "src/g.y", "src/h.y", "src/i.x", "src/j.x", "src/k.x")
         git("commit", "-q", "-m", "base")
         got_f = non_code_lines(F_X, *rules_for("src/f.x", _SYNTAX[str(root)], _MARKERS[str(root)]))
         if got_f != {2, 3, 4, 5}:
@@ -480,6 +483,17 @@ def selftest() -> int:
         case("a refused file names the line and why (#2260)", good.replace("src/c.x:2", "src/h.y:4"), 1, "line 2 has an odd number of backticks")
         case("a row's line-comment marker does not apply to another file type (#2260)", good.replace("src/c.x:2", "src/i.x:1"), 0, "answered")
         case("a row's refuse_when does not apply to another file type (#2260)", good.replace("src/c.x:2", "src/j.x:2"), 0, "answered")
+        case("a comment on line 1 after a byte-order mark is not code (#2260)", good.replace("src/c.x:2", "src/k.x:1"), 1, NOT_CODE)
+        case("code on line 2 of a byte-order-marked file passes (#2260)", good.replace("src/c.x:2", "src/k.x:2"), 0, "answered")
+        if file_at_head(root, "src/k.x")[0].startswith("\ufeff"):
+            bad += 1
+            print("FAIL a byte-order mark is stripped when a file is read at HEAD (#2260)")
+        if refusal_for("a.y", ["\ufeff<!-- c"], [{"extensions": [".y"], "refuse_when": [{"pattern": r"\S.*<!--", "why": "w"}]}]):
+            bad += 1
+            print("FAIL a byte-order mark is not text before `<!--` on line 1 for a refuse_when pattern (#2260)")
+        if non_code_lines(["\ufeff# c", "code"]) != {1}:
+            bad += 1
+            print("FAIL a byte-order mark is not part of line 1 (#2260)")
         case("a directory is never read as a cited file", good.replace("src/c.x:2", "src/dir.x:1"), 1, "a regular file committed at HEAD")
         case("a file type no stack declares is refused, not read with neutral rules", good.replace("src/c.x:2", "src/e.js:1"), 1,
              "declare this file type's comment syntax in the stack descriptor")

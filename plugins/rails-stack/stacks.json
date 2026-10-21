@@ -72,8 +72,8 @@
                   ],
                   "refuse_when": [
                     {
-                      "pattern": "^[^`]*`(?:[^`]*`[^`]*`)*[^`]*$",
-                      "why": "has an odd number of backticks: a template literal may span lines, and its body lines would read as code"
+                      "pattern": "`",
+                      "why": "contains a backtick: a template literal's body lines cannot be told from code by a line reader, and an even backtick count proves nothing (a nested template, an escaped backtick, a backtick in a string, in a substitution or in a comment all keep it even); cite a file without one"
                     },
                     {
                       "pattern": "\\S.*<!--",

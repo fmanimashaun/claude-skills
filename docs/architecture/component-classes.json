@@ -8290,7 +8290,7 @@
    "path": "plugins/rails-stack/security/syntax-cases.json",
    "plugin": "rails-stack",
    "proven": false,
-   "rails_lines": 35,
+   "rails_lines": 44,
    "registered": [],
    "seam": "",
    "type": "support",

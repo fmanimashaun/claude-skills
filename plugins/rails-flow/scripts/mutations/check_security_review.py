@@ -188,7 +188,7 @@ GUARD = Guard(
         ),
         Mutation(
             "#2260: refuse_when never matches, so a template literal's body lines read as code",
-            "                    if pattern.search(line):",
+            '                    if pattern.search(line.lstrip("\\ufeff") if n == 1 else line):',
             "                    if False:",
             "a file the row's refuse_when matches is refused whole",
         ),
@@ -209,6 +209,24 @@ GUARD = Guard(
             '        if any(path.endswith(ext) for ext in row.get("extensions") or []):\n            for refusal in',
             '        if True:\n            for refusal in',
             "a row's refuse_when does not apply to another file type",
+        ),
+        Mutation(
+            "#2260: a file is decoded as plain UTF-8, so a byte-order mark stays in line 1 and `\\ufeff// comment` reads as code",
+            'proc.stdout.decode("utf-8-sig", errors="replace").splitlines()',
+            'proc.stdout.decode("utf-8", errors="replace").splitlines()',
+            "a byte-order mark is stripped when a file is read at HEAD",
+        ),
+        Mutation(
+            "#2260: a byte-order mark is kept in line 1 when the lines are judged",
+            '        if n == 1:\n            raw = raw.lstrip("\\ufeff")',
+            '        if False:\n            raw = raw.lstrip("\\ufeff")',
+            "a byte-order mark is not part of line 1",
+        ),
+        Mutation(
+            "#2260: a byte-order mark counts as text before `<!--` on line 1, so a refuse_when pattern misreads it",
+            'pattern.search(line.lstrip("\\ufeff") if n == 1 else line)',
+            "pattern.search(line)",
+            "a byte-order mark is not text before `<!--` on line 1",
         ),
     ),
 )
