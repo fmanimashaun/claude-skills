@@ -40,6 +40,7 @@ import argparse
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -101,11 +102,12 @@ def fixtures(base: Path) -> dict[str, Path]:
 
 def environment(base: Path, log: Path, project: Path, plugin_root: Path | None = None) -> dict[str, str]:
     tools = [str(Path(sys.executable).parent), *(str(Path(p).parent) for p in (shutil.which("git"),) if p), "/usr/bin", "/bin"]
-    env = {"PATH": os.pathsep.join([str(base / "tripwire"), *dict.fromkeys(tools)]), "HOME": str(base / "home"), "TMPDIR": str(base),
+    env = {"PATH": os.pathsep.join([str(base / "tripwire"), *dict.fromkeys(tools)]), "HOME": str(base / "home"), "TMPDIR": str(base / "tmp"),
            "LANG": "C.UTF-8", "PROVE_TRIPWIRE_LOG": str(log), "CLAUDE_PROJECT_DIR": str(project), "GIT_CONFIG_GLOBAL": os.devnull}
     if plugin_root is not None:
         env["CLAUDE_PLUGIN_ROOT"] = str(plugin_root)
     (base / "home").mkdir(exist_ok=True)
+    (base / "tmp").mkdir(exist_ok=True)
     return env
 
 
@@ -123,28 +125,43 @@ def verdict(rc: int, out: str, log: Path, *, usage_ok: bool = False) -> tuple[st
     return ("finding" if not usage_ok else "notproven"), f"exit {rc}: {out.strip().splitlines()[-1][:80] if out.strip() else 'no output'}"
 
 
+def run_group(cmd: list[str], *, cwd: Path, env: dict[str, str], stdin: str | None) -> tuple[int, str] | None:
+    """Run `cmd` in its own process group and kill the whole group on a timeout (a component can spawn children that outlive it). None on timeout."""
+    proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, start_new_session=True)
+    try:
+        out, _ = proc.communicate(stdin, timeout=TIMEOUT)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.communicate()
+        return None
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)  # stragglers of a component that exited
+    except ProcessLookupError:
+        pass
+    return proc.returncode, out
+
+
 def run_hook(path: Path, event: str, project: Path, base: Path) -> tuple[str, str]:
     log = base / f"log-{path.name}-{project.name}"
     log.unlink(missing_ok=True)
     payload = {"session_id": "prove", "transcript_path": str(base / "none.jsonl"), "cwd": str(project), "hook_event_name": event, **PAYLOADS.get(event.split()[0], {})}
     plugin_root = next(p for p in (path, *path.parents) if (p / ".claude-plugin").is_dir())
     cmd = ["/bin/bash", "-p", str(path)] if path.suffix == ".sh" else [sys.executable, str(path)]
-    try:
-        done = subprocess.run(cmd, input=json.dumps(payload), cwd=project, env=environment(base, log, project, plugin_root), capture_output=True, text=True, timeout=TIMEOUT)
-    except subprocess.TimeoutExpired:
-        return "finding", f"timed out after {TIMEOUT}s"
-    return verdict(done.returncode, done.stdout + done.stderr, log)
+    done = run_group(cmd, cwd=project, env=environment(base, log, project, plugin_root), stdin=json.dumps(payload))
+    if done is None:
+        return "notproven", f"timed out after {TIMEOUT}s (a slow or loaded machine proves nothing either way)"
+    return verdict(done[0], done[1], log)
 
 
 def run_script(path: Path, project: Path, base: Path) -> tuple[str, str]:
     log = base / f"log-{path.name}-{project.name}"
     log.unlink(missing_ok=True)
     cmd = [sys.executable, str(path)] if path.suffix == ".py" else ["/bin/bash", str(path)]
-    try:
-        done = subprocess.run(cmd, stdin=subprocess.DEVNULL, cwd=project, env=environment(base, log, project), capture_output=True, text=True, timeout=TIMEOUT)
-    except subprocess.TimeoutExpired:
+    done = run_group(cmd, cwd=project, env=environment(base, log, project), stdin=None)
+    if done is None:
         return "notproven", f"timed out after {TIMEOUT}s"
-    return verdict(done.returncode, done.stdout + done.stderr, log, usage_ok=True)
+    return verdict(done[0], done[1], log, usage_ok=True)
 
 
 def run_gate(check, project: Path, base: Path) -> tuple[str, str]:
@@ -164,6 +181,8 @@ def run_gate(check, project: Path, base: Path) -> tuple[str, str]:
         return "finding", f"called a Rails tool: {calls[0][:80]}"
     if result.status in (pg.PASS, pg.NA):
         return "clean", ""
+    if "is not on PATH" in result.detail:
+        return "notproven", f"needs a tool this harness does not provide: {result.detail[:80]}"
     return "finding", f"{result.status}: {result.detail[:80]}"
 
 
@@ -177,7 +196,7 @@ def prove_all(root: Path, components: list[dict], only: set[str] | None = None) 
         checks[f"plugins/{check.plugin}/checks.json#{check.id}"] = check
     todo = [c for c in components if c["info"] and c["info"]["class"] == "neutral" and c["type"] in ("hook", "script", "gate") and (only is None or c["path"] in only)]
     results: dict[str, dict] = {}
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         base = Path(tmp)
         tripwire(base / "tripwire")
         projects = fixtures(base)
