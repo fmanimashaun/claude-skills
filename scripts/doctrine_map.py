@@ -764,6 +764,17 @@ CLAIMS: tuple[Claim, ...] = (
         refs=(2118,),
         note="Our design, no external claim. The check proves the citation exists, not that the criterion's observable would fail without the control.",
     ),
+    Claim(
+        claim="A change that adds or edits a threat model cannot be marked ready without a current `security-auditor` record that answers every `mitigate` and `accept` row, "
+              "and a `mitigate` row recorded `not implemented` is a finding for a human.",
+        stated_in="plugins/rails-flow/commands/feature.md",
+        anchor="**verify the threat model**",
+        kind=GUARANTEE,
+        enforced_by=("script:plugins/rails-flow/scripts/check_security_review.py", "mutation:check_security_review"),
+        refs=(2119,),
+        note="Our design, no external claim. It binds `gh pr ready` through the sweep (`project_gates.py` -> `guard-pr-ready.sh`), not by chaining. It proves the record is current, "
+             "complete and cites code that exists, not that the cited line implements the control.",
+    ),
     # ---- what the plugins promise downstream ------------------------------------------------
     Claim(
         claim="An acceptance criterion that no spec cites is unproven, and the work order says so.",

@@ -61,5 +61,5 @@ Exit 1 names the row: a missing section, a decision outside the four, an `accept
 
 ## What follows (not built by this command)
 
-- Mandatory `security-auditor` against the model before `gh pr ready` when a model exists for the change (#2119, decision D3 on #2115). Until that lands, run `security-auditor` yourself on any unit that has a model.
+- Mandatory `security-auditor` against the model before `gh pr ready` when the change adds or edits one (#2119, decision D3 on #2115): `check_security_review.py`, a sweep gate. `/rails-flow:feature` has the record's shape.
 - Abuse-case charters from the `mitigate` rows for QA (#2126).

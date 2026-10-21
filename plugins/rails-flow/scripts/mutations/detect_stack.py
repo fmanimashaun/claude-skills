@@ -328,5 +328,18 @@ GUARD = Guard(
             '        print(json.dumps({"stacks": [{"id": s["id"]} for s in report["stacks"]], "fresh": report["fresh"],',
             "--descriptor names each stack's plugin",
         ),
+        Mutation(
+            # #2214 review: a heredoc pattern without `id` passed validation and crashed check_security_review.
+            "a heredoc pattern with no `id` group passes again",
+            '                if "id" not in groups:',
+            '                if False:',
+            "a heredoc pattern with no `id` group is a problem",
+        ),
+        Mutation(
+            "a non-boolean column0 passes again",
+            "        return [] if isinstance(value, bool) else [f\"{where} must be true or false\"]",
+            "        return []",
+            "a column0 that is not true or false is a problem",
+        ),
     ),
 )

@@ -325,6 +325,13 @@ gh pr create --base <base> --title "feat: <summary>" --body "<the PR Documentati
   a finding for the user, so stop, quote the findings and hand the merge over; it is not an automatic stop of the work, and you do
   not decide its disposition. Exit 2 means it could not classify: stop. Mark the PR ready with `risky_diff.py ... && gh pr ready`,
   never `;`. A record is tied to the commit it names, so a push after the pass needs a new one.
+- On CLEAN, **verify the threat model** when the change adds or edits one (`docs/security/threat-models/<slug>.md`, #2119):
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_security_review.py"`. `security-auditor` is MANDATORY then, not "if auth changed": give it the model and the
+  base, and save its answer verbatim to `docs/evidence/reviews/prs/<slug>/security-audit.md`: first line `Head: <sha>`, one line per `mitigate` and `accept` row
+  (`TM-n: implemented <file:line>`, `TM-n: not implemented`, `TM-n: holds <why>`, `TM-n: stale <what changed>`), last line `VERDICT: CLEAN` or `VERDICT: BLOCKED`.
+  Exit 1: run the pass on this HEAD (the record is missing, stale or leaves a row out). Exit 3: a `mitigate` row is not implemented, an `accept` row has gone stale
+  or the verdict is BLOCKED; that is a finding for the user, so stop and quote it. Exit 2: it could not read the model or the base. The check is also a `project_gates.py` gate,
+  so a missing or stale record turns the sweep red and `gh pr ready` is refused without a green sweep for HEAD; a push after the pass needs a new one.
 - On CLEAN and a two-way door: if the base is `dev`, merge (`gh pr merge --squash`), then post a summary
   comment citing the gate's findings. If the base is the default branch (no `dev`), stop
   after CLEAN and hand the merge decision to the user — and offer them a PR babysitter:
