@@ -22,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fixture_git  # noqa: E402  (#1588: a fixture's git touches only its own temp repo)
+from process_containment import contained  # noqa: E402  (#1582: nothing a case starts outlives the run)
 
 for _k, _v in (("GIT_AUTHOR_NAME", "t"), ("GIT_AUTHOR_EMAIL", "t@t"), ("GIT_COMMITTER_NAME", "t"), ("GIT_COMMITTER_EMAIL", "t@t")):  # fixture-git: exempt (an identity for fixture_git.run's own commit; it names no repository)
     os.environ[_k] = _v
@@ -181,11 +182,11 @@ def _claim_bodies(base: Path) -> None:
     fx.reset()
     try:      # no writer: a shim that reads it HANGS, which must be this check failing by name, not the selftest crashing on a timeout
         proc = subprocess.Popen(["bash", "-c", f"gh pr create --title t --body-file {fifo}"], cwd=fx.repo, env=fx.env, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True, start_new_session=True)
+                                stderr=subprocess.PIPE, text=True)
         out, err = proc.communicate(timeout=15)
         ok, why = proc.returncode == 0 and len(fx.ran()) == 1 and "NOT checked" in err, f"rc {proc.returncode}, {err.strip()[-160:]!r}"
     except subprocess.TimeoutExpired:
-        os.killpg(proc.pid, signal.SIGKILL)       # the whole group: a `cat` blocked on the fifo would otherwise outlive the test
+        proc.kill()              # the shell; a `cat` blocked on the fifo is swept by the containment when the run ends
         proc.communicate()
         ok, why = False, "the shim hung reading the fifo (15 s)"
     check("a fifo body is not read by the shim (no hang): NOT checked, said, and it runs", ok, why)
@@ -216,7 +217,7 @@ def _claim_bodies(base: Path) -> None:
         for leftover in own_tmp.glob("rf-gh-body.*"):
             leftover.unlink()
         proc = subprocess.Popen(["bash", "-c", f'exec gh pr create --title t --body "$(cat {good})"'], cwd=fx.repo, env=fx.env,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         time.sleep(delay)
         try:
             os.kill(proc.pid, signal.SIGTERM)
@@ -225,7 +226,7 @@ def _claim_bodies(base: Path) -> None:
         try:
             proc.communicate(timeout=30)
         except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
+            proc.kill()          # anything it left is swept by the containment
             proc.communicate()
         if proc.returncode == 143:
             landed = (delay, fx.ran(), sorted(own_tmp.glob("rf-gh-body.*")))
@@ -556,13 +557,18 @@ def main(argv: list[str]) -> int:
         print(f"SELFTEST FAILED -- no case's label contains {match!r}", file=sys.stderr)
         return 1
     global CURRENT
-    for label, fn in chosen:
-        CURRENT = label
-        td = tempfile.mkdtemp(prefix="ghshim-")
-        try:
-            fn(Path(td))
-        finally:
-            shutil.rmtree(td, ignore_errors=True)
+    # CONTAINED (#1582): every process a case starts carries the box's token, and the box sweeps them all when it closes. The fifo case's `cat`, blocked on a fifo
+    # with no writer when a mutant reads it, would otherwise outlive the run.
+    with contained() as box:
+        for label, fn in chosen:
+            CURRENT = label
+            td = tempfile.mkdtemp(prefix="ghshim-")
+            try:
+                fn(Path(td))
+            finally:
+                shutil.rmtree(td, ignore_errors=True)
+    if box.killed:
+        print(f"gh-shim selftest: the containment swept {len(box.killed)} leftover process(es): {box.killed}", file=sys.stderr)
     if FAILURES:
         print(f"gh-shim selftest FAILED -- {len(FAILURES)} of {CHECKS}:", file=sys.stderr)
         for f in FAILURES:

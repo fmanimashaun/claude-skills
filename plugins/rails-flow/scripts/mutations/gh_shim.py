@@ -9,7 +9,8 @@ GUARD = Guard(
     selftest="scripts/gh_shim_selftest.py",
     needs=("scripts/fixture_git.py", "git-shim/gh", "hooks/scripts/guard-pr-ready.sh", "hooks/scripts/lib",
            # #2258: the shim judges a claim-carrying body through guard-claims.sh, which reads extract_claims.py
-           "hooks/scripts/guard-claims.sh", "scripts/extract_claims.py"),
+           "hooks/scripts/guard-claims.sh", "scripts/extract_claims.py",
+           "scripts/process_containment.py"),   # the selftest runs its cases under contained() (#1582)
     narrow_with="--match",
     mutations=(
         Mutation('RAILS_FLOW_GH_OK is ignored', 'if [ "${RAILS_FLOW_GH_OK:-}" = 1 ]; then', 'if false; then', 'escape'),
