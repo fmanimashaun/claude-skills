@@ -3472,7 +3472,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/commands/feature.md",
    "plugin": "rails-flow",
-   "rails_lines": 2,
+   "rails_lines": 3,
    "registered": [],
    "seam": "asks the stack detector (#2163) for the stack's commands instead of naming Rails ones",
    "type": "command",
@@ -3484,7 +3484,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/commands/fix.md",
    "plugin": "rails-flow",
-   "rails_lines": 3,
+   "rails_lines": 4,
    "registered": [],
    "seam": "asks the stack detector (#2163) for the stack's commands instead of naming Rails ones",
    "type": "command",
@@ -3508,7 +3508,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/commands/handoff.md",
    "plugin": "rails-flow",
-   "rails_lines": 6,
+   "rails_lines": 7,
    "registered": [],
    "seam": "asks the stack detector (#2163) for the stack's commands instead of naming Rails ones",
    "type": "command",
@@ -3520,23 +3520,23 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/commands/issues.md",
    "plugin": "rails-flow",
-   "rails_lines": 1,
+   "rails_lines": 2,
    "registered": [],
    "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
    "type": "command",
    "via": "decision"
   },
   {
-   "class": "neutral",
-   "issue": null,
+   "class": "mixed",
+   "issue": 2183,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/commands/pr-comments.md",
    "plugin": "rails-flow",
-   "rails_lines": 0,
+   "rails_lines": 1,
    "registered": [],
-   "seam": "",
+   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
    "type": "command",
-   "via": "declared"
+   "via": "decision"
   },
   {
    "class": "neutral",
@@ -3568,7 +3568,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/commands/review.md",
    "plugin": "rails-flow",
-   "rails_lines": 4,
+   "rails_lines": 5,
    "registered": [],
    "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
    "type": "command",
@@ -3688,7 +3688,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/agents/code-reviewer.md",
    "plugin": "rails-flow",
-   "rails_lines": 8,
+   "rails_lines": 1,
    "registered": [],
    "seam": "",
    "type": "agent",
@@ -3700,7 +3700,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/agents/design-auditor.md",
    "plugin": "rails-flow",
-   "rails_lines": 13,
+   "rails_lines": 1,
    "registered": [],
    "seam": "",
    "type": "agent",
@@ -3724,7 +3724,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/agents/migration-writer.md",
    "plugin": "rails-flow",
-   "rails_lines": 9,
+   "rails_lines": 1,
    "registered": [],
    "seam": "",
    "type": "agent",
@@ -3748,7 +3748,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/agents/rails-developer.md",
    "plugin": "rails-flow",
-   "rails_lines": 9,
+   "rails_lines": 1,
    "registered": [],
    "seam": "",
    "type": "agent",
@@ -3760,7 +3760,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/agents/security-auditor.md",
    "plugin": "rails-flow",
-   "rails_lines": 8,
+   "rails_lines": 1,
    "registered": [],
    "seam": "",
    "type": "agent",
@@ -3796,7 +3796,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/agents/test-runner.md",
    "plugin": "rails-flow",
-   "rails_lines": 9,
+   "rails_lines": 1,
    "registered": [],
    "seam": "",
    "type": "agent",
@@ -6834,6 +6834,18 @@
    "via": "decision"
   },
   {
+   "class": "mixed",
+   "issue": 2183,
+   "nextjs_lines": 3,
+   "path": "plugins/rails-flow/reference/stack-roles.md",
+   "plugin": "rails-flow",
+   "rails_lines": 4,
+   "registered": [],
+   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "type": "support",
+   "via": "decision"
+  },
+  {
    "class": "rails",
    "issue": 2175,
    "nextjs_lines": 0,
@@ -6871,11 +6883,83 @@
   },
   {
    "class": "rails",
+   "issue": 2173,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/agents/code-reviewer.md",
+   "plugin": "rails-stack",
+   "rails_lines": 8,
+   "registered": [],
+   "seam": "",
+   "type": "agent",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2173,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/agents/design-auditor.md",
+   "plugin": "rails-stack",
+   "rails_lines": 13,
+   "registered": [],
+   "seam": "",
+   "type": "agent",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
    "issue": 2179,
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/agents/kamal-configurator.md",
    "plugin": "rails-stack",
    "rails_lines": 17,
+   "registered": [],
+   "seam": "",
+   "type": "agent",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2173,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/agents/migration-writer.md",
+   "plugin": "rails-stack",
+   "rails_lines": 9,
+   "registered": [],
+   "seam": "",
+   "type": "agent",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2173,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/agents/rails-developer.md",
+   "plugin": "rails-stack",
+   "rails_lines": 9,
+   "registered": [],
+   "seam": "",
+   "type": "agent",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2173,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/agents/security-auditor.md",
+   "plugin": "rails-stack",
+   "rails_lines": 8,
+   "registered": [],
+   "seam": "",
+   "type": "agent",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2173,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/agents/test-runner.md",
+   "plugin": "rails-stack",
+   "rails_lines": 9,
    "registered": [],
    "seam": "",
    "type": "agent",
@@ -6967,6 +7051,54 @@
   },
   {
    "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/check_simple_form_only.py",
+   "plugin": "rails-stack",
+   "rails_lines": 71,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "mixed",
+   "issue": 2183,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/dev_baseline.py",
+   "plugin": "rails-stack",
+   "rails_lines": 30,
+   "registered": [],
+   "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "mixed",
+   "issue": 2186,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/findings.py",
+   "plugin": "rails-stack",
+   "rails_lines": 1,
+   "registered": [],
+   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "neutral",
+   "issue": 2186,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/fixture_git.py",
+   "plugin": "rails-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
    "issue": 2179,
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/scripts/kamal_destination.py",
@@ -6974,6 +7106,18 @@
    "rails_lines": 21,
    "registered": [],
    "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "mixed",
+   "issue": 2183,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/triage_failures.py",
+   "plugin": "rails-stack",
+   "rails_lines": 29,
+   "registered": [],
+   "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
    "type": "script",
    "via": "declared"
   },
@@ -7003,11 +7147,35 @@
   },
   {
    "class": "rails",
-   "issue": 2179,
+   "issue": 2173,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/VENDORED.md",
+   "plugin": "rails-stack",
+   "rails_lines": 1,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
+   "class": "neutral",
+   "issue": 2186,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/reference/agent-output-contract.md",
+   "plugin": "rails-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2173,
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/reference/model-tiers.md",
    "plugin": "rails-stack",
-   "rails_lines": 0,
+   "rails_lines": 2,
    "registered": [],
    "seam": "",
    "type": "support",
@@ -7041,10 +7209,10 @@
  "generated_by": "scripts/component_classes.py",
  "summary": {
   "by_class": {
-   "mixed": 199,
-   "neutral": 271,
+   "mixed": 204,
+   "neutral": 272,
    "nextjs": 3,
-   "rails": 110
+   "rails": 118
   },
   "by_plugin": {
    "design-flow": {
@@ -7083,18 +7251,18 @@
     "total": 129
    },
    "rails-flow": {
-    "mixed": 104,
-    "neutral": 114,
+    "mixed": 106,
+    "neutral": 113,
     "nextjs": 0,
     "rails": 73,
-    "total": 291
+    "total": 292
    },
    "rails-stack": {
-    "mixed": 3,
-    "neutral": 2,
+    "mixed": 6,
+    "neutral": 4,
     "nextjs": 0,
-    "rails": 9,
-    "total": 14
+    "rails": 17,
+    "total": 27
    }
   },
   "by_type": {
@@ -7102,12 +7270,12 @@
     "mixed": 12,
     "neutral": 10,
     "nextjs": 0,
-    "rails": 9,
-    "total": 31
+    "rails": 15,
+    "total": 37
    },
    "command": {
-    "mixed": 25,
-    "neutral": 28,
+    "mixed": 26,
+    "neutral": 27,
     "nextjs": 0,
     "rails": 1,
     "total": 54
@@ -7127,11 +7295,11 @@
     "total": 49
    },
    "script": {
-    "mixed": 58,
-    "neutral": 54,
+    "mixed": 61,
+    "neutral": 55,
     "nextjs": 0,
-    "rails": 31,
-    "total": 143
+    "rails": 32,
+    "total": 148
    },
    "skill": {
     "mixed": 3,
@@ -7141,11 +7309,11 @@
     "total": 7
    },
    "support": {
-    "mixed": 15,
-    "neutral": 34,
+    "mixed": 16,
+    "neutral": 35,
     "nextjs": 3,
-    "rails": 6,
-    "total": 58
+    "rails": 7,
+    "total": 61
    },
    "test": {
     "mixed": 59,
@@ -7155,6 +7323,6 @@
     "total": 186
    }
   },
-  "components": 583
+  "components": 597
  }
 }

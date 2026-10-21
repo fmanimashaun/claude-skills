@@ -1,25 +1,17 @@
-# Model tiers — which rails-stack agent runs on what, and why
+# Model tiers: rails-stack's agents
 
-**A `model:` pin is a cap, so we only pin where something outside the agent grades its output.**
-Everything else inherits the session model the user deliberately chose. The full argument and citations
-live in `plugins/rails-flow/reference/model-tiers.md`.
+Which model each rails-stack agent runs on. The policy, and why each agent sits in its tier, is in rails-flow's `reference/model-tiers.md` (the agents moved here from rails-flow in #2173, with the tiers unchanged).
 
-<!-- rails-stack:tiers:begin -->
+<!-- rails-flow:tiers:begin -->
 | Agent | Tier | `model:` | What proves its output |
 |---|---|---|---|
+| `code-reviewer` | judgement | `inherit` | — |
+| `security-auditor` | judgement | `inherit` | — |
+| `migration-writer` | judgement | `inherit` | — |
+| `rails-developer` | judgement | `inherit` | — |
+| `test-runner` | mechanical | `haiku` | `bundle exec rspec` exit status — 0 failures or the gate blocks |
+| `design-auditor` | mechanical | `haiku` | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `kamal-configurator` | judgement | `inherit` | — |
-<!-- rails-stack:tiers:end -->
+<!-- rails-flow:tiers:end -->
 
-## Why it is judgement
-
-`kamal-configurator` performs an **autonomous cloud deployment** from a briefing sheet. The blast radius is a
-production environment, and a deploy that succeeds against the wrong configuration reports success. Nothing outside
-the agent grades that judgement: the attempt ledger grades the run (attempts, signatures, ordering), never whether the
-host was the right one. This is the last agent in the marketplace that should be capped below the model a user
-deliberately selected, so an empty proof cell is exactly right, and `check_handoff.py` enforces that a `haiku` row
-cannot have one.
-
-## `effort` is deliberately unset
-
-It *"Overrides the session effort level"* and its levels *"depend on the model"*, which is unpublished per model.
-Left to the session.
+`kamal-configurator` arrived from `pipeline` in #2179. It performs an **autonomous cloud deployment** from a briefing sheet: the blast radius is a production environment, and a deploy that succeeds against the wrong configuration reports success. Nothing outside the agent grades that judgement (the attempt ledger grades the run, never whether the host was the right one), so an empty proof cell is exactly right and it stays uncapped.

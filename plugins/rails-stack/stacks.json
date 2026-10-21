@@ -29,12 +29,12 @@
           "routes": ["/", "/up"]
         },
         "agents": {
-          "developer": "rails-flow:rails-developer",
-          "migrations": "rails-flow:migration-writer",
-          "test_runner": "rails-flow:test-runner",
-          "security": "rails-flow:security-auditor",
-          "reviewer": "rails-flow:code-reviewer",
-          "design_auditor": "rails-flow:design-auditor"
+          "developer": "rails-stack:rails-developer",
+          "migrations": "rails-stack:migration-writer",
+          "test_runner": "rails-stack:test-runner",
+          "security": "rails-stack:security-auditor",
+          "reviewer": "rails-stack:code-reviewer",
+          "design_auditor": "rails-stack:design-auditor"
         },
         "deploy": {
           "target": "kamal",
