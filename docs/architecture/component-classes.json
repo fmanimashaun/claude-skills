@@ -7127,7 +7127,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/skills/design-system",
    "plugin": "rails-stack",
-   "rails_lines": 486,
+   "rails_lines": 489,
    "registered": [],
    "seam": "neutral catalog plus Rails implementation references; the Rails half moves to a rails-stack skill",
    "type": "skill",
