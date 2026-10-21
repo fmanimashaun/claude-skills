@@ -792,7 +792,8 @@
    {
     "match": [
      "plugins/rails-stack/agents/*",
-     "plugins/rails-stack/VENDORED.md"
+     "plugins/rails-stack/VENDORED.md",
+     "plugins/rails-stack/reference/model-tiers.md"
     ],
     "class": "rails",
     "issue": 2173,

@@ -7111,6 +7111,18 @@
   },
   {
    "class": "rails",
+   "issue": 2173,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/reference/model-tiers.md",
+   "plugin": "rails-stack",
+   "rails_lines": 2,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
    "issue": 2182,
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/setup/rails.md",
@@ -7140,7 +7152,7 @@
    "mixed": 203,
    "neutral": 268,
    "nextjs": 3,
-   "rails": 117
+   "rails": 118
   },
   "by_plugin": {
    "design-flow": {
@@ -7189,8 +7201,8 @@
     "mixed": 5,
     "neutral": 3,
     "nextjs": 0,
-    "rails": 13,
-    "total": 21
+    "rails": 14,
+    "total": 22
    }
   },
   "by_type": {
@@ -7240,8 +7252,8 @@
     "mixed": 16,
     "neutral": 35,
     "nextjs": 3,
-    "rails": 6,
-    "total": 60
+    "rails": 7,
+    "total": 61
    },
    "test": {
     "mixed": 59,
@@ -7251,6 +7263,6 @@
     "total": 185
    }
   },
-  "components": 591
+  "components": 592
  }
 }
