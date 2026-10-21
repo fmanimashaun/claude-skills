@@ -328,7 +328,7 @@ def trust() -> None:
         def jobs_of(names, conclusion="success"):
             return {"total_count": len(names), "jobs": [{"name": n, "status": "completed", "conclusion": conclusion} for n in names]}
 
-        release_jobs = jobs_of(["proof", "gates / gates", *[f"gates / mutation ({i})" for i in (1, 2, 3, 4)], "gates / mutation coverage", "release"])
+        release_jobs = jobs_of(["proof", "gates / gates", *[f"gates / mutation ({i})" for i in range(1, inc.EXPECTED_SHARDS + 1)], "gates / mutation coverage", "release"])
 
         def api(statuses_out, run_obj, run_code=0, jobs_obj=None, jobs_code=0):
             """A `gh` stub that answers the statuses endpoint, the run endpoint and the run's jobs endpoint separately."""
@@ -391,7 +391,7 @@ def trust() -> None:
         # A GENUINE RUN CAN STILL PROVE NOTHING (adversary round 2): release.yml SKIPS `gates` when the tree matched a maintainer's local proof,
         # which is recorded on macOS, so a successful push run of main may hold no mutation job. The run's JOBS must show the full sweep.
         fake, calls = api(pointed, good_run)
-        check("jobs: a release run whose gates and 4 mutation shards all succeeded is a proof", inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is True)
+        check(f"jobs: a release run whose gates and {inc.EXPECTED_SHARDS} mutation shards all succeeded is a proof", inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is True)
         check("jobs: it reads the jobs of that run (latest attempts)", any("actions/runs/777/jobs" in " ".join(c) and "filter=latest" in " ".join(c) for c in calls), str(calls))
         skipped_gates = {"jobs": [{"name": "proof", "status": "completed", "conclusion": "success"},
                                   {"name": "gates / gates", "status": "completed", "conclusion": "skipped"},
@@ -399,14 +399,14 @@ def trust() -> None:
         fake, _ = api(pointed, good_run, jobs_obj=skipped_gates)
         check("jobs: a successful release run in which `gates` was SKIPPED is not a proof",
               inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is False)
-        names = ["proof", "gates / gates", *[f"gates / mutation ({i})" for i in (1, 2, 3, 4)], "gates / mutation coverage", "release"]
+        names = ["proof", "gates / gates", *[f"gates / mutation ({i})" for i in range(1, inc.EXPECTED_SHARDS + 1)], "gates / mutation coverage", "release"]
         for label, jobs_obj in (
                 ("mutation coverage skipped", {"jobs": [dict(j, conclusion="skipped") if j["name"] == "gates / mutation coverage" else j for j in jobs_of(names)["jobs"]]}),
                 ("mutation coverage cancelled", {"jobs": [dict(j, conclusion="cancelled") if j["name"] == "gates / mutation coverage" else j for j in jobs_of(names)["jobs"]]}),
                 ("mutation coverage failed", {"jobs": [dict(j, conclusion="failure") if j["name"] == "gates / mutation coverage" else j for j in jobs_of(names)["jobs"]]}),
                 ("mutation coverage missing", jobs_of([n for n in names if n != "gates / mutation coverage"])),
-                ("one of the 4 shards missing", jobs_of([n for n in names if n != "gates / mutation (4)"])),
-                ("three shards only, a fifth numbered shard instead", jobs_of([n for n in names if n != "gates / mutation (4)"] + ["gates / mutation (5)"])),
+                ("one of the shards missing", jobs_of([n for n in names if n != "gates / mutation (4)"])),
+                ("one shard short, an extra out-of-range shard instead", jobs_of([n for n in names if n != "gates / mutation (4)"] + [f"gates / mutation ({inc.EXPECTED_SHARDS + 1})"])),
                 ("one shard skipped", {"jobs": [dict(j, conclusion="skipped") if j["name"] == "gates / mutation (2)" else j for j in jobs_of(names)["jobs"]]}),
                 ("one shard failed", {"jobs": [dict(j, conclusion="failure") if j["name"] == "gates / mutation (3)" else j for j in jobs_of(names)["jobs"]]}),
                 ("one shard still in progress", {"jobs": [dict(j, status="in_progress", conclusion=None) if j["name"] == "gates / mutation (1)" else j for j in jobs_of(names)["jobs"]]}),
@@ -424,16 +424,16 @@ def trust() -> None:
         # The weekly workflow: shards `mutation (<runner>, N)` and a `summary (<runner>)` per OS.
         weekly_run = dict(good_run, path=".github/workflows/mutation-weekly.yml", event="schedule")
 
-        def weekly(runner, shards=(1, 2, 3, 4), summary=True, other_runner_complete=True):
+        def weekly(runner, shards=tuple(range(1, inc.EXPECTED_SHARDS + 1)), summary=True, other_runner_complete=True):
             out = [f"mutation ({runner}, {i})" for i in shards] + ([f"summary ({runner})"] if summary else [])
             other = "macos-latest" if runner == "ubuntu-latest" else "ubuntu-latest"
             if other_runner_complete:
-                out += [f"mutation ({other}, {i})" for i in (1, 2, 3, 4)] + [f"summary ({other})"]
+                out += [f"mutation ({other}, {i})" for i in range(1, inc.EXPECTED_SHARDS + 1)] + [f"summary ({other})"]
             return jobs_of(out)
         for system, runner in (("linux", "ubuntu-latest"), ("darwin", "macos-latest")):
             weekly_pointed = json.dumps([{"context": f"mutation-proof/{system}", "state": "success", "target_url": url}])
             fake, _ = api(weekly_pointed, weekly_run, jobs_obj=weekly(runner))
-            check(f"jobs: the weekly run with all 4 {runner} shards and its summary is a {system} proof", inc.github_proof_lookup(Path("."), system, run=fake)("abc") is True)
+            check(f"jobs: the weekly run with all {inc.EXPECTED_SHARDS} {runner} shards and its summary is a {system} proof", inc.github_proof_lookup(Path("."), system, run=fake)("abc") is True)
             fake, _ = api(weekly_pointed, weekly_run, jobs_obj=weekly(runner, shards=(1, 2, 3)))
             check(f"jobs: the weekly run with one {runner} shard missing is not a {system} proof (the other OS being complete does not help)",
                   inc.github_proof_lookup(Path("."), system, run=fake)("abc") is False)
