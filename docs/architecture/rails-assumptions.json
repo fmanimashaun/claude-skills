@@ -2646,21 +2646,21 @@
    "invokes": [],
    "kind": "script",
    "lines": [
-    633,
-    634,
-    845,
-    847,
-    849,
-    855,
-    860,
-    943,
-    947,
-    996,
-    1014,
-    1033,
-    1071,
-    1100,
-    1129
+    665,
+    666,
+    877,
+    879,
+    881,
+    887,
+    892,
+    975,
+    979,
+    1085,
+    1103,
+    1122,
+    1160,
+    1189,
+    1218
    ],
    "move": ""
   },
@@ -2966,7 +2966,7 @@
    "invokes": [],
    "kind": "agent",
    "lines": [
-    156
+    157
    ],
    "move": ""
   },
@@ -3146,13 +3146,13 @@
     "rails-word": 1
    },
    "invokes": [
-    247
+    249
    ],
    "kind": "command",
    "lines": [
     12,
-    235,
-    247
+    237,
+    249
    ],
    "move": ""
   },
@@ -4983,56 +4983,64 @@
   "plugins/rails-flow/scripts/check_mockup_gate.py": {
    "assumes": "hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test",
    "categories": {
-    "concept": 19,
+    "concept": 25,
     "hotwire": 1,
-    "path": 26,
+    "path": 34,
     "tool": 1
    },
    "decision": "detector",
    "how": "reads source globs, risky paths and commands from the detector's stack descriptor",
    "ids": {
-    "app-layers": 24,
+    "app-layers": 32,
     "binstub": 1,
     "db": 1,
-    "erb": 12,
+    "erb": 16,
     "hotwire": 1,
     "rails-word": 2,
-    "ruby-file": 5,
+    "ruby-file": 7,
     "spec-dir": 1
    },
    "invokes": [
-    903
+    1189
    ],
    "kind": "script",
    "lines": [
     5,
-    71,
-    72,
-    74,
-    80,
-    629,
-    714,
-    715,
-    716,
-    719,
-    720,
-    722,
-    723,
-    726,
-    728,
-    732,
-    738,
-    745,
-    903,
-    945,
-    971,
-    1161,
-    1162,
-    1190,
-    1191,
-    1194,
-    1201,
-    1202
+    81,
+    82,
+    84,
+    90,
+    749,
+    851,
+    852,
+    853,
+    856,
+    857,
+    859,
+    860,
+    863,
+    865,
+    869,
+    875,
+    882,
+    1037,
+    1038,
+    1039,
+    1040,
+    1055,
+    1057,
+    1189,
+    1231,
+    1257,
+    1447,
+    1448,
+    1544,
+    1545,
+    1548,
+    1555,
+    1556,
+    1565,
+    1569
    ],
    "move": ""
   },

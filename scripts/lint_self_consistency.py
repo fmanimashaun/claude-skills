@@ -843,7 +843,7 @@ def check_findings_script_drift() -> tuple[list[Finding], int]:
     return findings, len(FINDINGS_COPIES)
 
 
-# Rule: vendored-copy-drift (#2173)
+# Rule: vendored-copy-drift (#2173, #2226)
 # The Rails agents moved from rails-flow to rails-stack, and three of them run rails-flow files through
 # ${CLAUDE_PLUGIN_ROOT}, which in rails-stack points at rails-stack: there is no cross-plugin root. So rails-stack
 # ships copies, kept byte-identical here (#906's pattern). EACH COPY IS TEMPORARY, and the third field says what removes it.
@@ -852,6 +852,8 @@ VENDORED_COPIES = (
      "rails-stack's test-runner runs it; it leaves when the flows' triage reads the descriptor and rails-stack owns the original"),
     ("plugins/rails-flow/scripts/dev_baseline.py", "plugins/rails-stack/scripts/dev_baseline.py",
      "the vendored triage_failures.py imports it; it leaves with that copy, when the flows' triage reads the descriptor (#2183)"),
+    ("plugins/rails-flow/scripts/mockup_records.py", "plugins/qa-flow/scripts/mockup_records.py",
+     "qa-flow's release_evidence.py refuses the certification stamp for a shipped design with no `Story:`; it reads the record lines with this file (#2226), and leaves when a shared core plugin owns it"),
     ("plugins/rails-flow/reference/agent-output-contract.md", "plugins/rails-stack/reference/agent-output-contract.md",
      "every moved agent cites it; a neutral reference whose single home is core-skills (#2186), which removes this copy"),
 )

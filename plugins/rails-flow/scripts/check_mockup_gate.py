@@ -28,6 +28,12 @@ approval itself as a link to the comment where they said so, and the widths (a p
 and a desktop width ≥ 1024) and states it covers. The branch must add or change the record, or name
 it with --record. An approval with no link is a sentence anyone can type.
 
+THE DESIGN LINES (#2226). A screen record also carries `Template:`, `States:`, `Screen:` and `Nav:`, whose allowed values are ONE list,
+reference/mockup-vocabulary.json (the gate refuses when it is missing). `States:` is `;`-separated, every state exactly once, designed or
+`<state>: n/a: <reason>`; `Nav:` is `level N under <parent>`, a graph rooted at the shell with `Screen:` as its nodes. On the real diff
+(`--base`, not `--paths`) a record must also name its `Story:`: a story file or a user-visible file that exists. `--audit` is the ONLINE
+check for designs whose issue is closed and that never got a Story; qa-flow's certification stamp runs the same code (mockup_records.py).
+
 THE SHELL (#2211). A mock-up is drawn inside the app's own shell: its layout and navigation, not a free-standing
 screen. The shell is a RECORDED, APPROVED thing the project owns: `docs/product/mockups/shell.md`, a record in the
 format above plus `Kind: shell`, `Shell-sources:` (two or more approved HTML mock-ups of DIFFERENT screens) and
@@ -68,6 +74,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from classify_door import Unusable, diff  # noqa: E402  -- one diff reader, never a second
+# The record-line reader and the online audit: ONE copy, vendored byte-identical into qa-flow for its certification stamp (#2226).
+from mockup_records import (DESIGN_KEYS, ISSUE_REF, RECORD_DIR, RECORD_KEYS, SHELL_KEYS, SHELL_RECORD,  # noqa: E402,F401
+                            audit, read_fields)
 
 UI_PATHS = (re.compile(r"^app/views/"), re.compile(r"^app/components/"), re.compile(r"^app/javascript/"),
             re.compile(r"^app/assets/(stylesheets|tailwind|images)/"), re.compile(r"^app/helpers/"),
@@ -79,13 +88,10 @@ UI_PATHS = (re.compile(r"^app/views/"), re.compile(r"^app/components/"), re.comp
 # the installed app's name and icons.
 NOT_UI = re.compile(r"\.(json|xml)(\.[a-z]+)?$")
 SEEN_ANYWAY = re.compile(r"^app/views/pwa/")
-RECORD_DIR = "docs/product/mockups/"
-RECORD_KEYS = ("Mock-up", "Issue", "Approved-by", "Approval", "Widths", "States")
 # The shell (#2211): one record every other record points at.
-SHELL_RECORD = RECORD_DIR + "shell.md"
-SHELL_KEYS = ("Kind", "Shell", "Shell-sources", "Shell-keep", "Shell-signature")
 # The design lines of a screen record (#2226); their allowed values are in reference/mockup-vocabulary.json, the one list.
-DESIGN_KEYS = ("Template",)
+NAV_LINE = re.compile(r"^level (\d+) under (.+)$")
+STORY_FILE = re.compile(r"\.stories\.(jsx?|tsx?|mdx)$", re.I)
 VOCABULARY = Path(__file__).resolve().parents[1] / "reference" / "mockup-vocabulary.json"
 LANDMARKS = frozenset(("header", "nav", "main", "footer", "aside"))
 SHELL_MIN_TOKENS = 3
@@ -93,7 +99,6 @@ HTML_MOCK = re.compile(r"\.html?$", re.I)
 APPROVAL_URL = re.compile(r"^https://github\.com/[^/\s]+/[^/\s]+/(issues|pull)/\d+"
                           r"#(issuecomment-\d+|discussion_r\d+|pullrequestreview-\d+)$")
 MOCK_FILE = re.compile(r"\.(html?|png|jpe?g|webp|pdf|svg)$", re.I)
-ISSUE_REF = re.compile(r"^(#\d+|https://github\.com/[^/\s]+/[^/\s]+/issues/\d+)\b")
 # Space and tab only: CommonMark counts no other character as indentation (spec 0.31.2 §2.1), so a
 # line opening with a non-breaking space is paragraph text, not an indented declaration (#1490).
 OPT_OUT = re.compile(r"^[ \t]*(?:[-*+][ \t]*)?`?mockup-gate:[ \t]*off`?[ \t]*$", re.M | re.I)
@@ -474,15 +479,6 @@ def signature_weak(tokens: list[str]) -> str | None:
     return None
 
 
-def read_fields(path: Path) -> dict[str, str]:
-    fields: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        m = re.match(r"^\s*(?:[-*]\s*)?\**([A-Za-z-]+)\**:\s*(.*?)\s*$", line)
-        if m and m.group(1) in RECORD_KEYS + SHELL_KEYS + DESIGN_KEYS:
-            fields[m.group(1)] = m.group(2)
-    return fields
-
-
 def _html_text(root: Path, rel: str) -> str | None:
     """The text of a repo HTML file, or None when `rel` is not one, or resolves outside the repo."""
     f = root / rel
@@ -640,7 +636,99 @@ def template_problems(rel: str, fields: dict[str, str], vocab: dict) -> list[str
     return []
 
 
-def record_problems(root: Path, rel: str) -> list[str]:
+def states_problems(rel: str, fields: dict[str, str], vocab: dict) -> list[str]:
+    """`;`-separated entries; every vocabulary state exactly once, each `<state>` (designed) or `<state>: n/a: <reason>`.
+
+    A script can demand a non-empty reason, not a true one (a typed bypass): the reviewer reads the truth (#2225). `loaded` need not be designed:
+    a system page marks most states n/a. At least one state is designed, or the line says nothing."""
+    out: list[str] = []
+    seen: dict[str, str] = {}
+    for entry in (e.strip() for e in fields.get("States", "").split(";")):
+        if not entry:
+            out.append(f"{rel}: States has an empty entry (a stray `;`)")
+            continue
+        name, _, rest = (part.strip() for part in entry.partition(":"))
+        if name not in vocab["states"]:
+            out.append(f"{rel}: States names {name!r}, which is not one of {', '.join(vocab['states'])}")
+        elif name in seen:
+            out.append(f"{rel}: States names {name} twice")
+        elif not rest:
+            seen[name] = "designed"
+        elif rest.startswith("n/a:") and rest[4:].strip():
+            seen[name] = "n/a"
+        else:
+            out.append(f"{rel}: State {name} must be `{name}` (designed) or `{name}: n/a: <reason>` with a reason, got {entry!r}")
+    missing = [st for st in vocab["states"] if st not in seen]
+    if missing and not out:
+        out.append(f"{rel}: States does not account for {', '.join(missing)}: each state is designed or `n/a: <reason>`")
+    if seen and not out and all(v == "n/a" for v in seen.values()):
+        out.append(f"{rel}: every state is n/a: at least one state must be designed")
+    return out
+
+
+def _other_records(root: Path, rel: str) -> list[tuple[str, dict[str, str]]]:
+    """The other screen records in the records folder (not the README, the shell, or `rel` itself): (path, its lines)."""
+    folder = root / RECORD_DIR
+    found = []
+    for path in sorted(folder.glob("*.md")) if folder.is_dir() else []:
+        other = path.relative_to(root).as_posix()
+        if other == rel or other == SHELL_RECORD or path.name.lower() == "readme.md":
+            continue
+        found.append((other, read_fields(path)))
+    return found
+
+
+def screen_nav_problems(root: Path, rel: str, fields: dict[str, str], vocab: dict) -> list[str]:
+    """`Screen: <name>` (unique) and `Nav: level N under <parent>`, a graph rooted at the shell: level 1 sits under `shell`; level N>=2 sits under
+    the `Screen:` of an existing record at level N-1; N is at most the vocabulary's nav_max_level. Levels only rise, so there is no cycle."""
+    out: list[str] = []
+    screen, nav = fields.get("Screen", ""), fields.get("Nav", "")
+    if not screen:
+        out.append(f"{rel}: no `Screen:` line: name this screen (the node `Nav:` lines of other records hang from)")
+    if not nav:
+        out.append(f"{rel}: no `Nav:` line: `Nav: level N under <parent>`, N from 1 to {vocab['nav_max_level']}, level 1 under `shell`")
+    others = _other_records(root, rel)
+    for other, other_fields in others:
+        if screen and other_fields.get("Screen") == screen:
+            out.append(f"{rel}: Screen {screen!r} is also the Screen of {other}: one record per screen")
+    m = NAV_LINE.match(nav) if nav else None
+    if nav and not m:
+        out.append(f"{rel}: Nav {nav!r} must read `level N under <parent>`")
+    if m:
+        level, parent = int(m.group(1)), m.group(2).strip()
+        if not 1 <= level <= vocab["nav_max_level"]:
+            out.append(f"{rel}: Nav level {level} is outside 1 to {vocab['nav_max_level']} (the shell is level 0)")
+        elif level == 1:
+            if parent != "shell":
+                out.append(f"{rel}: a level 1 screen sits under `shell`, got {parent!r}")
+        else:
+            parents = [(o, f) for o, f in others if f.get("Screen") == parent]
+            if not parents:
+                out.append(f"{rel}: Nav parent {parent!r} is the Screen of no record: a level {level} screen sits under the Screen of a level {level - 1} record")
+            for o, f in parents:
+                pm = NAV_LINE.match(f.get("Nav", ""))
+                if not pm or int(pm.group(1)) != level - 1:
+                    out.append(f"{rel}: Nav parent {parent!r} ({o}) is not at level {level - 1} ({f.get('Nav') or 'no Nav line'})")
+    return out
+
+
+def story_problems(root: Path, rel: str, fields: dict[str, str]) -> list[str]:
+    """Pre-merge only: the built screen's `Story:`, a repo path to a story file or a user-visible file. A route cannot be checked here: the stack's
+    route list comes with the stack descriptor (#2219), so a project with no Storybook and no view path cannot satisfy this until then."""
+    story = fields.get("Story", "")
+    if not story:
+        return [f"{rel}: no `Story:` line: the change is built, so name the story file (or the view) that implements this mock-up"]
+    if story.startswith(("http://", "https://")) or story.startswith("/") or ".." in Path(story).parts:
+        return [f"{rel}: Story {story!r} must be a path inside the repo"]
+    target = root / story
+    if not target.is_file():
+        return [f"{rel}: Story {story!r} is not a file in the repo"]
+    if not (STORY_FILE.search(story) or ui_paths([story])):
+        return [f"{rel}: Story {story!r} is neither a story file (*.stories.*) nor a user-visible file the stack's UI paths name"]
+    return []
+
+
+def record_problems(root: Path, rel: str, require_story: bool = False) -> list[str]:
     path = root / rel
     if not path.is_file():
         return [f"{rel}: no such mock-up record"]
@@ -686,6 +774,10 @@ def record_problems(root: Path, rel: str) -> list[str]:
             out.append(f"{rel}: {VOCABULARY.name} is missing or unreadable, so the design lines cannot be checked (the gate refuses rather than guess)")
         else:
             out += template_problems(rel, fields, vocab)
+            out += states_problems(rel, fields, vocab)
+            out += screen_nav_problems(root, rel, fields, vocab)
+        if require_story:
+            out += story_problems(root, rel, fields)
         out += shell_reference_problems(root, rel, fields)
     return out
 
@@ -696,7 +788,8 @@ def shell_on_base(root: Path, base: str) -> bool:
     return r.returncode == 0
 
 
-def run(root: Path, changed: list[str], record: str | None, base_has_shell: bool = False) -> tuple[int, list[str]]:
+def run(root: Path, changed: list[str], record: str | None, base_has_shell: bool = False,
+        require_story: bool = False) -> tuple[int, list[str]]:
     """The whole decision. main() and the selftest both come through here.
 
     `base_has_shell`: the shell record already exists on the base. Then a change that touches only the shell record covers none of its
@@ -712,7 +805,7 @@ def run(root: Path, changed: list[str], record: str | None, base_has_shell: bool
         return 1, [f"{len(ui)} user-visible file(s) ({', '.join(ui[:5])}{' …' if len(ui) > 5 else ''}) and no "
                    f"approved mock-up: publish one, stop for the owner's approval, then record it in "
                    f"{RECORD_DIR}<slug>.md"]
-    problems = [p for r in records for p in record_problems(root, r)]
+    problems = [p for r in records for p in record_problems(root, r, require_story)]
     if problems:
         return 1, problems
     if ui and base_has_shell and all(r == SHELL_RECORD for r in records):
@@ -731,10 +824,16 @@ Issue: #12
 Approved-by: @owner
 Approval: https://github.com/acme/app/issues/12#issuecomment-99
 Widths: 1280, 390
-States: default, empty, error
+States: loaded; empty-filtered: n/a: nothing to filter; loading: n/a: static; error; partial: n/a: one source; permission-denied: n/a: public; success: n/a: read only; first-run: n/a: seeded
 Shell: docs/product/mockups/shell.md
 Template: list
+Screen: Invoice bell
+Nav: level 1 under shell
 """
+
+def as_screen(text: str, name: str) -> str:
+    """The same record for another screen: `Screen:` is unique per record (#2226)."""
+    return text.replace("Screen: Invoice bell", f"Screen: {name}")
 
 # Two screens of one shell: they share header, nav, main#main and #toasts; #screen-a and #screen-b are content (#2211).
 SHELL_A = '<html><body><header></header><nav></nav><main id="main"><div id="screen-a"></div></main><div id="toasts"></div></body></html>'
@@ -785,14 +884,14 @@ def selftest() -> int:
         code, msg = run(root, view, None)
         check_that("a UI change with no mock-up record is held", code == 1, msg)
 
-        (rec / "bell.md").write_text(GOOD)
+        (rec / "bell.md").write_text(as_screen(GOOD, "bell screen"))
         code, msg = run(root, view + ["docs/product/mockups/bell.md"], None)
         check_that("CONTROL: a UI change with a complete, approved record passes", code == 0, msg)
         code, msg = run(root, view, "docs/product/mockups/bell.md")
         check_that("CONTROL: --record names a record the branch did not touch", code == 0, msg)
 
         def with_record(text: str) -> tuple[int, list[str]]:
-            (rec / "r.md").write_text(text)
+            (rec / "r.md").write_text(as_screen(text, "r screen"))
             return run(root, view + ["docs/product/mockups/r.md"], None)
 
         code, msg = with_record(GOOD.replace("Approval: https://github.com/acme/app/issues/12#issuecomment-99\n", ""))
@@ -854,6 +953,122 @@ def selftest() -> int:
             globals()["VOCABULARY"] = real
         code, msg = with_record(GOOD)
         check_that("#2226 CONTROL: the real vocabulary is back and the record passes", code == 0, msg)
+        # #2226: the States grammar, `;`-separated, every state exactly once, designed or `n/a: <reason>`.
+        STATES = next(line for line in GOOD.split("\n") if line.startswith("States:"))
+
+        def states(value: str) -> tuple[int, list[str]]:
+            return with_record(GOOD.replace(STATES, f"States: {value}"))
+
+        ALL = ["loaded", "empty-filtered", "loading", "error", "partial", "permission-denied", "success", "first-run"]
+
+        def na(*names: str, designed: tuple[str, ...] = ()) -> str:
+            return "; ".join(n if n in designed else f"{n}: n/a: not this screen" for n in ALL if n in names or n in designed)
+
+        code, msg = states("default, empty, error")
+        check_that("#2226: the old free-text States line is held", code == 1 and any("States names" in m for m in msg), msg)
+        code, msg = states("; ".join(ALL))
+        check_that("#2226 CONTROL: every state designed passes", code == 0, msg)
+        code, msg = states("loaded: n/a: a system page; " + "; ".join(f"{n}: n/a: none" for n in ALL[1:-1]) + "; first-run: n/a: none; error")
+        check_that("#2226: a duplicate state is held", code == 1 and any("twice" in m for m in msg), msg)
+        code, msg = states(na(*ALL, designed=("error",)))
+        check_that("#2226 CONTROL: a system page with only `error` designed and `loaded` n/a passes", code == 0, msg)
+        code, msg = states("; ".join(ALL[:-1]))
+        check_that("#2226: a state left out is held, and the message names it", code == 1 and any("first-run" in m and "does not account" in m for m in msg), msg)
+        code, msg = states("; ".join(ALL[:-1] + ["first-run: n/a:"]))
+        check_that("#2226: an n/a with an empty reason is held", code == 1 and any("with a reason" in m for m in msg), msg)
+        code, msg = states("; ".join(ALL[:-1] + ["first-run: n/a"]))
+        check_that("#2226: `n/a` with no colon and no reason is held", code == 1 and any("with a reason" in m for m in msg), msg)
+        code, msg = states("; ".join(ALL[:-1] + ["first-run: maybe later"]))
+        check_that("#2226: a state with a note that is not `n/a: <reason>` is held", code == 1 and any("with a reason" in m for m in msg), msg)
+        code, msg = states("; ".join(ALL[:-1] + ["first-run: n/a: none, ever; really"]))
+        check_that("#2226: a `;` inside a reason splits it (a reason carries no `;`)", code == 1 and any("States names" in m for m in msg), msg)
+        code, msg = states("; ".join(ALL[:-1] + ["first-run: n/a: none, ever"]))
+        check_that("#2226 CONTROL: a comma in a reason does not split the entry", code == 0, msg)
+        code, msg = states("; ".join(ALL) + ";")
+        check_that("#2226: a stray `;` is held", code == 1 and any("empty entry" in m for m in msg), msg)
+        code, msg = states("; ".join(f"{n}: n/a: nothing here" for n in ALL))
+        check_that("#2226: a record whose every state is n/a is held", code == 1 and any("at least one state must be designed" in m for m in msg), msg)
+        code, msg = states("; ".join(ALL[:-1] + ["First-Run"]))
+        check_that("#2226: a state's case matters", code == 1, msg)
+
+        # #2226: Screen and Nav, a graph rooted at the shell.
+        def nav(line: str, screen: str | None = None) -> tuple[int, list[str]]:
+            text = GOOD.replace("Nav: level 1 under shell", line)
+            return with_record(text.replace("Screen: Invoice bell", f"Screen: {screen}") if screen else text)
+
+        child = as_screen(GOOD.replace("Nav: level 1 under shell", "Nav: level 2 under bell screen"), "child screen")
+        code, msg = with_record(GOOD.replace("Screen: Invoice bell\n", ""))
+        check_that("#2226: a record with no Screen line is held", code == 1 and any("no `Screen:` line" in m for m in msg), msg)
+        code, msg = with_record(GOOD.replace("Nav: level 1 under shell\n", ""))
+        check_that("#2226: a record with no Nav line is held", code == 1 and any("no `Nav:` line" in m for m in msg), msg)
+        code, msg = nav("Nav: top level")
+        check_that("#2226: a Nav line that is not `level N under <parent>` is held", code == 1 and any("must read" in m for m in msg), msg)
+        code, msg = nav("Nav: level 0 under shell")
+        check_that("#2226: level 0 (the shell itself) is held", code == 1 and any("outside 1 to 3" in m for m in msg), msg)
+        code, msg = nav("Nav: level 4 under bell screen")
+        check_that("#2226: level 4 is past the cap", code == 1 and any("outside 1 to 3" in m for m in msg), msg)
+        code, msg = nav("Nav: level 1 under bell screen")
+        check_that("#2226: level 1 must sit under `shell`", code == 1 and any("under `shell`" in m for m in msg), msg)
+        code, msg = nav("Nav: level 2 under bell screen")
+        check_that("#2226 CONTROL: level 2 under an existing level 1 screen passes", code == 0, msg)
+        code, msg = nav("Nav: level 2 under no such screen")
+        check_that("#2226: a parent that is no record's Screen is held", code == 1 and any("is the Screen of no record" in m for m in msg), msg)
+        code, msg = nav("Nav: level 2 under shell")
+        check_that("#2226: level 2 under `shell` is held", code == 1 and any("is the Screen of no record" in m for m in msg), msg)
+        code, msg = nav("Nav: level 3 under bell screen")
+        check_that("#2226: level 3 under a level 1 parent is held", code == 1 and any("is not at level 2" in m for m in msg), msg)
+        (rec / "child.md").write_text(child)
+        code, msg = nav("Nav: level 3 under child screen")
+        check_that("#2226 CONTROL: level 3 under an existing level 2 screen passes", code == 0, msg)
+        code, msg = nav("Nav: level 4 under child screen")
+        check_that("#2226: level 4 under a level 3 parent is past the cap, not a graph error", code == 1 and any("outside 1 to 3" in m for m in msg), msg)
+        code, msg = nav("Nav: level 1 under shell", screen="bell screen")
+        check_that("#2226: two records with one Screen name are held", code == 1 and any("one record per screen" in m for m in msg), msg)
+        code, msg = nav("Nav: level 2 under r screen")
+        check_that("#2226: a record cannot hang from its own Screen", code == 1 and any("is the Screen of no record" in m for m in msg), msg)
+        (rec / "child.md").write_text(child.replace("Nav: level 2 under bell screen", "no nav here"))
+        code, msg = nav("Nav: level 3 under child screen")
+        check_that("#2226: a parent whose own Nav line is unreadable is held", code == 1 and any("is not at level 2" in m for m in msg), msg)
+        (rec / "child.md").unlink()
+
+        # #2226: Story, pre-merge only.
+        (root / "src").mkdir(exist_ok=True)
+        (root / "src/Bell.stories.tsx").write_text("export default {}\n")
+        (root / "app/views/invoices").mkdir(parents=True, exist_ok=True)
+        (root / "app/views/invoices/index.html.erb").write_text("<table></table>\n")
+        (root / "app/models").mkdir(parents=True, exist_ok=True)
+        (root / "app/models/invoice.rb").write_text("class Invoice; end\n")
+        (root / "a.stories.d").mkdir(exist_ok=True)
+        (root / "a.stories.d/x.txt").write_text("x\n")
+        (root / "README.md").write_text("x\n")
+
+        def story(value: str | None) -> tuple[int, list[str]]:
+            (rec / "r.md").write_text(as_screen(GOOD, "r screen") + (f"Story: {value}\n" if value is not None else ""))
+            return run(root, view + ["docs/product/mockups/r.md"], None, require_story=True)
+
+        code, msg = story(None)
+        check_that("#2226: pre-merge, a record with no Story line is held", code == 1 and any("no `Story:` line" in m for m in msg), msg)
+        code, msg = run(root, view + ["docs/product/mockups/bell.md"], None)
+        check_that("#2226 CONTROL: at plan time (--paths), no Story is needed", code == 0, msg)
+        code, msg = story("src/Bell.stories.tsx")
+        check_that("#2226 CONTROL: a story file passes", code == 0, msg)
+        code, msg = story("app/views/invoices/index.html.erb")
+        check_that("#2226 CONTROL: a user-visible file passes", code == 0, msg)
+        code, msg = story("app/models/invoice.rb")
+        check_that("#2226: a backend file is no story", code == 1 and any("neither a story file" in m for m in msg), msg)
+        code, msg = story("README.md")
+        check_that("#2226: a README is no story", code == 1 and any("neither a story file" in m for m in msg), msg)
+        code, msg = story("a.stories.d/x.txt")
+        check_that("#2226: `.stories.` in a directory name is no story file", code == 1 and any("neither a story file" in m for m in msg), msg)
+        code, msg = story("src/Missing.stories.tsx")
+        check_that("#2226: a story path that does not exist is held", code == 1 and any("is not a file" in m for m in msg), msg)
+        code, msg = story("https://example.com/story")
+        check_that("#2226: a link is no story path", code == 1 and any("path inside the repo" in m for m in msg), msg)
+        code, msg = story("../outside.stories.tsx")
+        check_that("#2226: a path that climbs out of the repo is held", code == 1 and any("path inside the repo" in m for m in msg), msg)
+        code, msg = story("/etc/hosts")
+        check_that("#2226: an absolute path is held", code == 1 and any("path inside the repo" in m for m in msg), msg)
+        (rec / "r.md").write_text(as_screen(GOOD, "r screen"))
         (rec / "README.md").write_text("# How mock-up records work\n")
         code, msg = run(root, view + ["docs/product/mockups/README.md", "docs/product/mockups/bell.md"], None)
         check_that("CONTROL: a README in the records folder is not a record", code == 0, msg)
@@ -995,7 +1210,7 @@ def selftest() -> int:
         check_that("#1430: a record naming itself is held", code == 1 and any("itself" in m for m in msg), msg)
         # #1479: a HARD LINK is the record under another name; resolve() keeps the name, samefile
         # does not. Named .html so the Markdown-record rule cannot be what holds it. Portable to Linux.
-        (rec / "r.md").write_text(GOOD)
+        (rec / "r.md").write_text(as_screen(GOOD, "r screen"))
         alias = rec / "r-alias.html"
         alias.unlink(missing_ok=True)
         os.link(rec / "r.md", alias)
@@ -1047,7 +1262,7 @@ def selftest() -> int:
             (rec / name).write_text(text)
 
         def feature(mock: str, record_text: str | None = None) -> tuple[int, list[str]]:
-            (rec / "f.md").write_text(record_text or GOOD.replace("https://example.com/mockups/bell", mock))
+            (rec / "f.md").write_text(as_screen(record_text or GOOD.replace("https://example.com/mockups/bell", mock), "f screen"))
             return run(root, view + ["docs/product/mockups/f.md"], None)
 
         put("shell-a.html", SHELL_A)
@@ -1239,6 +1454,74 @@ def selftest() -> int:
         except Unusable:
             pass
 
+    # #2226: the online audit, with the issue lookup replaced.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        rec = root / "docs/product/mockups"
+        rec.mkdir(parents=True)
+        states = {"1": "CLOSED", "2": "OPEN", "3": None}
+
+        def lookup(_root: Path, ref: str) -> str | None:
+            return states.get(ref.rsplit("/", 1)[-1])
+
+        def record(name: str, issue: str, *, template: bool = True, story: str | None = None) -> None:
+            (rec / name).write_text(f"# x\nMock-up: https://example.com/{name}\nIssue: {issue}\n" + ("Template: list\n" if template else "")
+                                    + (f"Story: {story}\n" if story else ""))
+
+        code, msg = audit(root, lookup)
+        check_that("#2226: an audit over no records passes", code == 0, msg)
+        record("a.md", "#1")
+        code, msg = audit(root, lookup)
+        check_that("#2226: a new-format record, closed issue, no Story fails the audit", code == 1 and any("a.md" in m and "closed" in m for m in msg), msg)
+        record("a.md", "#1", story="src/A.stories.tsx")
+        code, msg = audit(root, lookup)
+        check_that("#2226 CONTROL: the same record with a Story passes", code == 0, msg)
+        record("a.md", "#2")
+        code, msg = audit(root, lookup)
+        check_that("#2226 CONTROL: an OPEN issue means it is not built yet: passes", code == 0, msg)
+        record("a.md", "#3")
+        code, msg = audit(root, lookup)
+        check_that("#2226: an issue gh cannot read is UNJUDGED, exit 2, never a pass", code == 2 and any("could not be read" in m for m in msg), msg)
+        record("b.md", "#1")
+        code, msg = audit(root, lookup)
+        check_that("#2226: a failure outranks an unjudged record", code == 1, msg)
+        (rec / "b.md").unlink()
+        record("a.md", "https://github.com/acme/app/issues/1")
+        code, msg = audit(root, lookup)
+        check_that("#2226: an issue given as a URL is read too", code == 1, msg)
+        record("a.md", "the bell one")
+        code, msg = audit(root, lookup)
+        check_that("#2226: a new-format record whose Issue is not a reference is unjudged", code == 2, msg)
+        (rec / "a.md").unlink()
+        record("old.md", "#1", template=False)
+        code, msg = audit(root, lookup)
+        check_that("#2226: a LEGACY record (no Template) without a Story is listed, never failed",
+                   code == 0 and any("old.md" in m and "listed, not failed" in m for m in msg), msg)
+        (rec / "README.md").write_text("# how\n")
+        (rec / "shell.md").write_text("# shell\nIssue: #1\nTemplate: list\n")
+        code, msg = audit(root, lookup)
+        check_that("#2226 CONTROL: the README and the shell record are not screens", code == 0 and not any("shell.md" in m or "README" in m for m in msg), msg)
+        code, msg = audit(root / "nowhere", lookup)
+        check_that("#2226 CONTROL: a project with no records folder passes", code == 0, msg)
+        # The real lookup, against a fake `gh` on PATH: only OPEN or CLOSED is an answer.
+        from mockup_records import issue_state
+        with tempfile.TemporaryDirectory() as fake:
+            gh = Path(fake) / "gh"
+            real_path = os.environ.get("PATH", "")
+            try:
+                for label, script, want in (("CLOSED", "#!/bin/sh\necho CLOSED\n", "CLOSED"), ("OPEN", "#!/bin/sh\necho OPEN\n", "OPEN"),
+                                            ("a banner that is not a state", "#!/bin/sh\necho 'gh: update available'\n", None),
+                                            ("a failing gh", "#!/bin/sh\necho CLOSED\nexit 1\n", None)):
+                    gh.write_text(script)
+                    gh.chmod(0o755)
+                    os.environ["PATH"] = f"{fake}:{real_path}"
+                    check_that(f"#2226: the issue lookup reads {label}", issue_state(root, "1") == want, issue_state(root, "1"))
+                gh.unlink()
+                os.environ["PATH"] = fake
+                check_that("#2226: no gh at all is `unknown`, not a state", issue_state(root, "1") is None)
+            finally:
+                os.environ["PATH"] = real_path
+
     # #2211 review, through the git path main() takes: the shell on the base decides whether a shell-only record covers a view.
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -1273,6 +1556,20 @@ def selftest() -> int:
         (root / "app/views/invoices/index.html.erb").write_text("<table></table>\n")
         code, msg = run(root, list(diff(root, "dev")), None, shell_on_base(root, "dev"))
         check_that("#2211: a branch that edits only the shell record does not cover a new view", code == 1 and any("only record is the shell" in m for m in msg), msg)
+        # #2226 through main(): the real diff (pre-merge) needs a Story; the plan's files (--paths) do not.
+        (recdir / "g.md").write_text(as_screen(GOOD, "g screen"))
+        script = str(Path(__file__).resolve())
+        pre = subprocess.run([sys.executable, script, "--root", str(root), "--base", "dev"], capture_output=True, text=True)
+        check_that("#2226: pre-merge (the real diff), a record with no Story holds the branch, through main()",
+                   pre.returncode == 1 and "no `Story:` line" in pre.stdout, (pre.returncode, pre.stdout, pre.stderr))
+        plan = subprocess.run([sys.executable, script, "--root", str(root), "--base", "dev", "--paths", "app/views/invoices/index.html.erb",
+                               "docs/product/mockups/g.md"], capture_output=True, text=True)
+        check_that("#2226 CONTROL: at plan time (--paths) the same record needs no Story, through main()",
+                   plan.returncode == 0, (plan.returncode, plan.stdout, plan.stderr))
+        (recdir / "g.md").write_text(as_screen(GOOD, "g screen") + "Story: app/views/invoices/index.html.erb\n")
+        done = subprocess.run([sys.executable, script, "--root", str(root), "--base", "dev"], capture_output=True, text=True)
+        check_that("#2226 CONTROL: pre-merge, the record that names its Story passes, through main()",
+                   done.returncode == 0, (done.returncode, done.stdout, done.stderr))
 
     for f in failures:
         print(f"selftest FAIL: {f}")
@@ -1292,10 +1589,18 @@ def main(argv: list[str]) -> int:
                                    "happen to have in common; it cannot add a token)")
     for flag in ("approval", "approved-by", "issue", "widths", "states"):
         ap.add_argument(f"--{flag}", help="with --adopt-shell: the value of the record's line of that name")
+    ap.add_argument("--audit", action="store_true",
+                    help="ONLINE: list records whose issue is closed and that name no `Story:` (exit 1), and legacy records without one (#2226)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
     if a.selftest:
         return selftest()
+    if a.audit:
+        code, lines = audit(a.root.resolve())
+        print(("MOCK-UP STORY AUDIT: FAIL -- " if code == 1 else "MOCK-UP STORY AUDIT: UNJUDGED -- " if code == 2 else "MOCK-UP STORY AUDIT: ok -- ") + lines[0])
+        for line in lines[1:]:
+            print(f"  {line}")
+        return code
     if a.adopt_shell:
         missing = [f for f in ("approval", "approved_by", "issue", "widths", "states") if not getattr(a, f)]
         if missing:
@@ -1319,7 +1624,7 @@ def main(argv: list[str]) -> int:
     except Unusable as exc:
         print(f"UNUSABLE: {exc} -- an unclassified change is not exempt; ask the owner", file=sys.stderr)
         return 2
-    code, lines = run(a.root, changed, a.record, shell_on_base(a.root, a.base))
+    code, lines = run(a.root, changed, a.record, shell_on_base(a.root, a.base), require_story=not a.paths)
     print(("MOCK-UP GATE: HOLD -- " if code else "MOCK-UP GATE: ok -- ") + lines[0])
     for line in lines[1:]:
         print(f"  {line}")

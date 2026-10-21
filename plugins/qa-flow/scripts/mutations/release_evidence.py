@@ -10,6 +10,7 @@ GUARD = Guard(
     name="release_evidence",
     subject="scripts/release_evidence.py",
     selftest="scripts/release_evidence.py",
+    needs=("scripts/mockup_records.py",),
     mutations=(
         # #1493: a fixture commit's detached `git maintenance` raced the temp-dir cleanup.
         Mutation(
@@ -304,6 +305,24 @@ GUARD = Guard(
             ' and raw_report.strip() == f"{REPORT_ROOT}{version}.md":',
             ':',
             "is never an allowed path",
+        ),
+        Mutation(
+            'the stamp never checks the mock-up stories',
+            '    findings += check_mockup_stories(base, rev)\n',
+            '    findings += []\n',
+            'a shipped design (closed issue) that names no Story refuses the stamp',
+        ),
+        Mutation(
+            'an unreadable issue passes the stamp',
+            '    return [f"mock-up stories: {line}" for line in failing + unjudged]',
+            '    return [f"mock-up stories: {line}" for line in failing]',
+            'an issue that cannot be read refuses the stamp',
+        ),
+        Mutation(
+            'the records are read from the working tree even with --rev',
+            '            root = Path(td)\n        failing,',
+            '            pass\n        failing,',
+            'with --rev the record is read as COMMITTED',
         ),
     ),
 )

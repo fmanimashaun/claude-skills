@@ -112,6 +112,8 @@ layer failing (Phase 3b) → verdict FAIL, no stamp; defects filed, dev is not r
 `qa-reporter` writes `qa/CERTIFICATION` (bound to the tested dev sha) and promotes
 the cycle's proven features into the `@regression` corpus. Report which sha is
 cleared for main and remind the user the release-gate hook now permits that promotion.
+**Shipped designs must name their screen** (#2226): `release_evidence.py stamp` also refuses the stamp when a mock-up record with a `Template:` line and a closed `Issue:` names no `Story:` (the story file or view that implements the design), or when its issue cannot be read. It reads the records as committed at the stamp's revision. If it refuses, add the `Story:` line to the record on dev; a record that predates the line is only listed.
+
 **Committing the stamp** (#1337): commit `qa/CERTIFICATION` to dev by its own PR, together with the
 first-boot and authz evidence it names (#1428), and change nothing else before promoting. The gate
 accepts a stamp whose sha is an ancestor of dev when the only paths changed since are
