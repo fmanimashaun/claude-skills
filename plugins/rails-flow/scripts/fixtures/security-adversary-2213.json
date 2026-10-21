@@ -291,5 +291,19 @@
   "model_name": "x.md",
   "model": "# T\n## What we are building\nA webhook.\n## Trust boundaries\n- Zoho -> app: the callback body\n## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-1 | Forged callback | S | webhook | mitigate | signature checked |\n| TM-2 | Replay | R | webhook | accept | idempotent, harmless |\n| TM-3 | Body logged | I | logger | mitigate | filtered |\n## Security requirements\n- verify the signature\n",
   "refused_with": "no raw HTML blocks"
+ },
+ {
+  "name": "pass 3 review: a four-space details block under a list item",
+  "criteria": "## Webhook\n- **AC-1** Given a callback with a bad signature, when it posts to the webhook, then the response is 401 and no contract changes [error] [security] (TM-1)\n- note\n\n    <details>\n\n- **AC-2** Given a signed callback, when the log is written, then the body is filtered from the log line [security] covers: TM-3\n\n    </details>\n",
+  "model_name": "x.md",
+  "model": "# T\n## What we are building\nA webhook.\n## Trust boundaries\n- Zoho -> app: the callback body\n## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-1 | Forged callback | S | webhook | mitigate | signature checked |\n| TM-2 | Replay | R | webhook | accept | idempotent, harmless |\n| TM-3 | Body logged | I | logger | mitigate | filtered |\n## Security requirements\n- verify the signature\n",
+  "refused_with": "no raw HTML blocks"
+ },
+ {
+  "name": "pass 3 review: a tab-indented details block under a list item",
+  "criteria": "## Webhook\n- **AC-1** Given a callback with a bad signature, when it posts to the webhook, then the response is 401 and no contract changes [error] [security] (TM-1)\n- note\n\n\t<details>\n\n- **AC-2** Given a signed callback, when the log is written, then the body is filtered from the log line [security] covers: TM-3\n\n\t</details>\n",
+  "model_name": "x.md",
+  "model": "# T\n## What we are building\nA webhook.\n## Trust boundaries\n- Zoho -> app: the callback body\n## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-1 | Forged callback | S | webhook | mitigate | signature checked |\n| TM-2 | Replay | R | webhook | accept | idempotent, harmless |\n| TM-3 | Body logged | I | logger | mitigate | filtered |\n## Security requirements\n- verify the signature\n",
+  "refused_with": "no raw HTML blocks"
  }
 ]
