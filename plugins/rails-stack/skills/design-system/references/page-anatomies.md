@@ -549,6 +549,47 @@ Many small forms, grouped. The risk here is a wall of inputs.
 - **Save per section**, not one page-wide save. A single save button over eight
   sections makes every edit feel risky.
 
+## Multi-step — one question per page, check answers, confirmation
+
+A flow the user completes in order: a series of question pages, one **check answers** page, then a
+**confirmation**. The pattern is GOV.UK's (*Question pages*, *Check answers*, *Confirmation pages*,
+*Complete multiple tasks*); each rule below is a claim `doctrine-verifier` confirmed against those
+pages, listed with its id in `architecture.md` (rules A29–A52). This section says how our shells,
+primitives and catalog compose it. **Stacked shell** (no rail: a flow has nowhere else to go), one
+`Stack` of regions, `Description list` for answers, `Button` for the forward action.
+
+- **Question page** — a back link at the top that returns to the previous page in the state they last saw it; one `h1` that is the
+  question (a statement when several related things are asked); the fields; one `Button` labelled
+  **Continue**. One question per page; no two pages share a heading. The first region is the back
+  link, not breadcrumbs: a flow is not a place in a hierarchy.
+- **Task list (long flows only)** — one `Stack` of tasks per group; each task is a verb-led name
+  with its status; a task that cannot start yet is plain text, not a link; the user may do tasks in
+  any order and go back into one to change an answer; they move on only when every task is
+  Completed. It is not used for a short flow, for a flow that must run in a fixed order, or to show
+  answers.
+- **Check answers** — one page immediately before the confirmation. A `Description list` of the
+  answers, a **Change** link beside each section whose hidden text names what it changes, and after
+  a change **Continue** returns here. A line above the submit button states what the user is
+  confirming, and the page says the transaction is not complete until they do.
+- **Confirmation** — says the transaction is complete, shows the reference number when there is one,
+  and says what happens next and when.
+
+The state contract (`architecture.md`, layer 5) applies to each question page. Its error state is
+an error message next to each field in error plus, on a failed submit, an error summary at the top of
+the page with keyboard focus moved to it (rules A59, A60; [forms.md](forms.md) for the fields).
+
+## Search results
+
+The pattern is the Scottish Government Design System's *Search results* (GOV.UK has none); its rules
+are claims `doctrine-verifier` confirmed, listed in `architecture.md` (rules A53–A58). Composition in
+ours: the shell the product already uses, one `Stack`; the query in a `role="search"` form at the top;
+the **results count** (with the search terms) above the list; the **sort** control above the results;
+the list; **pagination** at the bottom (ten to a page, only when there are more than ten). The
+**no-results** state replaces the list with a plain statement and hints ([Empty state](components.md#empty-state)),
+not a blank page. When results change without a page load, the heading that carries the count is
+`aria-live` and focus moves to the start of the changed content. What one result contains (title,
+summary, metadata) is not settled here: the source delegates it to a separate page not yet verified.
+
 ---
 
 # No breakpoint where a primitive says it better

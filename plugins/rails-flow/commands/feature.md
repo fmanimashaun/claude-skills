@@ -167,17 +167,24 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --paths <each file 
   Proceed.
 - **Exit 1**: user-visible scope. If the issue already links an approved mock-up, record it and
   proceed. Otherwise:
-  1. **Build a clickable mock-up**, with `/design-flow:canvas` or `/design-flow:variants` where the
-     project uses design-flow, or else a single HTML page. Use realistic example data and the
-     project's own tokens, at a phone width and a desktop width, with the empty and error states
-     the criteria name.
+  1. **Build a clickable mock-up inside the app's own shell**: its layout and navigation, not a
+     free-standing screen (the owner's rule, #2211). Draw it as one HTML page, with realistic
+     example data and the project's own tokens, at a phone width and a desktop width, with the
+     empty and error states the criteria name. Claude Design import
+     (`/design-flow:canvas`, `/design-flow:port`) is an optional way to draw it, not the way a
+     screen enters the project. **No recorded shell yet?** (`docs/product/mockups/shell.md`
+     missing, which the gate reports.) The first change is the shell: mock up the core layout,
+     navigation and foundation screens, following the design system, get them approved, then
+     record them with `check_mockup_gate.py --adopt-shell`. Format and rules:
+     `${CLAUDE_PLUGIN_ROOT}/reference/mockup-record.md`.
   2. **Publish it, post its link on the issue, and STOP for the owner's approval.** This is a hold
      like the one-way door's, not advice: approval is a human decision. Change requests mean
      iterate and ask again.
   3. **Record the approval** in `docs/product/mockups/<slug>.md` (committed on the branch once Phase 2
      creates it), one line each:
      `Mock-up:` (link or committed file), `Issue:`, `Approved-by:`, `Approval:` (the link to the
-     comment where the owner approved), `Widths:`, `States:`. Then proceed. The plan and the PR
+     comment where the owner approved), `Widths:`, `States:`, `Shell:` (always
+     `docs/product/mockups/shell.md`). Then proceed. The plan and the PR
      cite the record.
 
 The same check runs again on the branch's real diff before merge (Phase 6), so a view the plan did

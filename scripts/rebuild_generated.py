@@ -46,7 +46,7 @@ BUILDERS = (
     ("dist/*.skill", "package_core.py", ("dist/",)),
     ("maintainer skill mirrors", "build_maintainer_skills.py", (".claude/skills/",)),
     ("mandated gems", "derive_mandated_gems.py", ("plugins/rails-flow/mandated_gems.json",)),
-    ("tenancy cop", "derive_tenancy_cop.py", ("plugins/rails-flow/scaffold/",)),
+    ("tenancy cop", "derive_tenancy_cop.py", ("plugins/rails-stack/scaffold/",)),
 )
 
 # A `scripts/*.py --check` gate that this script deliberately does NOT run, and why. Every entry is
@@ -62,6 +62,7 @@ NOT_REBUILT = {
     "extract_release_notes.py": "a validator, not a generator — it writes no file",
     # Folds `changelog.d/` fragments into CHANGELOG.md, by hand, at the arm (#1825). CHANGELOG.md is authored text, not a generated page: there is nothing to
     # rebuild and drift-check, and running the fold in a sweep would consume the fragments.
+    "prove_neutral.py": "--check re-runs components against fixtures; --record writes the proof file by hand, because execution results are not a function of the tree alone (#2205)",
     "changelog_fragments.py": "folds fragments into the authored CHANGELOG.md at the arm; nothing to regenerate",
 }
 

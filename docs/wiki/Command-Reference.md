@@ -66,14 +66,14 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 **Setup** — design system, tokens and the brand pack
 
-- `/design-flow:setup` — Scaffold the design system into a Rails 8 + Hotwire + Tailwind v4 project — @theme token architecture (brand primitives -> semantic roles -> Utopia fluid scale), layout-primitive @utility recipes, base ViewComponents, dark mode.
-- `/design-flow:tokens` — Export native design tokens (Phase 3) from the Rails app's Tailwind @theme — generate Android (colors.xml + Theme.Fidara) and iOS (SwiftUI Color) token files so fully-native screens match the web by construction.
+- `/design-flow:setup` — Scaffold the design system into the project through its UI adapter — token architecture (brand primitives -> semantic roles -> Utopia fluid scale), layout-primitive recipes, base components, dark mode.
+- `/design-flow:tokens` — Export native design tokens (Phase 3) from the app's token source of truth — generate Android (colors.xml + Theme.Fidara) and iOS (SwiftUI Color) token files so fully-native screens match the web by construction.
 
 
 **Build** — build UI against the system
 
 - `/design-flow:component` — Author or refactor a UI component per the design system.
-- `/design-flow:mobile` — Scaffold Hotwire Native parity (Phase 2) into a Rails 8 + Hotwire app — native-app detection + body flags, JSON path configuration, bridge components (button/menu/tab-bar), safe-area + min-h-touch wiring, and table->summary cards.
+- `/design-flow:mobile` — Scaffold native-shell parity (Phase 2) into the app through its UI adapter — native-app detection + body flags, JSON path configuration, bridge components, safe-area + min-h-touch wiring, and table->summary cards.
 - `/design-flow:variants` — Generate N brand-conformant compositions of one brief plus a dev-only switcher route.
 
 
@@ -93,7 +93,7 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 - `/design-flow:canvas` — Compose a Claude Design prompt for one surface that carries this project's own tokens, component catalog and band sequence — so the canvas comes back speaking the system and the port is a reconciliation rather than a translation.
 - `/design-flow:compose` — Generate the composition brief for one surface.
-- `/design-flow:port` — Port a Claude Design output — JSX/TSX, or a `<x-dc>` canvas export — into this Rails 8 + Hotwire app, faithful to the design and aligned to the design system by construction.
+- `/design-flow:port` — Port a Claude Design output — JSX/TSX, or a `<x-dc>` canvas export — into this app, faithful to the design and aligned to the design system by construction.
 
 
 

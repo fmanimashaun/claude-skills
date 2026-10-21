@@ -48,6 +48,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -214,6 +215,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1344. Every shipped frontmatter must be valid YAML: two command descriptions held an unquoted
     # `: ` and a strict reader refused them. Stdlib, because CI has no PyYAML.
     ("frontmatter is valid YAML", ("python3", "scripts/check_frontmatter.py")),
+    # #2233. A CONFIRMED verdict quotes only what the cited page says: the checker fetches and matches (a verifier's tool, networked), and these two run offline.
+    ("verdict quotes selftest", ("python3", "scripts/check_verdict_quotes.py", "--selftest")),
+    ("verdict quotes format", ("python3", "scripts/check_verdict_quotes.py", "--format-check")),
     ("frontmatter selftest", ("python3", "scripts/check_frontmatter.py", "--selftest")),
     # #1334. Every plugin hook command must survive an install path containing a space: the four
     # fail-closed guards stop guarding when their command splits. Local and deterministic, so it
@@ -265,10 +269,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("shared shapes", ("python3", "scripts/check_shared_shapes.py")),
     ("rails assumptions drift", ("python3", "scripts/rails_assumptions.py", "--check")),
     ("component classes drift", ("python3", "scripts/component_classes.py", "--check")),
+    ("neutral proof ratchet", ("python3", "scripts/prove_neutral.py", "--check")),
     ("worktree teardown wording", ("python3", "plugins/rails-flow/scripts/worktree_teardown.py", "--check-wording")),
     ("shared shapes selftest", ("python3", "scripts/check_shared_shapes.py", "--selftest")),
     ("rails assumptions selftest", ("python3", "scripts/rails_assumptions.py", "--selftest")),
     ("component classes selftest", ("python3", "scripts/component_classes.py", "--selftest")),
+    ("neutral proof selftest", ("python3", "scripts/prove_neutral.py", "--selftest")),
     # #92 (Phase 5), and the same shape a third time: `page-anatomies.md` -> How a page is paced
     # states a count measured from `coverage.md`, a band range, and a worked sequence whose whole
     # point is that consecutive bands differ. NOT a design gate — nothing here judges a sequence.
@@ -324,23 +330,23 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #779 / #778. Two claims the doctrine stated, nothing performed and nothing checked. Both
     # landed missing on two unrelated greenfield apps from clean runs of the documented path --
     # the recurrence is what made them structural rather than user error.
-    ("rails-flow ci runs tests",
-     ("python3", "plugins/rails-flow/scripts/check_ci_runs_tests.py", "--selftest")),
+    ("rails-stack ci runs tests",
+     ("python3", "plugins/rails-stack/scripts/check_ci_runs_tests.py", "--selftest")),
     ("rails-flow mandated gems",
      ("python3", "plugins/rails-flow/scripts/check_mandated_gems.py", "--selftest")),
     # #803. Rails generates the spec/support auto-loader COMMENTED and testing.md:99 says to
     # uncomment it; left as generated, every support file is dead with no error and no output.
-    ("rails-flow spec support wired",
-     ("python3", "plugins/rails-flow/scripts/check_spec_support.py", "--selftest")),
+    ("rails-stack spec support wired",
+     ("python3", "plugins/rails-stack/scripts/check_spec_support.py", "--selftest")),
     # #800. Maintainer decision: "gate is the key, advise can be ignored." A coverage DROP is a
     # measured regression against a recorded baseline, not judgement, so it gates honestly where a
     # fixed threshold never could.
-    ("rails-flow coverage ratchets",
-     ("python3", "plugins/rails-flow/scripts/check_coverage_ratchet.py", "--selftest")),
+    ("rails-stack coverage ratchets",
+     ("python3", "plugins/rails-stack/scripts/check_coverage_ratchet.py", "--selftest")),
     # #799. Situational, resolved by asking at setup and RECORDING the answer — which is what lets
     # the check have a real not-applicable state instead of gating everyone or nobody.
-    ("rails-flow i18n wired",
-     ("python3", "plugins/rails-flow/scripts/check_i18n_setup.py", "--selftest")),
+    ("rails-stack i18n wired",
+     ("python3", "plugins/rails-stack/scripts/check_i18n_setup.py", "--selftest")),
     # #797. The list rails-flow enforces is DERIVED from the rails-8 doctrine that declares it, and
     # committed beside the checker -- a runtime read would cross a plugin boundary, which is #617's
     # class and has already recurred twice. This proves the artifact still matches its source.
@@ -354,10 +360,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/derive_tenancy_cop.py", "--check")),
     ("tenancy cop derived selftest",
      ("python3", "scripts/derive_tenancy_cop.py", "--selftest")),
-    ("rails-flow tenancy cop",
-     ("python3", "plugins/rails-flow/scripts/check_tenancy_cop.py", "--selftest")),
-    ("rails-flow mcp end to end",                                                    # #1930
-     ("python3", "plugins/rails-flow/scripts/check_mcp_end_to_end.py", "--selftest")),
+    ("rails-stack tenancy cop",
+     ("python3", "plugins/rails-stack/scripts/check_tenancy_cop.py", "--selftest")),
+    ("rails-stack mcp end to end",                                                    # #1930
+     ("python3", "plugins/rails-stack/scripts/check_mcp_end_to_end.py", "--selftest")),
     ("rails-flow mcp personal fields",                                               # #1931
      ("python3", "plugins/rails-flow/scripts/check_mcp_personal_fields.py", "--selftest")),
     # #762's neighbour. The curated-doc drift signal is ADVISORY -- it blocks nothing -- and that is
@@ -477,7 +483,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1639. Where a worktree stopped: the facts file, HEAD drift, unknown-not-clean, the overall git deadline (#1643 R1).
     ("rails-flow where-stopped helper", ("python3", "plugins/rails-flow/hooks/scripts/lib/where_stopped.py", "--selftest")),
     ("rails-flow technical spec", ("python3", "plugins/rails-flow/scripts/check_spec.py", "--selftest")),
-    ("rails-flow simple-form-only gate", ("python3", "plugins/rails-flow/scripts/check_simple_form_only.py", "--selftest")),
+    ("rails-stack simple-form-only gate", ("python3", "plugins/rails-stack/scripts/check_simple_form_only.py", "--selftest")),
     ("shipped ERB passes simple-form-only", ("python3", "scripts/check_shipped_erb_forms.py")),
     ("shipped ERB forms selftest", ("python3", "scripts/check_shipped_erb_forms.py", "--selftest")),
     ("rails-flow mock-up gate", ("python3", "plugins/rails-flow/scripts/check_mockup_gate.py", "--selftest")),
@@ -603,6 +609,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("component states", ("python3", "scripts/check_component_states.py")),
     ("component states selftest",
      ("python3", "scripts/check_component_states.py", "--selftest")),
+    # #2220. The interface-architecture page ships only rules with a basis that exists: a check that
+    # is a real file, a CONFIRMED claim, or a recorded decision. A row with none is refused.
+    ("architecture rules", ("python3", "scripts/check_architecture_rules.py")),
+    ("architecture rules selftest",
+     ("python3", "scripts/check_architecture_rules.py", "--selftest")),
     # #1085. A SessionStart hook fires again on EVERY COMPACTION, so what it prints is charged
     # each time the context is reclaimed -- exactly when it is scarcest. One hook was 98% of the
     # cost and 85% of that was one file printed verbatim. A ratchet against a fixture project, so
@@ -788,6 +799,25 @@ class Result:
     findings: tuple[str, ...] = ()
 
 
+def gate_time_lines(timings: dict[str, float], under: float = 1.0) -> list[str]:
+    """The wall time of each gate that ran, slowest first, as plain log lines (#2246). Gates under `under` seconds are summed on one line, so the
+    block accounts for every gate without printing a couple of hundred. Empty when nothing ran. The CI log had no per-gate time before this: every
+    `[  ok  ]` line carried the end-of-run timestamp, so a gate near its budget could not be seen."""
+    if not timings:
+        return []
+    total = sum(timings.values())
+    slow = sorted(((s, n) for n, s in timings.items() if s >= under), reverse=True)
+    quick = [s for s in timings.values() if s < under]
+    lines = [f"gate wall times (this process's own clock, slowest first; gates under {under:g} s are summed):"]
+    for seconds, name in slow:
+        share = 100 * seconds / total if total else 0
+        lines.append(f"  {seconds:8.1f} s {share:5.1f}%  {name}")
+    if quick:
+        lines.append(f"  {len(quick)} gate(s) under {under:g} s: {sum(quick):.1f} s in total")
+    lines.append(f"  {len(timings)} gate(s) ran for {total:.1f} s in total")
+    return lines
+
+
 def gate_output(out: str, code: int) -> tuple[str, tuple[str, ...]]:
     """`(summary, the lines before it)` — a failing gate's output, not a line of it (#820).
 
@@ -834,6 +864,8 @@ class Doctor:
     shards_external: bool = False
     results: list[Result] = field(default_factory=list)
     fixed: list[str] = field(default_factory=list)
+    # Wall time of each gate that RAN, by gate name, on this process's own clock (#2246). A skip never ran, so it has none.
+    timings: dict[str, float] = field(default_factory=dict)
 
     # ---- helpers ----------------------------------------------------------------------
     def run(self, *args: str, cwd: Path | None = None,
@@ -1402,8 +1434,10 @@ class Doctor:
                     " ".join(cmd),
                 )
                 continue
+            started = time.monotonic()
             code, out = self.run(*slow_gate_command(name, cmd, self.require_slow),
                                  timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
+            self.timings[name] = time.monotonic() - started  # a killed gate is timed too: how long it ran is the evidence
             if code == 0:
                 # A slow gate's own summary line (mutation_check prints jobs and elapsed) is the
                 # measurement SLOW_GATES is set from; on a runner this is the only place it exists.
@@ -1531,6 +1565,12 @@ class Doctor:
                 print(f"             {finding_line}")
             if r.remedy and r.status in (FAIL, SKIP):
                 print(f"           -> {r.remedy}")
+
+        timing = gate_time_lines(self.timings)
+        if timing:
+            print()
+            for line in timing:
+                print(line)
 
         if self.fixed:
             print("\nRepaired (safe changes only):")
