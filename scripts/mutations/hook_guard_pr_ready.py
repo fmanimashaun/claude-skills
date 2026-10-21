@@ -90,5 +90,41 @@ GUARD = Guard(
             "    if not root:\n",
             "NOT in force (no marker, no workflow, no record dir)",
         ),
+        Mutation(
+            'the refusal never names the worktree with a green record',
+            '(looked for {record}).{elsewhere_hint(root, args)}"',
+            '(looked for {record})."',
+            'the refusal names the worktree with a green record',
+        ),
+        Mutation(
+            'a RED record elsewhere is offered',
+            'data.get("verdict") == "green" and',
+            'data.get("verdict") in ("green", "red") and',
+            'a RED record elsewhere is not offered',
+        ),
+        Mutation(
+            'a record with skips elsewhere is offered',
+            'and type(data.get("skips")) is int and data["skips"] == 0:',
+            ':',
+            'a record with a skip elsewhere is not offered',
+        ),
+        Mutation(
+            'a record naming another head elsewhere is offered',
+            'data.get("head") == head and data.get("verdict")',
+            'data.get("verdict")',
+            'a record naming another head elsewhere is not offered',
+        ),
+        Mutation(
+            'a skips that is not a number elsewhere is offered',
+            'type(data.get("skips")) is int and data["skips"] == 0',
+            'data.get("skips") in (0, "0")',
+            'a record whose skips is not a number elsewhere is not offered',
+        ),
+        Mutation(
+            'the cd form is suggested for a path the exception cannot accept',
+            'if CD_WORD.match(path)',
+            'if True',
+            'named WITHOUT the cd form',
+        ),
     ),
 )

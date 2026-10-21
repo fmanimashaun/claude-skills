@@ -246,6 +246,41 @@ def _claim_bodies(base: Path) -> None:
     check("a body the claim extractor cannot read (not UTF-8) is refused: the shim runs the hook strict", ok, why)
 
 
+@case("a worktree with a green record is named in the refusal")
+def _elsewhere(base: Path) -> None:
+    """#2143: the shim judges the checkout it runs in; when another worktree holds a green, zero-skip record the refusal names it and the cd form."""
+    fx = Fixture(base)
+    wt = base / "wt"
+    fixture_git.run(fx.repo, "worktree", "add", "-q", "-b", "feature/x", str(wt))
+    wt = wt.resolve()
+    # fixture_git refuses a linked worktree as its path and pins GIT_DIR, so the worktree's private sweep directory is built, not asked for: git keeps
+    # it at <git dir>/worktrees/<name>/. The worktree starts at the main checkout's commit, so both HEADs are the same sha: only the DIRECTORY differs.
+    head = fx.head
+    d = fx.repo.resolve() / ".git" / "worktrees" / "wt" / "rails-flow" / "sweep"
+    d.mkdir(parents=True, exist_ok=True)
+
+    def write(**over) -> None:
+        (d / f"{head}.json").write_text(json.dumps({"head": head, "verdict": "green", "skips": 0, "failed": 0, "errored": 0, **over}))
+
+    def said(command: str) -> tuple[bool, str]:
+        fx.reset()
+        r = fx.sh(command)
+        return (r.returncode != 0 and fx.ran() == []), (r.stdout + r.stderr)
+
+    ok, text = said("gh pr ready 5")
+    check("shim: with no green record anywhere the refusal names no worktree", ok and "exists for HEAD" not in text, text[-200:])
+    write()
+    ok, text = said("gh pr ready 5")
+    check("shim: a worktree with a green zero-skip record is named, with the one-command cd form, and the shim still refuses",
+          ok and f"exists for HEAD {head[:12]} in the worktree {wt}" in text and f"cd {wt} && gh pr ready 5" in text, text[-300:])
+    ok, why = allowed(fx, f"cd {wt} && gh pr ready 5")
+    check("shim: ...and the form it names is allowed", ok, why)
+    for label, over in (("RED", {"verdict": "red"}), ("with a skip", {"skips": 1}), ("for another head", {"head": "e" * 40})):
+        write(**over)
+        ok, text = said("gh pr ready 5")
+        check(f"shim: a record {label} elsewhere is not offered as a way out", ok and str(wt) not in text, text[-200:])
+
+
 @case("no record")
 def _no_record(base: Path) -> None:
     fx = Fixture(base)

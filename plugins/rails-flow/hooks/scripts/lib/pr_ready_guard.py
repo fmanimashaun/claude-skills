@@ -202,6 +202,46 @@ def main() -> int:
     return judge_record(root, args)
 
 
+# The word shape guard-pr-ready.sh's `cd <dir> && gh pr ready <n>` exception accepts (#2132): a plain literal path.
+CD_WORD = re.compile(r"\A[A-Za-z0-9_./~+-]+\Z")
+
+
+def green_elsewhere(root: str) -> list[tuple[str, str]]:
+    """(path, HEAD) of every OTHER worktree of `root`'s repository whose own HEAD has a green, zero-skip record (#2143).
+
+    Only a hint for a refusal: nothing here allows anything. A session whose Bash tool resets its directory to the main checkout is judged on that
+    checkout's HEAD, and the released way out (`cd <worktree> && gh pr ready <n>`) was invisible in the refusal."""
+    listing = git(root, "worktree", "list", "--porcelain")
+    if not listing:
+        return []
+    here = os.path.realpath(root)
+    found: list[tuple[str, str]] = []
+    for block in listing.split("\n\n"):
+        fields = dict(line.split(" ", 1) for line in block.splitlines() if " " in line)
+        path, head = fields.get("worktree", ""), fields.get("HEAD", "")
+        if not path or not head or os.path.realpath(path) == here:
+            continue
+        d = sweep_dir(path)
+        try:
+            data = json.loads((d / f"{head}.json").read_text(encoding="utf-8")) if d else None
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and data.get("head") == head and data.get("verdict") == "green" and type(data.get("skips")) is int and data["skips"] == 0:
+            found.append((path, head))
+    return sorted(found)[:3]
+
+
+def elsewhere_hint(root: str, args: str) -> str:
+    """The sentence a refusal appends when another worktree of the repository holds a green record for its own HEAD, or ''."""
+    ready = f"gh pr ready{(' ' + args.strip()) if args.strip() else ''}"
+    parts = []
+    for path, head in green_elsewhere(root):
+        how = (f"run `cd {path} && {ready}` as ONE command (the Bash tool does not carry a bare `cd` to the next call)" if CD_WORD.match(path)
+               else f"run `{ready}` from a session started in {path}")
+        parts.append(f"a green record with zero skips exists for HEAD {head[:12]} in the worktree {path}: {how}")
+    return (" " + "; ".join(parts) + ".") if parts else ""
+
+
 def judge_record(root: str, args: str) -> int:
     """The sweep record for the HEAD of `root`: 0 when it is green with zero skips, else a refusal. One judgement for the hook and for the `gh` shim (#1839)."""
     head = git(root, "rev-parse", "HEAD")
@@ -212,7 +252,7 @@ def judge_record(root: str, args: str) -> int:
         return refuse(f"the git directory of {root} could not be read.", args)
     record = d / f"{head}.json"
     if not record.is_file():
-        return refuse(f"no sweep record for HEAD {head[:12]} (looked for {record}).", args)
+        return refuse(f"no sweep record for HEAD {head[:12]} (looked for {record}).{elsewhere_hint(root, args)}", args)
     try:
         data = json.loads(record.read_text(encoding="utf-8"))
         if not isinstance(data, dict):

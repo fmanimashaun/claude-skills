@@ -6337,6 +6337,63 @@ def guard_pr_ready_fixtures() -> None:
                guard(repo, f"cd {other} && gh pr ready 3 -R o/r"), 2, "explicit repository target")
         expect("guard-pr-ready (#2132): `cd <missing dir> && gh pr ready` cannot be judged: refused",
                guard(repo, f"cd {td}/nope && gh pr ready 3"), 2)
+        # #2143: the refusal NAMES the worktree that holds a green record, and loosens nothing. A session whose directory is reset to the main
+        # checkout is judged on its HEAD; the released way out is the `cd` form, which the refusal never mentioned.
+        main_head = head_of(repo)
+        (repo / ".git" / "rails-flow" / "sweep" / f"{main_head}.json").unlink(missing_ok=True)    # the rows above left the main checkout a green record
+
+        def add_worktree(name: str, branch: str) -> Path:
+            wt = Path(td) / name
+            _fixture_git(repo, "worktree", "add", "-q", "-b", branch, str(wt), check=True)
+            _fixture_git(wt, "commit", "-q", "--allow-empty", "-m", "work", check=True)
+            return wt.resolve()
+
+        def record_in(wt: Path, **over) -> Path:
+            where = (_fixture_git(wt, "rev-parse", "--git-path", "rails-flow/sweep", check=True).stdout or "").strip()
+            d = Path(where) if os.path.isabs(where) else wt / where
+            d.mkdir(parents=True, exist_ok=True)
+            head = head_of(wt)
+            rec = {"head": head, "tree": "t", "verdict": "green", "passed": 3, "failed": 0, "errored": 0, "not_applicable": 2, "manifest_problems": 0,
+                   "skips": 0, "at": "2026-10-10T00:00:00Z", "project_gates": "0"}
+            rec.update(over)
+            f = d / f"{head}.json"
+            f.write_text(json.dumps(rec), encoding="utf-8")
+            return f
+
+        lone = new_repo(td, "lone")
+        res = guard(lone, "gh pr ready 3")
+        expect("guard-pr-ready (#2143): with no other worktree there is nothing to name: refused, no hint", res, 2, "no sweep record")
+        check("guard-pr-ready (#2143): ...and the refusal does not claim a green record elsewhere", "exists for HEAD" not in res[1], blocked_lines(res[1]))
+        wt = add_worktree("wt2143", "feature/2143")
+        res = guard(repo, "gh pr ready 3")
+        check("guard-pr-ready (#2143): a worktree without a record is not named", str(wt) not in res[1], blocked_lines(res[1]))
+        rec_wt = record_in(wt)
+        res = guard(repo, "gh pr ready 3")
+        expect("guard-pr-ready (#2143): the main checkout is still REFUSED (nothing is loosened)", res, 2, f"no sweep record for HEAD {main_head[:12]}")
+        expect("guard-pr-ready (#2143): ...and the refusal names the worktree with a green record, the HEAD it covers and the one-command cd form", res, 2,
+               f"exists for HEAD {head_of(wt)[:12]} in the worktree {wt}", f"cd {wt} && gh pr ready 3", "ONE command")
+        expect("guard-pr-ready (#2143): ...and the form it names is ALLOWED", guard(repo, f"cd {wt} && gh pr ready 3"), 0)
+        expect("guard-pr-ready (#2143): the PR number the session typed is the one in the hint",
+               guard(repo, "gh pr ready 77"), 2, f"cd {wt} && gh pr ready 77")
+        rec_wt.unlink()
+        record_in(wt, verdict="red")
+        res = guard(repo, "gh pr ready 3")
+        check("guard-pr-ready (#2143): a RED record elsewhere is not offered as a way out", res[0] == 2 and str(wt) not in res[1], blocked_lines(res[1]))
+        record_in(wt, skips=1)
+        res = guard(repo, "gh pr ready 3")
+        check("guard-pr-ready (#2143): a record with a skip elsewhere is not offered either", res[0] == 2 and str(wt) not in res[1], blocked_lines(res[1]))
+        record_in(wt, head="e" * 40)
+        res = guard(repo, "gh pr ready 3")
+        check("guard-pr-ready (#2143): a record naming another head elsewhere is not offered", res[0] == 2 and str(wt) not in res[1], blocked_lines(res[1]))
+        record_in(wt, skips="0")
+        res = guard(repo, "gh pr ready 3")
+        check("guard-pr-ready (#2143): a record whose skips is not a number elsewhere is not offered", res[0] == 2 and str(wt) not in res[1], blocked_lines(res[1]))
+        record_in(wt)
+        spaced = add_worktree("wt 2143 spaced", "feature/2143-spaced")
+        record_in(spaced)
+        res = guard(repo, "gh pr ready 3")
+        check("guard-pr-ready (#2143): a worktree path the cd exception cannot accept is named WITHOUT the cd form",
+              f"from a session started in {spaced}" in res[1] and f"cd {spaced}" not in res[1] and f"cd {wt} && gh pr ready 3" in res[1], blocked_lines(res[1]))
 
     with scratch_dir() as td:
         plain = new_repo(td, "plain", marker=False)
