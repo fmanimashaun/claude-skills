@@ -114,3 +114,17 @@ The set (list, detail with list-detail as a layout variant, create/edit, multi-s
 | system: error | CONFIRMED | GOV.UK "There is a problem with the service pages" |
 | system: maintenance | CONFIRMED | GOV.UK "Service unavailable pages" |
 | system: no permission | INCONCLUSIVE at GOV.UK | none; Carbon's permissions empty state is C17' (cite that, not GOV.UK) |
+
+## Maintainer decisions (cited by id from the framework page's rules)
+
+These are our own choices; they have no upstream, so the authority is the maintainer's recorded decision (CLAUDE.md, *The non-negotiable gate*). Recorded by the coordinator (claude-skills-a2) on the owner's behalf on 2026-10-21, for the owner's review.
+
+| id | Decision |
+|---|---|
+| D1 | A screen's designed states live in the mock-up record, a `States:` line beside #2211's `Shell:` line (validation: #2226). |
+| D2 | Performance budgets default to the Core Web Vitals "good" thresholds (C33); a project may override them in its own config. |
+| D3 | The page-template set is list, detail (list-detail is a layout variant), create-edit, multi-step, dashboard-home, settings, search-results, sign-in and system (not-found, no-permission, error, maintenance). First-run is a state, not a template. |
+| D4 | Navigation is at most three levels deep from the shell. |
+| D5 | Modal-driven CRUD is a Hotwire rule and leaves the neutral framework page (#2223). |
+| D6 | Every UI change ships a mock-up in the app's own shell before the code (#2211); the approved shell is the project's concrete instance of layer 1. |
+| D7 | House rules that no standard states: a skip link is first in the body; one `h1` per page; a list's sort, filter and page are URL state. They are reported as house rules, never as a WCAG or NN/g failure. |
