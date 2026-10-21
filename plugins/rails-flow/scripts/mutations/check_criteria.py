@@ -193,9 +193,15 @@ GUARD = Guard(
         ),
         Mutation(
             "a raw HTML block is accepted again",
-            '            if re.match(r" {0,3}<(?:[A-Za-z][\\w-]*|/[A-Za-z]|[!?])", line):',
+            '            if re.match(r" {0,3}<(?:[A-Za-z][\\w-]*|/[A-Za-z]|[!?])", line) or (inner != line and re.match(r"<(?:[A-Za-z][\\w-]*|/[A-Za-z]|[!?])", inner)):',
             '            if False:',
             "a criterion inside a details block",
+        ),
+        Mutation(
+            "a raw HTML block inside a blockquote or list item is accepted again",
+            '            if re.match(r" {0,3}<(?:[A-Za-z][\\w-]*|/[A-Za-z]|[!?])", line) or (inner != line and re.match(r"<(?:[A-Za-z][\\w-]*|/[A-Za-z]|[!?])", inner)):',
+            '            if re.match(r" {0,3}<(?:[A-Za-z][\\w-]*|/[A-Za-z]|[!?])", line):',
+            "a details block inside a blockquote",
         ),
     ),
 )
