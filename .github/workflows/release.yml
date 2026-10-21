@@ -28,8 +28,8 @@ jobs:
   # blast radius of that is a published release.
   #
   # REUSE A PROVEN SWEEP, NEVER ASSUME ONE (#1635). A push to dev now runs only the fast sweep, and the
-  # full one (with `mutation coverage`) runs on the maintainer's machine before a promotion, where
-  # `maintainer_doctor.py --gates-only --require-slow --record-proof` posts a `full-sweep` commit status
+  # full one (with `mutation coverage`) runs here on GitHub by default (owner rule 2026-10-21; this repo is
+  # public). A local `maintainer_doctor.py --gates-only --require-slow --record-proof`, optional and meant for private repos, posts a `full-sweep` commit status
   # whose description names the TREE it ran on. This job looks for such a status on a dev commit with the
   # SAME tree as the commit being released (a tree is a hash of the content, so equal trees are the same
   # bytes even though the promotion is a new merge commit). Found: `gates` below is skipped and the log names

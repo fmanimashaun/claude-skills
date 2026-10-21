@@ -6,10 +6,10 @@ Run:  (record and record_failure are called by `maintainer_doctor.py --record-pr
       python3 scripts/sweep_proof.py check-wiring           # release.yml, gates.yml, release_local.sh agree
       python3 scripts/sweep_proof.py --selftest
 
-WHY (owner's decision, #1635). A push to `dev` runs the fast sweep on GitHub; the full sweep, with
-`mutation coverage`, runs on the maintainer's machine before a promotion. `release.yml` then has to
-know that the full sweep already passed on the content it is about to publish, and run it itself when
-it did not.
+WHY (owner's decision, #1635; amended 2026-10-21). A push to `dev` runs the fast sweep on GitHub; the full sweep, with
+`mutation coverage`, runs in `release.yml` on GitHub for this public repository. A local `--require-slow --record-proof` (for private
+repositories) records a proof instead. `release.yml` therefore has to know whether the full sweep already passed on the content it is
+about to publish, and run it itself when it did not.
 
 THE FORM: a commit status named `full-sweep` posted by `gh` on the commit the sweep ran on, whose
 description is `tree=<tree sha>`. Why not a committed file: a file stating "this tree passed" changes

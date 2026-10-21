@@ -330,6 +330,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | token contrast selftest | `repo` | `python3 scripts/check_token_contrast.py --selftest` | selftest |
 | upstream check selftest | `repo` | `python3 scripts/check_upstream_docs.py --selftest` | selftest |
 | upstream citation coverage | `repo` | `python3 scripts/check_upstream_docs.py --coverage` | live check |
+| vendor hand-off | `repo` | `python3 scripts/check_vendor_handoff.py` | live check |
+| vendor hand-off selftest | `repo` | `python3 scripts/check_vendor_handoff.py --selftest` | selftest |
 | vendored alone | `repo` | `python3 scripts/check_vendored_alone.py` | live check |
 | vendored alone selftest | `repo` | `python3 scripts/check_vendored_alone.py --selftest` | selftest |
 | verdict quotes format | `repo` | `python3 scripts/check_verdict_quotes.py --format-check` | live check |

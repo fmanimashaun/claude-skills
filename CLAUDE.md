@@ -102,8 +102,8 @@ externally verifiable claim, read for omissions, decide a no-upstream claim as o
 `gh pr merge <n> --merge`. A squash keeps dev's content and drops its ancestry, so the merge base falls
 back and the next promotion cannot merge at all (v1.83.0 → v1.84.0: six phantom conflicts). Repair, if
 it happens: merge `origin/main` into `dev`, resolve every conflict to dev's side, and assert
-`git diff --cached <dev-before> --stat` is **empty**. The full doctor's *the last promotion carried dev's
-ancestry* check asserts both halves; `--gates-only` skips it, so run the full doctor before promoting.
+`git diff --cached <dev-before> --stat` is **empty**. The plain doctor's *the last promotion carried dev's
+ancestry* check asserts both halves; `--gates-only` skips it, so run the plain doctor (no flags) for that check before promoting.
 
 ### A promotion is two steps, and only the second publishes
 
@@ -123,9 +123,9 @@ a promotion must carry no `Unreleased`, and a second arm would leave the first h
 
 - **It runs `--gates-only`, not `--gates`**: content gates only; the machine diagnostics are about a
   maintainer's clone and would teach people to ignore a red build.
-- **A pull request and a push to `dev` run `--fast`; the full sweep runs before a promotion, on your
-  machine.** `--fast` skips exactly `PR_SKIPPED_GATES` (`mutation coverage`, `guard-bash cases (full)`), reported as `skip` (#866).
-  Before promoting run `maintainer_doctor.py --gates-only --require-slow --record-proof`: it posts a
+- **A pull request and a push to `dev` run `--fast`; the full sweep runs on GitHub at the promotion.** This repo is
+  public, so `release.yml` runs it free; never tie up the shared machine for it (owner rule, 2026-10-21). `--fast` skips exactly `PR_SKIPPED_GATES` (`mutation coverage`, `guard-bash cases (full)`), reported as `skip` (#866).
+  A local `maintainer_doctor.py --gates-only --require-slow --record-proof` is for PRIVATE repos only: it posts a
   `full-sweep` status for the tree; `release.yml` reuses it for an identical tree, else runs all (#1635).
 - **A gate over its budget is FAIL by name**, its group killed. Guards live one per file, from **two
   roots**: `scripts/mutations/` (maintainer-only) and `plugins/<name>/scripts/mutations/` (ships, #1109). Before pushing a change to a guard, run it on Linux: `scripts/linux_check.sh <guard>` (docker; fails closed without it, #1738).
