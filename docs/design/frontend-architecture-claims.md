@@ -128,3 +128,38 @@ These are our own choices; they have no upstream, so the authority is the mainta
 | D5 | Modal-driven CRUD is a Hotwire rule and leaves the neutral framework page (#2223). |
 | D6 | Every UI change ships a mock-up in the app's own shell before the code (#2211); the approved shell is the project's concrete instance of layer 1. |
 | D7 | House rules that no standard states: a skip link is first in the body; one `h1` per page; a list's sort, filter and page are URL state. They are reported as house rules, never as a WCAG or NN/g failure. |
+
+## GOV.UK multi-step, confirmation and task-list rules (doctrine-verifier, 2026-10-21)
+
+The coordinator asked that multi-step, confirmation and search-results patterns come from GOV.UK. A verifier fetched `question-pages`, `check-answers`, `confirmation-pages`, `complete-multiple-tasks` and the task-list component. Claim id = 33 + the verifier's rule number. Rules whose quote was a fetch-tool paraphrase were reworded to the quoted part; the green confirmation panel's contrast (G15), the summary-list and summary-card use (G14), hint-text and whole-row-link details (G28-G30) and task-list error status text (G26) are visual or component detail and are not carried as rules.
+
+**Search results: no GOV.UK source.** The Design System lists no search or search-results pattern (`/components/` and `/patterns/` fetched 2026-10-21). Search results stay a template we name (D3) with no anatomy and no rule until a source is verified; the Scottish Government design system has a search-results pattern (unverified, not GOV.UK).
+
+| # | Verdict | Citation | Use as |
+|---|---|---|---|
+| C34 | C | design-system.service.gov.uk/patterns/question-pages | Ask one question per page. |
+| C35 | C | design-system.service.gov.uk/patterns/question-pages | If several related things must be asked on one page, the heading is a statement, not a question. |
+| C36 | C | design-system.service.gov.uk/patterns/question-pages | Always include a back link at the top of a question page. |
+| C37 | C | design-system.service.gov.uk/patterns/question-pages | The back link takes the user to the previous page they were on. |
+| C38 | C | design-system.service.gov.uk/patterns/question-pages | Do not use the same page heading across pages; each heading is specific to its question. |
+| C39 | C | design-system.service.gov.uk/patterns/question-pages | The button is labelled "Continue", not "Next". |
+| C41 | C | design-system.service.gov.uk/patterns/check-answers | Provide a "Change" link next to each section of the answers. |
+| C42 | C | design-system.service.gov.uk/patterns/check-answers | Change links carry hidden text that says what each one changes. |
+| C43 | C | design-system.service.gov.uk/patterns/check-answers | Show a single check-answers page immediately before the confirmation screen. |
+| C44 | C | design-system.service.gov.uk/patterns/check-answers | Make it clear the transaction is not complete until the user confirms their information is correct. |
+| C45 | C | design-system.service.gov.uk/patterns/check-answers | After a change, Continue returns the user to the check-answers page. |
+| C46 | C | design-system.service.gov.uk/patterns/check-answers | Put a statement of what the user is confirming above the submit button. |
+| C49 | C | design-system.service.gov.uk/patterns/confirmation-pages | Show a reference number, if there is one. |
+| C50 | C | design-system.service.gov.uk/patterns/confirmation-pages | Say what happens next and when. |
+| C52 | C | design-system.service.gov.uk/patterns/complete-multiple-tasks | Use a complete-multiple-tasks page only for longer transactions involving multiple tasks. |
+| C53 | C | design-system.service.gov.uk/patterns/complete-multiple-tasks | Use one task list per group of tasks on the page. |
+| C54 | C | design-system.service.gov.uk/patterns/complete-multiple-tasks | Task names start with a verb. |
+| C55 | C | design-system.service.gov.uk/patterns/complete-multiple-tasks | Make it clear which tasks are completed and which still need attention. |
+| C56 | C | design-system.service.gov.uk/patterns/complete-multiple-tasks | A task that cannot be started yet is not linked. |
+| C57 | C | design-system.service.gov.uk/patterns/complete-multiple-tasks | Where possible, allow users to complete tasks in any order. |
+| C58 | C | design-system.service.gov.uk/patterns/complete-multiple-tasks | Always allow users to go back into a task to change an answer. |
+| C60 | C | design-system.service.gov.uk/components/task-list | Users can only move on from the task list when all tasks are Completed. |
+| C64 | C | design-system.service.gov.uk/components/task-list | Do not use the task list for a long service that must be done in a specific order. |
+| C65 | C | design-system.service.gov.uk/components/task-list | Do not use the task list to show users their answers. |
+| C40 | I | design-system.service.gov.uk/patterns/question-pages | an error summary on the question page: the page only links to the separate recover-from-validation-errors pattern; not verified here |
+| C51 | I | design-system.service.gov.uk/patterns/confirmation-pages | the order of the confirmation page's parts, and the reference number inside the panel: examples, not mandates |

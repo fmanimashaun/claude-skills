@@ -57,7 +57,8 @@ labelled so:
 | dashboard-home | Salesforce Lightning *Home Page* and *App Page* |
 | sign-in | GOV.UK: *Create accounts*, *Start using a service* |
 | system: not found, error, maintenance | GOV.UK: *Page not found pages*, *There is a problem with the service pages*, *Service unavailable pages* |
-| list, create-edit, settings, search-results, system: no permission | ours (D3) |
+| list, create-edit, settings, system: no permission | ours (D3) |
+| search-results | ours (D3); the GOV.UK Design System has no search or search-results pattern (checked 2026-10-21), so it has no anatomy and no rule until a source is verified |
 
 `page-anatomies.md` already holds the detailed anatomy of list-detail, detail, the data table,
 settings, the dashboard, errors and sign-in; this page names the set and does not repeat them.
@@ -123,6 +124,30 @@ plugin, since escaping, content-security policy and action authorization are sta
 | A26 | cross-cutting | No link points at nothing and no asset goes missing. | check: plugins/qa-flow/scripts/link_audit.py | ours |
 | A27 | cross-cutting | Performance budgets default to LCP at most 2.5 s, INP at most 200 ms and CLS at most 0.1 at the 75th percentile. | claim: C33 | web.dev *Web Vitals* |
 | A28 | cross-cutting | Error messages say what went wrong and how to fix it; button labels lead with a verb. | claim: C29 | GOV.UK *Validation*; Polaris *Error messages* |
+| A29 | template | A multi-step flow asks one question per page. | claim: C34 | GOV.UK *Question pages* |
+| A30 | template | A page that asks several related things has a statement as its heading. | claim: C35 | GOV.UK *Question pages* |
+| A31 | template | Every question page has a back link at the top. | claim: C36 | GOV.UK *Question pages* |
+| A32 | template | The back link goes to the previous page the user was on. | claim: C37 | GOV.UK *Question pages* |
+| A33 | template | No two pages in a flow share a heading. | claim: C38 | GOV.UK *Question pages* |
+| A34 | template | The forward button on a question page is labelled "Continue", not "Next". | claim: C39 | GOV.UK *Question pages* |
+| A35 | template | The check-answers page offers a Change link beside each section. | claim: C41 | GOV.UK *Check answers* |
+| A36 | template | Each Change link carries hidden text naming what it changes. | claim: C42 | GOV.UK *Check answers* |
+| A37 | template | One check-answers page comes immediately before the confirmation. | claim: C43 | GOV.UK *Check answers* |
+| A38 | template | The check-answers page says the transaction is not complete until the user confirms. | claim: C44 | GOV.UK *Check answers* |
+| A39 | template | After a change, Continue returns to the check-answers page. | claim: C45 | GOV.UK *Check answers* |
+| A40 | template | A statement of what the user is confirming sits above the submit button. | claim: C46 | GOV.UK *Check answers* |
+| A41 | template | The confirmation shows a reference number when there is one. | claim: C49 | GOV.UK *Confirmation pages* |
+| A42 | template | The confirmation says what happens next and when. | claim: C50 | GOV.UK *Confirmation pages* |
+| A43 | template | A task list is used only for a longer transaction of several tasks. | claim: C52 | GOV.UK *Complete multiple tasks* |
+| A44 | template | A task page has one task list per group of tasks. | claim: C53 | GOV.UK *Complete multiple tasks* |
+| A45 | template | Task names start with a verb. | claim: C54 | GOV.UK *Complete multiple tasks* |
+| A46 | template | Every task shows its status. | claim: C55 | GOV.UK *Complete multiple tasks* |
+| A47 | template | A task that cannot be started yet is not a link. | claim: C56 | GOV.UK *Complete multiple tasks* |
+| A48 | template | Tasks can be completed in any order where possible. | claim: C57 | GOV.UK *Complete multiple tasks* |
+| A49 | template | A user can always go back into a task to change an answer. | claim: C58 | GOV.UK *Complete multiple tasks* |
+| A50 | template | The user moves on from the task list only when every task is Completed. | claim: C60 | GOV.UK *Task list* |
+| A51 | template | A task list is not used for a flow that must be done in a fixed order. | claim: C64 | GOV.UK *Task list* |
+| A52 | template | A task list is never the way answers are shown; a description list is. | claim: C65 | GOV.UK *Task list* |
 
 ## Arrives with its enforcement
 
