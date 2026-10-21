@@ -58,7 +58,7 @@ def derive(page_text: str) -> list[dict]:
 
 
 def render(rules: list[dict]) -> str:
-    return json.dumps({"derived_from": car.PAGE, "rules": rules}, indent=1, ensure_ascii=False) + "\n"
+    return json.dumps({"derived_from": "rails-stack: skills/design-system/references/architecture.md", "rules": rules}, indent=1, ensure_ascii=False) + "\n"
 
 
 def current() -> str:

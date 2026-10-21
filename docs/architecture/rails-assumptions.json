@@ -43,10 +43,10 @@
     18,
     26,
     43,
-    56,
-    57,
-    70,
-    104
+    60,
+    61,
+    75,
+    109
    ],
    "move": ""
   },
@@ -497,6 +497,25 @@
     45,
     46,
     86
+   ],
+   "move": ""
+  },
+  "plugins/design-flow/reference/architecture-rules.json": {
+   "assumes": "derived data: the rule texts and sources name the Rails adapter's checks (the viewcomponent-erb paths) because that is where three of the framework's rules are enforced today",
+   "categories": {
+    "concept": 3
+   },
+   "decision": "neutral",
+   "how": "nothing to change: the registry is the framework page's table, and the paths move with the adapter when another stack's adapter exists",
+   "ids": {
+    "erb": 3
+   },
+   "invokes": [],
+   "kind": "reference",
+   "lines": [
+    99,
+    108,
+    117
    ],
    "move": ""
   },

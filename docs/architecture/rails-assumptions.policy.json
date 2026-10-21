@@ -30,6 +30,17 @@
  "rules": [
   {
    "match": [
+    "plugins/design-flow/reference/architecture-rules.json"
+   ],
+   "decision": "neutral",
+   "assumes": "derived data: the rule texts and sources name the Rails adapter's checks (the viewcomponent-erb paths) because that is where three of the framework's rules are enforced today",
+   "how": "nothing to change: the registry is the framework page's table, and the paths move with the adapter when another stack's adapter exists",
+   "lines": {
+    "plugins/design-flow/reference/architecture-rules.json": 3
+   }
+  },
+  {
+   "match": [
     "plugins/rails-flow/agents/rails-developer.md",
     "plugins/rails-flow/agents/migration-writer.md",
     "plugins/rails-flow/agents/test-runner.md",

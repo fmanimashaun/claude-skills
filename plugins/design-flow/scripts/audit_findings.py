@@ -4,7 +4,8 @@ authority is COMPUTED from that rule's basis, never written by whoever found it 
 
 Run:  python3 audit_findings.py check   findings.json [--root DIR]
       python3 audit_findings.py report  findings.json [--root DIR] [--out report.md]
-      python3 audit_findings.py from-judge NAME judge.json [--screens N]   # reuse a qa-flow judge's output
+      python3 audit_findings.py from-judge NAME judge.json --screens N      # reuse a qa-flow judge's output
+      python3 audit_findings.py merge a.json b.json ...                     # one document, every finding kept
       python3 audit_findings.py --selftest
 
 WHY THIS EXISTS. The owner's rule is that a rule not enforced is useless, and the framework's rules
@@ -152,6 +153,15 @@ def from_judge(name: str, data: object, screens: int) -> dict:
     return {"audit": f"{name} findings against {rule}", "screens_examined": screens, "findings": findings}
 
 
+def merge(docs: list[dict]) -> dict:
+    """One findings document from several: every finding kept, the larger screen count."""
+    if not docs:
+        raise Unusable("nothing to merge")
+    return {"audit": "; ".join(str(d.get("audit", "")) for d in docs if d.get("audit")) or "merged audit",
+            "screens_examined": max(int(d.get("screens_examined") or 0) for d in docs),
+            "findings": [f for d in docs for f in d.get("findings", [])]}
+
+
 def selftest() -> int:
     registry = {
         "A1": {"id": "A1", "authority": "standard", "basis": "claim", "ref": "C2", "source": "HTML spec", "rule": "one main"},
@@ -205,6 +215,12 @@ def selftest() -> int:
             ("the report labels a standard with its source", "standard: HTML spec" in report_md(d1, registry)),
             ("a clean report still says how many screens it examined", "Screens examined: 3" in report_md({"audit": "t", "screens_examined": 3, "findings": []}, registry)),
         ]
+        m = merge([{"audit": "a", "screens_examined": 2, "findings": [1, 2]}, {"audit": "b", "screens_examined": 5, "findings": [3]}])
+        cases += [
+            ("a merge keeps every finding", m["findings"] == [1, 2, 3]),
+            ("a merge takes the larger screen count", m["screens_examined"] == 5),
+            ("a merge of nothing is unusable", _raises(lambda: merge([]))),
+        ]
         fj = from_judge("layout_fit", {"findings": [{"rule": "clipped", "ref": "x", "detail": "hidden", "count": 4, "examples": ["/p"]}]}, 5)
         cases += [
             ("a judge's finding maps to its framework rule", fj["findings"][0]["rule"] == "A23" and fj["findings"][0]["screen"] == "/p"),
@@ -242,6 +258,8 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--registry", default=str(REGISTRY))
         if name == "report":
             p.add_argument("--out")
+    p = sub.add_parser("merge")
+    p.add_argument("docs", nargs="+")
     p = sub.add_parser("from-judge")
     p.add_argument("name")
     p.add_argument("judge_json")
@@ -250,6 +268,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if a.selftest:
             return selftest()
+        if a.cmd == "merge":
+            print(json.dumps(merge([json.loads(Path(d).read_text(encoding="utf-8")) for d in a.docs]), indent=1))
+            return 0
         if a.cmd == "from-judge":
             print(json.dumps(from_judge(a.name, json.loads(Path(a.judge_json).read_text()), a.screens), indent=1))
             return 0

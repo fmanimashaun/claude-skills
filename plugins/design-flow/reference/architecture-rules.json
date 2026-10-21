@@ -1,5 +1,5 @@
 {
- "derived_from": "plugins/rails-stack/skills/design-system/references/architecture.md",
+ "derived_from": "rails-stack: skills/design-system/references/architecture.md",
  "rules": [
   {
    "id": "A1",

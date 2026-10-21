@@ -236,6 +236,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1779. The library moved to docs/design/assets/, and a project that still has docs/assets/ must be stopped, not read as empty.
     ("design-flow asset home selftest",
      ("python3", "plugins/design-flow/scripts/asset_home.py", "--selftest")),
+    # #2221. The interface audit's findings contract (a finding's authority is derived from its
+    # rule, never written) and the judge that turns collector snapshots into findings.
+    ("design-flow audit findings selftest",
+     ("python3", "plugins/design-flow/scripts/audit_findings.py", "--selftest")),
+    ("design-flow interface audit selftest",
+     ("python3", "plugins/design-flow/scripts/interface_audit.py", "--selftest")),
     # #625/#628/#629. Three modules encode one layout decision and `asset_plan.py` holds its half as
     # literals (it is deliberately standalone). Move one and not the others and `--scaffold` creates
     # a folder nothing writes to while `--run` writes into one the scaffold never made — both halves

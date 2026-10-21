@@ -270,6 +270,18 @@
    "class": "neutral",
    "issue": null,
    "nextjs_lines": 0,
+   "path": "plugins/design-flow/scripts/audit_findings.py",
+   "plugin": "design-flow",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
    "path": "plugins/design-flow/scripts/brand_pack_lint.py",
    "plugin": "design-flow",
    "rails_lines": 0,
@@ -565,6 +577,18 @@
    "seam": "",
    "type": "test",
    "via": "tests asset_plan.py"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/design-flow/scripts/mutations/audit_findings.py",
+   "plugin": "design-flow",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests audit_findings.py"
   },
   {
    "class": "neutral",
@@ -983,6 +1007,18 @@
    "rails_lines": 18,
    "registered": [],
    "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "type": "support",
+   "via": "decision"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/design-flow/reference/architecture-rules.json",
+   "plugin": "design-flow",
+   "rails_lines": 3,
+   "registered": [],
+   "seam": "",
    "type": "support",
    "via": "decision"
   },

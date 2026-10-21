@@ -51,6 +51,10 @@ second `setup` laid over the first's managed block — two packs' roles in one b
   native repos; never modifies them.
 - `/design-flow:critique [path]` — the design *lens* where `audit` is the gate: is this surface
   considered, or mechanically assembled? Advisory by design; see `references/art-direction.md`.
+- `/design-flow:interface-audit <app url>` — audit a **running** app's screens against the interface
+  architecture framework (`design-system/references/architecture.md`). Every finding names its rule
+  and whether it is a standard or a house rule (computed from the rule's basis, never written by the
+  auditor); ranked by script; improvements proposed as a mock-up first. Reports, never blocks.
 - `/design-flow:canvas <brief>` — draft a design as a Claude Design canvas from the system's tokens
   and catalog, for visual refinement before porting.
 - `/design-flow:port <artboard>` — port a Claude Design artboard to ERB, ViewComponents,
@@ -67,6 +71,7 @@ second `setup` laid over the first's managed block — two packs' roles in one b
 - **design-auditor** — the consistency gate (design-system-specific; complements rails-flow's).
 - **brand-guardian** — enforces token/brand/logo/icon usage and the brand-pack model.
 - **design-critic** — the advisory lens behind `/design-flow:critique`; never blocks.
+- **interface-auditor** — measures a running app with a browser and lets `interface_audit.py` and `audit_findings.py` decide; behind `/design-flow:interface-audit`.
 - **rails-ui-porter** — ports a Claude Design artboard to the Rails stack behind `/design-flow:port`.
 
 ## Checks

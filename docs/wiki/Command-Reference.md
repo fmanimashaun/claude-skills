@@ -93,6 +93,7 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 - `/design-flow:canvas` — Compose a Claude Design prompt for one surface that carries this project's own tokens, component catalog and band sequence — so the canvas comes back speaking the system and the port is a reconciliation rather than a translation.
 - `/design-flow:compose` — Generate the composition brief for one surface.
+- `/design-flow:interface-audit` — Audit a running app's screens against the interface architecture framework (shell, navigation, state contract, cross-cutting contracts).
 - `/design-flow:port` — Port a Claude Design output — JSX/TSX, or a `<x-dc>` canvas export — into this Rails 8 + Hotwire app, faithful to the design and aligned to the design system by construction.
 
 
@@ -162,4 +163,4 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 ---
 
-**55 commands** across 4 plugins.
+**56 commands** across 4 plugins.

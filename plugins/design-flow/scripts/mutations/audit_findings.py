@@ -61,5 +61,11 @@ GUARD = Guard(
             '"layout_fit": "A24"',
             "a judge's finding maps to its framework rule",
         ),
+        Mutation(
+            "a merge drops all but the first document's findings",
+            '"findings": [f for d in docs for f in d.get("findings", [])]}',
+            '"findings": list(docs[0].get("findings", []))}',
+            "a merge keeps every finding",
+        ),
     ),
 )
