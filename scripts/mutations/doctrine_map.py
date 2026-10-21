@@ -121,5 +121,17 @@ GUARD = Guard(
             "            elif False:",
             "a source the row does not cite in refs fires",
         ),
+        Mutation(
+            "a base that is HEAD is compared with HEAD itself, so a list grown in HEAD's commit agrees with itself",
+            "    if point == head:\n        point = run(\"rev-parse\", \"HEAD^1\")",
+            "    if False:\n        point = run(\"rev-parse\", \"HEAD^1\")",
+            "is measured from HEAD's parent, never HEAD",
+        ),
+        Mutation(
+            "a base row whose kind is positional is not read, so its entry is falsely refused",
+            '                kw = dict(zip(("claim", "stated_in", "anchor", "kind"), call.args))',
+            "                kw = {}",
+            "a base row whose kind is positional is read",
+        ),
     ),
 )
