@@ -91,42 +91,7 @@
    ],
    "move": ""
   },
-  "plugins/design-flow/agents/design-porter.md": {
-   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
-   "categories": {
-    "concept": 5,
-    "gem": 2,
-    "hotwire": 9,
-    "tool": 1
-   },
-   "decision": "rails-stack",
-   "how": "moves with its checks.json row",
-   "ids": {
-    "erb": 2,
-    "gem": 2,
-    "hotwire": 9,
-    "rails-idiom": 2,
-    "rails-word": 1,
-    "ruby": 1
-   },
-   "invokes": [],
-   "kind": "agent",
-   "lines": [
-    5,
-    7,
-    8,
-    27,
-    41,
-    42,
-    43,
-    57,
-    73,
-    75,
-    76
-   ],
-   "move": "design-flow-erb"
-  },
-  "plugins/design-flow/agents/ui-composer.md": {
+  "plugins/design-flow/agents/rails-ui-composer.md": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
     "concept": 4,
@@ -135,7 +100,7 @@
     "tool": 1
    },
    "decision": "rails-stack",
-   "how": "moves with its checks.json row",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
     "app-layers": 1,
     "erb": 2,
@@ -154,38 +119,83 @@
    ],
    "move": "design-flow-erb"
   },
+  "plugins/design-flow/agents/rails-ui-porter.md": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "categories": {
+    "concept": 6,
+    "gem": 2,
+    "hotwire": 9,
+    "tool": 1
+   },
+   "decision": "rails-stack",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
+   "ids": {
+    "erb": 3,
+    "gem": 2,
+    "hotwire": 9,
+    "rails-idiom": 2,
+    "rails-word": 1,
+    "ruby": 1
+   },
+   "invokes": [],
+   "kind": "agent",
+   "lines": [
+    5,
+    7,
+    8,
+    27,
+    31,
+    41,
+    42,
+    43,
+    57,
+    73,
+    75,
+    76
+   ],
+   "move": "design-flow-erb"
+  },
   "plugins/design-flow/checks.json": {
    "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
    "categories": {
-    "concept": 1,
+    "concept": 9,
     "path": 9
    },
    "decision": "reword",
    "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
    "ids": {
     "app-layers": 9,
+    "erb": 8,
     "ruby-file": 1
    },
    "invokes": [],
    "kind": "data",
    "lines": [
     10,
+    21,
     24,
+    35,
     38,
     46,
+    49,
     52,
     53,
+    64,
     67,
+    78,
     81,
+    92,
     96,
-    110
+    107,
+    110,
+    121
    ],
    "move": ""
   },
   "plugins/design-flow/commands/audit.md": {
    "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
    "categories": {
-    "concept": 5,
+    "concept": 7,
     "hotwire": 1,
     "path": 2,
     "tool": 2
@@ -195,7 +205,7 @@
    "ids": {
     "app-layers": 2,
     "binstub": 1,
-    "erb": 3,
+    "erb": 5,
     "hotwire": 1,
     "rails-word": 1,
     "ruby": 1,
@@ -206,6 +216,7 @@
    ],
    "kind": "command",
    "lines": [
+    36,
     57,
     76,
     93,
@@ -213,7 +224,8 @@
     163,
     171,
     276,
-    314
+    314,
+    317
    ],
    "move": ""
   },
@@ -291,12 +303,13 @@
   "plugins/design-flow/commands/port.md": {
    "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
    "categories": {
-    "concept": 2,
+    "concept": 4,
     "hotwire": 3
    },
    "decision": "reword",
    "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
    "ids": {
+    "erb": 2,
     "hotwire": 3,
     "rails-idiom": 1,
     "rails-word": 1
@@ -306,8 +319,10 @@
    "lines": [
     2,
     11,
+    44,
     55,
-    56
+    56,
+    76
    ],
    "move": ""
   },
@@ -386,7 +401,7 @@
   "plugins/design-flow/commands/variants.md": {
    "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
    "categories": {
-    "concept": 19,
+    "concept": 21,
     "hotwire": 3,
     "path": 11,
     "tool": 2
@@ -395,7 +410,7 @@
    "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
    "ids": {
     "app-layers": 9,
-    "erb": 13,
+    "erb": 15,
     "hotwire": 3,
     "rails-word": 2,
     "routes": 2,
@@ -429,8 +444,10 @@
     155,
     156,
     162,
+    182,
     210,
     211,
+    215,
     247
    ],
    "move": ""
@@ -483,21 +500,124 @@
    ],
    "move": ""
   },
-  "plugins/design-flow/scripts/canvas_manifest.py": {
+  "plugins/design-flow/scripts/compose_brief.py": {
+   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
+   "categories": {
+    "concept": 2
+   },
+   "decision": "reword",
+   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
+   "ids": {
+    "erb": 2
+   },
+   "invokes": [],
+   "kind": "script",
+   "lines": [
+    142,
+    480
+   ],
+   "move": ""
+  },
+  "plugins/design-flow/scripts/design_prompt.py": {
+   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
+   "categories": {
+    "concept": 1,
+    "hotwire": 1,
+    "path": 2
+   },
+   "decision": "reword",
+   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
+   "ids": {
+    "app-layers": 2,
+    "hotwire": 1,
+    "rails-word": 1
+   },
+   "invokes": [],
+   "kind": "script",
+   "lines": [
+    5,
+    9,
+    63
+   ],
+   "move": ""
+  },
+  "plugins/design-flow/scripts/llm_tell_detector.py": {
+   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
+   "categories": {
+    "concept": 6,
+    "tool": 1
+   },
+   "decision": "reword",
+   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
+   "ids": {
+    "erb": 5,
+    "ruby": 1,
+    "ruby-file": 1
+   },
+   "invokes": [],
+   "kind": "script",
+   "lines": [
+    447,
+    477,
+    578,
+    775,
+    777
+   ],
+   "move": ""
+  },
+  "plugins/design-flow/scripts/prompt_library.py": {
+   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
+   "categories": {
+    "concept": 1,
+    "path": 1
+   },
+   "decision": "reword",
+   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
+   "ids": {
+    "app-layers": 1,
+    "erb": 1
+   },
+   "invokes": [],
+   "kind": "script",
+   "lines": [
+    574
+   ],
+   "move": ""
+  },
+  "plugins/design-flow/ui/viewcomponent-erb/adapter.json": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "categories": {
+    "concept": 3
+   },
+   "decision": "rails-stack",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
+   "ids": {
+    "erb": 2,
+    "rails-word": 1
+   },
+   "invokes": [],
+   "kind": "data",
+   "lines": [
+    2,
+    4
+   ],
+   "move": "design-flow-erb"
+  },
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/canvas_manifest.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
     "concept": 7,
     "path": 5
    },
    "decision": "rails-stack",
-   "how": "moves with its checks.json row",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
     "app-layers": 5,
     "erb": 6,
     "ruby-file": 1
    },
    "invokes": [],
-   "kind": "script",
+   "kind": "doc",
    "lines": [
     240,
     250,
@@ -509,7 +629,7 @@
    ],
    "move": "design-flow-erb"
   },
-  "plugins/design-flow/scripts/check_component_contract.py": {
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/check_component_contract.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
     "concept": 51,
@@ -518,7 +638,7 @@
     "tool": 3
    },
    "decision": "rails-stack",
-   "how": "moves with its checks.json row",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
     "app-layers": 31,
     "erb": 32,
@@ -527,7 +647,7 @@
     "ruby-file": 19
    },
    "invokes": [],
-   "kind": "script",
+   "kind": "doc",
    "lines": [
     4,
     28,
@@ -592,21 +712,21 @@
    ],
    "move": "design-flow-erb"
   },
-  "plugins/design-flow/scripts/check_layout_composition.py": {
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/check_layout_composition.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
     "concept": 37,
     "path": 25
    },
    "decision": "rails-stack",
-   "how": "moves with its checks.json row",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
     "app-layers": 25,
     "erb": 35,
     "rails-word": 2
    },
    "invokes": [],
-   "kind": "script",
+   "kind": "doc",
    "lines": [
     4,
     44,
@@ -656,7 +776,7 @@
    ],
    "move": "design-flow-erb"
   },
-  "plugins/design-flow/scripts/check_modal_fit.py": {
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/check_modal_fit.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
     "concept": 26,
@@ -664,7 +784,7 @@
     "tool": 3
    },
    "decision": "rails-stack",
-   "how": "moves with its checks.json row",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
     "app-layers": 7,
     "erb": 15,
@@ -672,7 +792,7 @@
     "ruby-file": 11
    },
    "invokes": [],
-   "kind": "script",
+   "kind": "doc",
    "lines": [
     4,
     35,
@@ -705,7 +825,7 @@
    ],
    "move": "design-flow-erb"
   },
-  "plugins/design-flow/scripts/check_surface_layout.py": {
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/check_surface_layout.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
     "concept": 47,
@@ -713,7 +833,7 @@
     "tool": 6
    },
    "decision": "rails-stack",
-   "how": "moves with its checks.json row",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
     "app-layers": 22,
     "erb": 30,
@@ -721,7 +841,7 @@
     "ruby-file": 17
    },
    "invokes": [],
-   "kind": "script",
+   "kind": "doc",
    "lines": [
     4,
     19,
@@ -778,7 +898,7 @@
    ],
    "move": "design-flow-erb"
   },
-  "plugins/design-flow/scripts/check_table_layout.py": {
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/check_table_layout.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
     "concept": 20,
@@ -786,7 +906,7 @@
     "path": 24
    },
    "decision": "rails-stack",
-   "how": "moves with its checks.json row",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
     "app-layers": 24,
     "erb": 17,
@@ -795,7 +915,7 @@
     "ruby-file": 1
    },
    "invokes": [],
-   "kind": "script",
+   "kind": "doc",
    "lines": [
     4,
     27,
@@ -841,14 +961,14 @@
    ],
    "move": "design-flow-erb"
   },
-  "plugins/design-flow/scripts/check_token_drift.py": {
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/check_token_drift.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
     "concept": 9,
     "path": 6
    },
    "decision": "rails-stack",
-   "how": "moves with its checks.json row",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
     "app-layers": 2,
     "rails-config": 4,
@@ -856,48 +976,30 @@
     "ruby-file": 7
    },
    "invokes": [],
-   "kind": "script",
+   "kind": "doc",
    "lines": [
     4,
-    65,
-    72,
-    114,
-    373,
-    385,
-    386,
-    388,
-    393,
-    532,
-    534
+    69,
+    76,
+    118,
+    377,
+    389,
+    390,
+    392,
+    397,
+    536,
+    538
    ],
    "move": "design-flow-erb"
   },
-  "plugins/design-flow/scripts/compose_brief.py": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "categories": {
-    "concept": 2
-   },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
-   "ids": {
-    "erb": 2
-   },
-   "invokes": [],
-   "kind": "script",
-   "lines": [
-    142,
-    480
-   ],
-   "move": ""
-  },
-  "plugins/design-flow/scripts/content_floors.py": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/content_floors.py": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
     "concept": 5,
     "path": 4
    },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
+   "decision": "rails-stack",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
     "app-layers": 4,
     "erb": 3,
@@ -905,7 +1007,7 @@
     "ruby-file": 1
    },
    "invokes": [],
-   "kind": "script",
+   "kind": "doc",
    "lines": [
     47,
     216,
@@ -913,71 +1015,47 @@
     218,
     270
    ],
-   "move": ""
+   "move": "design-flow-erb"
   },
-  "plugins/design-flow/scripts/design_prompt.py": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "categories": {
-    "concept": 1,
-    "hotwire": 1,
-    "path": 2
-   },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
-   "ids": {
-    "app-layers": 2,
-    "hotwire": 1,
-    "rails-word": 1
-   },
-   "invokes": [],
-   "kind": "script",
-   "lines": [
-    5,
-    9,
-    63
-   ],
-   "move": ""
-  },
-  "plugins/design-flow/scripts/llm_tell_detector.py": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "categories": {
-    "concept": 6,
-    "tool": 1
-   },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
-   "ids": {
-    "erb": 5,
-    "ruby": 1,
-    "ruby-file": 1
-   },
-   "invokes": [],
-   "kind": "script",
-   "lines": [
-    447,
-    477,
-    578,
-    775,
-    777
-   ],
-   "move": ""
-  },
-  "plugins/design-flow/scripts/mutations/check_component_contract.py": {
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/mutations/canvas_manifest.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 4,
-    "path": 3
+    "concept": 2
    },
    "decision": "rails-stack",
-   "followed": "plugins/design-flow/scripts/check_component_contract.py",
-   "how": "moves with its checks.json row",
+   "followed": "plugins/design-flow/ui/viewcomponent-erb/scripts/canvas_manifest.py",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
-    "app-layers": 3,
-    "erb": 4
+    "erb": 2
    },
    "invokes": [],
    "kind": "mutation",
    "lines": [
+    7,
+    8
+   ],
+   "move": "design-flow-erb"
+  },
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/mutations/check_component_contract.py": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "categories": {
+    "concept": 8,
+    "path": 3
+   },
+   "decision": "rails-stack",
+   "followed": "plugins/design-flow/ui/viewcomponent-erb/scripts/check_component_contract.py",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
+   "ids": {
+    "app-layers": 3,
+    "erb": 8
+   },
+   "invokes": [],
+   "kind": "mutation",
+   "lines": [
+    6,
+    7,
+    10,
+    11,
     40,
     43,
     44,
@@ -986,23 +1064,47 @@
    ],
    "move": "design-flow-erb"
   },
-  "plugins/design-flow/scripts/mutations/check_modal_fit.py": {
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/mutations/check_layout_composition.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 4,
+    "concept": 4
+   },
+   "decision": "rails-stack",
+   "followed": "plugins/design-flow/ui/viewcomponent-erb/scripts/check_layout_composition.py",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
+   "ids": {
+    "erb": 4
+   },
+   "invokes": [],
+   "kind": "mutation",
+   "lines": [
+    6,
+    7,
+    10,
+    11
+   ],
+   "move": "design-flow-erb"
+  },
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/mutations/check_modal_fit.py": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "categories": {
+    "concept": 7,
     "tool": 1
    },
    "decision": "rails-stack",
-   "followed": "plugins/design-flow/scripts/check_modal_fit.py",
-   "how": "moves with its checks.json row",
+   "followed": "plugins/design-flow/ui/viewcomponent-erb/scripts/check_modal_fit.py",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
-    "erb": 1,
+    "erb": 4,
     "ruby": 1,
     "ruby-file": 3
    },
    "invokes": [],
    "kind": "mutation",
    "lines": [
+    10,
+    11,
+    12,
     16,
     62,
     97,
@@ -1011,23 +1113,27 @@
    ],
    "move": "design-flow-erb"
   },
-  "plugins/design-flow/scripts/mutations/check_surface_layout.py": {
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/mutations/check_surface_layout.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 4,
+    "concept": 8,
     "tool": 4
    },
    "decision": "rails-stack",
-   "followed": "plugins/design-flow/scripts/check_surface_layout.py",
-   "how": "moves with its checks.json row",
+   "followed": "plugins/design-flow/ui/viewcomponent-erb/scripts/check_surface_layout.py",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
-    "erb": 2,
+    "erb": 6,
     "ruby": 4,
     "ruby-file": 2
    },
    "invokes": [],
    "kind": "mutation",
    "lines": [
+    6,
+    7,
+    10,
+    11,
     49,
     51,
     80,
@@ -1038,40 +1144,104 @@
    ],
    "move": "design-flow-erb"
   },
-  "plugins/design-flow/scripts/mutations/setup_doctrine_crosscheck.py": {
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/mutations/check_table_layout.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
+    "concept": 3
+   },
+   "decision": "rails-stack",
+   "followed": "plugins/design-flow/ui/viewcomponent-erb/scripts/check_table_layout.py",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
+   "ids": {
+    "erb": 3
+   },
+   "invokes": [],
+   "kind": "mutation",
+   "lines": [
+    10,
+    11,
+    12
+   ],
+   "move": "design-flow-erb"
+  },
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/mutations/content_floors.py": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "categories": {
+    "concept": 2
+   },
+   "decision": "rails-stack",
+   "followed": "plugins/design-flow/ui/viewcomponent-erb/scripts/content_floors.py",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
+   "ids": {
+    "erb": 2
+   },
+   "invokes": [],
+   "kind": "mutation",
+   "lines": [
+    11,
+    12
+   ],
+   "move": "design-flow-erb"
+  },
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/mutations/port_fidelity_gate.py": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "categories": {
+    "concept": 2
+   },
+   "decision": "rails-stack",
+   "followed": "plugins/design-flow/ui/viewcomponent-erb/scripts/port_fidelity_gate.py",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
+   "ids": {
+    "erb": 2
+   },
+   "invokes": [],
+   "kind": "mutation",
+   "lines": [
+    7,
+    8
+   ],
+   "move": "design-flow-erb"
+  },
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/mutations/setup_doctrine_crosscheck.py": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "categories": {
+    "concept": 2,
     "gem": 1
    },
    "decision": "rails-stack",
-   "followed": "plugins/design-flow/scripts/setup_doctrine_crosscheck.py",
-   "how": "moves with its checks.json row",
+   "followed": "plugins/design-flow/ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
+    "erb": 2,
     "gem": 1
    },
    "invokes": [],
    "kind": "mutation",
    "lines": [
+    6,
+    7,
     33
    ],
    "move": "design-flow-erb"
   },
-  "plugins/design-flow/scripts/mutations/source_text.py": {
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/mutations/source_text.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 8,
+    "concept": 10,
     "tool": 4
    },
    "decision": "rails-stack",
-   "followed": "plugins/design-flow/scripts/source_text.py",
-   "how": "moves with its checks.json row",
+   "followed": "plugins/design-flow/ui/viewcomponent-erb/scripts/source_text.py",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
-    "erb": 8,
+    "erb": 10,
     "ruby": 4
    },
    "invokes": [],
    "kind": "mutation",
    "lines": [
+    6,
+    7,
     12,
     15,
     62,
@@ -1087,62 +1257,46 @@
    ],
    "move": "design-flow-erb"
   },
-  "plugins/design-flow/scripts/mutations/variant_conformance.py": {
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/mutations/variant_conformance.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 3
+    "concept": 5
    },
    "decision": "rails-stack",
-   "followed": "plugins/design-flow/scripts/variant_conformance.py",
-   "how": "moves with its checks.json row",
+   "followed": "plugins/design-flow/ui/viewcomponent-erb/scripts/variant_conformance.py",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
-    "erb": 3
+    "erb": 5
    },
    "invokes": [],
    "kind": "mutation",
    "lines": [
     7,
+    13,
+    14,
     33,
     65
    ],
    "move": "design-flow-erb"
   },
-  "plugins/design-flow/scripts/prompt_library.py": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "categories": {
-    "concept": 1,
-    "path": 1
-   },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
-   "ids": {
-    "app-layers": 1,
-    "erb": 1
-   },
-   "invokes": [],
-   "kind": "script",
-   "lines": [
-    574
-   ],
-   "move": ""
-  },
-  "plugins/design-flow/scripts/setup_doctrine_crosscheck.py": {
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 49,
+    "concept": 51,
     "gem": 5,
     "path": 19
    },
    "decision": "rails-stack",
-   "how": "moves with its checks.json row",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
+    "erb": 2,
     "gem": 5,
     "rails-config": 19,
     "rails-word": 27,
     "ruby-file": 22
    },
    "invokes": [],
-   "kind": "script",
+   "kind": "doc",
    "lines": [
     8,
     11,
@@ -1153,66 +1307,68 @@
     35,
     38,
     44,
+    63,
     72,
-    113,
-    118,
+    101,
+    116,
     121,
-    122,
-    219,
-    220,
-    228,
-    230,
-    299,
-    312,
-    314,
-    320,
-    322,
-    329,
-    330,
-    335,
-    375,
-    380,
-    386,
-    388,
+    124,
+    125,
+    222,
+    223,
+    231,
+    233,
+    302,
+    315,
+    317,
+    323,
+    325,
+    332,
+    333,
+    338,
+    378,
+    383,
     389,
-    399,
-    400,
-    406,
-    408,
+    391,
+    392,
+    402,
+    403,
     409,
+    411,
     412,
-    418,
-    439,
-    443,
+    415,
+    421,
+    442,
     446,
-    447,
-    460,
-    465,
-    466,
-    480,
-    484,
-    485,
-    499,
-    505,
-    513
+    449,
+    450,
+    463,
+    468,
+    469,
+    483,
+    487,
+    488,
+    502,
+    508,
+    516
    ],
    "move": "design-flow-erb"
   },
-  "plugins/design-flow/scripts/source_text.py": {
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/source_text.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
     "concept": 21,
     "tool": 9
    },
    "decision": "rails-stack",
-   "how": "moves with its checks.json row",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
     "erb": 19,
     "ruby": 9,
     "ruby-file": 2
    },
    "invokes": [],
-   "kind": "script",
+   "kind": "doc",
    "lines": [
     22,
     24,
@@ -1244,14 +1400,14 @@
    ],
    "move": "design-flow-erb"
   },
-  "plugins/design-flow/scripts/variant_conformance.py": {
+  "plugins/design-flow/ui/viewcomponent-erb/scripts/variant_conformance.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
     "concept": 52,
     "tool": 1
    },
    "decision": "rails-stack",
-   "how": "moves with its checks.json row",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
     "erb": 35,
     "rails-word": 13,
@@ -1259,126 +1415,63 @@
     "ruby-file": 4
    },
    "invokes": [],
-   "kind": "script",
+   "kind": "doc",
    "lines": [
     23,
-    121,
-    122,
-    240,
-    326,
-    335,
-    343,
-    466,
-    496,
-    541,
-    630,
-    631,
-    639,
-    641,
-    648,
-    687,
-    697,
-    703,
-    710,
-    711,
-    719,
-    721,
+    124,
+    125,
+    243,
+    329,
+    338,
+    346,
+    469,
+    499,
+    544,
+    633,
+    634,
+    642,
+    644,
+    651,
+    690,
+    700,
+    706,
+    713,
+    714,
     722,
-    729,
-    735,
-    736,
-    745,
-    746,
-    753,
-    754,
-    760,
+    724,
+    725,
+    732,
+    738,
+    739,
+    748,
+    749,
+    756,
+    757,
     763,
-    764,
-    773,
-    774,
-    783,
-    784,
-    793,
-    802,
-    803,
-    811,
-    820,
-    821,
-    830,
-    841,
-    842,
+    766,
+    767,
+    776,
+    777,
+    786,
+    787,
+    796,
+    805,
+    806,
+    814,
+    823,
+    824,
+    833,
     844,
-    848,
+    845,
+    847,
     851,
-    852,
-    860,
-    879,
-    889
+    854,
+    855,
+    863,
+    882,
+    892
    ],
    "move": "design-flow-erb"
-  },
-  "plugins/pipeline/agents/kamal-configurator.md": {
-   "assumes": "routes deploy values into Rails credentials and config/deploy.yml",
-   "categories": {
-    "concept": 8,
-    "path": 4,
-    "tool": 3
-   },
-   "decision": "rails-stack",
-   "how": "the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector",
-   "ids": {
-    "bin-rails": 1,
-    "rails-config": 4,
-    "rails-word": 5,
-    "ruby": 2,
-    "ruby-file": 3
-   },
-   "invokes": [
-    38
-   ],
-   "kind": "agent",
-   "lines": [
-    15,
-    30,
-    34,
-    37,
-    38,
-    41,
-    42,
-    47,
-    48,
-    50,
-    51,
-    83
-   ],
-   "move": "rails-deploy"
-  },
-  "plugins/pipeline/commands/deploy-cloud.md": {
-   "assumes": "prose or examples that name Rails, the Gemfile or Rails binstubs",
-   "categories": {
-    "concept": 8,
-    "path": 3
-   },
-   "decision": "reword",
-   "how": "reworded to reference the detector's commands",
-   "ids": {
-    "gemfile": 1,
-    "rails-config": 2,
-    "rails-word": 5,
-    "ruby-file": 3
-   },
-   "invokes": [],
-   "kind": "command",
-   "lines": [
-    10,
-    37,
-    43,
-    55,
-    57,
-    58,
-    73
-   ],
-   "move": ""
   },
   "plugins/pipeline/commands/release.md": {
    "assumes": "prose or examples that name Rails, the Gemfile or Rails binstubs",
@@ -1574,6 +1667,51 @@
    ],
    "move": ""
   },
+  "plugins/pipeline/scripts/detect_stack.py": {
+   "assumes": "the stack detector's own prose and fixtures name Rails and Next.js; the markers it reads are data in each plugin's stacks.json",
+   "categories": {
+    "concept": 12,
+    "path": 13,
+    "tool": 7
+   },
+   "decision": "detector",
+   "how": "a byte-identical mirror of plugins/rails-flow/scripts/detect_stack.py, held by the detect-stack-drift rule (a plugin installs alone and cannot import another's code); reworded only in the canonical copy",
+   "ids": {
+    "gemfile": 10,
+    "rails-config": 3,
+    "rails-word": 9,
+    "ruby": 7,
+    "ruby-file": 3
+   },
+   "invokes": [],
+   "kind": "script",
+   "lines": [
+    14,
+    15,
+    37,
+    303,
+    574,
+    575,
+    589,
+    590,
+    592,
+    594,
+    638,
+    639,
+    646,
+    703,
+    730,
+    768,
+    770,
+    774,
+    777,
+    781,
+    783,
+    799,
+    813
+   ],
+   "move": ""
+  },
   "plugins/pipeline/scripts/git_guard_selftest.py": {
    "assumes": "fixture repositories use Rails-shaped sample paths (app/models/user.rb) to exercise a stack-neutral guard, board or hook",
    "categories": {
@@ -1598,51 +1736,6 @@
    ],
    "move": ""
   },
-  "plugins/pipeline/scripts/kamal_destination.py": {
-   "assumes": "routes deploy values into Rails credentials and config/deploy.yml",
-   "categories": {
-    "concept": 5,
-    "path": 12,
-    "tool": 5
-   },
-   "decision": "rails-stack",
-   "how": "the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector",
-   "ids": {
-    "binstub": 1,
-    "rails-config": 12,
-    "rails-word": 3,
-    "ruby": 4,
-    "ruby-file": 2
-   },
-   "invokes": [
-    257
-   ],
-   "kind": "script",
-   "lines": [
-    13,
-    23,
-    24,
-    28,
-    92,
-    93,
-    94,
-    97,
-    112,
-    167,
-    191,
-    192,
-    193,
-    194,
-    197,
-    198,
-    200,
-    241,
-    242,
-    257,
-    286
-   ],
-   "move": "rails-deploy"
-  },
   "plugins/pipeline/scripts/mutations/git_guard_pre_commit.py": {
    "assumes": "fixture repositories use Rails-shaped sample paths (app/models/user.rb) to exercise a stack-neutral guard, board or hook",
    "categories": {
@@ -1663,25 +1756,6 @@
     141
    ],
    "move": ""
-  },
-  "plugins/pipeline/scripts/mutations/kamal_destination.py": {
-   "assumes": "routes deploy values into Rails credentials and config/deploy.yml",
-   "categories": {
-    "tool": 2
-   },
-   "decision": "rails-stack",
-   "followed": "plugins/pipeline/scripts/kamal_destination.py",
-   "how": "the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector",
-   "ids": {
-    "ruby": 2
-   },
-   "invokes": [],
-   "kind": "mutation",
-   "lines": [
-    58,
-    59
-   ],
-   "move": "rails-deploy"
   },
   "plugins/pipeline/scripts/release_build.py": {
    "assumes": "reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan",
@@ -2812,70 +2886,34 @@
   "plugins/rails-flow/agents/code-reviewer.md": {
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
-    "concept": 5,
-    "gem": 1,
-    "hotwire": 2,
-    "path": 2
+    "concept": 1
    },
    "decision": "rails-stack",
    "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
    "ids": {
-    "app-layers": 2,
-    "gem": 1,
-    "hotwire": 2,
-    "rails-idiom": 1,
-    "rails-word": 2,
-    "ruby-file": 2
+    "rails-word": 1
    },
    "invokes": [],
    "kind": "agent",
    "lines": [
-    4,
-    5,
-    11,
-    22,
-    23,
-    27,
-    79,
-    80
+    8
    ],
    "move": "rails-agents"
   },
   "plugins/rails-flow/agents/design-auditor.md": {
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
-    "concept": 7,
-    "gem": 5,
-    "hotwire": 3,
-    "path": 5
+    "concept": 1
    },
    "decision": "rails-stack",
    "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
    "ids": {
-    "app-layers": 4,
-    "erb": 3,
-    "gem": 5,
-    "hotwire": 3,
-    "rails-config": 1,
-    "rails-idiom": 3,
-    "ruby-file": 1
+    "rails-word": 1
    },
    "invokes": [],
    "kind": "agent",
    "lines": [
-    5,
-    6,
-    19,
-    22,
-    23,
-    24,
-    30,
-    31,
-    32,
-    34,
-    42,
-    60,
-    61
+    10
    ],
    "move": "rails-agents"
   },
@@ -2899,35 +2937,17 @@
   "plugins/rails-flow/agents/migration-writer.md": {
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
-    "concept": 3,
-    "path": 4,
-    "tool": 3
+    "concept": 1
    },
    "decision": "rails-stack",
    "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
    "ids": {
-    "bin-rails": 3,
-    "db": 3,
-    "gemfile": 1,
-    "rails-word": 2,
-    "ruby-file": 1
+    "rails-word": 1
    },
-   "invokes": [
-    34,
-    35,
-    38
-   ],
+   "invokes": [],
    "kind": "agent",
    "lines": [
-    4,
-    10,
-    13,
-    34,
-    35,
-    36,
-    38,
-    39,
-    51
+    8
    ],
    "move": "rails-agents"
   },
@@ -2953,71 +2973,34 @@
   "plugins/rails-flow/agents/rails-developer.md": {
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
-    "concept": 4,
-    "gem": 1,
-    "hotwire": 4,
-    "path": 2,
-    "tool": 1
+    "concept": 1
    },
    "decision": "rails-stack",
    "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
    "ids": {
-    "app-layers": 1,
-    "gem": 1,
-    "hotwire": 4,
-    "rails-idiom": 1,
-    "rails-word": 2,
-    "rspec": 1,
-    "ruby-file": 1,
-    "spec-dir": 1
+    "rails-word": 1
    },
    "invokes": [],
    "kind": "agent",
    "lines": [
-    4,
-    5,
-    12,
-    17,
-    19,
-    24,
-    25,
-    27,
-    44
+    8
    ],
    "move": "rails-agents"
   },
   "plugins/rails-flow/agents/security-auditor.md": {
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
-    "concept": 4,
-    "path": 1,
-    "tool": 6
+    "concept": 1
    },
    "decision": "rails-stack",
    "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
    "ids": {
-    "app-layers": 1,
-    "brakeman": 3,
-    "bundler": 2,
-    "bundler-audit": 1,
-    "rails-idiom": 1,
-    "rails-word": 1,
-    "ruby-file": 2
+    "rails-word": 1
    },
-   "invokes": [
-    14,
-    15
-   ],
+   "invokes": [],
    "kind": "agent",
    "lines": [
-    5,
-    11,
-    14,
-    15,
-    21,
-    34,
-    59,
-    60
+    8
    ],
    "move": "rails-agents"
   },
@@ -3044,39 +3027,17 @@
   "plugins/rails-flow/agents/test-runner.md": {
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "categories": {
-    "concept": 1,
-    "gem": 1,
-    "path": 1,
-    "tool": 10
+    "concept": 1
    },
    "decision": "rails-stack",
    "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
    "ids": {
-    "bin-rails": 2,
-    "bundler": 3,
-    "gem": 1,
-    "rspec": 5,
-    "ruby-file": 1,
-    "spec-dir": 1
+    "rails-word": 1
    },
-   "invokes": [
-    10,
-    16,
-    17,
-    30,
-    31
-   ],
+   "invokes": [],
    "kind": "agent",
    "lines": [
-    4,
-    10,
-    12,
-    16,
-    17,
-    30,
-    31,
-    32,
-    44
+    10
    ],
    "move": "rails-agents"
   },
@@ -3211,6 +3172,7 @@
   "plugins/rails-flow/commands/feature.md": {
    "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
    "categories": {
+    "concept": 1,
     "hotwire": 1,
     "tool": 1
    },
@@ -3218,39 +3180,42 @@
    "how": "the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction)",
    "ids": {
     "bundler": 1,
-    "hotwire": 1
+    "hotwire": 1,
+    "rails-word": 1
    },
    "invokes": [
-    242
+    244
    ],
    "kind": "command",
    "lines": [
-    230,
-    242
+    12,
+    232,
+    244
    ],
    "move": ""
   },
   "plugins/rails-flow/commands/fix.md": {
    "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
    "categories": {
-    "concept": 1,
+    "concept": 2,
     "tool": 2
    },
    "decision": "detector",
    "how": "the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction)",
    "ids": {
     "binstub": 1,
-    "rails-word": 1,
+    "rails-word": 2,
     "ruby": 1
    },
    "invokes": [
-    79
+    81
    ],
    "kind": "command",
    "lines": [
-    51,
-    79,
-    86
+    8,
+    53,
+    81,
+    88
    ],
    "move": ""
   },
@@ -3283,7 +3248,7 @@
   "plugins/rails-flow/commands/handoff.md": {
    "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
    "categories": {
-    "concept": 4,
+    "concept": 5,
     "path": 5,
     "tool": 4
    },
@@ -3293,39 +3258,61 @@
     "app-layers": 2,
     "bundler": 2,
     "db": 1,
+    "rails-word": 1,
     "rspec": 2,
     "ruby-file": 4,
     "spec-dir": 2
    },
    "invokes": [
-    76,
-    78
+    78,
+    80
    ],
    "kind": "command",
    "lines": [
-    54,
-    55,
+    8,
+    56,
     57,
-    58,
-    76,
-    78
+    59,
+    60,
+    78,
+    80
    ],
    "move": ""
   },
   "plugins/rails-flow/commands/issues.md": {
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
    "categories": {
+    "concept": 1,
     "tool": 1
    },
    "decision": "reword",
    "how": "reworded in the slice that touches the file; no code changes",
    "ids": {
+    "rails-word": 1,
     "ruby": 1
    },
    "invokes": [],
    "kind": "command",
    "lines": [
-    145
+    12,
+    147
+   ],
+   "move": ""
+  },
+  "plugins/rails-flow/commands/pr-comments.md": {
+   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "categories": {
+    "concept": 1
+   },
+   "decision": "reword",
+   "how": "reworded in the slice that touches the file; no code changes",
+   "ids": {
+    "rails-word": 1
+   },
+   "invokes": [],
+   "kind": "command",
+   "lines": [
+    8
    ],
    "move": ""
   },
@@ -3349,7 +3336,7 @@
   "plugins/rails-flow/commands/review.md": {
    "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
    "categories": {
-    "concept": 3,
+    "concept": 4,
     "hotwire": 1,
     "path": 2
    },
@@ -3359,16 +3346,17 @@
     "app-layers": 2,
     "hotwire": 1,
     "rails-idiom": 1,
-    "rails-word": 1,
+    "rails-word": 2,
     "ruby-file": 1
    },
    "invokes": [],
    "kind": "command",
    "lines": [
     12,
-    32,
-    33,
-    66
+    14,
+    34,
+    35,
+    68
    ],
    "move": ""
   },
@@ -3451,23 +3439,6 @@
    "lines": [
     29,
     75
-   ],
-   "move": ""
-  },
-  "plugins/rails-flow/hooks/hooks.json": {
-   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
-   "categories": {
-    "tool": 1
-   },
-   "decision": "reword",
-   "how": "reworded in the slice that touches the file; no code changes",
-   "ids": {
-    "ruby": 1
-   },
-   "invokes": [],
-   "kind": "hook",
-   "lines": [
-    73
    ],
    "move": ""
   },
@@ -3556,56 +3527,6 @@
    ],
    "move": ""
   },
-  "plugins/rails-flow/hooks/scripts/guard-migrate.sh": {
-   "assumes": "fires on db/migrate files and .rb edits; runs bin/rails and rubocop",
-   "categories": {
-    "concept": 12,
-    "path": 12,
-    "tool": 6
-   },
-   "decision": "rails-stack",
-   "how": "its hooks.json entry moves to the stack plugin",
-   "ids": {
-    "bin-rails": 6,
-    "db": 12,
-    "rails-word": 4,
-    "ruby-file": 8
-   },
-   "invokes": [
-    8,
-    14,
-    38,
-    46,
-    48,
-    66
-   ],
-   "kind": "hook",
-   "lines": [
-    2,
-    7,
-    8,
-    14,
-    15,
-    21,
-    22,
-    23,
-    26,
-    28,
-    29,
-    33,
-    37,
-    38,
-    44,
-    46,
-    48,
-    60,
-    66,
-    78,
-    84,
-    99
-   ],
-   "move": "rails-hooks"
-  },
   "plugins/rails-flow/hooks/scripts/lib/issue_labels.py": {
    "assumes": "hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test",
    "categories": {
@@ -3648,39 +3569,6 @@
     86
    ],
    "move": ""
-  },
-  "plugins/rails-flow/hooks/scripts/lint-ruby.sh": {
-   "assumes": "fires on db/migrate files and .rb edits; runs bin/rails and rubocop",
-   "categories": {
-    "concept": 1,
-    "tool": 11
-   },
-   "decision": "rails-stack",
-   "how": "its hooks.json entry moves to the stack plugin",
-   "ids": {
-    "bundler": 1,
-    "rubocop": 4,
-    "ruby": 6,
-    "ruby-file": 1
-   },
-   "invokes": [
-    16,
-    27
-   ],
-   "kind": "hook",
-   "lines": [
-    2,
-    9,
-    14,
-    16,
-    17,
-    19,
-    20,
-    25,
-    27,
-    34
-   ],
-   "move": "rails-hooks"
   },
   "plugins/rails-flow/hooks/scripts/self-consistency.sh": {
    "assumes": "hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test",
@@ -3930,6 +3818,26 @@
    "lines": [
     116,
     117
+   ],
+   "move": ""
+  },
+  "plugins/rails-flow/reference/stack-roles.md": {
+   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "categories": {
+    "concept": 4
+   },
+   "decision": "reword",
+   "how": "reworded in the slice that touches the file; no code changes",
+   "ids": {
+    "rails-word": 4
+   },
+   "invokes": [],
+   "kind": "reference",
+   "lines": [
+    3,
+    24,
+    29,
+    31
    ],
    "move": ""
   },
@@ -4676,7 +4584,7 @@
    "categories": {
     "concept": 108,
     "path": 58,
-    "tool": 109
+    "tool": 110
    },
    "decision": "detector",
    "how": "learns the sibling stack plugin's hooks directory (step 3d of the plan) and drives each stack's hooks with that stack's fixtures",
@@ -4694,26 +4602,24 @@
     "routes": 3,
     "rspec": 20,
     "rubocop": 2,
-    "ruby": 18,
+    "ruby": 19,
     "ruby-file": 104,
     "spec-dir": 6
    },
    "invokes": [
-    690,
-    738,
-    827,
-    882,
-    1013,
-    1017,
-    1674,
-    1675,
+    692,
+    740,
+    829,
+    884,
+    1015,
+    1019,
     1676,
+    1677,
     1678,
     1680,
-    1681,
     1682,
+    1683,
     1684,
-    1685,
     1686,
     1687,
     1688,
@@ -4723,130 +4629,131 @@
     1692,
     1693,
     1694,
-    1697,
-    1698,
+    1695,
+    1696,
+    1699,
     1700,
-    1701,
-    1733,
-    1734,
-    1738,
-    1739,
+    1702,
+    1703,
+    1735,
+    1736,
     1740,
-    1744,
-    1757,
-    1758,
+    1741,
+    1742,
+    1746,
     1759,
     1760,
     1761,
     1762,
-    1787,
-    1797,
-    1803,
-    1810,
+    1763,
+    1764,
+    1789,
+    1799,
+    1805,
     1812,
-    1816,
-    4434,
-    4453
+    1814,
+    1818,
+    4436,
+    4455
    ],
    "kind": "script",
    "lines": [
     12,
     20,
     21,
-    57,
-    62,
-    573,
-    583,
-    594,
-    617,
-    654,
+    49,
+    59,
+    64,
+    575,
+    585,
+    596,
+    619,
     656,
-    659,
-    663,
-    676,
-    680,
-    687,
-    690,
-    693,
+    658,
+    661,
+    665,
+    678,
+    682,
+    689,
+    692,
     695,
-    696,
+    697,
     698,
-    703,
-    704,
-    713,
+    700,
+    705,
+    706,
     715,
-    718,
-    722,
-    723,
-    726,
-    727,
-    731,
-    732,
+    717,
+    720,
+    724,
+    725,
+    728,
+    729,
+    733,
     734,
-    735,
     736,
+    737,
     738,
-    739,
-    744,
-    745,
+    740,
+    741,
+    746,
     747,
-    752,
-    758,
-    761,
-    762,
-    765,
-    777,
-    787,
-    790,
-    793,
-    800,
-    803,
-    816,
-    822,
-    827,
-    830,
-    833,
-    840,
-    841,
-    844,
-    847,
-    850,
-    854,
-    862,
-    865,
-    873,
-    874,
-    881,
-    882,
+    749,
+    754,
+    760,
+    763,
+    764,
+    767,
+    779,
+    789,
+    792,
+    795,
+    802,
+    805,
+    818,
+    824,
+    829,
+    832,
+    835,
+    842,
+    843,
+    846,
+    849,
+    852,
+    856,
+    864,
+    867,
+    875,
+    876,
+    883,
     884,
-    888,
-    907,
-    931,
-    932,
-    935,
-    956,
-    957,
-    967,
-    968,
+    886,
+    890,
+    909,
+    933,
+    934,
+    937,
+    958,
+    959,
     969,
-    1008,
+    970,
+    971,
     1010,
-    1013,
-    1016,
-    1017,
-    1044,
-    1045,
-    1092,
-    1671,
-    1674,
-    1675,
+    1012,
+    1015,
+    1018,
+    1019,
+    1046,
+    1047,
+    1094,
+    1673,
     1676,
+    1677,
     1678,
     1680,
-    1681,
     1682,
+    1683,
     1684,
-    1685,
     1686,
     1687,
     1688,
@@ -4856,105 +4763,107 @@
     1692,
     1693,
     1694,
-    1697,
-    1698,
+    1695,
+    1696,
+    1699,
     1700,
-    1701,
-    1714,
-    1733,
-    1734,
-    1738,
-    1739,
+    1702,
+    1703,
+    1716,
+    1735,
+    1736,
     1740,
-    1744,
-    1757,
-    1758,
+    1741,
+    1742,
+    1746,
     1759,
     1760,
     1761,
     1762,
-    1787,
-    1797,
-    1803,
+    1763,
+    1764,
+    1789,
+    1799,
     1805,
-    1810,
+    1807,
     1812,
-    1816,
-    2741,
-    2742,
-    2851,
-    2855,
+    1814,
+    1818,
+    2743,
+    2744,
+    2853,
     2857,
-    2858,
-    2872,
-    2877,
-    2878,
-    2907,
-    2920,
-    2924,
-    2925,
+    2859,
+    2860,
+    2874,
+    2879,
+    2880,
+    2909,
+    2922,
     2926,
-    2934,
-    2946,
-    2966,
-    2969,
-    2973,
-    2974,
-    2978,
-    2982,
-    2983,
-    2997,
-    3012,
-    3046,
-    3050,
-    3062,
-    3074,
-    3075,
-    3184,
-    3185,
-    3194,
-    3646,
-    3647,
-    3863,
-    3864,
-    3873,
-    3975,
-    4189,
-    4190,
+    2927,
+    2928,
+    2936,
+    2948,
+    2968,
+    2971,
+    2975,
+    2976,
+    2980,
+    2984,
+    2985,
+    2999,
+    3014,
+    3048,
+    3052,
+    3064,
+    3076,
+    3077,
+    3186,
+    3187,
+    3196,
+    3648,
+    3649,
+    3865,
+    3866,
+    3875,
+    3977,
     4191,
     4192,
-    4229,
+    4193,
+    4194,
     4231,
-    4408,
-    4425,
-    4426,
-    4434,
-    4437,
-    4438,
-    4444,
-    4447,
-    4450,
-    4453,
-    4454,
-    4461,
-    4466,
-    4482,
-    4483,
+    4233,
+    4410,
+    4427,
+    4428,
+    4436,
+    4439,
+    4440,
+    4446,
+    4449,
+    4452,
+    4455,
+    4456,
+    4463,
+    4468,
+    4484,
     4485,
-    4488,
-    4491,
-    4498,
-    4504,
-    4515,
-    4520,
-    4529,
-    6378,
-    6544,
-    6547,
-    6583,
-    6761,
-    6765,
-    6766
+    4487,
+    4490,
+    4493,
+    4500,
+    4506,
+    4517,
+    4522,
+    4531,
+    6380,
+    6546,
+    6549,
+    6585,
+    6763,
+    6767,
+    6768
    ],
    "move": ""
   },
@@ -8107,18 +8016,13 @@
  "moves": {
   "design-flow-erb": {
    "issue": 2178,
-   "summary": "The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (design-porter, ui-composer). Next.js gets its own design gates under #2171.",
-   "title": "The design-flow ERB / ViewComponent gates and porter"
+   "summary": "The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (rails-ui-porter, rails-ui-composer). They do NOT move to rails-stack: they live in design-flow's own Rails UI adapter, plugins/design-flow/ui/viewcomponent-erb/, which a stack descriptor selects with ui.implementation, so design stays neutral (owner, via the coordinator, 2026-10-21). Next.js gets its own adapter under #2171.",
+   "title": "The design-flow Rails UI adapter (ERB / ViewComponent gates and porter)"
   },
   "rails-agents": {
    "issue": 2173,
    "summary": "Agents whose whole job is a Rails task (implement in Rails, write migrations, run RSpec, audit with Brakeman, review against Rails practice). They are loaded by every rails-flow install; a Next.js project would see agents it can never use.",
    "title": "The Rails specialist agents"
-  },
-  "rails-deploy": {
-   "issue": 2179,
-   "summary": "kamal-configurator and kamal_destination.py route values into Rails credentials and deploy.yml; Vercel deploy (#2167) is its own path.",
-   "title": "The Kamal-on-Rails deploy path"
   },
   "rails-docs-generators": {
    "issue": 2177,
@@ -8130,155 +8034,11 @@
    "summary": "Gate scripts that read a Rails project (simple_form, migrations order, tenancy cop, privacy inventory, production config, MCP checks, i18n, CI-runs-tests, coverage ratchet, spec support, layer structure, herb) and their checks.json registrations. project_gates.py already discovers checks.json from sibling plugins, so this is a move, not new machinery.",
    "title": "The Rails project gates"
   },
-  "rails-hooks": {
-   "issue": 2174,
-   "summary": "Hooks that fire on a Rails artifact: guard-migrate.sh on a new db/migrate file, lint-ruby.sh on a .rb edit. They register through the plugin's hooks.json, so the stack plugin must register them instead.",
-   "title": "The Rails-only hooks"
-  },
   "rails-mandated-gems": {
    "issue": 2176,
    "summary": "mandated_gems.json and the scripts that read or derive it. The list is Rails doctrine by definition; a Node stack needs a different list under its own name.",
    "title": "The mandated-gems policy"
   }
  },
- "policy": "docs/architecture/rails-assumptions.policy.json",
- "summary": {
-  "by_category": {
-   "concept": 1966,
-   "gem": 138,
-   "hotwire": 104,
-   "path": 1245,
-   "tool": 890
-  },
-  "by_decision": {
-   "detector": {
-    "files": 90,
-    "lines": 1228
-   },
-   "neutral": {
-    "files": 7,
-    "lines": 24
-   },
-   "rails-stack": {
-    "files": 68,
-    "lines": 1673
-   },
-   "reword": {
-    "files": 63,
-    "lines": 278
-   }
-  },
-  "by_flow": {
-   "design-flow": {
-    "detector": 2,
-    "files": 38,
-    "lines": 550,
-    "neutral": 0,
-    "rails-stack": 18,
-    "reword": 18
-   },
-   "pipeline": {
-    "detector": 9,
-    "files": 19,
-    "lines": 89,
-    "neutral": 3,
-    "rails-stack": 3,
-    "reword": 4
-   },
-   "qa-flow": {
-    "detector": 29,
-    "files": 36,
-    "lines": 275,
-    "neutral": 1,
-    "rails-stack": 0,
-    "reword": 6
-   },
-   "rails-flow": {
-    "detector": 50,
-    "files": 135,
-    "lines": 2289,
-    "neutral": 3,
-    "rails-stack": 47,
-    "reword": 35
-   }
-  },
-  "by_kind": {
-   "agent": {
-    "files": 21,
-    "lines": 104
-   },
-   "command": {
-    "files": 27,
-    "lines": 160
-   },
-   "data": {
-    "files": 3,
-    "lines": 46
-   },
-   "doc": {
-    "files": 1,
-    "lines": 7
-   },
-   "hook": {
-    "files": 15,
-    "lines": 116
-   },
-   "manifest": {
-    "files": 2,
-    "lines": 2
-   },
-   "mutation": {
-    "files": 44,
-    "lines": 261
-   },
-   "reference": {
-    "files": 8,
-    "lines": 31
-   },
-   "scaffold": {
-    "files": 2,
-    "lines": 11
-   },
-   "script": {
-    "files": 88,
-    "lines": 2247
-   },
-   "selftest": {
-    "files": 16,
-    "lines": 212
-   },
-   "template": {
-    "files": 1,
-    "lines": 6
-   }
-  },
-  "by_pattern": {
-   "active-framework": 20,
-   "app-layers": 602,
-   "bin-rails": 125,
-   "binstub": 53,
-   "brakeman": 8,
-   "bundler": 85,
-   "bundler-audit": 5,
-   "db": 137,
-   "erb": 360,
-   "erb-lint": 73,
-   "gem": 138,
-   "gemfile": 176,
-   "hotwire": 104,
-   "rails-config": 109,
-   "rails-idiom": 53,
-   "rails-word": 313,
-   "rake": 56,
-   "routes": 37,
-   "rspec": 186,
-   "rubocop": 84,
-   "rubocop-yml": 2,
-   "ruby": 215,
-   "ruby-file": 1220,
-   "spec-dir": 182
-  },
-  "files": 228,
-  "lines": 3203
- }
+ "policy": "docs/architecture/rails-assumptions.policy.json"
 }

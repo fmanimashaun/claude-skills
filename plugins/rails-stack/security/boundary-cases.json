@@ -40,5 +40,295 @@
     "plan": "After sign-out, redirect_to params[:next].",
     "paths": [],
     "boundary": true
+  },
+  {
+    "name": "a namespaced sessions controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/admin/sessions_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "a magic-link controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/magic_links_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "a two-factor controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/two_factor_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an invitations controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/invitations_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "the application controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/application_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an auth concern is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/concerns/authorization.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "the user model is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/models/user.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "the devise initializer is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "config/initializers/devise.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "the session store initializer is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "config/initializers/session_store.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an auth library is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "lib/acme/auth/token_verifier.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an uploads controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/uploads_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an attachments controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/admin/attachments_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an mcp controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/mcp_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "a users index view is not a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/views/users/index.html.erb"
+    ],
+    "boundary": false
+  },
+  {
+    "name": "render html: is a boundary",
+    "plan": "Show the partner block with render html: body.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "render inline: is a boundary",
+    "plan": "Use render inline: template for the preview.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "redirect_to request.referer is a boundary",
+    "plan": "After save, redirect_to request.referer.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "an api token model is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/models/api_token.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "a session token model is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/models/session_token.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "a session issuer service is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/services/session_issuer.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an auth service folder is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/services/auth/token_minter.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "the routes file is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "config/routes.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an api controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/api_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "a webhook controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/webhook_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "require_authentication is a boundary",
+    "plan": "Call require_authentication in the base controller.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "require_login is a boundary",
+    "plan": "Add require_login to reports.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "csrf is a boundary",
+    "plan": "Turn off the CSRF check for the form.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "cors is a boundary",
+    "plan": "Allow CORS from the partner origin.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "JSON.parse(request.body) is a boundary",
+    "plan": "Read JSON.parse(request.body) in the action.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "YAML.safe_load is a boundary",
+    "plan": "Load the upload with YAML.safe_load.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "redirect_to session[ is a boundary",
+    "plan": "Finish with redirect_to session[:return].",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "a token helper view is not a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/views/tokens/_row.html.erb"
+    ],
+    "boundary": false
+  },
+  {
+    "name": "authenticate_user! is a boundary",
+    "plan": "Drop authenticate_user! from the index.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "an upper-case auth path is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "App/Controllers/Sessions_Controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an author model is not a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/models/author.rb"
+    ],
+    "boundary": false
+  },
+  {
+    "name": "an authors service folder is not a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/services/authors/byline.rb"
+    ],
+    "boundary": false
+  },
+  {
+    "name": "a sessionless helper name is not a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/models/sessionless_cart.rb"
+    ],
+    "boundary": false
+  },
+  {
+    "name": "a dot-dot path to the user model is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/x/../models/user.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "a policies directory without its slash is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/policies"
+    ],
+    "boundary": true
   }
 ]

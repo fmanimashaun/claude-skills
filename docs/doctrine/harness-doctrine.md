@@ -128,7 +128,7 @@ disagreed, and nothing had ever compared them. The generalisable rule is sharper
 
 So the remedy for #77 and #78 is *enforcement*, and the remedy for #56 is a *cross-check between two
 things we wrote*. Those are different pieces of work, and only one of them exists.
-`plugins/design-flow/scripts/setup_doctrine_crosscheck.py` is a cross-check of that family but a
+`plugins/design-flow/ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py` is a cross-check of that family but a
 different class — it catches doctrine depending on a `Rails.configuration.x.<key>` the generator never
 produces (#150/#104). Nothing compares a skill's stated non-negotiables against its own reference
 recipes:

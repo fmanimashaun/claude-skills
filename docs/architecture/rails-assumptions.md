@@ -6,34 +6,14 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 
 ## Decisions
 
-| decision | what it means | files | lines |
-|---|---|---:|---:|
-| `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 68 | 1673 |
-| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 90 | 1228 |
-| `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 63 | 278 |
-| `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change | 7 | 24 |
-| **all** | | **228** | **3203** |
+| decision | what it means |
+|---|---|
+| `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest |
+| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) |
+| `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched |
+| `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change |
 
-## By flow
-
-| flow | files | lines | `rails-stack` | `detector` | `reword` | `neutral` |
-|---|---:|---:|---:|---:|---:|---:|
-| `rails-flow` | 135 | 2289 | 47 | 50 | 35 | 3 |
-| `qa-flow` | 36 | 275 | 0 | 29 | 6 | 1 |
-| `pipeline` | 19 | 89 | 3 | 9 | 4 | 3 |
-| `design-flow` | 38 | 550 | 18 | 2 | 18 | 0 |
-
-## By what is named
-
-| category | lines naming it |
-|---|---:|
-| tool | 890 |
-| gem | 138 |
-| path | 1245 |
-| concept | 1966 |
-| hotwire | 104 |
-
-A line that names two things counts once per category it names in this table and once overall in the totals above.
+The counts (files and lines per decision, per flow, per thing named) are not stored in this page or in `rails-assumptions.json`: a stored total is a line every pull request rewrites. `python3 scripts/rails_assumptions.py --status` computes them from the inventory below. A line that names two things counts once per category it names there and once overall.
 
 ## The moves (each is an issue under #2162)
 
@@ -41,43 +21,106 @@ A line that names two things counts once per category it names in this table and
 
 Agents whose whole job is a Rails task (implement in Rails, write migrations, run RSpec, audit with Brakeman, review against Rails practice). They are loaded by every rails-flow install; a Next.js project would see agents it can never use.
 
-Files: `agents/code-reviewer.md` (rails-flow), `agents/design-auditor.md` (rails-flow), `agents/migration-writer.md` (rails-flow), `agents/rails-developer.md` (rails-flow), `agents/security-auditor.md` (rails-flow), `agents/test-runner.md` (rails-flow)
+Files:
 
-### rails-hooks: The Rails-only hooks (#2174)
-
-Hooks that fire on a Rails artifact: guard-migrate.sh on a new db/migrate file, lint-ruby.sh on a .rb edit. They register through the plugin's hooks.json, so the stack plugin must register them instead.
-
-Files: `hooks/scripts/guard-migrate.sh` (rails-flow), `hooks/scripts/lint-ruby.sh` (rails-flow)
+- `agents/code-reviewer.md` (rails-flow)
+- `agents/design-auditor.md` (rails-flow)
+- `agents/migration-writer.md` (rails-flow)
+- `agents/rails-developer.md` (rails-flow)
+- `agents/security-auditor.md` (rails-flow)
+- `agents/test-runner.md` (rails-flow)
 
 ### rails-gates: The Rails project gates (#2175)
 
 Gate scripts that read a Rails project (simple_form, migrations order, tenancy cop, privacy inventory, production config, MCP checks, i18n, CI-runs-tests, coverage ratchet, spec support, layer structure, herb) and their checks.json registrations. project_gates.py already discovers checks.json from sibling plugins, so this is a move, not new machinery.
 
-Files: `scaffold/tenancy/scoped_lookup.rb` (rails-flow), `scripts/check_ci_runs_tests.py` (rails-flow), `scripts/check_coverage_ratchet.py` (rails-flow), `scripts/check_i18n_setup.py` (rails-flow), `scripts/check_layer_structure.py` (rails-flow), `scripts/check_mcp_annotations.py` (rails-flow), `scripts/check_mcp_end_to_end.py` (rails-flow), `scripts/check_mcp_personal_fields.py` (rails-flow), `scripts/check_migration_order.py` (rails-flow), `scripts/check_privacy_inventory.py` (rails-flow), `scripts/check_production_config.py` (rails-flow), `scripts/check_simple_form_only.py` (rails-flow), `scripts/check_spec_support.py` (rails-flow), `scripts/check_tenancy_cop.py` (rails-flow), `scripts/check_unauthenticated_writes.py` (rails-flow), `scripts/herb_lint.py` (rails-flow), `scripts/mutations/check_ci_runs_tests.py` (rails-flow), `scripts/mutations/check_coverage_ratchet.py` (rails-flow), `scripts/mutations/check_i18n_setup.py` (rails-flow), `scripts/mutations/check_layer_structure.py` (rails-flow), `scripts/mutations/check_mcp_annotations.py` (rails-flow), `scripts/mutations/check_mcp_end_to_end.py` (rails-flow), `scripts/mutations/check_migration_order.py` (rails-flow), `scripts/mutations/check_privacy_inventory.py` (rails-flow), `scripts/mutations/check_production_config.py` (rails-flow), `scripts/mutations/check_simple_form_only.py` (rails-flow), `scripts/mutations/check_spec_support.py` (rails-flow), `scripts/mutations/check_tenancy_cop.py` (rails-flow), `scripts/mutations/herb_lint.py` (rails-flow), `scripts/structure_ratchet.py` (rails-flow)
+Files:
+
+- `scaffold/tenancy/scoped_lookup.rb` (rails-flow)
+- `scripts/check_ci_runs_tests.py` (rails-flow)
+- `scripts/check_coverage_ratchet.py` (rails-flow)
+- `scripts/check_i18n_setup.py` (rails-flow)
+- `scripts/check_layer_structure.py` (rails-flow)
+- `scripts/check_mcp_annotations.py` (rails-flow)
+- `scripts/check_mcp_end_to_end.py` (rails-flow)
+- `scripts/check_mcp_personal_fields.py` (rails-flow)
+- `scripts/check_migration_order.py` (rails-flow)
+- `scripts/check_privacy_inventory.py` (rails-flow)
+- `scripts/check_production_config.py` (rails-flow)
+- `scripts/check_simple_form_only.py` (rails-flow)
+- `scripts/check_spec_support.py` (rails-flow)
+- `scripts/check_tenancy_cop.py` (rails-flow)
+- `scripts/check_unauthenticated_writes.py` (rails-flow)
+- `scripts/herb_lint.py` (rails-flow)
+- `scripts/mutations/check_ci_runs_tests.py` (rails-flow)
+- `scripts/mutations/check_coverage_ratchet.py` (rails-flow)
+- `scripts/mutations/check_i18n_setup.py` (rails-flow)
+- `scripts/mutations/check_layer_structure.py` (rails-flow)
+- `scripts/mutations/check_mcp_annotations.py` (rails-flow)
+- `scripts/mutations/check_mcp_end_to_end.py` (rails-flow)
+- `scripts/mutations/check_migration_order.py` (rails-flow)
+- `scripts/mutations/check_privacy_inventory.py` (rails-flow)
+- `scripts/mutations/check_production_config.py` (rails-flow)
+- `scripts/mutations/check_simple_form_only.py` (rails-flow)
+- `scripts/mutations/check_spec_support.py` (rails-flow)
+- `scripts/mutations/check_tenancy_cop.py` (rails-flow)
+- `scripts/mutations/herb_lint.py` (rails-flow)
+- `scripts/structure_ratchet.py` (rails-flow)
 
 ### rails-mandated-gems: The mandated-gems policy (#2176)
 
 mandated_gems.json and the scripts that read or derive it. The list is Rails doctrine by definition; a Node stack needs a different list under its own name.
 
-Files: `mandated_gems.json` (rails-flow), `scripts/check_mandated_gems.py` (rails-flow), `scripts/mutations/check_mandated_gems.py` (rails-flow)
+Files:
+
+- `mandated_gems.json` (rails-flow)
+- `scripts/check_mandated_gems.py` (rails-flow)
+- `scripts/mutations/check_mandated_gems.py` (rails-flow)
 
 ### rails-docs-generators: The Rails documentation generators (#2177)
 
 architecture_graph.py (routes/app/db graph, /rails-flow:graph) and build_project_wiki.py read Rails sources to draw the architecture and the wiki.
 
-Files: `commands/graph.md` (rails-flow), `scripts/architecture_graph.py` (rails-flow), `scripts/build_help.py` (rails-flow), `scripts/build_project_wiki.py` (rails-flow), `scripts/mutations/architecture_graph.py` (rails-flow), `scripts/mutations/build_project_wiki.py` (rails-flow)
+Files:
 
-### design-flow-erb: The design-flow ERB / ViewComponent gates and porter (#2178)
+- `commands/graph.md` (rails-flow)
+- `scripts/architecture_graph.py` (rails-flow)
+- `scripts/build_help.py` (rails-flow)
+- `scripts/build_project_wiki.py` (rails-flow)
+- `scripts/mutations/architecture_graph.py` (rails-flow)
+- `scripts/mutations/build_project_wiki.py` (rails-flow)
 
-The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (design-porter, ui-composer). Next.js gets its own design gates under #2171.
+### design-flow-erb: The design-flow Rails UI adapter (ERB / ViewComponent gates and porter) (#2178)
 
-Files: `agents/design-porter.md` (design-flow), `agents/ui-composer.md` (design-flow), `scripts/canvas_manifest.py` (design-flow), `scripts/check_component_contract.py` (design-flow), `scripts/check_layout_composition.py` (design-flow), `scripts/check_modal_fit.py` (design-flow), `scripts/check_surface_layout.py` (design-flow), `scripts/check_table_layout.py` (design-flow), `scripts/check_token_drift.py` (design-flow), `scripts/mutations/check_component_contract.py` (design-flow), `scripts/mutations/check_modal_fit.py` (design-flow), `scripts/mutations/check_surface_layout.py` (design-flow), `scripts/mutations/setup_doctrine_crosscheck.py` (design-flow), `scripts/mutations/source_text.py` (design-flow), `scripts/mutations/variant_conformance.py` (design-flow), `scripts/setup_doctrine_crosscheck.py` (design-flow), `scripts/source_text.py` (design-flow), `scripts/variant_conformance.py` (design-flow)
+The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (rails-ui-porter, rails-ui-composer). They do NOT move to rails-stack: they live in design-flow's own Rails UI adapter, plugins/design-flow/ui/viewcomponent-erb/, which a stack descriptor selects with ui.implementation, so design stays neutral (owner, via the coordinator, 2026-10-21). Next.js gets its own adapter under #2171.
 
-### rails-deploy: The Kamal-on-Rails deploy path (#2179)
+Files:
 
-kamal-configurator and kamal_destination.py route values into Rails credentials and deploy.yml; Vercel deploy (#2167) is its own path.
-
-Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py` (pipeline), `scripts/mutations/kamal_destination.py` (pipeline)
+- `agents/rails-ui-composer.md` (design-flow)
+- `agents/rails-ui-porter.md` (design-flow)
+- `ui/viewcomponent-erb/adapter.json` (design-flow)
+- `ui/viewcomponent-erb/scripts/canvas_manifest.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_component_contract.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_layout_composition.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_modal_fit.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_surface_layout.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_table_layout.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_token_drift.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/content_floors.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/canvas_manifest.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/check_component_contract.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/check_layout_composition.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/check_modal_fit.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/check_surface_layout.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/check_table_layout.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/content_floors.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/port_fidelity_gate.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/setup_doctrine_crosscheck.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/source_text.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/variant_conformance.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/source_text.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/variant_conformance.py` (design-flow)
 
 ## setup-flow, section by section (issue #2180)
 
@@ -106,35 +149,33 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 |---|---|---:|---|---|---|
 | `.claude-plugin/plugin.json:3`<br>L3 | manifest | 1 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
 | `agents/claude-skills-reporter.md:23`<br>L23, 24 | agent | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `agents/code-reviewer.md:4`<br>L4, 5, 11, 22, 23 +3 more | agent | 8 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
-| `agents/design-auditor.md:5`<br>L5, 6, 19, 22, 23 +8 more | agent | 13 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
+| `agents/code-reviewer.md:8`<br>L8 | agent | 1 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
+| `agents/design-auditor.md:10`<br>L10 | agent | 1 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
 | `agents/doc-updater.md:27`<br>L27 | agent | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `agents/migration-writer.md:4`<br>L4, 10, 13, 34, 35 +4 more | agent | 9 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
+| `agents/migration-writer.md:8`<br>L8 | agent | 1 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
 | `agents/pr-reviewer.md:152`<br>L152 | agent | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `agents/rails-developer.md:4`<br>L4, 5, 12, 17, 19 +4 more | agent | 9 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
-| `agents/security-auditor.md:5`<br>L5, 11, 14, 15, 21 +3 more | agent | 8 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
+| `agents/rails-developer.md:8`<br>L8 | agent | 1 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
+| `agents/security-auditor.md:8`<br>L8 | agent | 1 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
 | `agents/spec-reviewer.md:103`<br>L103, 104 | agent | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `agents/test-runner.md:4`<br>L4, 10, 12, 16, 17 +4 more | agent | 9 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
+| `agents/test-runner.md:10`<br>L10 | agent | 1 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
 | `checks.json:19`<br>L19, 147, 154, 155, 159 +24 more | data | 29 | registers the Rails gates and names Rails paths in applies_when | `detector` | the Rails rows leave with their gates (rails-gates, rails-mandated-gems); what remains is stack-neutral |
 | `commands/brief.md:62`<br>L62, 151 | command | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `commands/coordinate.md:51`<br>L51 | command | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `commands/explain.md:34`<br>L34, 71, 148 | command | 3 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
-| `commands/feature.md:230`<br>L230, 242 | command | 2 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
-| `commands/fix.md:51`<br>L51, 79, 86 | command | 3 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
+| `commands/feature.md:12`<br>L12, 232, 244 | command | 3 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
+| `commands/fix.md:8`<br>L8, 53, 81, 88 | command | 4 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
 | `commands/graph.md:2`<br>L2, 44, 63 | command | 3 | reads routes, app/**, db/schema.rb to draw the architecture, wiki and help | `rails-stack` (rails-docs-generators) | moves with /rails-flow:graph (commands/graph.md names it) |
-| `commands/handoff.md:54`<br>L54, 55, 57, 58, 76 +1 more | command | 6 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
-| `commands/issues.md:145`<br>L145 | command | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
+| `commands/handoff.md:8`<br>L8, 56, 57, 59, 60 +2 more | command | 7 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
+| `commands/issues.md:12`<br>L12, 147 | command | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
+| `commands/pr-comments.md:8`<br>L8 | command | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `commands/retro.md:54`<br>L54 | command | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `commands/review.md:12`<br>L12, 32, 33, 66 | command | 4 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
+| `commands/review.md:12`<br>L12, 14, 34, 35, 68 | command | 5 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `commands/setup-flow.md:348`<br>L348, 351, 366, 367, 382 +18 more | command | 23 | the scaffold, Gemfile, Rails config and gem doctrine it writes into CLAUDE.md | `detector` | asks the detector which stack descriptor to scaffold; the Rails sections move with the rails-stack scaffold |
 | `commands/spec.md:29`<br>L29, 75 | command | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `hooks/hooks.json:73`<br>L73 | hook | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `hooks/scripts/guard-bash.sh:93`<br>L93, 96, 100, 103, 104 +19 more | hook | 24 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `hooks/scripts/guard-lane.sh:33`<br>L33, 54 | hook | 2 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
-| `hooks/scripts/guard-migrate.sh:2`<br>L2, 7, 8, 14, 15 +17 more | hook | 22 | fires on db/migrate files and .rb edits; runs bin/rails and rubocop | `rails-stack` (rails-hooks) | its hooks.json entry moves to the stack plugin |
 | `hooks/scripts/lib/issue_labels.py:1300`<br>L1300, 1303 | hook | 2 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `hooks/scripts/lib/trusted-env.sh:13`<br>L13, 18, 29, 37, 45 +2 more | hook | 7 | a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others | `detector` | the env scrub keeps working exactly as today; only its stack facts (the repo-root markers and the RUBY*/GEM_*/BUNDLE_* names) move to a per-stack list the stack descriptor provides |
-| `hooks/scripts/lint-ruby.sh:2`<br>L2, 9, 14, 16, 17 +5 more | hook | 10 | fires on db/migrate files and .rb edits; runs bin/rails and rubocop | `rails-stack` (rails-hooks) | its hooks.json entry moves to the stack plugin |
 | `hooks/scripts/self-consistency.sh:21`<br>L21 | hook | 1 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `hooks/scripts/stop-gate.sh:26`<br>L26, 31, 32, 44, 178 +12 more | hook | 17 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
 | `hooks/scripts/test-preflight.sh:4`<br>L4, 5, 14, 21 | hook | 4 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
@@ -145,6 +186,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `reference/downstream-spec-fixtures.md:11`<br>L11 | reference | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `reference/help.md:34`<br>L34, 52, 53, 64, 67 | reference | 5 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `reference/model-tiers.md:116`<br>L116, 117 | reference | 2 | text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec) | `detector` | the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example |
+| `reference/stack-roles.md:3`<br>L3, 24, 29, 31 | reference | 4 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scaffold/tenancy/scoped_lookup.rb:3`<br>L3, 9, 13, 14, 15 +5 more | scaffold | 10 | parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project | `rails-stack` (rails-gates) | moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin |
 | `scripts/architecture_graph.py:2`<br>L2, 20, 81, 176, 178 +82 more | script | 87 | reads routes, app/**, db/schema.rb to draw the architecture, wiki and help | `rails-stack` (rails-docs-generators) | moves with /rails-flow:graph (commands/graph.md names it) |
 | `scripts/assign_lanes.py:146`<br>L146, 174, 181, 185, 188 +4 more | script | 9 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
@@ -160,7 +202,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `scripts/check_guide_selftest.py:23`<br>L23, 79, 229, 238, 256 +32 more ↳ | selftest | 37 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/check_handoff.py:99`<br>L99, 184, 258 | script | 3 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/check_handoff_selftest.py:11`<br>L11, 18, 24, 59, 60 +18 more ↳ | selftest | 23 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
-| `scripts/check_hook_gates.py:12`<br>L12, 20, 21, 57, 62 +200 more | script | 205 | the harness that drives every hook, including the Rails ones, with Rails command fixtures (bin/rails, rspec) | `detector` | learns the sibling stack plugin's hooks directory (step 3d of the plan) and drives each stack's hooks with that stack's fixtures |
+| `scripts/check_hook_gates.py:12`<br>L12, 20, 21, 49, 59 +201 more | script | 206 | the harness that drives every hook, including the Rails ones, with Rails command fixtures (bin/rails, rspec) | `detector` | learns the sibling stack plugin's hooks directory (step 3d of the plan) and drives each stack's hooks with that stack's fixtures |
 | `scripts/check_i18n_setup.py:15`<br>L15, 33, 34, 80, 82 +19 more | script | 24 | parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project | `rails-stack` (rails-gates) | moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin |
 | `scripts/check_issue_mockup.py:47`<br>L47, 51, 206 | script | 3 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/check_issue_ready.py:27`<br>L27, 297, 298 | script | 3 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
@@ -285,8 +327,6 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 
 | file | kind | lines | what it assumes | decision | how |
 |---|---|---:|---|---|---|
-| `agents/kamal-configurator.md:15`<br>L15, 30, 34, 37, 38 +7 more | agent | 12 | routes deploy values into Rails credentials and config/deploy.yml | `rails-stack` (rails-deploy) | the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector |
-| `commands/deploy-cloud.md:10`<br>L10, 37, 43, 55, 57 +2 more | command | 7 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
 | `commands/release.md:26`<br>L26, 76, 136 | command | 3 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
 | `commands/setup-cloud.md:25`<br>L25, 37 | command | 2 | text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec) | `detector` | the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example |
 | `commands/setup-pipeline.md:45`<br>L45 | command | 1 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
@@ -296,10 +336,9 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `scripts/apm_advisory.py:4`<br>L4, 17, 45, 63, 77 +3 more | script | 8 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
 | `scripts/breaker.py:6`<br>L6 | script | 1 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
 | `scripts/breaker_selftest.py:146`<br>L146, 153, 158, 159 ↳ | selftest | 4 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
+| `scripts/detect_stack.py:14`<br>L14, 15, 37, 303, 574 +18 more | script | 23 | the stack detector's own prose and fixtures name Rails and Next.js; the markers it reads are data in each plugin's stacks.json | `detector` | a byte-identical mirror of plugins/rails-flow/scripts/detect_stack.py, held by the detect-stack-drift rule (a plugin installs alone and cannot import another's code); reworded only in the canonical copy |
 | `scripts/git_guard_selftest.py:308`<br>L308, 330, 331, 332, 443 +1 more | selftest | 6 | fixture repositories use Rails-shaped sample paths (app/models/user.rb) to exercise a stack-neutral guard, board or hook | `neutral` | nothing to change: the guard under test is neutral and the sample path is arbitrary |
-| `scripts/kamal_destination.py:13`<br>L13, 23, 24, 28, 92 +16 more | script | 21 | routes deploy values into Rails credentials and config/deploy.yml | `rails-stack` (rails-deploy) | the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector |
 | `scripts/mutations/git_guard_pre_commit.py:134`<br>L134, 135, 141 | mutation | 3 | fixture repositories use Rails-shaped sample paths (app/models/user.rb) to exercise a stack-neutral guard, board or hook | `neutral` | nothing to change: the guard under test is neutral and the sample path is arbitrary |
-| `scripts/mutations/kamal_destination.py:58`<br>L58, 59 ↳ | mutation | 2 | routes deploy values into Rails credentials and config/deploy.yml | `rails-stack` (rails-deploy) | the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector |
 | `scripts/release_build.py:307`<br>L307 | script | 1 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
 | `scripts/scan_committed_secrets.py:13`<br>L13, 128 | script | 2 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
 | `scripts/status_board_selftest.py:376`<br>L376 | selftest | 1 | fixture repositories use Rails-shaped sample paths (app/models/user.rb) to exercise a stack-neutral guard, board or hook | `neutral` | nothing to change: the guard under test is neutral and the sample path is arbitrary |
@@ -313,38 +352,44 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `README.md:18`<br>L18, 26, 43, 56, 57 +2 more | doc | 7 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
 | `agents/brand-guardian.md:49`<br>L49, 50 | agent | 2 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
 | `agents/design-auditor.md:83`<br>L83, 84 | agent | 2 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
-| `agents/design-porter.md:5`<br>L5, 7, 8, 27, 41 +6 more | agent | 11 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
-| `agents/ui-composer.md:4`<br>L4, 26, 28, 70 | agent | 4 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
-| `checks.json:10`<br>L10, 24, 38, 46, 52 +5 more | data | 10 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
-| `commands/audit.md:57`<br>L57, 76, 93, 99, 163 +3 more | command | 8 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
+| `agents/rails-ui-composer.md:4`<br>L4, 26, 28, 70 | agent | 4 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `agents/rails-ui-porter.md:5`<br>L5, 7, 8, 27, 31 +7 more | agent | 12 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `checks.json:10`<br>L10, 21, 24, 35, 38 +13 more | data | 18 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
+| `commands/audit.md:36`<br>L36, 57, 76, 93, 99 +5 more | command | 10 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
 | `commands/component.md:41`<br>L41, 59, 68, 69, 70 +1 more | command | 6 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
 | `commands/compose.md:77`<br>L77, 86 | command | 2 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
 | `commands/mobile.md:2`<br>L2, 9, 23, 35, 48 +1 more | command | 6 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
-| `commands/port.md:2`<br>L2, 11, 55, 56 | command | 4 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
+| `commands/port.md:2`<br>L2, 11, 44, 55, 56 +1 more | command | 6 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
 | `commands/setup.md:2`<br>L2, 20, 21, 27, 128 +16 more | command | 21 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
 | `commands/tokens.md:2`<br>L2, 11, 23, 28 | command | 4 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
-| `commands/variants.md:21`<br>L21, 23, 100, 102, 103 +22 more | command | 27 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
+| `commands/variants.md:21`<br>L21, 23, 100, 102, 103 +24 more | command | 29 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
 | `hooks/scripts/design-tells.sh:11`<br>L11, 20, 23, 24 | hook | 4 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
 | `hooks/scripts/lib/trusted-env.sh:13`<br>L13, 18, 29, 37, 45 +2 more | hook | 7 | a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others | `detector` | the env scrub keeps working exactly as today; only its stack facts (the repo-root markers and the RUBY*/GEM_*/BUNDLE_* names) move to a per-stack list the stack descriptor provides |
-| `scripts/canvas_manifest.py:240`<br>L240, 250, 477, 485, 490 +2 more | script | 7 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
-| `scripts/check_component_contract.py:4`<br>L4, 28, 30, 35, 78 +55 more | script | 60 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
-| `scripts/check_layout_composition.py:4`<br>L4, 44, 62, 64, 82 +40 more | script | 45 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
-| `scripts/check_modal_fit.py:4`<br>L4, 35, 36, 109, 110 +23 more | script | 28 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
-| `scripts/check_surface_layout.py:4`<br>L4, 19, 46, 85, 125 +47 more | script | 52 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
-| `scripts/check_table_layout.py:4`<br>L4, 27, 28, 30, 63 +36 more | script | 41 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
-| `scripts/check_token_drift.py:4`<br>L4, 65, 72, 114, 373 +6 more | script | 11 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
 | `scripts/compose_brief.py:142`<br>L142, 480 | script | 2 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
-| `scripts/content_floors.py:47`<br>L47, 216, 217, 218, 270 | script | 5 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
 | `scripts/design_prompt.py:5`<br>L5, 9, 63 | script | 3 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
 | `scripts/llm_tell_detector.py:447`<br>L447, 477, 578, 775, 777 | script | 5 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
-| `scripts/mutations/check_component_contract.py:40`<br>L40, 43, 44, 82, 83 ↳ | mutation | 5 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
-| `scripts/mutations/check_modal_fit.py:16`<br>L16, 62, 97, 98, 101 ↳ | mutation | 5 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
-| `scripts/mutations/check_surface_layout.py:49`<br>L49, 51, 80, 82, 104 +2 more ↳ | mutation | 7 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
-| `scripts/mutations/setup_doctrine_crosscheck.py:33`<br>L33 ↳ | mutation | 1 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
-| `scripts/mutations/source_text.py:12`<br>L12, 15, 62, 65, 68 +7 more ↳ | mutation | 12 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
-| `scripts/mutations/variant_conformance.py:7`<br>L7, 33, 65 ↳ | mutation | 3 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
 | `scripts/prompt_library.py:574`<br>L574 | script | 1 | describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics | `reword` | reworded when #2165 and #2171 settle which of these stay stack-neutral |
-| `scripts/setup_doctrine_crosscheck.py:8`<br>L8, 11, 12, 19, 25 +46 more | script | 51 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
-| `scripts/source_text.py:22`<br>L22, 24, 26, 68, 74 +22 more | script | 27 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
-| `scripts/variant_conformance.py:23`<br>L23, 121, 122, 240, 326 +48 more | script | 53 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | moves with its checks.json row |
+| `ui/viewcomponent-erb/adapter.json:2`<br>L2, 4 | data | 2 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/canvas_manifest.py:240`<br>L240, 250, 477, 485, 490 +2 more | doc | 7 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/check_component_contract.py:4`<br>L4, 28, 30, 35, 78 +55 more | doc | 60 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/check_layout_composition.py:4`<br>L4, 44, 62, 64, 82 +40 more | doc | 45 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/check_modal_fit.py:4`<br>L4, 35, 36, 109, 110 +23 more | doc | 28 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/check_surface_layout.py:4`<br>L4, 19, 46, 85, 125 +47 more | doc | 52 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/check_table_layout.py:4`<br>L4, 27, 28, 30, 63 +36 more | doc | 41 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/check_token_drift.py:4`<br>L4, 69, 76, 118, 377 +6 more | doc | 11 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/content_floors.py:47`<br>L47, 216, 217, 218, 270 | doc | 5 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/mutations/canvas_manifest.py:7`<br>L7, 8 ↳ | mutation | 2 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/mutations/check_component_contract.py:6`<br>L6, 7, 10, 11, 40 +4 more ↳ | mutation | 9 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/mutations/check_layout_composition.py:6`<br>L6, 7, 10, 11 ↳ | mutation | 4 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/mutations/check_modal_fit.py:10`<br>L10, 11, 12, 16, 62 +3 more ↳ | mutation | 8 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/mutations/check_surface_layout.py:6`<br>L6, 7, 10, 11, 49 +6 more ↳ | mutation | 11 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/mutations/check_table_layout.py:10`<br>L10, 11, 12 ↳ | mutation | 3 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/mutations/content_floors.py:11`<br>L11, 12 ↳ | mutation | 2 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/mutations/port_fidelity_gate.py:7`<br>L7, 8 ↳ | mutation | 2 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/mutations/setup_doctrine_crosscheck.py:6`<br>L6, 7, 33 ↳ | mutation | 3 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/mutations/source_text.py:6`<br>L6, 7, 12, 15, 62 +9 more ↳ | mutation | 14 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/mutations/variant_conformance.py:7`<br>L7, 13, 14, 33, 65 ↳ | mutation | 5 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py:8`<br>L8, 11, 12, 19, 25 +48 more | doc | 53 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/source_text.py:22`<br>L22, 24, 26, 68, 74 +22 more | doc | 27 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/scripts/variant_conformance.py:23`<br>L23, 124, 125, 243, 329 +48 more | doc | 53 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
 

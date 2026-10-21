@@ -9,6 +9,8 @@ argument-hint: "[issue number | label filter]"
 
 # /rails-flow:issues — $ARGUMENTS
 
+Agents are named by **role** (`developer`, `migrations`, `test_runner`, `reviewer`, `security`, `design_auditor`), resolved from the project's stack: see `reference/stack-roles.md`. When the stack names no agent for a role, STOP and ask; never use a Rails agent by default.
+
 Turn the repository's issue tracker into the work queue. One coherent branch at a time, full
 pipeline every time, nothing half-done.
 
@@ -156,10 +158,10 @@ For the issue — or group — at the head of the queue:
    - **bug** → the /rails-flow:fix rules: reproduce with a FAILING spec first, then
      make it pass; one proven change per commit.
    - **feature** → the /rails-flow:feature golden path: plan (delegated exploration),
-     spec-first units, migration-writer for schema.
+     spec-first units, the `migrations` role for schema.
    - **chore/docs** → lightweight, but the gates below still apply.
-4. Gates (all mandatory): code-reviewer → `VERDICT: CLEAN`; test-runner → full suite,
-   0 failures; security-auditor / design-auditor when their domains were touched.
+4. Gates (all mandatory): the `reviewer` role → `VERDICT: CLEAN`; the `test_runner` role → full suite,
+   0 failures; the `security` role / the `design_auditor` role when their domains were touched.
 5. **Open the PR only when every issue it names is COMPLETELY done.** The PR carries a closing
    keyword, so merging it closes those issues — a PR opened over unfinished work is a request to
    close an issue that is not fixed, and the remainder becomes invisible the moment it merges.

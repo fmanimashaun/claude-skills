@@ -30,6 +30,8 @@ WHAT IT CHECKS
   docs-path-outside-layout    a `docs/<dir>/` that rails-flow's commands, agents, hooks, checks or scripts name,
                               where `<dir>` is not in `docs_layout.py`'s LAYOUT: the path the plugin prescribes
                               fails the plugin's own docs-layout gate (#1700)
+  ui-adapter-unresolved       a stack descriptor whose `ui.implementation` has no `plugins/design-flow/ui/<id>/adapter.json`, or an adapter whose id,
+                              agents, checks or the descriptor's porter/composer do not resolve (#2178)
   undocumented-command        a plugins/<p>/commands/<c>.md that README.md (as `c`) or the
                               plugin's README (as /p:c) never names — same defect, one level down
   schema-reader-drift         `architecture_graph.py` (vendored alone) carries its own copy of the rule that decides which db/*_schema.rb files are the project's;
@@ -44,6 +46,10 @@ WHAT IT CHECKS
                               pipeline) differ, or one is missing -- one fixture-git lock, three copies (#1588)
   findings-script-drift       the two shipped copies of scripts/findings.py (rails-flow, qa-flow) differ,
                               or one is missing -- qa-reporter runs its own copy (#1680)
+  vendored-copy-drift         a file rails-stack vendors from rails-flow (triage_failures.py, check_simple_form_only.py,
+                              agent-output-contract.md) differs from its canonical copy, or one is missing (#2173)
+  detect-stack-drift          the two shipped copies of scripts/detect_stack.py (rails-flow, pipeline) differ,
+                              or one is missing -- pipeline's deploy_target.py imports its own copy (#2179)
   cross-plugin-relative-path  shipped markdown that runs `../<other-plugin>/...`, which resolves in the
                               clone and not in an install's per-plugin cache directories (#1680)
   fixture-git-bypass          a git call with the fixture identity (`t@t`) outside fixture_git -- a fixture's git
@@ -621,7 +627,10 @@ def check_hook_lib_drift() -> tuple[list[Finding], int]:
 # rails-flow copy. A fix to one copy that misses another reopens #1588 in that plugin.
 FIXTURE_GIT_COPIES = ("plugins/rails-flow/scripts/fixture_git.py",
                       "plugins/qa-flow/scripts/fixture_git.py",
-                      "plugins/pipeline/scripts/fixture_git.py")
+                      "plugins/pipeline/scripts/fixture_git.py",
+                      # #2173: rails-stack's vendored dev_baseline.py imports it (test-runner -> triage_failures -> dev_baseline -> fixture_git).
+                      # TEMPORARY with dev_baseline's copy: it leaves when rails-stack owns the triage originals (#2183).
+                      "plugins/rails-stack/scripts/fixture_git.py")
 
 
 def check_fixture_git_drift() -> tuple[list[Finding], int]:
@@ -640,7 +649,7 @@ def check_fixture_git_drift() -> tuple[list[Finding], int]:
     for rel in FIXTURE_GIT_COPIES[1:]:
         if canonical is not None and rel in texts and texts[rel] != canonical:
             findings.append(Finding("fixture-git-drift", rel, 0,
-                                    f"differs from {FIXTURE_GIT_COPIES[0]} -- one fixture-git lock, three copies: a fix "
+                                    f"differs from {FIXTURE_GIT_COPIES[0]} -- one fixture-git lock, several copies: a fix "
                                     "landed in one and not the others. Copy the canonical file over it (cp) and re-run"))
     return findings, len(FIXTURE_GIT_COPIES)
 
@@ -804,7 +813,10 @@ def check_gate_without_onfailure() -> tuple[list[Finding], int]:
 # `../rails-flow/scripts/findings.py`, which resolves only in this repo's checkout: an install puts each
 # plugin in its own versioned cache directory. qa-flow now ships a copy; this keeps it the same script.
 FINDINGS_COPIES = ("plugins/rails-flow/scripts/findings.py",
-                   "plugins/qa-flow/scripts/findings.py")
+                   "plugins/qa-flow/scripts/findings.py",
+                   # #2173: rails-stack's code-reviewer moved out of rails-flow and runs its own copy (a plugin sees only its own
+                   # ${CLAUDE_PLUGIN_ROOT}). TEMPORARY: findings.py is a neutral reference whose single home is core-skills (#2186).
+                   "plugins/rails-stack/scripts/findings.py")
 
 
 def check_findings_script_drift() -> tuple[list[Finding], int]:
@@ -827,6 +839,70 @@ def check_findings_script_drift() -> tuple[list[Finding], int]:
                                     "review records would validate against different rules. Copy the canonical "
                                     "file over it (cp) and re-run"))
     return findings, len(FINDINGS_COPIES)
+
+
+# Rule: vendored-copy-drift (#2173)
+# The Rails agents moved from rails-flow to rails-stack, and three of them run rails-flow files through
+# ${CLAUDE_PLUGIN_ROOT}, which in rails-stack points at rails-stack: there is no cross-plugin root. So rails-stack
+# ships copies, kept byte-identical here (#906's pattern). EACH COPY IS TEMPORARY, and the third field says what removes it.
+VENDORED_COPIES = (
+    ("plugins/rails-flow/scripts/triage_failures.py", "plugins/rails-stack/scripts/triage_failures.py",
+     "rails-stack's test-runner runs it; it leaves when the flows' triage reads the descriptor and rails-stack owns the original"),
+    ("plugins/rails-flow/scripts/dev_baseline.py", "plugins/rails-stack/scripts/dev_baseline.py",
+     "the vendored triage_failures.py imports it; it leaves with that copy, when the flows' triage reads the descriptor (#2183)"),
+    ("plugins/rails-flow/scripts/check_simple_form_only.py", "plugins/rails-stack/scripts/check_simple_form_only.py",
+     "rails-stack's design-auditor runs it; step 4 (#2175) moves the original and its checks.json row and deletes this copy"),
+    ("plugins/rails-flow/reference/agent-output-contract.md", "plugins/rails-stack/reference/agent-output-contract.md",
+     "every moved agent cites it; a neutral reference whose single home is core-skills (#2186), which removes this copy"),
+)
+
+
+def check_vendored_copy_drift() -> tuple[list[Finding], int]:
+    """Each vendored copy exists and is byte-identical to its canonical file."""
+    findings: list[Finding] = []
+    for canonical, copy, home in VENDORED_COPIES:
+        a, b = ROOT / canonical, ROOT / copy
+        if not a.is_file() or not b.is_file():
+            missing = copy if a.is_file() else canonical
+            findings.append(Finding("vendored-copy-drift", missing, 0,
+                                    f"missing -- the pair {canonical} / {copy} is one file in two plugins ({home}); copy the canonical over it"))
+            continue
+        if a.read_bytes() != b.read_bytes():
+            findings.append(Finding("vendored-copy-drift", copy, 0,
+                                    f"differs from {canonical} -- two plugins would run different code for one job ({home}). "
+                                    "Edit the canonical file and copy it over (cp), then re-run"))
+    return findings, len(VENDORED_COPIES)
+
+
+# Rule: detect-stack-drift (#2179)
+# `/pipeline:deploy-cloud` asks which deploy agent the project's stack declares, and the one thing that knows is the stack
+# detector, which rails-flow owns. A plugin installs alone and cannot import another's code, so pipeline ships a copy and
+# `deploy_target.py` imports it (the sibling-plugin discovery is the detector's own, called once, not a third copy of it).
+# A fix to the detector that misses the copy would route a deploy by a stale reading of the descriptor.
+DETECT_STACK_COPIES = ("plugins/rails-flow/scripts/detect_stack.py",
+                       "plugins/pipeline/scripts/detect_stack.py")
+
+
+def check_detect_stack_drift() -> tuple[list[Finding], int]:
+    """The detect_stack.py copies exist and are byte-identical to the rails-flow (canonical) one."""
+    findings: list[Finding] = []
+    texts = {}
+    for rel in DETECT_STACK_COPIES:
+        p = ROOT / rel
+        if not p.is_file():
+            findings.append(Finding("detect-stack-drift", rel, 0,
+                                    "missing -- pipeline's deploy_target.py has no detector to import (#2179); "
+                                    "copy it from plugins/rails-flow/scripts/detect_stack.py"))
+            continue
+        texts[rel] = p.read_bytes()
+    canonical = texts.get(DETECT_STACK_COPIES[0])
+    for rel in DETECT_STACK_COPIES[1:]:
+        if canonical is not None and texts.get(rel, canonical) != canonical:
+            findings.append(Finding("detect-stack-drift", rel, 0,
+                                    f"differs from {DETECT_STACK_COPIES[0]} -- one stack detector, two copies: a deploy "
+                                    "would be routed by a different reading of the descriptors than every other flow's. "
+                                    "Copy the canonical file over it (cp) and re-run"))
+    return findings, len(DETECT_STACK_COPIES)
 
 
 # Rule: cross-plugin-relative-path (#1680)
@@ -3417,6 +3493,75 @@ def check_undocumented_skill() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+def check_ui_adapter_unresolved() -> tuple[list[Finding], int]:
+    """A stack's `ui.implementation` must resolve to a design-flow UI adapter that exists (#2178).
+
+    design-flow's Rails rendering half lives in `plugins/design-flow/ui/<implementation>/`, selected by the
+    descriptor's `ui.implementation` used AS the directory name, so there is no table to drift. What can still
+    drift is the pointer: an implementation id with no `adapter.json`, an `adapter.json` whose `id` is not its
+    directory, an agent it names that no `agents/<name>.md` defines, a check id `checks.json` does not carry, or a
+    descriptor `ui.porter`/`ui.composer` naming a different agent than the adapter provides -- each leaves a
+    command dispatching to nothing.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for stacks_file in sorted(ROOT.glob("plugins/*/stacks.json")):
+        try:
+            stacks = json.loads(read(stacks_file)).get("stacks", [])
+        except (json.JSONDecodeError, AttributeError):
+            continue
+        rel = stacks_file.relative_to(ROOT).as_posix()
+        for stack in stacks:
+            ui = (stack.get("descriptor") or {}).get("ui")
+            if not isinstance(ui, dict) or not ui.get("implementation"):
+                continue
+            examined += 1
+            impl = ui["implementation"]
+            adapter = ROOT / "plugins/design-flow/ui" / impl / "adapter.json"
+            if not adapter.is_file():
+                findings.append(Finding(
+                    "ui-adapter-unresolved", rel, 1,
+                    f"stack {stack.get('id')!r} selects ui.implementation {impl!r} but "
+                    f"plugins/design-flow/ui/{impl}/adapter.json does not exist, so /design-flow commands that "
+                    f"dispatch on the descriptor have no adapter to dispatch to."))
+                continue
+            try:
+                spec = json.loads(read(adapter))
+            except json.JSONDecodeError as exc:
+                findings.append(Finding("ui-adapter-unresolved", adapter.relative_to(ROOT).as_posix(), 1,
+                                        f"adapter.json is not valid JSON: {exc}"))
+                continue
+            arel = adapter.relative_to(ROOT).as_posix()
+            if spec.get("id") != impl:
+                findings.append(Finding(
+                    "ui-adapter-unresolved", arel, 1,
+                    f"adapter.json id is {spec.get('id')!r}; the directory is the implementation id {impl!r}."))
+            agents = spec.get("agents") or {}
+            for role, name in sorted(agents.items()):
+                if not (ROOT / "plugins/design-flow/agents" / f"{name}.md").is_file():
+                    findings.append(Finding(
+                        "ui-adapter-unresolved", arel, 1,
+                        f"adapter agent {role}={name!r} has no plugins/design-flow/agents/{name}.md."))
+                declared = ui.get(role)
+                if declared is not None and declared != f"design-flow:{name}":
+                    findings.append(Finding(
+                        "ui-adapter-unresolved", rel, 1,
+                        f"descriptor ui.{role} is {declared!r} but the adapter provides 'design-flow:{name}'."))
+            checks_file = ROOT / "plugins/design-flow/checks.json"
+            known = set()
+            if checks_file.is_file():
+                try:
+                    known = {c.get("id") for c in json.loads(read(checks_file)).get("checks", [])}
+                except json.JSONDecodeError:
+                    pass
+            for check_id in spec.get("checks", []):
+                if check_id not in known:
+                    findings.append(Finding(
+                        "ui-adapter-unresolved", arel, 1,
+                        f"adapter check {check_id!r} is not an id in plugins/design-flow/checks.json."))
+    return findings, examined
+
+
 def check_unimported_agent_instructions() -> tuple[list[Finding], int]:
     """An authored `AGENTS.md` must be imported by `CLAUDE.md`, and vice versa.
 
@@ -4323,6 +4468,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     hook_start, hook_start_examined = check_hook_start_hardened()
     gate_onfail, gate_onfail_examined = check_gate_without_onfailure()
     findings_copy, findings_copies = check_findings_script_drift()
+    detect_copy, detect_copies = check_detect_stack_drift()
+    vendored_copy, vendored_copies = check_vendored_copy_drift()
     rel_xplugin, rel_xplugin_examined = check_cross_plugin_relative_path()
     fixture_bypass, fixture_bypass_examined = check_fixture_git_bypass(python_sources)
     submod, submod_examined = check_git_status_recurses_submodules()
@@ -4362,6 +4509,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     dup_unrel, dup_unrel_examined = check_duplicate_unreleased()
     agents_md, agents_md_examined = check_unimported_agent_instructions()
     undoc_skill, undoc_skill_examined = check_undocumented_skill()
+    ui_adapter, ui_adapter_examined = check_ui_adapter_unresolved()
     rel_extract, rel_extract_examined = check_duplicated_release_extractor()
     pinned_ref, pinned_ref_examined = check_pinned_toolchain_ref()
     action_pins, action_pins_examined = check_workflow_action_pins()
@@ -4390,6 +4538,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "hook_commands_checked_for_a_hardened_start": hook_start_examined,
         "gate_hooks_checked_for_onfailure": gate_onfail_examined,
         "findings_script_copies": findings_copies,
+        "detect_stack_copies": detect_copies,
+        "vendored_copy_pairs": vendored_copies,
         "shipped_markdown_checked_for_cross_plugin_paths": rel_xplugin_examined,
         "fixture_git_identity_lines": fixture_bypass_examined,
         "git_status_diff_calls_in_shipped_code": submod_examined,
@@ -4426,6 +4576,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "changelog_sections_with_unreleased": dup_unrel_examined,
         "root_agent_instruction_files": agents_md_examined,
         "skill_directories_named_in_claude_md": undoc_skill_examined,
+        "stack_descriptors_resolved_to_a_ui_adapter": ui_adapter_examined,
         "publish_paths_checked_for_own_extractor": rel_extract_examined,
         "shipped_docs_scanned_for_a_pinned_toolchain_tag": pinned_ref_examined,
         "workflows_checked_for_action_pins": action_pins_examined,
@@ -4449,8 +4600,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
             + markers + uncontained + nonhermetic + pointers + clone_paths + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + dangling + flat_role
-            + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
-            + findings_copy + rel_xplugin
+            + agents_md + undoc_skill + ui_adapter + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
+            + findings_copy + detect_copy + vendored_copy + rel_xplugin
             + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
             coverage)
 
@@ -4913,6 +5064,29 @@ def selftest() -> int:
     # A directory without a SKILL.md is not a skill -- do not fire on stray folders.
     scenario("...silent on a directory that is not a skill", rule=UDS, expect_finding=False,
              files={"CLAUDE.md": "# CLAUDE.md\n", "plugins/rails-stack/skills/notaskill/README.md": "hi\n"})
+
+    # -- ui-adapter-unresolved (#2178) ------------------------------------
+    UAU = "ui-adapter-unresolved"
+    UAU_STACKS = '{"stacks":[{"id":"rails","descriptor":{"ui":{"implementation":"viewcomponent-erb","porter":"design-flow:rails-ui-porter"}}}]}'
+    UAU_ADAPTER = '{"id":"viewcomponent-erb","agents":{"porter":"rails-ui-porter"},"checks":["token-drift"]}'
+    UAU_OK = {"plugins/rails-stack/stacks.json": UAU_STACKS,
+              "plugins/design-flow/ui/viewcomponent-erb/adapter.json": UAU_ADAPTER,
+              "plugins/design-flow/agents/rails-ui-porter.md": "---\nname: rails-ui-porter\n---\n",
+              "plugins/design-flow/checks.json": '{"checks":[{"id":"token-drift"}]}'}
+    scenario("a descriptor whose ui.implementation has no adapter.json", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
+             files={"plugins/rails-stack/stacks.json": UAU_STACKS})
+    scenario("...an adapter naming an agent that does not exist", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
+             files={k: v for k, v in UAU_OK.items() if not k.endswith("rails-ui-porter.md")})
+    scenario("...a descriptor porter that disagrees with the adapter", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
+             files={**UAU_OK, "plugins/rails-stack/stacks.json": UAU_STACKS.replace("rails-ui-porter", "some-other-porter")})
+    scenario("...an adapter whose id is not its directory", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
+             files={**UAU_OK, "plugins/design-flow/ui/viewcomponent-erb/adapter.json": UAU_ADAPTER.replace('"id":"viewcomponent-erb"', '"id":"other"')})
+    scenario("...an adapter check id checks.json does not carry", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
+             files={**UAU_OK, "plugins/design-flow/checks.json": '{"checks":[]}'})
+    scenario("...silent when the adapter, its agent and its checks all resolve", rule=UAU, expect_finding=False, only=check_ui_adapter_unresolved,
+             files=UAU_OK)
+    scenario("...silent on a stack with no ui block", rule=UAU, expect_finding=False, only=check_ui_adapter_unresolved,
+             files={"plugins/x-stack/stacks.json": '{"stacks":[{"id":"x","descriptor":{}}]}'})
 
     # -- unimported-agent-instructions ------------------------------------
     UAI = "unimported-agent-instructions"
@@ -5605,17 +5779,39 @@ def selftest() -> int:
     scenario("identical fixture_git copies are silent", rule="fixture-git-drift", expect_finding=False,
              files={c: FG for c in FIXTURE_GIT_COPIES})
     scenario("a fixture_git copy that differs by one byte is a finding", rule="fixture-git-drift", expect_finding=True,
-             files={FIXTURE_GIT_COPIES[0]: FG, FIXTURE_GIT_COPIES[1]: FG, FIXTURE_GIT_COPIES[2]: FG + "\n"})
+             files={**{c: FG for c in FIXTURE_GIT_COPIES}, FIXTURE_GIT_COPIES[2]: FG + "\n"})
+    scenario("a rails-stack fixture_git copy that differs by one byte is a finding", rule="fixture-git-drift", expect_finding=True,
+             files={**{c: FG for c in FIXTURE_GIT_COPIES}, FIXTURE_GIT_COPIES[3]: FG + "\n"})
     scenario("a missing fixture_git copy is a finding", rule="fixture-git-drift", expect_finding=True,
-             files={FIXTURE_GIT_COPIES[0]: FG, FIXTURE_GIT_COPIES[1]: FG})
+             files={c: FG for c in FIXTURE_GIT_COPIES if c != FIXTURE_GIT_COPIES[2]})
     FS = "REQUIRED = ('id',)\n"
     scenario("identical findings.py copies are silent", rule="findings-script-drift", expect_finding=False,
              files={c: FS for c in FINDINGS_COPIES}, only=check_findings_script_drift)
     scenario("a findings.py copy that differs by one byte is a finding", rule="findings-script-drift",
-             expect_finding=True, files={FINDINGS_COPIES[0]: FS, FINDINGS_COPIES[1]: FS + "\n"},
+             expect_finding=True, files={**{c: FS for c in FINDINGS_COPIES}, FINDINGS_COPIES[1]: FS + "\n"},
              only=check_findings_script_drift)
     scenario("a missing qa-flow findings.py is a finding", rule="findings-script-drift", expect_finding=True,
-             files={FINDINGS_COPIES[0]: FS}, only=check_findings_script_drift)
+             files={c: FS for c in FINDINGS_COPIES if c != FINDINGS_COPIES[1]}, only=check_findings_script_drift)
+    scenario("a rails-stack findings.py that differs by one byte is a finding", rule="findings-script-drift",
+             expect_finding=True, files={**{c: FS for c in FINDINGS_COPIES}, FINDINGS_COPIES[2]: FS + "\n"},
+             only=check_findings_script_drift)
+    VC = "BODY = 1\n"
+    scenario("identical vendored copies are silent", rule="vendored-copy-drift", expect_finding=False,
+             files={rel: VC for pair in VENDORED_COPIES for rel in pair[:2]}, only=check_vendored_copy_drift)
+    for canonical, copy, _home in VENDORED_COPIES:   # a2's condition: EACH copy has its own one-byte negative case
+        scenario(f"a vendored {copy.rsplit('/', 1)[-1]} that differs by one byte is a finding", rule="vendored-copy-drift",
+                 expect_finding=True, files={**{rel: VC for pair in VENDORED_COPIES for rel in pair[:2]}, copy: VC + "x"},
+                 only=check_vendored_copy_drift)
+        scenario(f"a missing vendored {copy.rsplit('/', 1)[-1]} is a finding", rule="vendored-copy-drift", expect_finding=True,
+                 files={rel: VC for pair in VENDORED_COPIES for rel in pair[:2] if rel != copy}, only=check_vendored_copy_drift)
+    DS = "def run(project, dirs):\n    pass\n"
+    scenario("identical detect_stack copies are silent", rule="detect-stack-drift", expect_finding=False,
+             files={c: DS for c in DETECT_STACK_COPIES}, only=check_detect_stack_drift)
+    scenario("a detect_stack copy that differs by one byte is a finding", rule="detect-stack-drift",
+             expect_finding=True, files={DETECT_STACK_COPIES[0]: DS, DETECT_STACK_COPIES[1]: DS + "\n"},
+             only=check_detect_stack_drift)
+    scenario("a missing pipeline detect_stack is a finding", rule="detect-stack-drift", expect_finding=True,
+             files={DETECT_STACK_COPIES[0]: DS}, only=check_detect_stack_drift)
     XP = "cross-plugin-relative-path"
     XP_TREE = {"plugins/rails-flow/scripts/findings.py": FS}
     scenario("an agent running ../rails-flow/ from qa-flow is a finding (the #1680 line)", rule=XP,
