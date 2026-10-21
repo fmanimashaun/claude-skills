@@ -63,30 +63,53 @@ Legend: **covered** = a rule exists; **partial** = exists for one shape or in Ra
 
 Every layer gets, in the framework page: a one-line **conformance statement** ("the shell has exactly one `main` landmark"), the **finding shape** above (a defect an auditor can name with a screen and a region), a **severity default**, and a **kind** (check or advice). #2221 reads that table; it must not invent layers or findings.
 
-## Where the checks can fail
+## Enforcement (owner ruling 2026-10-21: "a claim or rule not enforced is useless")
 
-| Layer | Check that can fail | Authority | Owner |
-|---|---|---|---|
-| 1 shell | one `main` landmark, toast region; skip link and one `h1` as our rules; conformance to the approved shell | HTML spec (C2); maintainer decision (skip link, one `h1`); #2211 | crawl (qa-flow) + #2211 |
-| 2 navigation | `aria-current` on primary nav; list state survives reload (URL) | WAI-ARIA (C5); NN/g URL-as-UI (C8) | route sweep |
-| 3 templates | table: count shown, states present | maintainer decision (`page-anatomies.md:383-418`) | existing data-table rules |
-| 4 regions | raw layout CSS today; nested card to build | maintainer decision | design-auditor |
-| 5 state contract | forced-state crawl with per-state markers; per-screen state list present | WCAG 3.3.1, 4.1.3 (C14, C15) for error and status; the state set itself is a maintainer decision | new |
-| 6 cross-cutting | axe (WCAG 2.2 AA, with the limits above), layout fit, heading order | WCAG SC per rule; heading order is advice-grade | qa-flow today |
-| 7 flow | none (an index) | — | — |
+No rule ships as advice. Every rule gets one of three enforcements, defined on #2220: **(1) mechanical check** (a lint, AST or rendered-page check in `checks.json` with a negative fixture and a mutation guard); **(2) required declaration verified by script** (the mock-up record names its template, states and so on, and a script refuses a missing or unknown value); **(3) recorded review verdict** (the reviewer records pass/fail with evidence per judgement rule, and a script refuses a PR whose record lacks one). A rule that fits none is rewritten until it does, or dropped. The per-layer "Kind: advice" lines above are superseded by this table; "authority" is where the rule comes from (a WCAG SC, a named source, or a maintainer decision), and #2221 cites it so a house rule is never reported as a standards failure.
 
-Layers 2 (hierarchy depth), 3 (template choice), 4 (density) and 6 (content hierarchy, performance budgets) are **advice** and labelled so. **Rule for #2221:** a finding cites its authority column. A rule whose authority is "maintainer decision" is reported as a house rule, never as a WCAG or NN/g failure.
+| Layer | Rule | Enforcement | Where it would live | Authority |
+|---|---|---|---|---|
+| 1 shell | one non-hidden `main`, toast region present | 1 | rendered-page scan in the qa-flow crawl | HTML spec (C2) |
+| 1 | skip link first in `body`; one `h1` | 1 | same scan | maintainer decision (C1: WCAG asks only for a bypass mechanism) |
+| 1 | global actions, identity and status sit in shell chrome, as the approved shell | 2 | record `Shell:` line (#2211) names each region; script refuses an unknown region name | maintainer decision |
+| 2 navigation | `aria-current` on the current item of primary nav | 1 | route sweep | WAI-ARIA (C5) |
+| 2 | a list's sort/filter/page state is in the URL and survives reload | 1 | route sweep: load, change state, reload, compare | maintainer decision (C8 not cited) |
+| 2 | each destination declares its parent and level; depth within a recorded cap | 2 | record `Nav:` line; script checks the cap. **The cap is an open number, a maintainer decision** | maintainer decision |
+| 2 | a client-side route change moves focus to the new view | 1 | stack-specific crawl, belongs to #2222; neutral page holds the rule | web.dev (C31', pending re-verify) |
+| 3 templates | the record declares one `Template:` from the fixed set; an unknown value is refused | 2 | #2211 record check. **The set is being revised (see below); layer held** | maintainer decision |
+| 3 | per-template mechanical parts (data table: count shown, five states) | 1 | existing data-table rules where scripted, else new check | maintainer decision (`page-anatomies.md:383`) |
+| 4 regions | no raw layout CSS | 1 | a design-flow gate if one exists (to be measured in phase 2), else new | maintainer decision |
+| 4 | no card inside a card | 1 | **new** rendered-page check (none exists today: `grep -ci nested` on `design-auditor.md` returns 0) | maintainer decision |
+| 4 | density matches the surface class (app / marketing / form) | 3 | reviewer verdict with evidence per screen | maintainer decision |
+| 5 state contract | the record's `States:` line lists the designed states, or `n/a: <why>` per state | 2 | #2211 record check (a2 ruling 2026-10-21) | maintainer decision |
+| 5 | each declared state renders distinct from loaded and carries its own marker | 1 | forced-state crawl (empty fixture, failing request, forbidden user) | WCAG 3.3.1, 4.1.3 (C14, C15) for error and status |
+| 6 cross-cutting | axe WCAG 2.2 AA with the recorded limits (24px exceptions, no focus rule, 2.4.11 means entirely hidden, 1.4.10 exempts data tables) | 1 | qa-flow a11y gate | WCAG (C18-C21) |
+| 6 | focus visible | 1 | **new**: axe runs no focus rule under WCAG tags (`a11y-auditor.md:76`), so a keyboard-tab crawl must be added | WCAG 2.4.7 (C20) |
+| 6 | layout fit at 320px; heading order | 1 | qa-flow layout fit; heading-order scan | WCAG 1.4.10 (C21); heading order maintainer decision |
+| 6 | Core Web Vitals within "good" (LCP 2.5 s, INP 200 ms, CLS 0.1, p75); a project may override in config | 1 | lab check in the QA gate | web.dev (C23, C33); default is a2's decision |
+| 6 | content hierarchy; interaction feedback present for every action | 3 | reviewer verdict with evidence | maintainer decision |
+| 6 | security: no unescaped user HTML, CSP present, action authorization | 1 | stack-specific, #2222 and #2223; the neutral page names the contract and the stack plugin enforces it | per stack, official docs |
+| 7 flow | every UI change has a mock-up record with the required lines | 2 | #2211 gate | maintainer decision (#2211) |
+
+A rule that cannot yet be placed is not in this table; it is listed under "Open" below until it fits one of the three kinds.
+
+## Page-template set is being revised
+
+a2 reports the owner's question about the industry standard: the six templates (list/index, detail, create/edit, dashboard, settings, first-run) do not fully meet it. Direction: add **multi-step** (question, check answers, confirmation), **search results**, **sign-in** and **system pages** (not found, no permission, error, maintenance); move **empty-first-run into the state contract** (layer 5); treat **list-detail as a layout variant**. Layer 3 is held until a2 confirms the final list; the `Template:` check needs it.
 
 ## External claims this outline would make
 
 Each goes to `doctrine-verifier` before any skill edit; INCONCLUSIVE stays out. See `docs/design/frontend-architecture-claims.md`.
 
-## Open questions (need a decision, not a guess)
+## Decided and open
 
-1. Where does a screen's state list live: in the mock-up file, a `states:` block in the screen spec, or the QA test-case catalogue? The check in layer 5 depends on it.
-2. Performance budgets: does the maintainer set numbers (our own decision), or do we cite only Core Web Vitals "good" thresholds and leave budgets to the project?
-3. The six page templates are our decision (GOV.UK and Carbon do not list them as a set): confirm as a recorded maintainer decision.
-4. The create/edit template: `DS/SKILL.md:103-104` mandates modal-driven CRUD, a Rails/Turbo choice. In a stack-neutral framework that is an adapter rule. Confirm it moves out of the non-negotiables for the neutral page.
+Decided by a2 on 2026-10-21 (technical calls, recorded for the owner): the state list lives in the mock-up record as a `States:` line beside #2211's `Shell:` line; performance budgets default to the Core Web Vitals "good" thresholds (C33) with a per-project override; modal-driven CRUD leaves the neutral page for Hotwire (#2223, 7e has it as H25/H26); the six templates are a maintainer decision and the set is being revised (above).
+
+Open:
+1. The final template list (a2 confirming with the owner). Layer 3 and the `Template:` check wait on it.
+2. The navigation depth cap (a number; a maintainer decision) for the `Nav:` check.
+3. Whether the record's `Nav:`, `Template:`, `Shell:` and `States:` lines live in #2211's format or a second record; #2211 (32) owns the format.
+4. Which judgement rules (density, content hierarchy, interaction feedback) get a reviewer verdict, and where the verdict record and its refusing script live (the reviewer agent and `checks.json`); needs #2221's design.
 
 ## Coordination
 
