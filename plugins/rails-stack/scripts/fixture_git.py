@@ -76,6 +76,10 @@ def hermetic(base: Mapping[str, str] | None = None) -> dict[str, str]:
         out[f"GIT_CONFIG_KEY_{i}"] = key
         out[f"GIT_CONFIG_VALUE_{i}"] = value
     out["GIT_CONFIG_COUNT"] = str(start + len(SETTINGS))
+    # #2208: the MACHINE's git config is not the fixture's. Homebrew's sets `core.hooksPath=.githooks`, so a hook a fixture plants in
+    # .git/hooks never ran and every "the hook did not run" assertion passed whatever the code did; Xcode's names the default branch.
+    # A CI runner has no system config, so this makes a Mac fixture behave as the runner does.
+    out["GIT_CONFIG_NOSYSTEM"] = "1"
     return out
 
 
