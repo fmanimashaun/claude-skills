@@ -120,8 +120,6 @@ def verdict(rc: int, out: str, log: Path, *, usage_ok: bool = False) -> tuple[st
         return "finding", "crashed with a traceback"
     if rc in (0,) or (rc == 1 and usage_ok):
         return "clean", ""
-    if usage_ok and rc == 2:
-        return "notproven", "needs arguments"
     return ("finding" if not usage_ok else "notproven"), f"exit {rc}: {out.strip().splitlines()[-1][:80] if out.strip() else 'no output'}"
 
 
@@ -142,6 +140,14 @@ def run_group(cmd: list[str], *, cwd: Path, env: dict[str, str], stdin: str | No
     return proc.returncode, out
 
 
+def timed_out(log: Path) -> tuple[str, str]:
+    """A timeout proves nothing either way, EXCEPT that a stub called before the kill is still a finding: a Rails hook that hangs after `bundle exec` must not hide as not proven."""
+    calls = log.read_text(encoding="utf-8").strip().splitlines() if log.is_file() else []
+    if calls:
+        return "finding", f"called a Rails tool before timing out: {calls[0][:80]}"
+    return "notproven", f"timed out after {TIMEOUT}s (a slow or loaded machine proves nothing either way)"
+
+
 def run_hook(path: Path, event: str, project: Path, base: Path) -> tuple[str, str]:
     log = base / f"log-{path.name}-{project.name}"
     log.unlink(missing_ok=True)
@@ -150,7 +156,7 @@ def run_hook(path: Path, event: str, project: Path, base: Path) -> tuple[str, st
     cmd = ["/bin/bash", "-p", str(path)] if path.suffix == ".sh" else [sys.executable, str(path)]
     done = run_group(cmd, cwd=project, env=environment(base, log, project, plugin_root), stdin=json.dumps(payload))
     if done is None:
-        return "notproven", f"timed out after {TIMEOUT}s (a slow or loaded machine proves nothing either way)"
+        return timed_out(log)
     return verdict(done[0], done[1], log)
 
 
@@ -160,7 +166,7 @@ def run_script(path: Path, project: Path, base: Path) -> tuple[str, str]:
     cmd = [sys.executable, str(path)] if path.suffix == ".py" else ["/bin/bash", str(path)]
     done = run_group(cmd, cwd=project, env=environment(base, log, project), stdin=None)
     if done is None:
-        return "notproven", f"timed out after {TIMEOUT}s"
+        return timed_out(log)
     return verdict(done[0], done[1], log, usage_ok=True)
 
 
@@ -272,12 +278,23 @@ def _selftest() -> int:
         nj = projects["nextjs"]
         check("a clean hook is clean on the Next.js project", run_hook(plug / "clean.sh", "Stop", nj, base)[0] == "clean")
         state, why = run_hook(plug / "bad.sh", "PreToolUse Bash", nj, base)
-        check("a hook that calls `bundle exec rspec` is a finding", state == "finding" and "bundle" in why)
+        check("a hook that calls `bundle exec rspec` is a finding", state == "finding" and "called a Rails tool: bundle" in why)
         check("a hook that calls bin/rails is a finding", run_hook(plug / "rails.sh", "SessionStart", nj, base)[0] == "finding")
         check("a hook that exits non-zero is a finding", run_hook(plug / "crash.sh", "Stop", nj, base)[0] == "finding")
         check("a hook that calls a stub in the empty project is a finding too", run_hook(plug / "bad.sh", "Stop", projects["empty"], base)[0] == "finding")
         (plug / "tb.py").write_text("raise SystemExit(int('x'))\n", encoding="utf-8")
         check("a script that crashes with a traceback is a finding", run_script(plug / "tb.py", nj, base)[0] == "finding")
+        (plug / "hang.sh").write_text("#!/bin/bash\nbundle exec rspec\nsleep 30\n", encoding="utf-8")
+        (plug / "idle.sh").write_text("#!/bin/bash\nsleep 30\n", encoding="utf-8")
+        global TIMEOUT
+        saved, TIMEOUT = TIMEOUT, 2
+        try:
+            state, why = run_hook(plug / "hang.sh", "Stop", nj, base)
+            check("a hook that calls a stub and then hangs past the timeout is a finding", state == "finding" and "before timing out" in why)
+            check("a hook that only hangs is not proven, not a finding", run_hook(plug / "idle.sh", "Stop", nj, base)[0] == "notproven")
+            check("a script that calls a stub and then hangs is a finding", run_script(plug / "hang.sh", nj, base)[0] == "finding")
+        finally:
+            TIMEOUT = saved
         (plug / "usage.py").write_text("import sys\nsys.exit(2)\n", encoding="utf-8")
         check("a script that needs arguments is not proven, not a finding", run_script(plug / "usage.py", nj, base)[0] == "notproven")
         (plug / "fine.py").write_text("print('ok')\n", encoding="utf-8")

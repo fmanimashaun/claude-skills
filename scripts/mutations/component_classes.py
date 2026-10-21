@@ -9,6 +9,18 @@ GUARD = Guard(
     needs=("scripts/rails_assumptions.py", "scripts/hermetic_git.py", "plugins/rails-flow/scripts/fixture_git.py"),   # rails_assumptions imports both at load
     mutations=(
         Mutation(
+            "a proof entry for a component that is not neutral passes",
+            "        if match is None or not match[\"proven\"]:",
+            "        if False:",
+            "a proof entry for a component that is not there is a finding",
+        ),
+        Mutation(
+            "a component not recorded in the proof file is shown proven",
+            '        comp["proven"] = comp["path"] in proven and bool(comp["info"]) and comp["info"]["class"] == "neutral"',
+            '        comp["proven"] = bool(comp["info"]) and comp["info"]["class"] == "neutral"',
+            "a component not in the proof file is not shown proven",
+        ),
+        Mutation(
             "a committed page that differs from a clean build passes --check",
             "            elif blob != built:",
             "            elif False:",
