@@ -1701,5 +1701,18 @@ GUARD = Guard(
             'data.get("hooks", {}).get("Stop", []) + data.get("hooks", {}).get("PreToolUse", [])',
             "a named gate on a Stop hook is out of scope (the field has no effect there): silent",
         ),
+        Mutation(
+            # #2178: the pointer from a stack descriptor to its design-flow UI adapter.
+            "an adapter that names an agent with no agents/<name>.md is accepted",
+            '                if not (ROOT / "plugins/design-flow/agents" / f"{name}.md").is_file():\n',
+            "                if False:\n",
+            "ui-adapter-unresolved / ...an adapter naming an agent that does not exist",
+        ),
+        Mutation(
+            "a descriptor porter or composer that disagrees with the adapter is accepted",
+            '                if declared is not None and declared != f"design-flow:{name}":\n',
+            "                if False:\n",
+            "ui-adapter-unresolved / ...a descriptor porter that disagrees with the adapter",
+        ),
     ),
 )

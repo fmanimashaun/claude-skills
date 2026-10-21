@@ -1,5 +1,5 @@
 ---
-name: design-porter
+name: rails-ui-porter
 description: >
   Ports a Claude Design output — React/JSX/TSX, or a `<x-dc>` canvas export with a `:root` token
   block, inline styles and a CDN font — into a Rails 8 + Hotwire app: faithful to the design AND

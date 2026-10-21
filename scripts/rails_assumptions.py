@@ -192,7 +192,8 @@ def subject_of(path: str) -> str | None:
     kind = kind_of(path)
     plugin, rest = path.split("/")[1], path.split("/", 2)[2]
     if kind == "mutation":
-        return f"plugins/{plugin}/scripts/{Path(rest).name}"
+        # the guard sits in `mutations/` beside its script, wherever that is: `scripts/` or a UI adapter's `ui/<implementation>/scripts/` (#2178)
+        return f"{path.rsplit('/mutations/', 1)[0]}/{Path(rest).name}"
     if kind == "selftest" and rest.startswith("scripts/") and rest.endswith("_selftest.py"):
         return f"plugins/{plugin}/scripts/{Path(rest).name[: -len('_selftest.py')]}.py"
     return None
@@ -468,6 +469,7 @@ def _selftest() -> int:
         check("the plugin's own name is not a hit", "plugins/pipeline/scripts/note.py" not in hits)
         check("a binary file is skipped", "plugins/pipeline/scripts/blob.bin" not in hits)
         check("a mutation guard follows its script", subject_of("plugins/rails-flow/scripts/mutations/gate.py") == "plugins/rails-flow/scripts/gate.py")
+        check("an adapter's guard follows the script beside it", subject_of("plugins/design-flow/ui/viewcomponent-erb/scripts/mutations/gate.py") == "plugins/design-flow/ui/viewcomponent-erb/scripts/gate.py")
         check("a selftest follows its script", subject_of("plugins/rails-flow/scripts/gate_selftest.py") == "plugins/rails-flow/scripts/gate.py")
         check("a plain script follows nothing", subject_of("plugins/rails-flow/scripts/gate.py") is None)
         policy = {"moves": {"M1": {"title": "t", "summary": "s", "issue": 1}},

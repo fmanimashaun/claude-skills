@@ -27,8 +27,8 @@
    "issue": 2177
   },
   "design-flow-erb": {
-   "title": "The design-flow ERB / ViewComponent gates and porter",
-   "summary": "The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (design-porter, ui-composer). Next.js gets its own design gates under #2171.",
+   "title": "The design-flow Rails UI adapter (ERB / ViewComponent gates and porter)",
+   "summary": "The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (rails-ui-porter, rails-ui-composer). They do NOT move to rails-stack: they live in design-flow's own Rails UI adapter, plugins/design-flow/ui/viewcomponent-erb/, which a stack descriptor selects with ui.implementation, so design stays neutral (owner, via the coordinator, 2026-10-21). Next.js gets its own adapter under #2171.",
    "issue": 2178
   },
   "rails-deploy": {
@@ -122,12 +122,15 @@
     "plugins/design-flow/ui/viewcomponent-erb/scripts/canvas_manifest.py",
     "plugins/design-flow/ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py",
     "plugins/design-flow/ui/viewcomponent-erb/scripts/check_token_drift.py",
-    "plugins/design-flow/agents/design-porter.md",
-    "plugins/design-flow/agents/ui-composer.md"
+    "plugins/design-flow/ui/viewcomponent-erb/scripts/content_floors.py",
+    "plugins/design-flow/agents/rails-ui-porter.md",
+    "plugins/design-flow/agents/rails-ui-composer.md",
+    "plugins/design-flow/ui/viewcomponent-erb/adapter.json",
+    "plugins/design-flow/ui/viewcomponent-erb/scripts/port_fidelity_gate.py"
    ],
    "decision": "rails-stack",
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
-   "how": "moves with its checks.json row",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "move": "design-flow-erb"
   },
   {
@@ -527,6 +530,14 @@
     ],
     "class": "neutral",
     "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/design-flow/ui/*"
+    ],
+    "class": "rails",
+    "issue": 2178,
+    "why": "the Rails UI adapter: its checks and gates read .erb and app/components, selected by descriptor ui.implementation; the whole directory is Rails by path"
    },
    {
     "match": [

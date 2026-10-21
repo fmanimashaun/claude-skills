@@ -51,7 +51,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 
 # The shipped reference implementations. Both are consumed as copy-me-verbatim code by
-# `ui-composer` and `design-porter`, so a fixed keyword list here becomes one in a user's app.
+# `rails-ui-composer` and `rails-ui-porter`, so a fixed keyword list here becomes one in a user's app.
 SOURCES = (
     "plugins/rails-stack/skills/design-system/references/component-implementations.md",
     "plugins/rails-stack/skills/design-system/references/reference-implementation.md",

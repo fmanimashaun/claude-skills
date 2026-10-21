@@ -30,6 +30,8 @@ WHAT IT CHECKS
   docs-path-outside-layout    a `docs/<dir>/` that rails-flow's commands, agents, hooks, checks or scripts name,
                               where `<dir>` is not in `docs_layout.py`'s LAYOUT: the path the plugin prescribes
                               fails the plugin's own docs-layout gate (#1700)
+  ui-adapter-unresolved       a stack descriptor whose `ui.implementation` has no `plugins/design-flow/ui/<id>/adapter.json`, or an adapter whose id,
+                              agents, checks or the descriptor's porter/composer do not resolve (#2178)
   undocumented-command        a plugins/<p>/commands/<c>.md that README.md (as `c`) or the
                               plugin's README (as /p:c) never names — same defect, one level down
   schema-reader-drift         `architecture_graph.py` (vendored alone) carries its own copy of the rule that decides which db/*_schema.rb files are the project's;
@@ -3417,6 +3419,75 @@ def check_undocumented_skill() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+def check_ui_adapter_unresolved() -> tuple[list[Finding], int]:
+    """A stack's `ui.implementation` must resolve to a design-flow UI adapter that exists (#2178).
+
+    design-flow's Rails rendering half lives in `plugins/design-flow/ui/<implementation>/`, selected by the
+    descriptor's `ui.implementation` used AS the directory name, so there is no table to drift. What can still
+    drift is the pointer: an implementation id with no `adapter.json`, an `adapter.json` whose `id` is not its
+    directory, an agent it names that no `agents/<name>.md` defines, a check id `checks.json` does not carry, or a
+    descriptor `ui.porter`/`ui.composer` naming a different agent than the adapter provides -- each leaves a
+    command dispatching to nothing.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for stacks_file in sorted(ROOT.glob("plugins/*/stacks.json")):
+        try:
+            stacks = json.loads(read(stacks_file)).get("stacks", [])
+        except (json.JSONDecodeError, AttributeError):
+            continue
+        rel = stacks_file.relative_to(ROOT).as_posix()
+        for stack in stacks:
+            ui = (stack.get("descriptor") or {}).get("ui")
+            if not isinstance(ui, dict) or not ui.get("implementation"):
+                continue
+            examined += 1
+            impl = ui["implementation"]
+            adapter = ROOT / "plugins/design-flow/ui" / impl / "adapter.json"
+            if not adapter.is_file():
+                findings.append(Finding(
+                    "ui-adapter-unresolved", rel, 1,
+                    f"stack {stack.get('id')!r} selects ui.implementation {impl!r} but "
+                    f"plugins/design-flow/ui/{impl}/adapter.json does not exist, so /design-flow commands that "
+                    f"dispatch on the descriptor have no adapter to dispatch to."))
+                continue
+            try:
+                spec = json.loads(read(adapter))
+            except json.JSONDecodeError as exc:
+                findings.append(Finding("ui-adapter-unresolved", adapter.relative_to(ROOT).as_posix(), 1,
+                                        f"adapter.json is not valid JSON: {exc}"))
+                continue
+            arel = adapter.relative_to(ROOT).as_posix()
+            if spec.get("id") != impl:
+                findings.append(Finding(
+                    "ui-adapter-unresolved", arel, 1,
+                    f"adapter.json id is {spec.get('id')!r}; the directory is the implementation id {impl!r}."))
+            agents = spec.get("agents") or {}
+            for role, name in sorted(agents.items()):
+                if not (ROOT / "plugins/design-flow/agents" / f"{name}.md").is_file():
+                    findings.append(Finding(
+                        "ui-adapter-unresolved", arel, 1,
+                        f"adapter agent {role}={name!r} has no plugins/design-flow/agents/{name}.md."))
+                declared = ui.get(role)
+                if declared is not None and declared != f"design-flow:{name}":
+                    findings.append(Finding(
+                        "ui-adapter-unresolved", rel, 1,
+                        f"descriptor ui.{role} is {declared!r} but the adapter provides 'design-flow:{name}'."))
+            checks_file = ROOT / "plugins/design-flow/checks.json"
+            known = set()
+            if checks_file.is_file():
+                try:
+                    known = {c.get("id") for c in json.loads(read(checks_file)).get("checks", [])}
+                except json.JSONDecodeError:
+                    pass
+            for check_id in spec.get("checks", []):
+                if check_id not in known:
+                    findings.append(Finding(
+                        "ui-adapter-unresolved", arel, 1,
+                        f"adapter check {check_id!r} is not an id in plugins/design-flow/checks.json."))
+    return findings, examined
+
+
 def check_unimported_agent_instructions() -> tuple[list[Finding], int]:
     """An authored `AGENTS.md` must be imported by `CLAUDE.md`, and vice versa.
 
@@ -4362,6 +4433,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     dup_unrel, dup_unrel_examined = check_duplicate_unreleased()
     agents_md, agents_md_examined = check_unimported_agent_instructions()
     undoc_skill, undoc_skill_examined = check_undocumented_skill()
+    ui_adapter, ui_adapter_examined = check_ui_adapter_unresolved()
     rel_extract, rel_extract_examined = check_duplicated_release_extractor()
     pinned_ref, pinned_ref_examined = check_pinned_toolchain_ref()
     action_pins, action_pins_examined = check_workflow_action_pins()
@@ -4426,6 +4498,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "changelog_sections_with_unreleased": dup_unrel_examined,
         "root_agent_instruction_files": agents_md_examined,
         "skill_directories_named_in_claude_md": undoc_skill_examined,
+        "stack_descriptors_resolved_to_a_ui_adapter": ui_adapter_examined,
         "publish_paths_checked_for_own_extractor": rel_extract_examined,
         "shipped_docs_scanned_for_a_pinned_toolchain_tag": pinned_ref_examined,
         "workflows_checked_for_action_pins": action_pins_examined,
@@ -4449,7 +4522,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
             + markers + uncontained + nonhermetic + pointers + clone_paths + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + dangling + flat_role
-            + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
+            + agents_md + undoc_skill + ui_adapter + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
             + findings_copy + rel_xplugin
             + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
             coverage)
@@ -4913,6 +4986,29 @@ def selftest() -> int:
     # A directory without a SKILL.md is not a skill -- do not fire on stray folders.
     scenario("...silent on a directory that is not a skill", rule=UDS, expect_finding=False,
              files={"CLAUDE.md": "# CLAUDE.md\n", "plugins/rails-stack/skills/notaskill/README.md": "hi\n"})
+
+    # -- ui-adapter-unresolved (#2178) ------------------------------------
+    UAU = "ui-adapter-unresolved"
+    UAU_STACKS = '{"stacks":[{"id":"rails","descriptor":{"ui":{"implementation":"viewcomponent-erb","porter":"design-flow:rails-ui-porter"}}}]}'
+    UAU_ADAPTER = '{"id":"viewcomponent-erb","agents":{"porter":"rails-ui-porter"},"checks":["token-drift"]}'
+    UAU_OK = {"plugins/rails-stack/stacks.json": UAU_STACKS,
+              "plugins/design-flow/ui/viewcomponent-erb/adapter.json": UAU_ADAPTER,
+              "plugins/design-flow/agents/rails-ui-porter.md": "---\nname: rails-ui-porter\n---\n",
+              "plugins/design-flow/checks.json": '{"checks":[{"id":"token-drift"}]}'}
+    scenario("a descriptor whose ui.implementation has no adapter.json", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
+             files={"plugins/rails-stack/stacks.json": UAU_STACKS})
+    scenario("...an adapter naming an agent that does not exist", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
+             files={k: v for k, v in UAU_OK.items() if not k.endswith("rails-ui-porter.md")})
+    scenario("...a descriptor porter that disagrees with the adapter", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
+             files={**UAU_OK, "plugins/rails-stack/stacks.json": UAU_STACKS.replace("rails-ui-porter", "design-porter")})
+    scenario("...an adapter whose id is not its directory", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
+             files={**UAU_OK, "plugins/design-flow/ui/viewcomponent-erb/adapter.json": UAU_ADAPTER.replace('"id":"viewcomponent-erb"', '"id":"other"')})
+    scenario("...an adapter check id checks.json does not carry", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
+             files={**UAU_OK, "plugins/design-flow/checks.json": '{"checks":[]}'})
+    scenario("...silent when the adapter, its agent and its checks all resolve", rule=UAU, expect_finding=False, only=check_ui_adapter_unresolved,
+             files=UAU_OK)
+    scenario("...silent on a stack with no ui block", rule=UAU, expect_finding=False, only=check_ui_adapter_unresolved,
+             files={"plugins/x-stack/stacks.json": '{"stacks":[{"id":"x","descriptor":{}}]}'})
 
     # -- unimported-agent-instructions ------------------------------------
     UAI = "unimported-agent-instructions"

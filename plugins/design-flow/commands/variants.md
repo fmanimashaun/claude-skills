@@ -15,7 +15,7 @@ argument-hint: "<brief>  [--variants N]   [e.g. pricing page --variants 3]"
 # /design-flow:variants — $ARGUMENTS
 
 Generate **N genuinely different compositions of one brief** (default 3) and a switcher to
-compare them live in the real app. Delegate composition to the **ui-composer** agent, one
+compare them live in the real app. Delegate composition to the **rails-ui-composer** agent, one
 dispatch per variant; delegate the brand verdict to **brand-guardian**.
 
 **Exploring before you pay N × ERB?** That is `/design-flow:canvas` — it writes a Claude Design
@@ -78,7 +78,7 @@ scale, and for a marketing surface the three mandatory references (`marketing-co
 `visual-assets.md`, `motion.md`). Variant mode changes *how many* outputs there are, not *what
 the doctrine is*.
 
-Dispatch `ui-composer` **once per variant, in parallel**, each with the same brief and the same
+Dispatch `rails-ui-composer` **once per variant, in parallel**, each with the same brief and the same
 pack, plus an explicit **composition axis** to move along so the set does not collapse into
 three renderings of one idea:
 

@@ -1,5 +1,5 @@
 ---
-description: Port a Claude Design output — JSX/TSX, or a `<x-dc>` canvas export — into this Rails 8 + Hotwire app, faithful to the design and aligned to the design system by construction. Dispatches to the design-porter agent under design-system's design-handoff mapping.
+description: Port a Claude Design output — JSX/TSX, or a `<x-dc>` canvas export — into this Rails 8 + Hotwire app, faithful to the design and aligned to the design system by construction. Dispatches to the rails-ui-porter agent under design-system's design-handoff mapping.
 ---
 
 # /design-flow:port
@@ -10,7 +10,7 @@ brings the result back.
 **Why this is a command and not freehand work.** A whole-app audit on a live project found **20
 alignable divergences** — raw hex, bespoke `.field`/`.label`, `form_with` field forms, hand-rolled
 card and grid CSS, CDN fonts — concentrated in exactly the two surfaces that had been ported ad-hoc
-from Claude Design canvases. A `ui-composer` composes *from* the system; nothing owned translating a
+from Claude Design canvases. A `rails-ui-composer` composes *from* the system; nothing owned translating a
 source *into* it, and that step is where all of it entered.
 
 ## Preconditions
@@ -47,7 +47,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/ui/viewcomponent-erb/scripts/canvas_manifest.py" 
 Every heading, copy run, control, repeat, conditional, icon and data label the canvas specifies becomes one item
 with a stable id. That manifest is the porter's checklist and the denominator of "done" (#908).
 
-Dispatch the **`design-porter`** agent. It works the order in `design-handoff.md`:
+Dispatch the **`rails-ui-porter`** agent. It works the order in `design-handoff.md`:
 
 1. **Identify the source format** — JSX/TSX or `<x-dc>` canvas. They carry the same design and are
    read differently.
