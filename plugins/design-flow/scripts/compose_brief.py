@@ -139,7 +139,7 @@ def governing_section(doc: Path, surface: str) -> str | None:
     """The `page-anatomies.md` section that governs this surface, if the catalogue names one. #676.
 
     THE CATALOGUE CARRIES EXACTLY ONE STRUCTURED BAND SEQUENCE -- the paced block, whose own text
-    scopes it "for a product landing page". Pricing, About, Error and Auth are prose and ERB with no
+    scopes it "for a product landing page". Pricing, About, Error and Auth are prose and markup with no
     band table at all. So every surface composed here gets the LANDING spine, and until now the brief
     never said so: a pricing brief that is silently a landing brief is the correct-looking-but-wrong
     output this flow keeps producing.
@@ -477,7 +477,7 @@ def render(brief: dict) -> str:
         out.append(f"> **Composed from _{_cell(anatomy['sequence'])}_, which is borrowed here.** The "
                    f"catalogue governs this surface in **§{_cell(anatomy['governed_by'])}** of "
                    f"`page-anatomies.md`, and that section carries no band table — it is prose and "
-                   f"ERB. The bands below are the landing spine, which is the closest structured "
+                   f"markup. The bands below are the landing spine, which is the closest structured "
                    f"sequence the catalogue has; read §{_cell(anatomy['governed_by'])} for what this "
                    f"page actually owes, because this brief does not encode it.\n")
     elif anatomy.get("sequence"):

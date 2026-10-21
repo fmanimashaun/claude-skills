@@ -15,12 +15,12 @@ argument-hint: "<brief>  [--variants N]   [e.g. pricing page --variants 3]"
 # /design-flow:variants — $ARGUMENTS
 
 Generate **N genuinely different compositions of one brief** (default 3) and a switcher to
-compare them live in the real app. Delegate composition to the **rails-ui-composer** agent, one
+compare them live in the real app. Delegate composition to the adapter's composer agent (Phase 1), one
 dispatch per variant; delegate the brand verdict to **brand-guardian**.
 
-**Exploring before you pay N × ERB?** That is `/design-flow:canvas` — it writes a Claude Design
+**Exploring before you pay N × the real implementation?** That is `/design-flow:canvas` — it writes a Claude Design
 prompt carrying this project's own role tokens, its real component catalog and the band sequence for
-the surface, and `/design-flow:port` brings the chosen artboard back as ERB. Use this command when
+the surface, and `/design-flow:port` brings the chosen artboard back into the app. Use this command when
 you want the options **as running screens** to compare in the app; use the canvas when you want them
 as pictures first. The pen.dev tier that used to sit here was retired in #766.
 
@@ -78,7 +78,7 @@ scale, and for a marketing surface the three mandatory references (`marketing-co
 `visual-assets.md`, `motion.md`). Variant mode changes *how many* outputs there are, not *what
 the doctrine is*.
 
-Dispatch `rails-ui-composer` **once per variant, in parallel**, each with the same brief and the same
+Resolve the UI adapter once (`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ui_adapter.py"`; exit 2 means it cannot say: quote its message and stop, never fall back to another stack), then dispatch the **`design-flow:<agents.composer>`** agent it names **once per variant, in parallel**, each with the same brief and the same
 pack, plus an explicit **composition axis** to move along so the set does not collapse into
 three renderings of one idea:
 
@@ -94,84 +94,19 @@ pricing table"* — not reverse-engineered afterwards. Criterion: a rationale a 
 
 ## Phase 2 — the switcher, scaffolded to be thrown away
 
-Three artefacts, and all three are temporary. Write them where the discard step can find them.
+Three artefacts, and all three are temporary: the manifest (`variants.json`: brief, brand, one entry per variant with its id,
+file and one-line rationale), the variants themselves (partials, so the winner can be moved unchanged) and a switcher that renders
+one at a time. Write them where the discard step can find them. Where, and in which template language, is the adapter's:
+**read `<dir>/variants.md`** (the directory `ui_adapter.py` printed; see Phase 1).
 
-```
-app/views/design_variants/<slug>/
-  variants.json      the manifest — brief, brand, one entry per variant
-  _a.html.erb        the variants themselves, partials so the winner can be moved unchanged
-  _b.html.erb
-  _c.html.erb
-app/views/design_variants/show.html.erb          the switcher
-app/controllers/design_variants_controller.rb    dev-only
-config/routes.rb                                 one guarded block
-```
+**The route is development-only.** A switcher route renders every *rejected* variant, so leaving it reachable in production ships
+three landing pages nobody approved. Guard it, and constrain the slug so a path segment cannot walk out of the directory. The adapter
+file carries the working code; the guard is the rule, and Phase 3 asserts it.
 
-`variants.json`:
-
-```json
-{
-  "slug": "pricing",
-  "brief": "pricing page for the fmworkflows marketing site",
-  "brand": "fidara:fmworkflows",
-  "variants": [
-    { "id": "a", "file": "_a.html.erb", "rationale": "denser; leads with the comparison table" },
-    { "id": "b", "file": "_b.html.erb", "rationale": "airier; leads with the claim, price below" },
-    { "id": "c", "file": "_c.html.erb", "rationale": "single-column; one plan recommended by default" }
-  ]
-}
-```
-
-**The route is development-only.** A switcher route renders every *rejected* variant, so leaving
-it reachable in production ships three landing pages nobody approved. Guard it, and constrain the
-slug so a path segment cannot walk out of the directory:
-
-```ruby
-# config/routes.rb — REMOVE this block when a variant is chosen.
-if Rails.env.development?
-  get "design_variants/:slug", to: "design_variants#show", as: :design_variant,
-      constraints: { slug: /[a-z0-9-]+/ }
-end
-```
-
-```ruby
-# app/controllers/design_variants_controller.rb — DELETE when a variant is chosen.
-class DesignVariantsController < ApplicationController
-  def show
-    root = Rails.root.join("app/views/design_variants", params[:slug])
-    @set = JSON.parse(root.join("variants.json").read)
-    @chosen = @set["variants"].find { |v| v["id"] == params[:v] } || @set["variants"].first
-    @partial = "design_variants/#{params[:slug]}/" \
-               "#{@chosen['file'].delete_prefix('_').delete_suffix('.html.erb')}"
-  end
-end
-```
-
-The toggle is a `turbo-frame` and its links — the same mechanism as the shared CRUD modal
-(`crud-modal-pattern.md`), so no new Stimulus controller and no new framework surface. Swapping a
-frame leaves the page, the scroll position and the viewport alone, which is the whole point: the
-comparison happens **at real viewports in the actual app**, not in a description of three options.
-
-```erb
-<%# app/views/design_variants/show.html.erb — DELETE when a variant is chosen. %>
-<div class="stack">
-  <nav class="cluster" aria-label="Variants">
-    <% @set["variants"].each do |v| %>
-      <%= link_to v["id"].upcase, design_variant_path(@set["slug"], v: v["id"]),
-                  class: "min-h-touch",
-                  data: { turbo_frame: "variant" },
-                  aria: { current: (v["id"] == @chosen["id"] ? "true" : nil) } %>
-    <% end %>
-  </nav>
-  <p class="text-muted-foreground"><%= @chosen["rationale"] %></p>
-  <%= turbo_frame_tag "variant" do %>
-    <%= render @partial %>
-  <% end %>
-</div>
-```
-
-Style the switcher chrome with role tokens like anything else, and keep it minimal — it is a
-comparison harness, not a screen. `min-h-touch` still applies; you will be tapping it on a phone.
+The toggle swaps a frame, not the page, so the page, the scroll position and the viewport are left alone, which is the whole point:
+the comparison happens **at real viewports in the actual app**, not in a description of three options. Style the switcher chrome with
+role tokens like anything else, and keep it minimal — it is a comparison harness, not a screen. `min-h-touch` still applies; you will
+be tapping it on a phone.
 
 ## Phase 3 — assert conformance, do not eyeball it
 
@@ -179,7 +114,7 @@ Run it. **"They look consistent" is not a verdict** — the whole reason the con
 mechanical is that three plausible screens are exactly the input a human review waves through.
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/ui/viewcomponent-erb/scripts/variant_conformance.py" .
+# the exact command, with the adapter's paths, is in <dir>/variants.md
 ```
 
 Exit 0 clean · 1 findings · 2 unusable. It runs the **#157 LLM-tell detector against every
@@ -207,12 +142,12 @@ chooser back into an approver.
 
 Once chosen:
 
-1. Move the winning partial to its real home (`app/views/...`), unchanged.
-2. Delete `app/views/design_variants/` entirely, the controller, and the routes block.
+1. Move the winning partial to its real home, unchanged.
+2. Delete the whole variants scaffold: the directory, the controller and the routes block.
 3. Prove it, rather than believing it — an un-run discard looks exactly like a completed one:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/ui/viewcomponent-erb/scripts/variant_conformance.py" --verify-discard .
+# the adapter's variants.md names the command: variant_conformance.py --verify-discard
 ```
 
 4. **The chosen variant still goes through `/design-flow:audit`.** Variants are a way of making a
@@ -244,7 +179,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/prompt_library.py" \
   --record-surface marketing-hero \
   --rationale "screenshot-led hero, claim demoted to a lede" \
   --axis "focal point" --verdict accept --why "the product carries it" \
-  --built app/views/home/index.html.erb
+  --built <winner-path>
 ```
 
 **Record the losers too.** A library of keepers cannot answer *"did we already try this and reject

@@ -18,6 +18,8 @@ Costs nothing: no network, stdlib + git only.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import shutil
 import subprocess
 import os
@@ -325,6 +327,70 @@ def starved_gate_fixtures() -> None:
         md.GATES, md.REPO = saved_gates, real
 
 
+def gate_time_fixtures() -> None:
+    """#2246: the sweep prints each gate's own wall time. The CI log had none (every `[  ok  ]` line carried the end-of-run timestamp), so a gate near
+    its budget could not be seen. The lines are pure arithmetic over `timings`, asserted directly, then driven through a real `check_gates` and `report`."""
+    lines = md.gate_time_lines({"slow gate": 12.0, "mid gate": 3.0, "quick a": 0.4, "quick b": 0.2})
+    _tick()
+    if md.gate_time_lines({}) != []:
+        FAILURES.append("#2246: no gate ran, so no timing lines")
+    _tick()
+    order = [i for i, ln in enumerate(lines) if ln.endswith("slow gate") or ln.endswith("mid gate")]
+    if len(order) != 2 or not (lines[order[0]].endswith("slow gate") and lines[order[1]].endswith("mid gate")):
+        FAILURES.append(f"#2246: gates are listed slowest first, got {lines!r}")
+    _tick()
+    if not any("12.0 s" in ln and " 76.9%" in ln and ln.endswith("slow gate") for ln in lines):
+        FAILURES.append(f"#2246: a gate's line carries its seconds and its share of the total (12.0 of 15.6 is 76.9%), got {lines!r}")
+    _tick()
+    if not any("2 gate(s) under 1 s: 0.6 s in total" in ln for ln in lines):
+        FAILURES.append(f"#2246: gates under a second are summed on one line, got {lines!r}")
+    _tick()
+    if not any("4 gate(s) ran for 15.6 s in total" in ln for ln in lines):
+        FAILURES.append(f"#2246: the block ends with every gate that ran and the total, got {lines!r}")
+    _tick()
+    if any("quick a" in ln or "quick b" in ln for ln in lines):
+        FAILURES.append(f"#2246: a gate under the threshold is summed, not listed, got {lines!r}")
+    work = fixture()
+    saved_gates, real = md.GATES, md.REPO
+    try:
+        md.REPO = work
+        scripts = work / "scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        (scripts / "_sleepy.py").write_text("import time\ntime.sleep(1.2)\nprint('slept')\n", encoding="utf-8")
+        (scripts / "_fails.py").write_text("import sys\nprint('boom')\nsys.exit(1)\n", encoding="utf-8")
+        md.GATES = (("selftest sleepy", ("python3", "scripts/_sleepy.py")), ("selftest fails", ("python3", "scripts/_fails.py")))
+        d = md.Doctor()
+        d.check_gates()
+        _tick()
+        if d.timings.get("selftest sleepy", 0) < 1.0:
+            FAILURES.append(f"#2246: a gate that ran for 1.2 s has a recorded wall time of at least 1 s, got {d.timings!r}")
+        _tick()
+        if "selftest fails" not in d.timings:
+            FAILURES.append(f"#2246: a FAILING gate is timed too, got {d.timings!r}")
+        sink = io.StringIO()
+        with contextlib.redirect_stdout(sink):
+            d.report()
+        out = sink.getvalue()
+        _tick()
+        if not any(" s " in ln and ln.rstrip().endswith("selftest sleepy") for ln in out.splitlines()):
+            FAILURES.append(f"#2246: the report prints the slow gate's wall time on its own line, got {out!r}")
+        _tick()
+        if "[  ok  ] gate: selftest sleepy" not in out or "[ FAIL ] gate: selftest fails" not in out:
+            FAILURES.append("#2246: CONTROL: the status lines are unchanged, so anything that reads them still reads them")
+        _tick()
+        if "2 gate(s) ran for" not in out:
+            FAILURES.append(f"#2246: the report ends the timing block with the count of gates that ran, got {out!r}")
+        d2 = md.Doctor()
+        _tick()
+        sink = io.StringIO()
+        with contextlib.redirect_stdout(sink):
+            d2.report()
+        if "gate wall times" in sink.getvalue():
+            FAILURES.append("#2246: a sweep that ran no gate prints no timing block")
+    finally:
+        md.GATES, md.REPO = saved_gates, real
+
+
 def timeout_fixtures() -> None:
     """A gate that is KILLED did not run -- so it is a skip, and a real failure is still a FAIL.
 
@@ -486,6 +552,7 @@ def timeout_fixtures() -> None:
 def run() -> int:
     md.restore_sigint()   # #1635: a backgrounded run inherits SIGINT ignored; the Ctrl-C fixtures below need it
     timeout_fixtures()
+    gate_time_fixtures()
     starved_gate_fixtures()
     repo_untouched_fixtures()
     ruleset_fixtures()

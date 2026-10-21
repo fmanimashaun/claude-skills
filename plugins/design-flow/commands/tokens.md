@@ -1,14 +1,14 @@
 ---
-description: Export native design tokens (Phase 3) from the Rails app's Tailwind @theme — generate Android (colors.xml + Theme.Fidara) and iOS (SwiftUI Color) token files so fully-native screens match the web by construction. Writes to tmp/; does NOT modify native app repos.
+description: Export native design tokens (Phase 3) from the app's token source of truth — generate Android (colors.xml + Theme.Fidara) and iOS (SwiftUI Color) token files so fully-native screens match the web by construction. Writes to tmp/; does NOT modify native app repos.
 argument-hint: "[android | ios | both]"
 disable-model-invocation: true
 ---
 
 # /design-flow:tokens — $ARGUMENTS
 
-Generate native token files from the `@theme` single source of truth, so fully-native
+Generate native token files from the single token source of truth, so fully-native
 Android/iOS screens match the web. Follow rails-stack's `skills/design-system/references/native-tokens.md`.
-This runs in the **Rails app** (which owns the `@theme`); it writes outputs to `tmp/` for the
+This runs in the **app** (which owns the tokens); it writes outputs to `tmp/` for the
 maintainer to carry into the native repos — it **never** writes into a native app repo.
 
 ## Preconditions
@@ -20,25 +20,22 @@ this one, and no `plugin.json` can declare that — there is no `requires` field
 this command's own agents call that doctrine *"the law"*, and improvising it is how a scaffold invents
 tokens and components that no gate will recognise (#513).
 
-A Rails app set up with `/design-flow:setup` (so `app/assets/tailwind/application.css` has the
-`@theme` + `:root` role tokens). `$ARGUMENTS` = target(s) (`android | ios | both`; default `both`).
+An app set up with `/design-flow:setup` (so its token file carries the primitives and the role tokens). `$ARGUMENTS` = target(s) (`android | ios | both`; default `both`).
 
-## Do (per native-tokens.md)
+## Which stack renders this
 
-1. Install/refresh `bin/export_design_tokens` (the reference Ruby script) if absent.
-2. Run it: parse `application.css`, **resolve role → primitive → hex**, and emit to
-   `tmp/design-tokens/`:
-   - **Android**: `values/colors.xml` (`fd_*`) + `theme_map.xml` (`Theme.Fidara` mapping
-     Material 3 attrs → `fd_*`); dark mode → `values-night/colors.xml` from the `.dark` roles.
-   - **iOS**: `FidaraTokens.swift` (`Color.fd*`); dark → asset-catalog dark variants.
-3. Also export radius (→ ShapeAppearance / Swift constants), spacing (→ dimens / constants),
-   and the type families (Bricolage/Newsreader/Overpass as downloadable-font references). Fluid
-   `--text-step-*` → fixed native sizes (the `clamp()` max), documented as such.
-4. Report a diff summary: N color roles + radius/spacing/type exported, per target.
+How the tokens are read and exported is the stack's. Resolve the project's UI adapter from its stack descriptor:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ui_adapter.py"
+```
+
+It prints JSON with `dir` and `tokens_file`. **Exit 2 means it cannot say**: quote its message and stop; never fall back to another
+stack. Read **`<dir>/tokens.md`** and do what it says; it names the source of truth, the exporter and the output layout.
 
 ## Guardrails
 
-- **Generated, never hand-edited** — re-run on token changes; keep the `@theme` canonical.
+- **Generated, never hand-edited** — re-run on token changes; keep the token source canonical.
 - Same **role names** across web/Android/iOS (a native screen reads like the web).
 - Output stays in `tmp/`; the maintainer copies it into the native app repo via **that repo's**
   flow. This command does not touch native repos.
