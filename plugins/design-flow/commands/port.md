@@ -41,7 +41,7 @@ Exit 1 means an old place still holds files. **Stop**, run the command it prints
 **Step 0 — the checklist is extracted, not written.** Before any code:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/canvas_manifest.py" extract "<canvas>.dc.html" --out "docs/design/<surface>/<canvas>.manifest.json"
+python3 "${CLAUDE_PLUGIN_ROOT}/ui/viewcomponent-erb/scripts/canvas_manifest.py" extract "<canvas>.dc.html" --out "docs/design/<surface>/<canvas>.manifest.json"
 ```
 
 Every heading, copy run, control, repeat, conditional, icon and data label the canvas specifies becomes one item
@@ -73,7 +73,7 @@ Dispatch the **`design-porter`** agent. It works the order in `design-handoff.md
   `token-gap`, or `deferred` + the reason the user approved — and this is clean:
 
   ```bash
-  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/canvas_manifest.py" check "docs/design/<surface>/<canvas>.manifest.json" --report "docs/design/<surface>/<canvas>.port-report.json"
+  python3 "${CLAUDE_PLUGIN_ROOT}/ui/viewcomponent-erb/scripts/canvas_manifest.py" check "docs/design/<surface>/<canvas>.manifest.json" --report "docs/design/<surface>/<canvas>.port-report.json"
   ```
 
   It refuses while any item is unaccounted for, and an `implemented` whose text is in neither the named file nor

@@ -5,8 +5,8 @@ GUARD = Guard(
     # #750/#754. The marker is the line between "the plugin's" and "yours", and every mutation
     # here erases that line in a different direction.
     name="check_token_drift",
-    subject="plugins/design-flow/scripts/check_token_drift.py",
-    selftest="plugins/design-flow/scripts/check_token_drift.py",
+    subject="plugins/design-flow/ui/viewcomponent-erb/scripts/check_token_drift.py",
+    selftest="plugins/design-flow/ui/viewcomponent-erb/scripts/check_token_drift.py",
     # `doctrine_path.py` joins `needs` with #777: these now resolve the doctrine through the
     # shared resolver, so without it the staged tempdir fails at IMPORT and the harness
     # reports the guard INERT -- every mutation "caught" whether or not it breaks anything.

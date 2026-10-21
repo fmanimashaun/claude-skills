@@ -3,8 +3,8 @@ from mutation_types import Guard, Mutation  # noqa: F401
 
 GUARD = Guard(
     name="source_text",
-    subject="scripts/source_text.py",
-    selftest="scripts/source_text.py",   # --selftest lives in the module
+    subject="ui/viewcomponent-erb/scripts/source_text.py",
+    selftest="ui/viewcomponent-erb/scripts/source_text.py",   # --selftest lives in the module
     mutations=(
         Mutation(
             # The reported form: a component explaining why the wrapper was REMOVED was reported

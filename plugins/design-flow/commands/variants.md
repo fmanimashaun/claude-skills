@@ -179,7 +179,7 @@ Run it. **"They look consistent" is not a verdict** — the whole reason the con
 mechanical is that three plausible screens are exactly the input a human review waves through.
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variant_conformance.py" .
+python3 "${CLAUDE_PLUGIN_ROOT}/ui/viewcomponent-erb/scripts/variant_conformance.py" .
 ```
 
 Exit 0 clean · 1 findings · 2 unusable. It runs the **#157 LLM-tell detector against every
@@ -212,7 +212,7 @@ Once chosen:
 3. Prove it, rather than believing it — an un-run discard looks exactly like a completed one:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variant_conformance.py" --verify-discard .
+python3 "${CLAUDE_PLUGIN_ROOT}/ui/viewcomponent-erb/scripts/variant_conformance.py" --verify-discard .
 ```
 
 4. **The chosen variant still goes through `/design-flow:audit`.** Variants are a way of making a

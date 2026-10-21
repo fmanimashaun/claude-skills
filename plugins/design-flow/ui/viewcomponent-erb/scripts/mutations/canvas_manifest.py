@@ -4,8 +4,8 @@ from mutation_types import Guard, Mutation  # noqa: F401
 # #908. Each mutation makes the checklist shorter or the check softer -- the two ways "done" loses its denominator.
 GUARD = Guard(
     name="canvas_manifest",
-    subject="scripts/canvas_manifest.py",
-    selftest="scripts/canvas_manifest.py",   # --selftest lives in the module itself
+    subject="ui/viewcomponent-erb/scripts/canvas_manifest.py",
+    selftest="ui/viewcomponent-erb/scripts/canvas_manifest.py",   # --selftest lives in the module itself
     mutations=(
         Mutation(
             "a void <input> control is dropped from the manifest (it never closes)",
