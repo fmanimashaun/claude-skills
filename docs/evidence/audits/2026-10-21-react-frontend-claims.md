@@ -113,7 +113,7 @@ One hand-written fixture per anti-pattern, in an App Router project (`app/`), li
 | sequential independent awaits in a page (R17) | nothing | nothing |
 | Server Action with no auth check (R22) | nothing | nothing |
 
-So nextjs-stack runs the three rules (`react-lint-off-by-default`, via `check_react_lint.py`: on this fixture project, exactly those four findings and no other rule) and checks itself only what nothing upstream catches: R8 (client route files), R16 (fetch in a client Effect) and R6 (internal `<a>`), in `check_react_patterns.py` (`react-patterns`), which on the fixture project reports exactly those three. R17 and R22 are not mechanised: R17 is a review verdict, R22 belongs to the security surface (#2210).
+So nextjs-stack runs the three rules (`react-lint-off-by-default`, via `check_react_lint.py`: on this fixture project, exactly those four findings and no other rule) and checks itself only what nothing upstream catches: R8 (client route files), R16 (fetch in a client Effect) and R6 (internal `<a>`), in `check_react_patterns.py` (`react-patterns`), which on the fixture project reports exactly those three. R17 and R22 are not mechanised: R17 is verified advice (a recorded-verdict rule once #2225 lands), R22 belongs to the security surface (#2210).
 
 ## False positives, measured (2026-10-21)
 
@@ -121,7 +121,7 @@ So nextjs-stack runs the three rules (`react-lint-off-by-default`, via `check_re
 
 | rule | fired | judged by hand | outcome |
 |---|---|---|---|
-| a `"use client"` module with no hook, handler, browser API or context | 9 | 4 certain false positives (a `Providers` wrapping `next-themes`' `ThemeProvider`, which needs the client because it renders a third-party context provider); 5 render `flowbite-react` components, undecidable from the file | **dropped** as a mechanical rule: a third-party import can be the reason a module needs the client, and source text cannot see it. It is now the review verdict `server-components-by-default`. |
+| a `"use client"` module with no hook, handler, browser API or context | 9 | 4 certain false positives (a `Providers` wrapping `next-themes`' `ThemeProvider`, which needs the client because it renders a third-party context provider); 5 render `flowbite-react` components, undecidable from the file | **dropped** as a mechanical rule: a third-party import can be the reason a module needs the client, and source text cannot see it. It is now verified advice (`server-components-by-default`), a recorded-verdict rule once #2225 lands. |
 | `use-client-route-file` | 3 | three client mail pages built from form inputs: deliberate trade-offs, exactly what R8 asks to be stated | kept, satisfied by **declaration** (`react-architecture: client-route -- <reason>`) |
 | `fetch-in-effect` | 0 | an independent count found 0 files with both `useEffect` and `fetch(` | 0 false positives; the corpora contain no true positive, so detection rests on the fixtures |
 | `internal-anchor` | 0 | an independent count found 0 internal `<a href="/...">` | as above |
@@ -139,6 +139,6 @@ The scan first read only `app/`, while 303 of the corpora's 335 client files liv
 | R9 | the framework (runtime error) |
 | R23 | the framework (`server-only` build error) |
 | R22 | the security surface, #2210 |
-| R1, R3, R5, R7, R10, R13, R14, R17, R19, R20 | recorded review verdict (rails-flow #2225); declared in the skill's last section |
+| R1, R3, R5, R7, R10, R13, R14, R17, R19, R20 | verified advice now, each citing its CONFIRMED claim; a recorded-verdict rule once rails-flow #2225 lands (the coordinator's call on the #2243 review, under the owner's "advice is fine when tested against a standard") |
 | C18 | not shipped (INCONCLUSIVE) |
 
