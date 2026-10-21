@@ -52,6 +52,13 @@ GUARD = Guard(
             "broken-doc-pointer / a declared root resolves the pointer against that plugin",
         ),
         Mutation(
+            # #2175: a stack's setup section names its own plugin's files as ${STACK_ROOT}/...
+            "a ${STACK_ROOT} pointer is never checked, so a setup section can name a gate its plugin does not ship",
+            "            for match in _STACK_ROOT_POINTER.finditer(body):\n",
+            "            for match in ():\n",
+            "broken-doc-pointer / ...and a ${STACK_ROOT} pointer to a file that plugin does not ship is a finding",
+        ),
+        Mutation(
             # #2182 review: released CHANGELOG blocks are history, as shipped.
             "released CHANGELOG blocks are checked as live pointers again",
             "            body = _unreleased_only(body)\n",
@@ -1728,6 +1735,37 @@ GUARD = Guard(
             'data.get("hooks", {}).get("PreToolUse", [])',
             'data.get("hooks", {}).get("Stop", []) + data.get("hooks", {}).get("PreToolUse", [])',
             "a named gate on a Stop hook is out of scope (the field has no effect there): silent",
+        ),
+        Mutation(
+            # #2208: a hook planted in .git/hooks under a machine whose system config sets core.hooksPath never runs.
+            "a selftest planting a hook under the machine's git config stops being a finding",
+            "        if not _HOOK_DIR_RESOLVED.search(code):\n",
+            "        if False:\n",
+            "a selftest planting a hook in .git/hooks under the machine's config",
+        ),
+        Mutation(
+            "fixture_git dropping GIT_CONFIG_NOSYSTEM stops being a finding",
+            "        if path.is_file() and '\"GIT_CONFIG_NOSYSTEM\"' not in read(path):\n",
+            "        if False:\n",
+            "fixture_git that stopped isolating the system config",
+        ),
+        Mutation(
+            "a .git/hooks path written as one string is not seen",
+            """_PLANTED_HOOKS = re.compile(r\"\"\"["']\\.git["']\\s*\\)?\\s*/\\s*["']hooks["']|["'][^"'\\n]*\\.git/hooks\"\"\")""",
+            """_PLANTED_HOOKS = re.compile(r\"\"\"["']\\.git["']\\s*\\)?\\s*/\\s*["']hooks["']\"\"\")""",
+            "a .git/hooks path written as one string is planted too",
+        ),
+        Mutation(
+            "comments are read as code, so a comment naming hermetic_git makes a non-hermetic script pass",
+            "        code = _code_only(read(path), shell=path.suffix == \".sh\")\n",
+            "        code = read(path)\n",
+            "a marker only in a comment does not make a script hermetic",
+        ),
+        Mutation(
+            "nested folders are not scanned",
+            'paths = [p for pattern in ("scripts/**/*", "plugins/*/scripts/**/*") for p in ROOT.glob(pattern) if p.suffix in (".py", ".sh")]',
+            'paths = [p for pattern in ("scripts/*", "plugins/*/scripts/*") for p in ROOT.glob(pattern) if p.suffix in (".py", ".sh")]',
+            "a nested selftest planting a hook is scanned too",
         ),
         Mutation(
             # #2178: the pointer from a stack descriptor to its design-flow UI adapter.
