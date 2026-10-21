@@ -71,20 +71,22 @@ def ready(command: list[str]) -> tuple[bool, str]:
     return done.returncode == 0, f"exit {done.returncode}"
 
 
-def locate(row: dict, project: Path) -> str | None:
-    """The CLI's path: on PATH first, then each of the descriptor's `project_paths` inside the project; None when neither."""
+def locate(row: dict, project: Path) -> tuple[str | None, bool]:
+    """(the CLI's path, whether it is the project's own copy): on PATH first, then each of the descriptor's `project_paths`.
+    A project copy must resolve inside the project, so a symlink pointing out of it is not one."""
     found = shutil.which(row["bin"])
     if found:
-        return found
+        return found, False
+    root = project.resolve()
     for rel in row.get("project_paths") or []:
-        candidate = project / rel
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return str(candidate)
-    return None
+        candidate = (project / rel).resolve()
+        if candidate.is_relative_to(root) and candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate), True
+    return None, False
 
 
 def version(row: dict, path: str) -> str:
-    """The first line the CLI prints for its `version` arguments, or why there is none: reported, never judged."""
+    """The first line a CLI on PATH prints for its `version` arguments, or why there is none: reported, never judged."""
     if not row.get("version"):
         return ""
     try:
@@ -125,10 +127,15 @@ def audit(project: Path, home: Path, dirs: list[Path] | None = None) -> tuple[in
             if row["bin"] in seen:
                 continue
             seen.add(row["bin"])
-            path = locate(row, project)
+            path, in_project = locate(row, project)
             if not path:
                 where = " or in the project" if row.get("project_paths") else ""
                 findings.append(f"MISSING cli {row['bin']} is not on PATH{where} ({label}): {row['install']}")
+                continue
+            if in_project:
+                # A diagnostic never runs what the repository ships: node_modules/.bin in a cloned project can be anything, so
+                # its copy is reported present and is not executed for its version or a ready check (#2168 security review).
+                notes.append(f"ok   cli {row['bin']} at {os.path.relpath(path, project.resolve())} (the project's own copy: not run) ({label})")
                 continue
             if row.get("ready"):
                 ok, how = ready([path, *row["ready"][1:]] if row["ready"][0] == row["bin"] else row["ready"])
@@ -193,8 +200,22 @@ def selftest() -> int:
             local.write_text("#!/bin/sh\necho 'localcli 9.8.7'\n", encoding="utf-8")
             local.chmod(0o755)
             rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
-            case(not any("localcli" in f for f in findings) and any("ok   cli localcli (localcli 9.8.7)" in n for n in notes),
-                 f"a CLI in the project's node_modules/.bin is found and its version reported: {findings} {notes}")
+            case(not any("localcli" in f for f in findings) and any("ok   cli localcli at node_modules/.bin/localcli (the project's own copy: not run)" in n for n in notes),
+                 f"a CLI in the project's node_modules/.bin is found and reported present: {findings} {notes}")
+            ran = proj / "ran.txt"
+            local.write_text(f"#!/bin/sh\necho ran > '{ran}'\n", encoding="utf-8")
+            run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
+            case(not ran.exists(), "the project's own copy of a CLI is never executed by the audit")
+            local.unlink()
+            outside = root / "outside-cli"
+            outside.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            outside.chmod(0o755)
+            local.symlink_to(outside)
+            rc, findings, _ = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
+            case(any("MISSING cli localcli" in f for f in findings), f"a project path that is a symlink out of the project is not the CLI: {findings}")
+            local.unlink()
+            local.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            local.chmod(0o755)
             text = "\n".join(findings)
             case(rc == 1, f"a missing tool is exit 1: rc={rc}")
             case("MISSING plugin extra@official is not enabled" in text and "/plugin install extra@official" in text,

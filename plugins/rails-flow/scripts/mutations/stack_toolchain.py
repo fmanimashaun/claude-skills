@@ -17,8 +17,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a CLI missing from PATH counts as present",
-            '            if not shutil.which(row["bin"]):',
-            '            if False:',
+            '    found = shutil.which(row["bin"])\n    if found:\n        return found, False',
+            '    found = shutil.which(row["bin"]) or "/bin/sh"\n    if found:\n        return found, False',
             "a CLI not on PATH is flagged with its install line",
         ),
         Mutation(
@@ -68,6 +68,18 @@ GUARD = Guard(
             '    if code == 2:\n        return 2,',
             '    if code == 2:\n        return 0,',
             "a project that cannot be judged is exit 2, never 0",
+        ),
+        Mutation(
+            "the project's own copy of a CLI is executed for its version and ready check",
+            '            if in_project:',
+            '            if False:',
+            "the project's own copy of a CLI is never executed by the audit",
+        ),
+        Mutation(
+            'a project path may resolve outside the project',
+            '        if candidate.is_relative_to(root) and candidate.is_file()',
+            '        if candidate.is_file()',
+            'a project path that is a symlink out of the project is not the CLI',
         ),
     ),
 )

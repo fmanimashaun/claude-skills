@@ -270,7 +270,9 @@ DESCRIPTOR_SCHEMA: dict = {
     # the line that installs it. `clis`: a binary on PATH, the line that installs it, and optionally `ready`, a command that exits
     # 0 only when the tool is usable (logged in, its daemon running), with `ready_hint` saying how to get there.
     "toolchain": {"plugins": [{"id": STR, "install": STR}],
-                  "clis": [{"bin": STR, "install": STR, "ready?": STRS, "ready_hint?": STR}]},
+                  # `project_paths`: where inside the project the binary may live instead of PATH (a dev-dependency CLI in
+                  # `node_modules/.bin/`); `version`: the arguments that print its version, reported beside it.
+                  "clis": [{"bin": STR, "install": STR, "ready?": STRS, "ready_hint?": STR, "project_paths?": STRS, "version?": STRS}]},
     "scripts": {"*": STR},
     "review_checklist": STRS,
 }
@@ -503,6 +505,9 @@ def toolchain_problems(stack: dict, where: str) -> list[str]:
             ready = row.get("ready")
             if isinstance(ready, list) and (not ready or not all(isinstance(a, str) and a.strip() for a in ready)):
                 found.append(f"{where}.toolchain.clis[{i}].ready must be a non-empty command (a list of arguments)")
+            for path in row.get("project_paths") or []:
+                if isinstance(path, str) and escapes(path):
+                    found.append(f"{where}.toolchain.clis[{i}].project_paths {path!r} must stay inside the project (no absolute path, no `..`)")
             if "ready" in row and not row.get("ready_hint"):
                 found.append(f"{where}.toolchain.clis[{i}] has a `ready` check but no `ready_hint` saying how to pass it")
     return found
