@@ -186,7 +186,13 @@ def _claim_bodies(base: Path) -> None:
         out, err = proc.communicate(timeout=15)
         ok, why = proc.returncode == 0 and len(fx.ran()) == 1 and "NOT checked" in err, f"rc {proc.returncode}, {err.strip()[-160:]!r}"
     except subprocess.TimeoutExpired:
-        proc.kill()              # the shell; a `cat` blocked on the fifo is swept by the containment when the run ends
+        # RELEASE THE READER, whatever binary it is: open the fifo for writing and close it, so a `cat` blocked on it reads end-of-file and exits. The containment
+        # cannot sweep it on macOS, where a system binary's environment (and so its token) cannot be read (filed as its own issue).
+        try:
+            os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
+        except OSError:
+            pass
+        proc.kill()
         proc.communicate()
         ok, why = False, "the shim hung reading the fifo (15 s)"
     check("a fifo body is not read by the shim (no hang): NOT checked, said, and it runs", ok, why)
