@@ -1,96 +1,5 @@
 {
  "files": {
-  "plugins/design-flow/.claude-plugin/plugin.json": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "categories": {
-    "concept": 1,
-    "hotwire": 1
-   },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
-   "ids": {
-    "hotwire": 1,
-    "rails-word": 1
-   },
-   "invokes": [],
-   "kind": "manifest",
-   "lines": [
-    3
-   ],
-   "move": ""
-  },
-  "plugins/design-flow/README.md": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "categories": {
-    "concept": 4,
-    "gem": 1,
-    "hotwire": 4,
-    "path": 1
-   },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
-   "ids": {
-    "erb": 1,
-    "gem": 1,
-    "hotwire": 4,
-    "rails-config": 1,
-    "rails-word": 2,
-    "ruby-file": 1
-   },
-   "invokes": [],
-   "kind": "doc",
-   "lines": [
-    18,
-    26,
-    43,
-    56,
-    57,
-    70,
-    104
-   ],
-   "move": ""
-  },
-  "plugins/design-flow/agents/brand-guardian.md": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "categories": {
-    "concept": 2,
-    "path": 2
-   },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
-   "ids": {
-    "app-layers": 2,
-    "erb": 1,
-    "ruby-file": 1
-   },
-   "invokes": [],
-   "kind": "agent",
-   "lines": [
-    49,
-    50
-   ],
-   "move": ""
-  },
-  "plugins/design-flow/agents/design-auditor.md": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "categories": {
-    "concept": 2,
-    "path": 2
-   },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
-   "ids": {
-    "app-layers": 2,
-    "erb": 2
-   },
-   "invokes": [],
-   "kind": "agent",
-   "lines": [
-    83,
-    84
-   ],
-   "move": ""
-  },
   "plugins/design-flow/agents/rails-ui-composer.md": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
@@ -156,13 +65,13 @@
    "move": "design-flow-erb"
   },
   "plugins/design-flow/checks.json": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
     "concept": 9,
     "path": 9
    },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
+   "decision": "rails-stack",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
     "app-layers": 9,
     "erb": 8,
@@ -190,276 +99,16 @@
     110,
     121
    ],
-   "move": ""
-  },
-  "plugins/design-flow/commands/audit.md": {
-   "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
-   "categories": {
-    "concept": 7,
-    "hotwire": 1,
-    "path": 2,
-    "tool": 2
-   },
-   "decision": "detector",
-   "how": "the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction)",
-   "ids": {
-    "app-layers": 2,
-    "binstub": 1,
-    "erb": 5,
-    "hotwire": 1,
-    "rails-word": 1,
-    "ruby": 1,
-    "ruby-file": 1
-   },
-   "invokes": [
-    171
-   ],
-   "kind": "command",
-   "lines": [
-    36,
-    57,
-    76,
-    93,
-    99,
-    163,
-    171,
-    276,
-    314,
-    317
-   ],
-   "move": ""
-  },
-  "plugins/design-flow/commands/component.md": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "categories": {
-    "concept": 3,
-    "hotwire": 3,
-    "tool": 1
-   },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
-   "ids": {
-    "erb": 2,
-    "hotwire": 3,
-    "ruby": 1,
-    "ruby-file": 1
-   },
-   "invokes": [],
-   "kind": "command",
-   "lines": [
-    41,
-    59,
-    68,
-    69,
-    70,
-    79
-   ],
-   "move": ""
-  },
-  "plugins/design-flow/commands/compose.md": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "categories": {
-    "concept": 2
-   },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
-   "ids": {
-    "erb": 2
-   },
-   "invokes": [],
-   "kind": "command",
-   "lines": [
-    77,
-    86
-   ],
-   "move": ""
-  },
-  "plugins/design-flow/commands/mobile.md": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "categories": {
-    "concept": 3,
-    "hotwire": 5,
-    "path": 1
-   },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
-   "ids": {
-    "app-layers": 1,
-    "hotwire": 5,
-    "rails-word": 3
-   },
-   "invokes": [],
-   "kind": "command",
-   "lines": [
-    2,
-    9,
-    23,
-    35,
-    48,
-    54
-   ],
-   "move": ""
-  },
-  "plugins/design-flow/commands/port.md": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "categories": {
-    "concept": 4,
-    "hotwire": 3
-   },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
-   "ids": {
-    "erb": 2,
-    "hotwire": 3,
-    "rails-idiom": 1,
-    "rails-word": 1
-   },
-   "invokes": [],
-   "kind": "command",
-   "lines": [
-    2,
-    11,
-    44,
-    55,
-    56,
-    76
-   ],
-   "move": ""
-  },
-  "plugins/design-flow/commands/setup.md": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "categories": {
-    "concept": 12,
-    "gem": 1,
-    "hotwire": 8,
-    "path": 5,
-    "tool": 1
-   },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
-   "ids": {
-    "app-layers": 2,
-    "erb": 5,
-    "gem": 1,
-    "hotwire": 8,
-    "rails-config": 3,
-    "rails-word": 4,
-    "ruby": 1,
-    "ruby-file": 3
-   },
-   "invokes": [],
-   "kind": "command",
-   "lines": [
-    2,
-    20,
-    21,
-    27,
-    128,
-    132,
-    142,
-    152,
-    153,
-    159,
-    163,
-    179,
-    180,
-    181,
-    186,
-    187,
-    197,
-    198,
-    199,
-    235,
-    239
-   ],
-   "move": ""
-  },
-  "plugins/design-flow/commands/tokens.md": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "categories": {
-    "concept": 3,
-    "path": 1,
-    "tool": 1
-   },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
-   "ids": {
-    "app-layers": 1,
-    "rails-word": 3,
-    "ruby": 1
-   },
-   "invokes": [],
-   "kind": "command",
-   "lines": [
-    2,
-    11,
-    23,
-    28
-   ],
-   "move": ""
-  },
-  "plugins/design-flow/commands/variants.md": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "categories": {
-    "concept": 21,
-    "hotwire": 3,
-    "path": 11,
-    "tool": 2
-   },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
-   "ids": {
-    "app-layers": 9,
-    "erb": 15,
-    "hotwire": 3,
-    "rails-word": 2,
-    "routes": 2,
-    "ruby": 2,
-    "ruby-file": 4
-   },
-   "invokes": [],
-   "kind": "command",
-   "lines": [
-    21,
-    23,
-    100,
-    102,
-    103,
-    104,
-    105,
-    106,
-    107,
-    118,
-    119,
-    120,
-    129,
-    130,
-    131,
-    137,
-    138,
-    141,
-    145,
-    150,
-    151,
-    155,
-    156,
-    162,
-    182,
-    210,
-    211,
-    215,
-    247
-   ],
-   "move": ""
+   "move": "design-flow-erb"
   },
   "plugins/design-flow/hooks/scripts/design-tells.sh": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
+   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter selftest resolves a real Rails-shaped project against the shipped rails-stack manifest, the one case that meets a real descriptor",
    "categories": {
     "concept": 2,
     "tool": 2
    },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
+   "decision": "neutral",
+   "how": "nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding",
    "ids": {
     "erb": 1,
     "ruby": 2,
@@ -500,55 +149,59 @@
    ],
    "move": ""
   },
-  "plugins/design-flow/scripts/compose_brief.py": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
+  "plugins/design-flow/scripts/detect_stack.py": {
+   "assumes": "a byte-identical mirror of rails-flow's stack detector (the detect-stack-drift rule holds it equal); its docstring and fixtures name Rails markers",
    "categories": {
-    "concept": 2
+    "concept": 12,
+    "path": 13,
+    "tool": 7
    },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
+   "decision": "detector",
+   "how": "stays a mirror so design-flow resolves its UI adapter with no other plugin installed; it is reworded where the canonical copy is (#2215), never here alone",
    "ids": {
-    "erb": 2
+    "gemfile": 10,
+    "rails-config": 3,
+    "rails-word": 9,
+    "ruby": 7,
+    "ruby-file": 3
    },
    "invokes": [],
    "kind": "script",
    "lines": [
-    142,
-    480
-   ],
-   "move": ""
-  },
-  "plugins/design-flow/scripts/design_prompt.py": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
-   "categories": {
-    "concept": 1,
-    "hotwire": 1,
-    "path": 2
-   },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
-   "ids": {
-    "app-layers": 2,
-    "hotwire": 1,
-    "rails-word": 1
-   },
-   "invokes": [],
-   "kind": "script",
-   "lines": [
-    5,
-    9,
-    63
+    14,
+    15,
+    37,
+    303,
+    574,
+    575,
+    589,
+    590,
+    592,
+    594,
+    638,
+    639,
+    646,
+    703,
+    730,
+    768,
+    770,
+    774,
+    777,
+    781,
+    783,
+    799,
+    813
    ],
    "move": ""
   },
   "plugins/design-flow/scripts/llm_tell_detector.py": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
+   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter selftest resolves a real Rails-shaped project against the shipped rails-stack manifest, the one case that meets a real descriptor",
    "categories": {
     "concept": 6,
     "tool": 1
    },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
+   "decision": "neutral",
+   "how": "nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding",
    "ids": {
     "erb": 5,
     "ruby": 1,
@@ -566,13 +219,13 @@
    "move": ""
   },
   "plugins/design-flow/scripts/prompt_library.py": {
-   "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
+   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter selftest resolves a real Rails-shaped project against the shipped rails-stack manifest, the one case that meets a real descriptor",
    "categories": {
     "concept": 1,
     "path": 1
    },
-   "decision": "reword",
-   "how": "reworded when #2165 and #2171 settle which of these stay stack-neutral",
+   "decision": "neutral",
+   "how": "nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding",
    "ids": {
     "app-layers": 1,
     "erb": 1
@@ -584,14 +237,68 @@
    ],
    "move": ""
   },
-  "plugins/design-flow/ui/viewcomponent-erb/adapter.json": {
+  "plugins/design-flow/scripts/ui_adapter.py": {
+   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter selftest resolves a real Rails-shaped project against the shipped rails-stack manifest, the one case that meets a real descriptor",
+   "categories": {
+    "concept": 2,
+    "path": 1
+   },
+   "decision": "neutral",
+   "how": "nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding",
+   "ids": {
+    "erb": 1,
+    "gemfile": 1,
+    "ruby-file": 1
+   },
+   "invokes": [],
+   "kind": "script",
+   "lines": [
+    177,
+    178,
+    182
+   ],
+   "move": ""
+  },
+  "plugins/design-flow/ui/viewcomponent-erb/README.md": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 3
+    "concept": 7,
+    "gem": 1,
+    "hotwire": 2,
+    "path": 2
    },
    "decision": "rails-stack",
    "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
+    "app-layers": 1,
+    "erb": 4,
+    "gem": 1,
+    "hotwire": 2,
+    "rails-config": 1,
+    "rails-word": 2,
+    "ruby-file": 1
+   },
+   "invokes": [],
+   "kind": "doc",
+   "lines": [
+    1,
+    3,
+    4,
+    5,
+    10
+   ],
+   "move": "design-flow-erb"
+  },
+  "plugins/design-flow/ui/viewcomponent-erb/adapter.json": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "categories": {
+    "concept": 3,
+    "path": 1
+   },
+   "decision": "rails-stack",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
+   "ids": {
+    "app-layers": 1,
     "erb": 2,
     "rails-word": 1
    },
@@ -599,7 +306,120 @@
    "kind": "data",
    "lines": [
     2,
-    4
+    4,
+    5
+   ],
+   "move": "design-flow-erb"
+  },
+  "plugins/design-flow/ui/viewcomponent-erb/audit.md": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "categories": {
+    "concept": 7,
+    "path": 2,
+    "tool": 1
+   },
+   "decision": "rails-stack",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
+   "ids": {
+    "app-layers": 2,
+    "binstub": 1,
+    "erb": 4,
+    "rails-word": 2,
+    "ruby-file": 1
+   },
+   "invokes": [
+    38
+   ],
+   "kind": "doc",
+   "lines": [
+    1,
+    13,
+    31,
+    34,
+    38,
+    42,
+    45
+   ],
+   "move": "design-flow-erb"
+  },
+  "plugins/design-flow/ui/viewcomponent-erb/component.md": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "categories": {
+    "concept": 6,
+    "hotwire": 3,
+    "tool": 1
+   },
+   "decision": "rails-stack",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
+   "ids": {
+    "erb": 4,
+    "hotwire": 3,
+    "rails-word": 1,
+    "ruby": 1,
+    "ruby-file": 1
+   },
+   "invokes": [],
+   "kind": "doc",
+   "lines": [
+    1,
+    4,
+    8,
+    13,
+    14,
+    18,
+    26
+   ],
+   "move": "design-flow-erb"
+  },
+  "plugins/design-flow/ui/viewcomponent-erb/mobile.md": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "categories": {
+    "concept": 5,
+    "hotwire": 4,
+    "path": 1
+   },
+   "decision": "rails-stack",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
+   "ids": {
+    "app-layers": 1,
+    "erb": 1,
+    "hotwire": 4,
+    "rails-word": 4
+   },
+   "invokes": [],
+   "kind": "doc",
+   "lines": [
+    1,
+    4,
+    6,
+    16,
+    27,
+    32
+   ],
+   "move": "design-flow-erb"
+  },
+  "plugins/design-flow/ui/viewcomponent-erb/port.md": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "categories": {
+    "concept": 5,
+    "hotwire": 2
+   },
+   "decision": "rails-stack",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
+   "ids": {
+    "erb": 4,
+    "hotwire": 2,
+    "rails-word": 1
+   },
+   "invokes": [],
+   "kind": "doc",
+   "lines": [
+    1,
+    4,
+    21,
+    32,
+    33,
+    53
    ],
    "move": "design-flow-erb"
   },
@@ -1205,14 +1025,14 @@
   "plugins/design-flow/ui/viewcomponent-erb/scripts/mutations/setup_doctrine_crosscheck.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 2,
+    "concept": 3,
     "gem": 1
    },
    "decision": "rails-stack",
    "followed": "plugins/design-flow/ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py",
    "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
-    "erb": 2,
+    "erb": 3,
     "gem": 1
    },
    "invokes": [],
@@ -1220,6 +1040,7 @@
    "lines": [
     6,
     7,
+    12,
     33
    ],
    "move": "design-flow-erb"
@@ -1282,18 +1103,18 @@
   "plugins/design-flow/ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 51,
+    "concept": 55,
     "gem": 5,
-    "path": 19
+    "path": 20
    },
    "decision": "rails-stack",
    "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
     "erb": 2,
     "gem": 5,
-    "rails-config": 19,
-    "rails-word": 27,
-    "ruby-file": 22
+    "rails-config": 20,
+    "rails-word": 30,
+    "ruby-file": 23
    },
    "invokes": [],
    "kind": "doc",
@@ -1310,47 +1131,51 @@
     63,
     72,
     101,
-    116,
-    121,
-    124,
-    125,
-    222,
-    223,
-    231,
+    111,
+    127,
+    132,
+    135,
+    136,
     233,
-    302,
-    315,
-    317,
-    323,
-    325,
-    332,
-    333,
-    338,
-    378,
-    383,
-    389,
-    391,
-    392,
-    402,
-    403,
-    409,
-    411,
+    234,
+    242,
+    244,
+    313,
+    326,
+    328,
+    334,
+    336,
+    343,
+    344,
+    349,
+    384,
+    385,
+    394,
+    401,
+    406,
     412,
+    414,
     415,
-    421,
-    442,
-    446,
-    449,
-    450,
-    463,
-    468,
+    425,
+    426,
+    432,
+    434,
+    435,
+    438,
+    444,
+    465,
     469,
-    483,
-    487,
-    488,
-    502,
-    508,
-    516
+    472,
+    473,
+    486,
+    491,
+    492,
+    506,
+    510,
+    511,
+    525,
+    531,
+    539
    ],
    "move": "design-flow-erb"
   },
@@ -1470,6 +1295,131 @@
     863,
     882,
     892
+   ],
+   "move": "design-flow-erb"
+  },
+  "plugins/design-flow/ui/viewcomponent-erb/setup.md": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "categories": {
+    "concept": 12,
+    "gem": 1,
+    "hotwire": 7,
+    "path": 5,
+    "tool": 1
+   },
+   "decision": "rails-stack",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
+   "ids": {
+    "app-layers": 2,
+    "erb": 4,
+    "gem": 1,
+    "hotwire": 7,
+    "rails-config": 3,
+    "rails-word": 5,
+    "ruby": 1,
+    "ruby-file": 3
+   },
+   "invokes": [],
+   "kind": "doc",
+   "lines": [
+    1,
+    4,
+    8,
+    9,
+    12,
+    48,
+    52,
+    62,
+    72,
+    73,
+    79,
+    83,
+    99,
+    100,
+    101,
+    106,
+    107,
+    117,
+    118,
+    119
+   ],
+   "move": "design-flow-erb"
+  },
+  "plugins/design-flow/ui/viewcomponent-erb/tokens.md": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "categories": {
+    "concept": 2,
+    "path": 1,
+    "tool": 1
+   },
+   "decision": "rails-stack",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
+   "ids": {
+    "app-layers": 1,
+    "erb": 1,
+    "rails-word": 1,
+    "ruby": 1
+   },
+   "invokes": [],
+   "kind": "doc",
+   "lines": [
+    1,
+    4,
+    8
+   ],
+   "move": "design-flow-erb"
+  },
+  "plugins/design-flow/ui/viewcomponent-erb/variants.md": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "categories": {
+    "concept": 23,
+    "hotwire": 3,
+    "path": 10,
+    "tool": 2
+   },
+   "decision": "rails-stack",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
+   "ids": {
+    "app-layers": 8,
+    "erb": 15,
+    "hotwire": 3,
+    "rails-word": 4,
+    "routes": 2,
+    "ruby": 2,
+    "ruby-file": 4
+   },
+   "invokes": [],
+   "kind": "doc",
+   "lines": [
+    1,
+    4,
+    6,
+    11,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    29,
+    30,
+    31,
+    40,
+    41,
+    42,
+    48,
+    49,
+    52,
+    56,
+    61,
+    62,
+    66,
+    67,
+    73,
+    90,
+    96,
+    99,
+    100
    ],
    "move": "design-flow-erb"
   },
