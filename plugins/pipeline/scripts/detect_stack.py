@@ -508,6 +508,8 @@ def toolchain_problems(stack: dict, where: str) -> list[str]:
             for path in row.get("project_paths") or []:
                 if isinstance(path, str) and escapes(path):
                     found.append(f"{where}.toolchain.clis[{i}].project_paths {path!r} must stay inside the project (no absolute path, no `..`)")
+            if isinstance(ready, list) and ready and isinstance(ready[0], str) and ("/" in ready[0] or " " in ready[0].strip()):
+                found.append(f"{where}.toolchain.clis[{i}].ready[0] {ready[0]!r} must be a bare command name, looked up on PATH")
             if "ready" in row and not row.get("ready_hint"):
                 found.append(f"{where}.toolchain.clis[{i}] has a `ready` check but no `ready_hint` saying how to pass it")
     return found
@@ -1082,6 +1084,9 @@ def selftest() -> int:
                 ("a CLI given as a path is a problem", {"clis": [{"bin": "/usr/bin/x", "install": "i"}]}, "must be a bare command name"),
                 ("an empty ready command is a problem", {"clis": [{"bin": "x", "install": "i", "ready": [], "ready_hint": "h"}]}, "ready must be a non-empty command"),
                 ("a ready check with no hint is a problem", {"clis": [{"bin": "x", "install": "i", "ready": ["x", "ok"]}]}, "no `ready_hint`"),
+                ("a ready command given as a path is a problem", {"clis": [{"bin": "x", "install": "i", "ready": ["/opt/x", "ok"], "ready_hint": "h"}]}, "ready[0] '/opt/x' must be a bare command name"),
+                ("a version given as a string is a problem", {"clis": [{"bin": "x", "install": "i", "version": "--version"}]}, "version"),
+                ("an empty version list is a problem", {"clis": [{"bin": "x", "install": "i", "version": []}]}, "version"),
                 ("an unknown toolchain key is a problem", {"clis": [{"bin": "x", "install": "i", "login": ["x"]}]}, "login is not a declared descriptor key")):
             tdir = plug(f"tc-{abs(hash(label)) % 10**8}", [{"id": "tc", "all": [{"file": "tc.txt"}], "descriptor": {"toolchain": tc}}])
             out = io.StringIO()

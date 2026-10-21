@@ -557,5 +557,11 @@ GUARD = Guard(
             'PER_STACK_KEYS = ("setup_section", "security")',
             'a toolchain-only descriptor owes no REQUIRED keys',
         ),
+        Mutation(
+            'a ready command given as a path passes',
+            '            if isinstance(ready, list) and ready and isinstance(ready[0], str) and ("/" in ready[0] or " " in ready[0].strip()):',
+            '            if False:',
+            'a ready command given as a path is a problem',
+        ),
     ),
 )

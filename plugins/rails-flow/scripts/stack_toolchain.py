@@ -9,6 +9,8 @@ asks the detector which stacks matched and reads their blocks, so a new stack ad
 A plugin counts as present when it is ENABLED: the documented record is the `enabledPlugins` key of the settings files, read
 here at user (`~/.claude/settings.json`), project (`.claude/settings.json`) and local (`.claude/settings.local.json`) scope, the
 most specific scope that names it winning. `installed_plugins.json` is not documented, so it is not read (#2168 verification).
+The project scope is taken at its word, as Claude Code takes it: a project's own `.claude/settings.json` enabling a plugin that is
+not installed reads as present here too.
 
 Exit: 0 every declared tool is present and ready
       1 something is missing or not ready (each on its own line, with the steps)
@@ -22,6 +24,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -60,10 +63,35 @@ def enabled_plugins(project: Path, home: Path) -> tuple[dict[str, bool], list[st
     return state, problems
 
 
-def ready(command: list[str]) -> tuple[bool, str]:
+def inside(path: Path, project: Path) -> bool:
+    """Whether `path` lives in `project`, judged by FILE IDENTITY (device and inode), not by spelling: a path string can name the
+    project through letter case on a case-insensitive volume, or through an alias such as macOS's /System/Volumes/Data, and
+    `resolve()` unifies only symlinks (#2291 adversary)."""
+    try:
+        root = os.stat(project)
+    except OSError:
+        return False
+    for p in (path, *path.parents):
+        try:
+            if os.path.samestat(os.stat(p), root):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def probe_env(project: Path) -> tuple[dict[str, str], str]:
+    """(environment, working directory) for running a CLI on PATH. Its PATH keeps only absolute entries outside the project, so a
+    `#!/usr/bin/env node` script cannot pick up the project's own `node`; it runs from a neutral directory, so nothing reads the
+    project's config by being started inside it (#2291 adversary)."""
+    keep = [e for e in os.environ.get("PATH", "").split(os.pathsep) if e and os.path.isabs(e) and not inside(Path(e), project)]
+    return {**os.environ, "PATH": os.pathsep.join(keep)}, tempfile.gettempdir()
+
+
+def ready(command: list[str], env: dict[str, str], cwd: str) -> tuple[bool, str]:
     """Run a readiness probe: ready only on exit 0 within the timeout."""
     try:
-        done = subprocess.run(command, capture_output=True, text=True, timeout=READY_TIMEOUT, stdin=subprocess.DEVNULL)
+        done = subprocess.run(command, capture_output=True, text=True, timeout=READY_TIMEOUT, stdin=subprocess.DEVNULL, env=env, cwd=cwd)
     except subprocess.TimeoutExpired:
         return False, f"timed out after {READY_TIMEOUT}s"
     except OSError as err:
@@ -88,23 +116,23 @@ def locate(row: dict, project: Path) -> tuple[str | None, bool]:
     never hides the one the project pins; then PATH. Every hit is RESOLVED and judged by where it really lives: anything under
     the project is the project's copy, never executed, however it was reached (a node_modules/.bin that direnv, `npm run` or a
     shell rc put on PATH). A project path that resolves outside the project (a symlink out) is not the project's copy."""
-    root = project.resolve()
     for rel in row.get("project_paths") or []:
         candidate = (project / rel).resolve()
-        if candidate.is_relative_to(root) and candidate.is_file() and os.access(candidate, os.X_OK):
+        if inside(candidate, project) and candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate), True
     found = on_path(row["bin"])
     if found:
-        return str(found), found.is_relative_to(root)
+        return str(found), inside(found, project)
     return None, False
 
 
-def version(row: dict, path: str) -> str:
+def version(row: dict, path: str, env: dict[str, str], cwd: str) -> str:
     """The first line a CLI on PATH prints for its `version` arguments, or why there is none: reported, never judged."""
     if not row.get("version"):
         return ""
     try:
-        done = subprocess.run([path, *row["version"]], capture_output=True, text=True, timeout=READY_TIMEOUT, stdin=subprocess.DEVNULL)
+        done = subprocess.run([path, *row["version"]], capture_output=True, text=True, timeout=READY_TIMEOUT, stdin=subprocess.DEVNULL,
+                              env=env, cwd=cwd)
     except (subprocess.TimeoutExpired, OSError) as err:
         return f" (version unknown: {type(err).__name__})"
     first = (done.stdout or done.stderr).strip().splitlines()
@@ -126,6 +154,7 @@ def audit(project: Path, home: Path, dirs: list[Path] | None = None) -> tuple[in
     findings: list[str] = []
     notes: list[str] = []
     seen: set[str] = set()
+    env, cwd = probe_env(project)
     for block in blocks:
         label = f"{block['plugin']}:{block['stack']}"
         for row in block.get("plugins") or []:
@@ -153,21 +182,20 @@ def audit(project: Path, home: Path, dirs: list[Path] | None = None) -> tuple[in
                 continue
             if row.get("ready"):
                 probe = Path(path) if row["ready"][0] == row["bin"] else on_path(row["ready"][0])
-                if probe is None or probe.resolve().is_relative_to(project.resolve()):
+                if probe is None or inside(probe, project):
                     # the probe binary is missing from PATH, or is the project's own: it is not run, so readiness is unknown
                     findings.append(f"NOT READY cli {row['bin']}: `{row['ready'][0]}` is not a binary outside the project, so "
                                     f"`{' '.join(row['ready'])}` was not run ({label}): {row['ready_hint']}")
                     continue
-                ok, how = ready([str(probe), *row["ready"][1:]])
+                ok, how = ready([str(probe), *row["ready"][1:]], env, cwd)
                 if not ok:
                     findings.append(f"NOT READY cli {row['bin']}: `{' '.join(row['ready'])}` failed ({how}) ({label}): {row['ready_hint']}")
                     continue
-            notes.append(f"ok   cli {row['bin']}{version(row, path)} ({label})")
+            notes.append(f"ok   cli {row['bin']}{version(row, path, env, cwd)} ({label})")
     return (1 if findings else 0), findings, notes
 
 
 def selftest() -> int:
-    import tempfile
     bad = 0
 
     def case(ok: bool, message: str) -> None:
@@ -282,6 +310,43 @@ def selftest() -> int:
                 {"id": "tcs", "all": [{"file": "marker.txt"}], "descriptor": {"toolchain": toolchain}}]}), encoding="utf-8")
             (local.parent / "localcli2").unlink()
             local.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            os.environ["PATH"] = f"{bindir}{os.pathsep}/usr/bin{os.pathsep}/bin"
+            # #2291 adversary: containment is judged by file identity, so a PATH entry spelling the project in other letter case
+            # (a case-insensitive volume) is still the project. On a case-sensitive volume that spelling does not exist.
+            (local.parent / "casecli").write_text(f"#!/bin/sh\ntouch '{pwned}'\n", encoding="utf-8")
+            (local.parent / "casecli").chmod(0o755)
+            alias = Path(str(local.parent).replace(proj.name, proj.name.upper()))
+            toolchain["clis"].append({"bin": "casecli", "install": "get casecli", "version": ["--version"]})
+            (plug / "stacks.json").write_text(json.dumps({"plugin": "tc", "stacks": [
+                {"id": "tcs", "all": [{"file": "marker.txt"}], "descriptor": {"toolchain": toolchain}}]}), encoding="utf-8")
+            os.environ["PATH"] = f"{alias}{os.pathsep}{bindir}{os.pathsep}/usr/bin{os.pathsep}/bin"
+            rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
+            case(not pwned.exists(), f"a PATH entry naming the project in other letter case does not run its binary (alias exists: {alias.exists()})")
+            # a global script whose interpreter comes from PATH cannot pick up the project's own interpreter
+            (local.parent / "casecli").unlink()
+            (local.parent / "fakeinterp").write_text(f"#!/bin/sh\ntouch '{pwned}'\n", encoding="utf-8")
+            (local.parent / "fakeinterp").chmod(0o755)
+            where = root / "probe-cwd.txt"
+            (bindir / "casecli").write_text(f"#!/usr/bin/env fakeinterp\n", encoding="utf-8")
+            (bindir / "casecli").chmod(0o755)
+            os.environ["PATH"] = f"{bindir}{os.pathsep}{local.parent}{os.pathsep}/usr/bin{os.pathsep}/bin"
+            rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
+            case(not pwned.exists(), "a global CLI's `#!/usr/bin/env` interpreter is never resolved from the project")
+            # the probe runs outside the project, so nothing reads the project's config by being started in it
+            (bindir / "casecli").write_text(f"#!/bin/sh\npwd > '{where}'\n", encoding="utf-8")
+            here = os.getcwd()
+            os.chdir(proj)
+            try:
+                run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
+            finally:
+                os.chdir(here)
+            probed = Path(where.read_text(encoding="utf-8").strip()) if where.exists() else None
+            case(probed is not None and not inside(probed, proj), f"a probe runs outside the project, not in it: {probed}")
+            toolchain["clis"] = [c for c in toolchain["clis"] if c["bin"] != "casecli"]
+            (plug / "stacks.json").write_text(json.dumps({"plugin": "tc", "stacks": [
+                {"id": "tcs", "all": [{"file": "marker.txt"}], "descriptor": {"toolchain": toolchain}}]}), encoding="utf-8")
+            (bindir / "casecli").unlink()
+            (local.parent / "fakeinterp").unlink()
             os.environ["PATH"] = f"{bindir}{os.pathsep}/usr/bin{os.pathsep}/bin"
             text = "\n".join(findings)
             case(rc == 1, f"a missing tool is exit 1: rc={rc}")

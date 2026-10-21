@@ -77,13 +77,13 @@ GUARD = Guard(
         ),
         Mutation(
             'a project path may resolve outside the project',
-            '        if candidate.is_relative_to(root) and candidate.is_file()',
+            '        if inside(candidate, project) and candidate.is_file()',
             '        if candidate.is_file()',
             'a project path that is a symlink out of the project is not the CLI',
         ),
         Mutation(
             "a PATH hit is never judged by where it lives, so the project's node_modules/.bin on PATH is run",
-            '        return str(found), found.is_relative_to(root)',
+            '        return str(found), inside(found, project)',
             '        return str(found), False',
             'a project binary reached through PATH is never executed',
         ),
@@ -101,9 +101,27 @@ GUARD = Guard(
         ),
         Mutation(
             "a ready probe that is the project's own binary is run",
-            '                if probe is None or probe.resolve().is_relative_to(project.resolve()):',
+            '                if probe is None or inside(probe, project):',
             '                if probe is None:',
             "a ready probe that is the project's own binary is not run",
+        ),
+        Mutation(
+            'containment is judged by spelling, so another letter case of the project escapes it',
+            '            if os.path.samestat(os.stat(p), root):',
+            '            if str(p).startswith(str(project.resolve())):',
+            'a PATH entry naming the project in other letter case does not run its binary',
+        ),
+        Mutation(
+            "the probe keeps the project's PATH entries, so a #!/usr/bin/env interpreter can be the project's",
+            'and os.path.isabs(e) and not inside(Path(e), project)]',
+            'and os.path.isabs(e)]',
+            "a global CLI's `#!/usr/bin/env` interpreter is never resolved from the project",
+        ),
+        Mutation(
+            'the probe runs in the current directory, which may be the project',
+            '    return {**os.environ, "PATH": os.pathsep.join(keep)}, tempfile.gettempdir()',
+            '    return {**os.environ, "PATH": os.pathsep.join(keep)}, os.getcwd()',
+            'a probe runs outside the project, not in it',
         ),
     ),
 )
