@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Production configuration is validated by something (#2120).
 
-WHY IT IS A GATE. `plugins/rails-stack/skills/rails-8/references/auth-security.md` documents the worst trap -- `config.hosts` is empty in
+WHY IT IS A GATE. rails-stack's `skills/rails-8/references/auth-security.md` documents the worst trap -- `config.hosts` is empty in
 production and does NOTHING -- and no gate read `config/environments/production.rb`. A downstream app shipped with
 the line commented out (Retask #2060: Host-header and DNS-rebinding protection off, an emailed link built from the
 request host). Static and offline, like `check_unauthenticated_writes.py`: it reads files and boots nothing.

@@ -86,12 +86,12 @@ def problems(controller_text: str, gemfile: str | None) -> list[str]:
             "the default locale.\n"
             "    An `around_action` is required rather than a `before_action`: `with_locale` "
             "restores the previous value when the block exits, which is what a wrapper does.\n"
-            "    See plugins/rails-stack/skills/rails-8/references/i18n.md §2")
+            "    See rails-stack's skills/rails-8/references/i18n.md §2")
     elif not uncommented(controller_text, AROUND_ACTION):
         found.append(
             "`I18n.with_locale` is used but no `around_action` wraps the action, so it cannot be "
             "covering the whole request.\n"
-            "    See plugins/rails-stack/skills/rails-8/references/i18n.md §2")
+            "    See rails-stack's skills/rails-8/references/i18n.md §2")
     if gemfile is not None and "rails-i18n" not in declared_gems(gemfile):
         found.append(
             "`rails-i18n` is not in the Gemfile. Rails ships English for its OWN strings only — "

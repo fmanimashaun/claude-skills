@@ -48,16 +48,16 @@ icon-only; no color-only state; keyboard reachable; `prefers-reduced-motion`.
 **Consistency** — catalog variant/size names; one mechanism per component (no duplicate
 button/badge idioms); radius language (btn `rounded-md`, card `rounded-lg`, badge
 `rounded-full`); Lucide icons; single source of truth for tokens.
-**Motion** (#136, `plugins/rails-stack/skills/design-system/references/motion.md`) — **one** entrance pattern per page,
+**Motion** (#136, rails-stack's `skills/design-system/references/motion.md`) — **one** entrance pattern per page,
 at most **three** animated regions, never two running at once in the viewport, and never on content
 the reader scrolled to on purpose. Count them; this is the one motion rule that is arithmetic rather
 than judgement. Every pattern also needs its static end-state and a reduced-motion behaviour change
 (not merely a shortened duration).
-**Marketing copy** (#131, `plugins/rails-stack/skills/design-system/references/marketing-copy.md`) — every section carries the copy contract
+**Marketing copy** (#131, rails-stack's `skills/design-system/references/marketing-copy.md`) — every section carries the copy contract
 for its archetype: one reader, a claim with its proof, specific over generic. Copy is a
 **positioning decision the human owns**; flag a draft that asserts a benefit with no proof, or that
 addresses no one in particular, but never rewrite positioning as if it were a style fix.
-**Visual assets** (#135, `plugins/rails-stack/skills/design-system/references/visual-assets.md`) — prefer specific over decorative: a product
+**Visual assets** (#135, rails-stack's `skills/design-system/references/visual-assets.md`) — prefer specific over decorative: a product
 screenshot beats brand geometry, which beats stock illustration. Illustration styles are never mixed
 on one surface. Third-party illustration must be recoloured to role tokens.
 **Composition/branding** — full-page single-focus views (auth, marketing splash, onboarding) use

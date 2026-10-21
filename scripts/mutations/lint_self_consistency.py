@@ -7,6 +7,32 @@ GUARD = Guard(
     selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
     mutations=(
         Mutation(
+            # #2182 release blocker: every shipped file type is scanned for the clone-only skills path.
+            "the clone-only skills path in a shipped script, json or README is no longer reported",
+            "            if CLONE_SKILLS in line:\n",
+            "            if False:\n",
+            "clone-path-in-shipped-file / a shipped script printing the clone-only skills path is a finding",
+        ),
+        Mutation(
+            "the clone-aware allow-list is ignored, so doctrine_path.py's own clone half is reported",
+            '        if "/mutations/" in "/" + rel(path) + "/" or rel(path) in CLONE_PATH_ALLOWED:\n',
+            '        if "/mutations/" in "/" + rel(path) + "/":\n',
+            "clone-path-in-shipped-file / ...but an allow-listed clone-aware file is silent",
+        ),
+        Mutation(
+            # #2182 release blocker: shipped text must name rails-stack's install-relative skills/ path.
+            "a clone-only plugins/rails-stack/skills/ path in shipped text is accepted again",
+            "            if shipped and target.startswith(CLONE_SKILLS):\n",
+            "            if False:\n",
+            "broken-doc-pointer / a clone-only path in shipped text is a finding even when the file exists",
+        ),
+        Mutation(
+            "shipped skills/ pointers resolve from the repo root again, so the install-relative path reads as broken",
+            '            base = ROOT / "plugins" / "rails-stack" if shipped else ROOT\n',
+            "            base = ROOT\n",
+            "broken-doc-pointer / ...and is silent when the skill doc is there",
+        ),
+        Mutation(
             # #2182: only a stack's setup_section may declare whose ${CLAUDE_PLUGIN_ROOT} it means.
             "a declaration is honoured in any file, so any command can silence a wrong-plugin pointer",
             "_without_fences(body)) if rel(path) in setup_sections else None\n",
@@ -1083,7 +1109,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the skill-pointer half stops being reported (#100)",
-            "            if (ROOT / match.group(1)).exists():\n                continue",
+            "            if (base / target).exists():\n                continue",
             "            if True:\n                continue",
             "command points at a skill doc that was renamed away",
         ),

@@ -61,7 +61,7 @@ Twice, that mechanism turns out to be one 37signals' tool-neutral shape can't as
 | Their concern | 37signals mechanism | Our scaffold today | Decision |
 |---|---|---|---|
 | One source of truth across tools | `AGENTS.md` + `.claude/CLAUDE.md` → `@../AGENTS.md` | `CLAUDE.md`, sole entry, marker-wrapped | **A — adopt the import, only when an AGENTS.md already exists** |
-| How code should read | separate [`STYLE.md`][f-style], AGENTS.md says *"read STYLE.md"* | `plugins/rails-stack/skills/rails-8/references/style.md` (Phase A) + Project Overrides | **B — point at the skill; never copy a STYLE.md; offer a path-scoped rule** |
+| How code should read | separate [`STYLE.md`][f-style], AGENTS.md says *"read STYLE.md"* | rails-stack's `skills/rails-8/references/style.md` (Phase A) + Project Overrides | **B — point at the skill; never copy a STYLE.md; offer a path-scoped rule** |
 | Orient an agent to the domain | AGENTS.md "Architecture Overview" prose | Patterns (code shapes) + `docs/architecture/graph.json` | **C — adopt a short, non-derivable overview** |
 | Mode / area-specific instructions | conditional [`saas/AGENTS.md`][f-saas] | none | **D — reject by default; document `.claude/rules/` for it** |
 | Test / controller micro-conventions | [writebook `AGENTS.md`][w-agents] | rails-8 skill doctrine | **E — noted, not scaffold material (and mostly Minitest)** |
@@ -126,7 +126,7 @@ or reviewing code, read STYLE.md."* The question #100 poses is whether we should
 `STYLE.md` too.
 
 **No — and the reason is that we already did it once, better.** Phase A extracted fizzy's `STYLE.md`
-into `plugins/rails-stack/skills/rails-8/references/style.md`: shipped doctrine, version-pinned, every rule quoted and
+into rails-stack's `skills/rails-8/references/style.md`: shipped doctrine, version-pinned, every rule quoted and
 cited, available in **every** rails-flow project (the scaffold already presumes the rails-8 skill —
 setup-flow §1 measures deviations *"from the rails-8 skill's vanilla doctrine"*). A per-project
 `STYLE.md` would either copy that skill — duplicating shipped doctrine and inviting drift, and directly
@@ -225,7 +225,7 @@ These are **not scaffold material**, and mostly not even ours to hold:
 - `assert_in_body` and fixtures are **Minitest/Capybara** idioms. We mandate pure **RSpec** — the
   Phase E divergence (EPIC #96) — so they don't translate.
 - `_path` over `_url` in tests is framework-neutral and sound, but it is **rails-8 skill doctrine**,
-  not scaffold content, and `plugins/rails-stack/skills/**` is out of this phase's lane. Recorded here for whoever owns
+  not scaffold content, and rails-stack's `skills/**` is out of this phase's lane. Recorded here for whoever owns
   Phase A/E; not acted on in rails-flow.
 
 The useful meta-observation: writebook folds a little style into `AGENTS.md` and ships **no**
