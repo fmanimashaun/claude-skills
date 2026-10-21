@@ -1,6 +1,6 @@
 ---
 name: react
-description: React and Next.js App Router frontend architecture: composition, the Server/Client boundary, data and state, streaming, performance and the frontend's security share, each rule with its enforcement. Use when writing or reviewing React components in a Next.js project.
+description: "React and Next.js App Router frontend architecture: composition, the Server/Client boundary, data and state, streaming, performance and the frontend's security share, each rule with its enforcement. Use when writing or reviewing React components in a Next.js project."
 ---
 
 # React frontend architecture (Next.js App Router)

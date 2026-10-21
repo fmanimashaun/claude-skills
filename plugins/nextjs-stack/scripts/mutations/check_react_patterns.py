@@ -26,7 +26,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the directive is found anywhere in the file, comments included",
-            "    client = bool(DIRECTIVE.match(raw))",
+            "    client = has_client_directive(raw)",
             '    client = "use client" in raw',
             "the directive inside a comment is not a directive",
         ),
@@ -47,6 +47,12 @@ GUARD = Guard(
             '        raise NotApplicable(f"{project}: no app/ or src/app/ directory -- not an App Router project")',
             "        return []",
             "NOT APPLICABLE",
+        ),
+        Mutation(
+            "a not-applicable project exits 0, reading as a pass",
+            '        print(f"check_react_patterns: not applicable -- {exc}")\n        return 3',
+            '        print(f"check_react_patterns: not applicable -- {exc}")\n        return 0',
+            "must exit 3, not applicable",
         ),
     ),
 )

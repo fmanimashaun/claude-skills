@@ -114,9 +114,12 @@ def selftest() -> int:
             failures.append("a project with no ESLint installed must be NOT APPLICABLE, not clean")
         except NotApplicable:
             pass
+    with tempfile.TemporaryDirectory() as tmp:   # the exit-3 site in main(): an empty folder is not applicable (#1873)
+        if main([tmp]) != 3:
+            failures.append("a project with no package.json must exit 3, not applicable")
     for failure in failures:
         print(f"FAIL  {failure}")
-    total = 3 + len(RULES) + 1
+    total = 3 + len(RULES) + 1 + 1
     print(f"check_react_lint selftest: {total - len(failures)} of {total} passed")
     return 1 if failures else 0
 

@@ -44,7 +44,6 @@ SOURCE_SUFFIXES = (".tsx", ".jsx", ".ts", ".js")
 ROUTE_FILES = {"layout", "page", "template", "default"}
 SKIP_DIRS = {"node_modules", ".next", "dist", "build", "out", ".git"}
 
-DIRECTIVE = re.compile(r"""\A(?:\s|//[^\n]*\n|/\*.*?\*/)*(['"])use client\1""", re.S)
 CLIENT_ROUTE_DECLARED = re.compile(r"react-architecture:[ \t]*client-route[ \t]*(?:--|—|:)[ \t]*\S")   # the reason on the SAME line
 EFFECT_CALL = re.compile(r"\buseEffect\s*\(")
 INTERNAL_ANCHOR = re.compile(r"""<a\b[^>]*\bhref\s*=\s*\{?\s*(['"`])/(?!/)""")
@@ -56,6 +55,28 @@ class Unjudgeable(Exception):
 
 class NotApplicable(Exception):
     """Not an App Router project: the check does not apply (exit 3, which project_gates grades n/a, never pass or fail)."""
+
+
+def has_client_directive(text: str) -> bool:
+    """`"use client"` as the module's first statement, after only whitespace and comments. A linear scan: the regex
+    it replaces (`(?:\\s|//...|/\\*.*?\\*/)*`) could backtrack exponentially on `/*` and many `*//*` (CodeQL, #2243)."""
+    i, n = 0, len(text)
+    while i < n:
+        if text[i].isspace():
+            i += 1
+        elif text.startswith("//", i):
+            j = text.find("\n", i)
+            if j == -1:
+                return False
+            i = j + 1
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            if j == -1:
+                return False
+            i = j + 2
+        else:
+            break
+    return text.startswith(('"use client"', "'use client'"), i)
 
 
 def strip_comments(text: str) -> str:
@@ -140,7 +161,7 @@ def judge_file(path: Path, rel: str, in_app: bool) -> list[dict]:
         raise Unjudgeable(f"{rel}: unreadable ({exc})") from exc
     findings: list[dict] = []
     code = strip_comments(raw)
-    client = bool(DIRECTIVE.match(raw))
+    client = has_client_directive(raw)
     stem = path.name.split(".")[0]
     if in_app and client and stem in ROUTE_FILES and not CLIENT_ROUTE_DECLARED.search(raw):
         findings.append({"rule": "use-client-route-file", "file": rel,
@@ -206,9 +227,12 @@ def selftest() -> int:
             failures.append("a project with no app/ directory must be NOT APPLICABLE, not clean")
         except NotApplicable:
             pass
+    with tempfile.TemporaryDirectory() as tmp:   # the exit-3 site in main(): an empty folder is not applicable (#1873)
+        if main([tmp]) != 3:
+            failures.append("a project with no package.json must exit 3, not applicable")
     for failure in failures:
         print(f"FAIL  {failure}")
-    total = len(cases) + 1
+    total = len(cases) + 1 + 1
     print(f"check_react_patterns selftest: {total - len(failures)} of {total} passed")
     return 1 if failures else 0
 

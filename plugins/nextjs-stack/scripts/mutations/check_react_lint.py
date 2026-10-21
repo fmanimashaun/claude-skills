@@ -24,5 +24,11 @@ GUARD = Guard(
             '''    rules = ", ".join(f'"{r}": "warn"' for r in RULES)''',
             "the config must turn",
         ),
+        Mutation(
+            "a not-applicable project exits 0, reading as a pass",
+            '        print(f"check_react_lint: not applicable -- {exc}")\n        return 3',
+            '        print(f"check_react_lint: not applicable -- {exc}")\n        return 0',
+            "must exit 3, not applicable",
+        ),
     ),
 )
