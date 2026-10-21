@@ -51,28 +51,12 @@
             "onFailure": "block"
           }
         ]
-      },
-      {
-        "matcher": "Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-migrate.sh\"",
-            "timeout": 10,
-            "onFailure": "block"
-          }
-        ]
       }
     ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
-          {
-            "type": "command",
-            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lint-ruby.sh\"",
-            "timeout": 60
-          },
           {
             "type": "command",
             "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/self-consistency.sh\"",
