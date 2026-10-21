@@ -256,7 +256,11 @@ DESCRIPTOR_SCHEMA: dict = {
     # code_syntax (#2119): what in this stack's files is not code (a block comment, a heredoc), so a security-review citation
     # `file:line` can be refused when it points inside one; scoped by extension. syntax_cases proves it.
     "security": {"checklist": STR, "scanners": STRS, "cases": STR, "syntax_cases": STR,
-                 "code_syntax": [{"extensions": STRS, "block_comments": [{"open": STR, "close": STR, "column0": BOOL}], "heredoc": STR}],
+                 # A key ending in `?` is optional in its record (#2260): a language with no heredoc declares none. `line_comments` are markers that
+                 # make a line that STARTS with them a comment; `refuse_when` names a pattern which, on any line of the file, means a reader that
+                 # goes line by line cannot be sure what is code (a template literal spanning lines), so the whole file is refused, with `why`.
+                 "code_syntax": [{"extensions": STRS, "block_comments": [{"open": STR, "close": STR, "column0": BOOL}], "heredoc?": STR,
+                                  "line_comments?": STRS, "refuse_when?": [{"pattern": STR, "why": STR}]}],
                  "boundary_text": [{"boundary": STR, "pattern": STR}],
                  "boundary_paths": [{"boundary": STR, "pattern": STR}],
                  # data_markers (#2214): a line that is exactly the marker (an end-of-code line such as `__END__`) ends code for the rest of the file.
@@ -293,13 +297,13 @@ def shape_problems(value: object, shape: object, where: str) -> list[str]:
         if isinstance(shape[0], dict):
             # A LIST ITEM IS A RECORD (#2189 review): a reader takes every key of it (`.allowed`), so each one is required.
             found += [f"{where}[{i}] needs `{key}`" for i, item in enumerate(value) if isinstance(item, dict)
-                      for key in shape[0] if key != "*" and key not in item]
+                      for key in shape[0] if key != "*" and not key.endswith("?") and key not in item]
         return found
     if not isinstance(value, dict) or not value:
         return [f"{where} must be a non-empty block"]
     found = []
     for key, item in value.items():
-        sub = shape.get(key, shape.get("*"))
+        sub = shape.get(key, shape.get(key + "?", shape.get("*")))
         if sub is None:
             found.append(f"{where}.{key} is not a declared descriptor key (descriptor-key-undeclared)")
         else:
@@ -449,6 +453,12 @@ def security_problems(manifest: dict, stack: dict, where: str) -> list[str]:
                 except re.error as err:
                     found.append(f"{where}.security.{key}[{i}].pattern does not compile: {err}")
     for i, row in enumerate(value.get("code_syntax") or []):
+        for j, refusal in enumerate(row.get("refuse_when") or [] if isinstance(row, dict) and isinstance(row.get("refuse_when"), list) else []):
+            if isinstance(refusal, dict) and isinstance(refusal.get("pattern"), str):
+                try:
+                    re.compile(refusal["pattern"])
+                except re.error as err:
+                    found.append(f"{where}.security.code_syntax[{i}].refuse_when[{j}].pattern does not compile: {err}")
         if isinstance(row, dict) and isinstance(row.get("heredoc"), str):
             try:
                 groups = re.compile(row["heredoc"]).groupindex
@@ -980,11 +990,21 @@ def selftest() -> int:
             ("extensions that are not a list are a problem", {"security": {"code_syntax": [{"extensions": ".x", "block_comments": [{"open": "<", "close": ">", "column0": False}], "heredoc": "(?P<id>X)"}]}}, "extensions must be a non-empty list of strings"),
             ("block comments that are not a list are a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": {"open": "<"}, "heredoc": "(?P<id>X)"}]}}, "block_comments must be a non-empty list"),
             ("a column0 that is not true or false is a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": [{"open": "<", "close": ">", "column0": "yes"}], "heredoc": "(?P<id>X)"}]}}, "column0 must be true or false"),
+            ("a refuse_when pattern that does not compile is a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": [{"open": "<", "close": ">", "column0": False}], "refuse_when": [{"pattern": "(", "why": "w"}]}]}}, "refuse_when[0].pattern does not compile"),
+            ("a refuse_when with no why is a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": [{"open": "<", "close": ">", "column0": False}], "refuse_when": [{"pattern": "x"}]}]}}, "refuse_when[0] needs `why`"),
+            ("line_comments that are not a list are a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": [{"open": "<", "close": ">", "column0": False}], "line_comments": "<!--"}]}}, "line_comments must be a non-empty list of strings"),
+            ("an unknown key in a code_syntax row is a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": [{"open": "<", "close": ">", "column0": False}], "line_comment": ["x"]}]}}, "line_comment is not a declared descriptor key"),
             ("a block comment with no column0 is a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": [{"open": "<", "close": ">"}], "heredoc": "(?P<id>X)"}]}}, "needs `column0`"),
         )):
             descriptor = {"tests": {"command": ["go"], "glob": "*_test.go"}, "agents": AGENTS, **extra}
             code, report = run(go_app, [plug(f"value-{n}", [{"id": "go", "all": [{"file": "go.mod"}], "descriptor": descriptor}])])
             case(code == 2 and any(needle in p for p in report["problems"]), f"{label}: {code} {report['problems']}")
+        # #2260: a code_syntax row for a language with no heredoc (only `extensions` and `block_comments` are required) is valid, and so are its optional keys.
+        js_row = {"extensions": [".js"], "block_comments": [{"open": "/*", "close": "*/", "column0": False}], "line_comments": ["<!--"],
+                  "refuse_when": [{"pattern": "`", "why": "a template literal"}]}
+        code, report = run(go_app, [plug("js-row", [{"id": "go", "all": [{"file": "go.mod"}], "descriptor": {"tests": {"command": ["go"], "glob": "*_test.go"}, "agents": AGENTS,
+                                                                                                         "security": {"code_syntax": [js_row]}}}])])
+        case(code == 0 and not report["problems"], f"a code_syntax row with no heredoc, and with line_comments and refuse_when, is valid: {code} {report['problems']}")
         held = {"plugin": "p", "_path": "p/stacks.json", "stacks": [{"id": "s", "descriptor": {"tests": {"command": ["go", "test"]}}}]}
         merged, _, _ = merged_descriptor([held], [{"id": "s", "plugin": "p"}])
         merged["tests"]["command"].append("MUTATED")
