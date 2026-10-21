@@ -5068,7 +5068,7 @@ def selftest() -> int:
     php("a .git/hooks path written as one string is planted too",
         {"scripts/b.py": 'open(f"{repo}/.git/hooks/pre-commit", "w")\n'}, True)
     php("a marker only in a comment does not make a script hermetic",
-        {"plugins/x/scripts/a_selftest.py": '# runs through hermetic_git and fixture_git.env, see #2208\nsubprocess.run(["git", "commit"])\n(repo / ".git" / "hooks").mkdir()\n'}, True)
+        {"plugins/x/scripts/a_selftest.py": '# we used to run git as hermetic_git.env(repo) with "--git-path" (#2208)\nsubprocess.run(["git", "commit"])\n(repo / ".git" / "hooks").mkdir()\n'}, True)
     php("a nested selftest planting a hook is scanned too",
         {"plugins/x/scripts/sub/b_selftest.py": 'subprocess.run(["git", "commit"])\n(repo / ".git" / "hooks").mkdir()\n'}, True)
     php("a shell selftest planting a hook is scanned too",
