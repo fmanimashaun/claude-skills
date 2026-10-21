@@ -97,20 +97,20 @@ GUARD = Guard(
         ),
         Mutation(
             'the Verdict: line is matched in capitals only, so `verdict: confirmed` is no verdict',
-            'VERDICT_LINE = re.compile(r"^\\s*[-*>]*\\s*\\**\\s*verdict\\s*\\**\\s*:\\s*\\**\\s*confirmed\\b", re.I)',
-            'VERDICT_LINE = re.compile(r"^\\s*[-*>]*\\s*\\**\\s*Verdict\\s*\\**\\s*:\\s*\\**\\s*CONFIRMED\\b")',
+            'VERDICT_LINE = re.compile(r"^\\s*[-*>]*\\s*\\**\\s*verdict\\s*\\**\\s*:\\s*(.*)$", re.I)',
+            'VERDICT_LINE = re.compile(r"^\\s*[-*>]*\\s*\\**\\s*Verdict\\s*\\**\\s*:\\s*(.*)$")',
             "`Verdict: Confirmed` and `verdict: confirmed` are verdicts in any case",
         ),
         Mutation(
             "a table cell that is CONFIRMED is no verdict",
-            '        if VERDICT_LINE.search(line) or "confirmed" in cells:',
-            "        if VERDICT_LINE.search(line):",
+            '            if "confirmed" in [c.strip("*` ").casefold() for c in cells]:',
+            '            if False:',
             "a table cell that is exactly CONFIRMED is a verdict, in any case",
         ),
         Mutation(
             "any line that uses the word confirmed is a verdict, so prose forces waivers",
-            '        if VERDICT_LINE.search(line) or "confirmed" in cells:',
-            '        if VERDICT_LINE.search(line) or "confirmed" in line.casefold():',
+            '            if "confirmed" in [c.strip("*` ").casefold() for c in cells]:',
+            '            if "confirmed" in line.casefold():',
             "PROSE that says confirmed is not a verdict",
         ),
         Mutation(
@@ -130,6 +130,24 @@ GUARD = Guard(
             'or not parts[1] or not parts[2]:',
             'or not parts[2]:',
             'an empty version or date field is refused',
+        ),
+        Mutation(
+            "a verdict written as a code is not held to the vocabulary",
+            "            if word not in VOCABULARY:",
+            "            if False:",
+            "`Verdict: OK` is a finding: use the verdict vocabulary",
+        ),
+        Mutation(
+            "the cells under a Verdict column are not read, so a code in a table escapes",
+            "            out.append((n, line, verdict_token(cells[column]) if column < len(cells) else \"\"))",
+            "            pass",
+            "a cell `C` under a Verdict column is a finding",
+        ),
+        Mutation(
+            "a Verdict column outlives its table",
+            "        if not line.lstrip().startswith(\"|\"):\n            column = None\n            continue",
+            "        if not line.lstrip().startswith(\"|\"):\n            continue",
+            "a Verdict column ends with its table: a later table's cells are not read as verdicts",
         ),
     ),
 )

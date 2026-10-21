@@ -42,8 +42,9 @@ describes: the verifier still states both. A shell is recognised by how little t
 reads as INCONCLUSIVE: that errs toward refusing. An inline tag is removed without a space, so two words a page joins only by markup (`foo<b>bar</b>`)
 read as one word, where a reader may see two; and text a stylesheet hides (a class, not an inline style) is counted as visible. Both err toward
 accepting a phrase the reader could not read, so a phrase that matters should be checked on the page by eye as well.
-A verdict written as a CODE (`C`, `C*`, `OK`, a tick) is OUTSIDE this check: it sees only `Verdict: CONFIRMED` and a table cell that is exactly CONFIRMED.
-A claims file must use that marker for the verdict, or nothing in it is read.
+A verdict written as a CODE (`C`, `OK`, a tick) cannot slip past: `--format-check` refuses any `Verdict:` line, or cell in a column headed Verdict, of a new
+audit whose value is not CONFIRMED, REFUTED or INCONCLUSIVE. A verdict written in PROSE, or in a table with no Verdict column and no cell that is exactly
+CONFIRMED, is not a verdict to this check.
 
 Stdlib only. Fetching needs a network, so this is a verifier's tool and the maintainer's, not a gate that runs in CI; the gate is `--format-check`
 and `--selftest`, which are offline.
@@ -278,33 +279,63 @@ def check_quotes(quotes: list[Quote], fetcher=fetch) -> tuple[int, list[str]]:
 # The format check (offline) and the legacy report
 # ---------------------------------------------------------------------------------------------
 
-# A verdict is a STRUCTURED marker, not a word: a line `Verdict: CONFIRMED` (any case, bold or list marker allowed), or a table cell whose whole text is
-# CONFIRMED (any case). Prose that merely says "the owner confirmed it" is not a verdict: matching bare prose would teach authors to write waivers.
-VERDICT_LINE = re.compile(r"^\s*[-*>]*\s*\**\s*verdict\s*\**\s*:\s*\**\s*confirmed\b", re.I)
+# A verdict is a STRUCTURED marker, not a word: a line `Verdict: <value>`, a cell in a table column headed "Verdict", or (in a table with no such column) a
+# cell whose whole text is CONFIRMED, all in any case. Prose that merely says "the owner confirmed it" is not a verdict: matching bare prose would teach
+# authors to write waivers. The VALUE is held to a vocabulary: a verdict written as a code (`OK`, a tick, `C`) would escape the quotes check, so it is a finding.
+VERDICT_LINE = re.compile(r"^\s*[-*>]*\s*\**\s*verdict\s*\**\s*:\s*(.*)$", re.I)
+VOCABULARY = ("confirmed", "refuted", "inconclusive")
 EVIDENCE = re.compile(r"\[quotes:\s*([A-Za-z0-9._-]+)\s*\]")
 WAIVED = re.compile(r"\[waived:\s*([^\]]*)\]")
 MIN_REASON = 20
 
 
-def verdict_lines(text: str) -> list[tuple[int, str]]:
-    """The lines that give a verdict outside a code fence: a `Verdict: CONFIRMED` line, or a table row with a cell that is exactly CONFIRMED (any case)."""
-    out: list[tuple[int, str]] = []
+def verdict_token(value: str) -> str:
+    """The first word of a verdict's value, lower-cased, without Markdown emphasis (`**Confirmed** with a correction` -> `confirmed`); empty if none."""
+    m = re.match(r"[^\s.,;:|)\u00b7]+", re.sub(r"[*`_]", "", value).strip())
+    return m.group(0).casefold() if m else ""
+
+
+def verdicts(text: str) -> list[tuple[int, str, str]]:
+    """(line number, line, verdict word) for every verdict outside a code fence: a `Verdict:` line, each row's cell under a column headed Verdict,
+    and, in a table with no such column, a cell that is exactly CONFIRMED."""
+    out: list[tuple[int, str, str]] = []
     fenced = False
+    column: int | None = None
     for n, line in enumerate(text.splitlines(), 1):
         if re.match(r"^\s*```", line):
             fenced = not fenced
             continue
         if fenced:
             continue
-        cells = [c.strip().strip("*` ").casefold() for c in line.split("|")] if line.lstrip().startswith("|") else []
-        if VERDICT_LINE.search(line) or "confirmed" in cells:
-            out.append((n, line))
+        m = VERDICT_LINE.match(line)
+        if m:
+            out.append((n, line, verdict_token(m.group(1))))
+            continue
+        if not line.lstrip().startswith("|"):
+            column = None
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if column is None:
+            heads = [i for i, c in enumerate(cells) if re.sub(r"[*`_]", "", c).strip().casefold().startswith("verdict")]
+            if heads:
+                column = heads[0]
+                continue
+            if "confirmed" in [c.strip("*` ").casefold() for c in cells]:
+                out.append((n, line, "confirmed"))
+        elif not all(re.fullmatch(r":?-{2,}:?", c.replace(" ", "")) for c in cells if c):
+            out.append((n, line, verdict_token(cells[column]) if column < len(cells) else ""))
     return out
+
+
+def verdict_lines(text: str) -> list[tuple[int, str]]:
+    """The verdicts that are CONFIRMED: the ones that must carry their quotes."""
+    return [(n, line) for n, line, word in verdicts(text) if word == "confirmed"]
 
 
 def format_findings(root: Path) -> list[str]:
     """Every verdict line of an audit that is not in LEGACY_AUDITS carries `[quotes: ID]` pointing at a ```quotes ID block that holds a record, or
-    `[waived: reason]` with a reason of at least MIN_REASON characters. One record or one waiver never covers a second verdict."""
+    `[waived: reason]` with a reason of at least MIN_REASON characters. One record or one waiver never covers a second verdict. The verdict's value is one
+    of VOCABULARY, so that no verdict can be written in a form this check does not read."""
     findings: list[str] = []
     base = root / AUDITS
     for path in sorted(base.rglob("*.md")) if base.is_dir() else []:
@@ -316,6 +347,10 @@ def format_findings(root: Path) -> list[str]:
         quotes, bad = parse_blocks(text, shown)
         findings += bad
         have = {q.ident for q in quotes if q.ident}
+        for n, line, word in verdicts(text):
+            if word not in VOCABULARY:
+                findings.append(f"{shown}:{n}: use the verdict vocabulary: CONFIRMED, REFUTED or INCONCLUSIVE (any case), not `{word or 'nothing'}`. "
+                                "A verdict written as a code or a tick escapes the quotes check")
         for n, line in verdict_lines(text):
             ev, waived = EVIDENCE.search(line), WAIVED.search(line)
             if ev and ev.group(1) in have:
@@ -517,6 +552,21 @@ def selftest() -> int:
         check("an UNDATED name does not make an audit old", len(findings("foo.md", "Verdict: CONFIRMED\n")) == 1)
         check("`Verdict: Confirmed` and `verdict: confirmed` are verdicts in any case", len(findings("2026-10-23-new.md", "Verdict: Confirmed\n")) == 1 and len(findings("2026-10-23-new.md", "- **verdict:** confirmed.\n")) == 1)
         check("a table cell that is exactly CONFIRMED is a verdict, in any case", len(findings("2026-10-23-new.md", "| C1 | the claim | CONFIRMED |\n")) == 1 and len(findings("2026-10-23-new.md", "| C1 | the claim | **Confirmed** | note |\n")) == 1)
+        check("`Verdict: OK` is a finding: use the verdict vocabulary", len(findings("2026-10-23-new.md", "Verdict: OK\n")) == 1)
+        check("`Verdict: \u2713` is a finding: use the verdict vocabulary", len(findings("2026-10-23-new.md", "Verdict: \u2713\n")) == 1)
+        check("an empty `Verdict:` is a finding", len(findings("2026-10-23-new.md", "Verdict:\n")) == 1)
+        check("a cell `C` under a Verdict column is a finding",
+              any("verdict vocabulary" in f for f in findings("2026-10-23-new.md", "| id | claim | Verdict |\n|---|---|---|\n| R1 | a claim | C |\n")))
+        check("a `C \u00b7 source` cell under a `verdict \u00b7 source` column is a finding",
+              any("verdict vocabulary" in f for f in findings("2026-10-23-new.md", "| id | claim | verdict \u00b7 source |\n|---|---|---|\n| R1 | a claim | C \u00b7 react.dev |\n")))
+        check("REFUTED and INCONCLUSIVE are in the vocabulary, in any case",
+              findings("2026-10-23-new.md", "Verdict: Refuted\n| id | verdict |\n|---|---|\n| R1 | inconclusive (held out) |\n") == [])
+        check("a CONFIRMED cell under a Verdict column needs its quotes even with extra words after it",
+              len(findings("2026-10-23-new.md", "| id | claim | Verdict |\n|---|---|---|\n| R1 | a claim | CONFIRMED with a correction |\n")) == 1)
+        check("a CONFIRMED cell under a Verdict column with its tag is clean",
+              findings("2026-10-23-new.md", "| id | claim | Verdict | evidence |\n|---|---|---|---|\n| C1 | a claim | **Confirmed** with a correction | [quotes: C1] |\n" + GOOD) == [])
+        check("a Verdict column ends with its table: a later table's cells are not read as verdicts",
+              findings("2026-10-23-new.md", "| id | verdict |\n|---|---|\n| R1 | inconclusive |\n\ntext\n\n| id | note |\n|---|---|\n| R2 | C |\n") == [])
         check("a table verdict with its tag in the row is clean", findings("2026-10-23-new.md", "| C1 | the claim | CONFIRMED | [quotes: C1] |\n" + GOOD) == [])
         check("PROSE that says confirmed is not a verdict", findings("2026-10-23-new.md", "The owner confirmed the scope. We CONFIRMED nothing here.\nthe claim is unconfirmed\n| C1 | claim | not confirmed by the page |\n") == [])
         check("a verdict with [quotes: ID] and its block is clean", findings("2026-10-23-new.md", "Verdict: CONFIRMED [quotes: C1]\n" + GOOD) == [])
@@ -595,7 +645,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         quotes += got
     if not quotes:
-        print("no ```quotes block in the file(s): a CONFIRMED verdict needs one (or `<!-- quotes-waived: reason -->`)")
+        print("no ```quotes block in the file(s): a CONFIRMED verdict needs a ```quotes ID block and `[quotes: ID]` on its line (or `[waived: reason of 20+ chars]`)")
         return 2
     code, report = check_quotes(quotes)
     for line in report:

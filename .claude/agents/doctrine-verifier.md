@@ -69,8 +69,9 @@ were not on the cited page, and one claim was CONFIRMED from a page that serves 
 4. A verdict whose evidence is source in this repository has no URL to match: its line says `[waived: <the reason, at least 20 characters>]`, per
    verdict. The gate (`check_verdict_quotes.py --format-check`) refuses a verdict line of a new audit that has neither.
 
-**A verdict written as a code (`C`, `C*`, `OK`, a tick) is outside the check.** The gate reads only `Verdict: CONFIRMED` and a table cell that is exactly
-CONFIRMED; a claims file that marks its verdicts another way is not read at all, so it must use the structured marker.
+**The verdict's value is held to a vocabulary.** A `Verdict:` line, or a cell in a column headed Verdict, says CONFIRMED, REFUTED or INCONCLUSIVE (any
+case, optionally followed by words). A code (`C`, `OK`, a tick) is a finding in a new audit, because it would escape the check; the claims file must use
+the structured marker.
 
 A match proves the phrase is on that page. It does not prove the page is the right authority or the right version: you still state both.
 
