@@ -149,6 +149,25 @@
    ],
    "move": ""
   },
+  "plugins/design-flow/reference/architecture-rules.json": {
+   "assumes": "derived data: the rule texts and sources name the Rails adapter's checks (the viewcomponent-erb paths) because that is where three of the framework's rules are enforced today",
+   "categories": {
+    "concept": 3
+   },
+   "decision": "neutral",
+   "how": "nothing to change: the registry is the framework page's table, and the paths move with the adapter when another stack's adapter exists",
+   "ids": {
+    "erb": 3
+   },
+   "invokes": [],
+   "kind": "reference",
+   "lines": [
+    99,
+    108,
+    117
+   ],
+   "move": ""
+  },
   "plugins/design-flow/scripts/detect_stack.py": {
    "assumes": "a byte-identical mirror of rails-flow's stack detector (the detect-stack-drift rule holds it equal); its docstring and fixtures name Rails markers",
    "categories": {
@@ -1677,12 +1696,12 @@
    "invokes": [],
    "kind": "selftest",
    "lines": [
-    308,
-    330,
-    331,
-    332,
-    443,
-    452
+    315,
+    337,
+    338,
+    339,
+    450,
+    459
    ],
    "move": ""
   },

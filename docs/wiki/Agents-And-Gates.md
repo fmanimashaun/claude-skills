@@ -2,11 +2,11 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**38 shipped agents · 55 shipped commands · 5 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
+**39 shipped agents · 56 shipped commands · 5 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
-| `design-flow` | 1.46.3 | 5 | 12 | 5 |
+| `design-flow` | 1.46.3 | 6 | 13 | 6 |
 | `flow-suite` | 1.0.0 | — | — | — |
 | `nextjs-stack` | 0.1.0 | — | — | — |
 | `pipeline` | 1.5.2 | 1 | 9 | 1 |
@@ -25,6 +25,7 @@
 | `brand-guardian` | judgement · inherit | Read, Grep, Glob, Edit, Bash, Skill | `/design-flow:variants` | — |
 | `design-auditor` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/design-flow:audit`, `/design-flow:variants` | — |
 | `design-critic` | judgement · inherit | Read, Grep, Glob, Skill | `/design-flow:critique` | — |
+| `interface-auditor` | judgement · inherit | Read, Grep, Glob, Write, Bash, Skill | `/design-flow:interface-audit` | `audit_findings.py check` refuses a finding with no real rule, no evidence, a written authority, or a house rule claiming a standard |
 | `rails-ui-composer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | — | — |
 | `rails-ui-porter` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:canvas` | — |
 
@@ -101,12 +102,14 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 |---|---|---|---|
 | design-flow LLM-tell detector | `design-flow` | `python3 plugins/design-flow/scripts/llm_tell_detector.py --selftest` | selftest |
 | design-flow asset home selftest | `design-flow` | `python3 plugins/design-flow/scripts/asset_home.py --selftest` | selftest |
+| design-flow audit findings selftest | `design-flow` | `python3 plugins/design-flow/scripts/audit_findings.py --selftest` | selftest |
 | design-flow brand pack lint | `design-flow` | `python3 plugins/design-flow/scripts/brand_pack_lint.py --selftest` | selftest |
 | design-flow brand packs conform | `design-flow` | `python3 plugins/design-flow/scripts/brand_pack_lint.py plugins/design-flow/brands/fidara plugins/design-flow/brands/reliance` | live check |
 | design-flow composition brief selftest | `design-flow` | `python3 plugins/design-flow/scripts/compose_brief.py --selftest` | selftest |
 | design-flow conformance collector | `design-flow` | `python3 plugins/design-flow/scripts/rendered_conformance.py --check-collector` | live check |
 | design-flow design prompt selftest | `design-flow` | `python3 plugins/design-flow/scripts/design_prompt.py --selftest` | selftest |
 | design-flow doctrine path selftest | `design-flow` | `python3 plugins/design-flow/scripts/doctrine_path.py --selftest` | selftest |
+| design-flow interface audit selftest | `design-flow` | `python3 plugins/design-flow/scripts/interface_audit.py --selftest` | selftest |
 | design-flow modal fit | `design-flow` | `python3 plugins/design-flow/ui/viewcomponent-erb/scripts/check_modal_fit.py --selftest` | selftest |
 | design-flow palette candidates | `design-flow` | `python3 plugins/design-flow/scripts/palette_candidates.py --check` | live check |
 | design-flow palette candidates selftest | `design-flow` | `python3 plugins/design-flow/scripts/palette_candidates.py --selftest` | selftest |
@@ -214,6 +217,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | always-on cost | `repo` | `python3 scripts/check_always_on_cost.py` | live check |
 | always-on cost selftest | `repo` | `python3 scripts/check_always_on_cost.py --selftest` | selftest |
 | architecture rules | `repo` | `python3 scripts/check_architecture_rules.py` | live check |
+| architecture rules derived | `repo` | `python3 scripts/derive_architecture_rules.py --check` | live check |
+| architecture rules derived selftest | `repo` | `python3 scripts/derive_architecture_rules.py --selftest` | selftest |
 | architecture rules selftest | `repo` | `python3 scripts/check_architecture_rules.py --selftest` | selftest |
 | arm window | `repo` | `python3 scripts/check_arm_window.py` | live check |
 | arm window selftest | `repo` | `python3 scripts/check_arm_window.py --selftest` | selftest |
@@ -343,6 +348,7 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `brand-guardian` | judgement | — |
 | `design-critic` | judgement | — |
 | `rails-ui-porter` | judgement | — |
+| `interface-auditor` | judgement | `audit_findings.py check` refuses a finding with no real rule, no evidence, a written authority, or a house rule claiming a standard |
 
 ### `pipeline`
 

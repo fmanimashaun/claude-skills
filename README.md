@@ -118,7 +118,7 @@ Steps 1–2 are once per project. Steps 3–4 are the loop.
 <details>
 <summary><b>design-flow</b> — UI and the design system</summary>
 
-`setup` `component` `tokens` `variants` `mobile` `audit` `critique` `canvas` `port` `compose` ·
+`setup` `component` `tokens` `variants` `mobile` `audit` `critique` `interface-audit` `canvas` `port` `compose` ·
 **assets:** `assets` `generate`
 
 </details>
