@@ -324,5 +324,11 @@ GUARD = Guard(
             '            pass\n        elif not (base / MOCKUP_DIR).is_dir():',
             'with --rev the record is read as COMMITTED',
         ),
+        Mutation(
+            'a missing reader crashes the stamp instead of refusing it by name',
+            '        except ImportError as exc:',
+            '        except ZeroDivisionError as exc:',
+            'records present and the reader missing refuses the stamp BY NAME',
+        ),
     ),
 )

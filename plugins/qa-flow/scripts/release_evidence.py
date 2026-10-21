@@ -475,7 +475,13 @@ def check_mockup_stories(base: Path, rev: str | None) -> list[str]:
             root = Path(td)
         elif not (base / MOCKUP_DIR).is_dir():
             return []
-        records = _mockup_records()
+        try:
+            records = _mockup_records()
+        except ImportError as exc:
+            # FAIL CLOSED: records exist and the reader that judges them is gone (a plugin install missing its copy). A stamp that skipped the
+            # check would certify a design nobody linked to a screen, and a traceback is not a verdict.
+            return [f"mock-up stories: this project has mock-up records but the reader that checks them ({exc}) is missing from qa-flow: "
+                    f"reinstall the plugin, or copy plugins/rails-flow/scripts/mockup_records.py beside release_evidence.py"]
         failing, unjudged, _legacy, _judged = records.audit_results(root, STORY_ISSUE_STATE or records.issue_state)
     return [f"mock-up stories: {line}" for line in failing + unjudged]
 
@@ -1041,7 +1047,29 @@ def selftest() -> int:
                   rc == 1 and "mock-up stories" in err, (rc, out, err))
             rc, out, err = run()
             check("stamp #2226 CONTROL: without --rev the working tree is read, and the fixed record passes", rc == 0, (rc, out, err))
-            (recdir / "a.md").unlink()
+            # The reader missing from the install: with records the stamp is refused by name; with none it never needed the reader.
+            record("a.md", "#2")
+            commit_records("a record again")
+            saved = sys.modules.get("mockup_records")
+            sys.modules["mockup_records"] = None          # `import mockup_records` now raises ImportError
+            try:
+                try:
+                    rc, out, err = run("--rev", "HEAD")
+                except Exception as exc:                  # a crash is a failed check here, not the end of the selftest
+                    rc, out, err = -1, "", f"Traceback: {exc!r}"
+                check("stamp #2226: records present and the reader missing refuses the stamp BY NAME, not with a traceback",
+                      rc == 1 and "mockup_records.py" in err and "Traceback" not in err, (rc, out, err))
+                (recdir / "a.md").unlink()
+                commit_records("no records, no reader")
+                rc, out, err = run("--rev", "HEAD")
+                check("stamp #2226 CONTROL: no records and the reader missing is fine: the reader is imported only when there is something to read",
+                      rc == 0, (rc, out, err))
+            finally:
+                if saved is None:
+                    sys.modules.pop("mockup_records", None)
+                else:
+                    sys.modules["mockup_records"] = saved
+            (recdir / "a.md").unlink(missing_ok=True)
             commit_records("no records")
             rc, out, err = run("--rev", "HEAD")
             check("stamp #2226 CONTROL: a project whose records are gone has nothing to say", rc == 0, (rc, out, err))
