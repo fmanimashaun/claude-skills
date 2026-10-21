@@ -23,9 +23,12 @@ word. So the contract refuses the freedom.
     carry `authority`, `rank` or `severity`: authority comes from the registry (`claim` -> standard,
     anything else -> house rule) and rank is computed here.
   * `evidence` is a screenshot that resolves to a file UNDER `--root`, or a measured value.
-  * Every free-text field (message, proposal, evidence.ref) of a house-rule finding is scanned for
-    words that claim a standard (WCAG, Success Criterion, Level A/AA/AAA, ADA, EN 301 549,
-    Section 508, ARIA spec, a11y requirement, "violates", "non-compliant", "standard").
+  * EVERY string of a house-rule finding is scanned, by a structural walk of the whole object (not a
+    list of fields), for words that claim a standard (WCAG, Success Criterion, Level A/AA/AAA, ADA,
+    EN 301 549, Section 508, ARIA spec, a11y requirement, "violates", "non-compliant", "standard").
+    The `screen` must be a path or URL with no spaces and is scanned with its separators read as
+    spaces; the document's `audit` title and `unverified` list are scanned when house-rule findings
+    sit beside them; unknown document keys are refused.
   * The document says which rules it audited and over how many screens each, and the report prints
     every other rule under **Not audited**, with what blocks it. A clean report names the rules it
     measured; it never says the interface is good.
@@ -52,9 +55,15 @@ FINDING_KEYS = ("rule", "screen", "instances", "evidence", "message", "proposal"
 EVIDENCE_KEYS = ("kind", "ref")
 EVIDENCE_KINDS = ("screenshot", "measured")
 # Words that claim a standard. A house-rule finding may not use them about itself, anywhere.
-STANDARD_WORDS = re.compile(
-    r"\b(WCAG|WAI-ARIA|success\s+criteri(?:on|a)|level\s+AAA?|level\s+A|ADA|EN\s*301[\s.]?549|section\s+508|"
-    r"ARIA\s+spec\w*|a11y\s+requirement\w*|violat\w*|non-?complian\w*|standards?)\b", re.I)
+CLAIM_WORDS = (r"WCAG|WAI-ARIA|success\s+criteri(?:on|a)|level\s+AAA?|level\s+A|ADA|EN\s*301[\s.]?549|section\s+508|"
+               r"ARIA\s+spec\w*|a11y\s+requirement\w*")
+PROSE_WORDS = r"violat\w*|non-?complian\w*|standards?"
+STANDARD_WORDS = re.compile(rf"\b({CLAIM_WORDS}|{PROSE_WORDS})\b", re.I)
+# A screen is a path or a URL with no spaces, so it cannot carry a sentence; its separators are read as spaces
+# before it is scanned, so "/WCAG-2.4.1-failure" is caught while a plain route name passes.
+SCREEN_SHAPE = re.compile(r"^(/\S*|https?://\S+)$")
+CLAIM_ONLY = re.compile(rf"\b({CLAIM_WORDS})\b", re.I)
+DOC_KEYS = ("audit", "audited", "unverified", "skipped_non_2xx", "findings")
 # A qa-flow judge's findings become findings against one framework rule each.
 JUDGE_RULES = {"layout_fit": "A23", "text_resize": "A24", "theme_parity": "A25", "link_audit": "A26"}
 # What blocks a rule from being audited today. A rule with no entry falls back on its basis.
@@ -95,9 +104,34 @@ def load_registry(path: Path = REGISTRY) -> dict[str, dict]:
     return {r["id"]: r for r in rules}
 
 
-def free_text(f: dict) -> str:
-    ev = f.get("evidence") if isinstance(f.get("evidence"), dict) else {}
-    return " ".join(str(x) for x in (f.get("message", ""), f.get("proposal", ""), ev.get("ref", "")))
+def every_string(obj: object, skip: tuple[str, ...] = ()):
+    """EVERY string inside obj, however deep, dict keys included: the structural walk. Fields are not
+    listed one at a time, because each listed field is a field someone forgets (#2253: evidence.ref,
+    then screen, then the audit title)."""
+    if isinstance(obj, str):
+        yield obj
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            yield str(k)
+            if k not in skip:
+                yield from every_string(v, skip)
+    elif isinstance(obj, (list, tuple)):
+        for v in obj:
+            yield from every_string(v, skip)
+
+
+def claim_in(strings, *, screen: str = "") -> str | None:
+    """The first standard-claiming word in the strings; the screen is scanned for the high-signal
+    claims only, with its separators read as spaces."""
+    for t in strings:
+        m = STANDARD_WORDS.search(t)
+        if m:
+            return m.group(0)
+    if screen:
+        m = CLAIM_ONLY.search(re.sub(r"[-_/.]+", " ", screen))
+        if m:
+            return m.group(0)
+    return None
 
 
 def _under(root: Path, ref: str) -> bool:
@@ -122,9 +156,19 @@ def validate(doc: object, registry: dict[str, dict], root: Path) -> list[str]:
             problems.append(f"audited rule {rid!r} is not in the framework's rules table")
         if not isinstance(n, int) or isinstance(n, bool) or n < 1:
             problems.append(f"audited rule {rid!r}: the screen count must be an integer above zero")
+    for k in doc:
+        if k not in DOC_KEYS:
+            problems.append(f"unknown document key `{k}` (allowed: {', '.join(DOC_KEYS)})")
     unv = doc.get("unverified", [])
-    if not isinstance(unv, list) or not all(isinstance(u, str) for u in unv):
-        problems.append("`unverified` must be a list of screens")
+    if not isinstance(unv, list) or not all(isinstance(u, str) and SCREEN_SHAPE.match(u) for u in unv):
+        problems.append("`unverified` must be a list of screens, each a path or URL with no spaces")
+    has_house = any(isinstance(f, dict) and (registry.get(f.get("rule")) or {}).get("authority") == "house"
+                    for f in doc["findings"])
+    if has_house:
+        claim = claim_in(list(every_string({"audit": doc.get("audit", ""), "unverified": unv})))
+        if claim:
+            problems.append(f"the document's title or unverified list claims a standard ({claim!r}) next to house-rule "
+                            "findings; the report prints them side by side")
     for n, f in enumerate(doc["findings"], 1):
         who = f"finding {n}"
         if not isinstance(f, dict):
@@ -140,8 +184,8 @@ def validate(doc: object, registry: dict[str, dict], root: Path) -> list[str]:
                 problems.append(f"{who}: carries `{k}`, which is derived from the rule and may not be written")
             elif k not in FINDING_KEYS:
                 problems.append(f"{who}: unknown key `{k}` (allowed: {', '.join(FINDING_KEYS)}); free text hides there")
-        if not isinstance(f.get("screen"), str) or not f["screen"].strip():
-            problems.append(f"{who}: no `screen`")
+        if not isinstance(f.get("screen"), str) or not SCREEN_SHAPE.match(f["screen"]):
+            problems.append(f"{who}: `screen` must be a path or URL with no spaces, not {f.get('screen')!r}")
         inst = f.get("instances")
         if not isinstance(inst, int) or isinstance(inst, bool) or inst < 1:
             problems.append(f"{who}: `instances` must be an integer of at least 1")
@@ -154,10 +198,12 @@ def validate(doc: object, registry: dict[str, dict], root: Path) -> list[str]:
                     problems.append(f"{who}: unknown evidence key `{k}`")
             if ev["kind"] == "screenshot" and not _under(root, str(ev["ref"])):
                 problems.append(f"{who}: screenshot {ev['ref']!r} is not a file under {root}")
-        m = STANDARD_WORDS.search(free_text(f))
-        if rule is not None and rule["authority"] == "house" and m:
-            problems.append(f"{who}: rule {rule['id']} is a house rule ({rule['basis']}: {rule['ref']}) but its text "
-                            f"claims a standard ({m.group(0)!r})")
+        if rule is not None and rule["authority"] == "house":
+            claim = claim_in(every_string({k: v for k, v in f.items() if k not in ("rule", "screen")}),
+                             screen=str(f.get("screen", "")))
+            if claim:
+                problems.append(f"{who}: rule {rule['id']} is a house rule ({rule['basis']}: {rule['ref']}) but its text "
+                                f"claims a standard ({claim!r})")
     return problems
 
 
@@ -243,9 +289,9 @@ def from_judge(name: str, data: object, screens: int) -> dict:
         if not isinstance(it, dict):
             raise Unusable(f"{name}: a finding is not an object ({it!r})")
         total = max(int(it.get("count") or 1), 1)
-        examples = [str(e) for e in (it.get("examples") or [it.get("ref") or it.get("target") or "(unknown)"])]
+        examples = [str(e) for e in (it.get("examples") or [it.get("ref") or it.get("target") or "/unknown"])]
         for screen in examples:
-            findings.append({"rule": rule, "screen": screen or "(unknown)", "instances": 1,
+            findings.append({"rule": rule, "screen": screen or "/unknown", "instances": 1,
                              "evidence": {"kind": "measured", "ref": f"{name}: {it.get('rule', '')} {it.get('detail', '')}".strip()},
                              "message": f"{it.get('detail', '')} (the judge counts {total} route(s) affected; {len(examples)} listed)".strip()})
     return {"audit": f"{name} findings against {rule}", "audited": {rule: screens}, "unverified": unverified,
@@ -315,6 +361,17 @@ def selftest() -> int:
             ("'ARIA spec' in a house rule's text is refused", any("claims a standard" in p for p in house(message="the ARIA spec says so"))),
             ("'a11y requirement' in a house rule's text is refused", any("claims a standard" in p for p in house(message="an a11y requirement"))),
             ("'Level AA' in a house rule's text is refused", any("claims a standard" in p for p in house(message="Level AA"))),
+            ("a screen that carries a sentence is refused", any("no spaces" in p for p in problems(doc(screen="/ WCAG 2.4.1 Level A failure")))),
+            ("a screen that is not a path or URL is refused, whatever the rule", any("no spaces" in p for p in problems(doc(screen="orders page")))),
+            ("a screen that hides a claim behind separators is refused on a house rule", any("claims a standard" in p for p in house(screen="/WCAG-2.4.1-Level-A"))),
+            ("a screen that joins the claim with underscores is refused on a house rule", any("claims a standard" in p for p in house(screen="/fail_WCAG_2.4.1"))),
+            ("a plain route named /standards passes on a house rule (prose words are not read in a screen)", house(screen="/standards/list") == []),
+            ("the document's title claiming a standard beside a house finding is refused", any("title or unverified" in p for p in problems({**doc(rule="A2"), "audit": "WCAG 2.4.1 failure on A2"}))),
+            ("a title naming WCAG is fine when only standard findings sit beside it", problems({**base, "audit": "WCAG audit"}) == []),
+            ("an unverified entry that carries a sentence is refused", any("no spaces" in p for p in problems({**base, "unverified": ["/x violates WCAG"]}))),
+            ("an unverified entry claiming a standard beside a house finding is refused", any("title or unverified" in p for p in problems({**doc(rule="A2"), "unverified": ["/WCAG-2.4.1-failure"]}))),
+            ("an unknown document key is refused", any("unknown document key" in p for p in problems({**base, "note": "WCAG"}))),
+            ("a claim nested inside a list in evidence.ref is refused", any("claims a standard" in p for p in house(evidence={"kind": "measured", "ref": ["WCAG 2.4.1 failure"]}))),
             ("plain prose about a house rule passes", house(message="the first focusable element is not a skip link") == []),
             ("a standard rule may say WCAG", problems(doc(rule="A1", message="WCAG says one main")) == []),
             ("a document that audited no rule is refused", any("audited no rule" in p for p in problems({**base, "audited": {}}))),
