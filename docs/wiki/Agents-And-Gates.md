@@ -278,6 +278,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | mutation cost record | `repo` | `python3 scripts/mutation_check.py --check-record` | live check |
 | mutation coverage | `repo` | `python3 scripts/mutation_check.py` | live check · 9000s budget |
 | mutation incremental selftest | `repo` | `python3 scripts/mutation_incremental_selftest.py` | live check |
+| neutral proof ratchet | `repo` | `python3 scripts/prove_neutral.py --check` | live check |
+| neutral proof selftest | `repo` | `python3 scripts/prove_neutral.py --selftest` | selftest |
 | packaging determinism | `repo` | `python3 scripts/package_core.py --selftest` | selftest |
 | page pacing | `repo` | `python3 scripts/check_page_pacing.py` | live check |
 | page pacing selftest | `repo` | `python3 scripts/check_page_pacing.py --selftest` | selftest |
