@@ -2,17 +2,17 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**31 shipped agents · 54 shipped commands · 4 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
+**31 shipped agents · 54 shipped commands · 5 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
 | `design-flow` | 1.46.3 | 5 | 12 | 5 |
 | `flow-suite` | 1.0.0 | — | — | — |
 | `nextjs-stack` | 0.1.0 | — | — | — |
-| `pipeline` | 1.5.2 | 2 | 9 | 2 |
+| `pipeline` | 1.5.2 | 1 | 9 | 1 |
 | `qa-flow` | 1.39.0 | 11 | 8 | 11 |
 | `rails-flow` | 1.65.0 | 13 | 25 | 13 |
-| `rails-stack` | 1.76.1 | — | — | — |
+| `rails-stack` | 1.76.1 | 1 | — | 1 |
 
 ## Agents
 
@@ -32,7 +32,6 @@
 
 | agent | tier · model | tools | named by | what proves its output |
 |---|---|---|---|---|
-| `kamal-configurator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/pipeline:deploy-cloud` | — |
 | `pipeline-coordinator` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/pipeline:pipeline`, `/pipeline:setup-pipeline`, `/pipeline:status` | — |
 
 ### `qa-flow`
@@ -68,6 +67,12 @@
 | `skill-curator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/rails-flow:curate` | — |
 | `spec-reviewer` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:retro`, `/rails-flow:spec` | — |
 | `test-runner` | mechanical · haiku | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:handoff`, `/rails-flow:issues`, `/rails-flow:pr-comments`, `/rails-flow:setup-flow` | `bundle exec rspec` exit status — 0 failures or the gate blocks |
+
+### `rails-stack`
+
+| agent | tier · model | tools | named by | what proves its output |
+|---|---|---|---|---|
+| `kamal-configurator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | — | — |
 
 ### `maintainer` (maintainer-only, not installed)
 
@@ -114,7 +119,6 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | pipeline committed-secret scan | `pipeline` | `python3 plugins/pipeline/scripts/scan_committed_secrets.py --selftest` | selftest |
 | pipeline git guards | `pipeline` | `python3 plugins/pipeline/scripts/git_guard_selftest.py` | live check |
 | pipeline hook install | `pipeline` | `python3 plugins/pipeline/scripts/install_git_hooks_selftest.py` | live check |
-| pipeline kamal destination | `pipeline` | `python3 plugins/pipeline/scripts/kamal_destination.py --selftest` | selftest |
 | pipeline release build | `pipeline` | `python3 plugins/pipeline/scripts/release_build.py --selftest` | selftest |
 | pipeline status board | `pipeline` | `python3 plugins/pipeline/scripts/status_board.py --selftest` | selftest |
 | pipeline status hook | `pipeline` | `python3 plugins/pipeline/scripts/pipeline_status_selftest.py` | live check |
@@ -192,10 +196,12 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | rails-flow where-stopped helper | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/where_stopped.py --selftest` | selftest |
 | rails-flow work order | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --selftest` | selftest |
 | rails-flow worktree guard helper | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/worktree_guard.py --selftest` | selftest |
+| rails-stack tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/rails-stack/agents --tiers plugins/rails-stack/reference/model-tiers.md` | live check |
 | stack detector selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/detect_stack.py --selftest` | selftest |
 | stack manifests valid | `rails-flow` | `python3 plugins/rails-flow/scripts/detect_stack.py --check` | live check |
 | status line | `rails-flow` | `python3 plugins/rails-flow/scripts/statusline.py --selftest` | selftest |
 | worktree teardown wording | `rails-flow` | `python3 plugins/rails-flow/scripts/worktree_teardown.py --check-wording` | live check |
+| rails-stack kamal destination | `rails-stack` | `python3 plugins/rails-stack/scripts/kamal_destination.py --selftest` | selftest |
 | agent output contract | `repo` | `python3 scripts/check_agent_output_contract.py` | live check |
 | agent output contract selftest | `repo` | `python3 scripts/check_agent_output_contract.py --selftest` | selftest |
 | always-on cost | `repo` | `python3 scripts/check_always_on_cost.py` | live check |
@@ -330,7 +336,6 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | agent | tier | what proves its output |
 |---|---|---|
 | `pipeline-coordinator` | judgement | — |
-| `kamal-configurator` | judgement | — |
 
 ### `qa-flow`
 
@@ -365,5 +370,11 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `design-auditor` | mechanical | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical | `architecture_graph.py` regenerates and its digest guard fails on drift |
 | `adversary` | adversarial | — |
+
+### `rails-stack`
+
+| agent | tier | what proves its output |
+|---|---|---|
+| `kamal-configurator` | judgement | — |
 
 Manifest cross-check: the 7 plugin directories inventoried are exactly the ones marketplace.json installs.

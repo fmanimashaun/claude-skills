@@ -434,6 +434,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("pipeline tiers", ("python3", "plugins/rails-flow/scripts/check_handoff.py",
                         "--agents", "plugins/pipeline/agents",
                         "--tiers", "plugins/pipeline/reference/model-tiers.md")),
+    ("rails-stack tiers", ("python3", "plugins/rails-flow/scripts/check_handoff.py",
+                           "--agents", "plugins/rails-stack/agents",
+                           "--tiers", "plugins/rails-stack/reference/model-tiers.md")),
     # #128, the pipeline half. Its last checks run against the SHIPPED doctrine and the SHIPPED
     # commands: that reference/stop-conditions.md still states the numbers and the four escapes the
     # script declares, and that every pipeline surface describing an unattended re-run names the

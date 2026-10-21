@@ -23,8 +23,8 @@ details{margin:.4em 0}summary{cursor:pointer}.wrap{overflow-x:auto}
 <li><span class="tag mixed">mixed</span> stays where it is but still assumes a stack somewhere. The <b>seam</b> says where it will ask the stack detector instead (or that it is only wording), and the issue is the plan step that fixes it.</li></ul>
 <dl class="gloss"><dt>hook</dt><dd>a script the assistant runs automatically at a moment in a session (before a command, when it stops) to block or warn.</dd><dt>command</dt><dd>a <code>/name</code> a person types to start a workflow.</dd><dt>agent</dt><dd>a specialist the assistant hands one job to, with its own instructions.</dd><dt>skill</dt><dd>a folder of written guidance the assistant loads when a task matches.</dd><dt>script</dt><dd>a program that does the checking or generating work behind the rest.</dd><dt>gate</dt><dd>one check that must pass before work moves on; each is a row in a plugin's <code>checks.json</code>.</dd><dt>seam</dt><dd>the place a stack-specific step will be swapped for one the stack provides.</dd><dt>stack detector</dt><dd>the shared code (#2163) that looks at a project and answers which stack it uses and which commands and paths to run.</dd><dt>policy file</dt><dd><code>docs/architecture/rails-assumptions.policy.json</code>: where each decision and class is written down.</dd><dt>scan</dt><dd>a search of every file's text for Rails and Next.js names, run by <code>component_classes.py</code>.</dd></dl>
 <p>The class is written down once, in the policy file, and the scan checks it: a component marked neutral that names a Rails or Next.js thing fails the check, and so does a component nobody classified. <b>Limit:</b> the scan finds references by name. A component that assumes Rails without ever naming it still reads as neutral, so neutral means &ldquo;nothing found&rdquo;, not &ldquo;proven on every stack&rdquo;. The per-file reasons are in <code>docs/architecture/rails-assumptions.md</code>.</p></div>
-<h2>Totals (579 components)</h2><div class="wrap"><table><tr><th>class</th><th class="num">components</th></tr>
-<tr><td><span class="tag neutral">neutral</span></td><td class="num">268</td></tr>
+<h2>Totals (581 components)</h2><div class="wrap"><table><tr><th>class</th><th class="num">components</th></tr>
+<tr><td><span class="tag neutral">neutral</span></td><td class="num">270</td></tr>
 <tr><td><span class="tag rails">rails</span></td><td class="num">109</td></tr>
 <tr><td><span class="tag nextjs">nextjs</span></td><td class="num">3</td></tr>
 <tr><td><span class="tag mixed">mixed</span></td><td class="num">199</td></tr>
@@ -33,17 +33,17 @@ details{margin:.4em 0}summary{cursor:pointer}.wrap{overflow-x:auto}
 <tr><td><code>design-flow</code></td><td class="num">94</td><td class="num">43</td><td class="num">28</td><td class="num">0</td><td class="num">23</td></tr>
 <tr><td><code>flow-suite</code></td><td class="num">1</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr>
 <tr><td><code>nextjs-stack</code></td><td class="num">3</td><td class="num">0</td><td class="num">0</td><td class="num">3</td><td class="num">0</td></tr>
-<tr><td><code>pipeline</code></td><td class="num">51</td><td class="num">31</td><td class="num">3</td><td class="num">0</td><td class="num">17</td></tr>
+<tr><td><code>pipeline</code></td><td class="num">50</td><td class="num">33</td><td class="num">0</td><td class="num">0</td><td class="num">17</td></tr>
 <tr><td><code>qa-flow</code></td><td class="num">129</td><td class="num">77</td><td class="num">0</td><td class="num">0</td><td class="num">52</td></tr>
 <tr><td><code>rails-flow</code></td><td class="num">291</td><td class="num">114</td><td class="num">73</td><td class="num">0</td><td class="num">104</td></tr>
-<tr><td><code>rails-stack</code></td><td class="num">10</td><td class="num">2</td><td class="num">5</td><td class="num">0</td><td class="num">3</td></tr>
+<tr><td><code>rails-stack</code></td><td class="num">13</td><td class="num">2</td><td class="num">8</td><td class="num">0</td><td class="num">3</td></tr>
 </table></div>
 <h2>By kind</h2><div class="wrap"><table><tr><th>kind</th><th class="num">all</th><th class="num">neutral</th><th class="num">rails</th><th class="num">nextjs</th><th class="num">mixed</th></tr>
-<tr><td>command</td><td class="num">54</td><td class="num">27</td><td class="num">1</td><td class="num">0</td><td class="num">26</td></tr>
+<tr><td>command</td><td class="num">54</td><td class="num">28</td><td class="num">1</td><td class="num">0</td><td class="num">25</td></tr>
 <tr><td>agent</td><td class="num">31</td><td class="num">10</td><td class="num">9</td><td class="num">0</td><td class="num">12</td></tr>
 <tr><td>hook</td><td class="num">49</td><td class="num">34</td><td class="num">2</td><td class="num">0</td><td class="num">13</td></tr>
 <tr><td>skill</td><td class="num">7</td><td class="num">2</td><td class="num">2</td><td class="num">0</td><td class="num">3</td></tr>
-<tr><td>script</td><td class="num">141</td><td class="num">53</td><td class="num">31</td><td class="num">0</td><td class="num">57</td></tr>
+<tr><td>script</td><td class="num">143</td><td class="num">54</td><td class="num">31</td><td class="num">0</td><td class="num">58</td></tr>
 <tr><td>gate</td><td class="num">55</td><td class="num">12</td><td class="num">29</td><td class="num">0</td><td class="num">14</td></tr>
 <tr><td>test</td><td class="num">185</td><td class="num">96</td><td class="num">30</td><td class="num">0</td><td class="num">59</td></tr>
 <tr><td>support</td><td class="num">57</td><td class="num">34</td><td class="num">5</td><td class="num">3</td><td class="num">15</td></tr>
@@ -176,12 +176,12 @@ details{margin:.4em 0}summary{cursor:pointer}.wrap{overflow-x:auto}
 <tr><td><code>skills/nextjs-supabase-vercel/SKILL.md</code></td><td><span class="tag nextjs">nextjs</span></td><td></td><td>#2165</td><td></td></tr>
 <tr><td><code>stacks.json</code></td><td><span class="tag nextjs">nextjs</span></td><td></td><td>#2165</td><td></td></tr>
 </table></div></details>
-<h2><code>pipeline</code> (51)</h2>
-<details open><summary><b>commands</b> (9: 5 neutral, 4 mixed)</summary>
+<h2><code>pipeline</code> (50)</h2>
+<details open><summary><b>commands</b> (9: 6 neutral, 3 mixed)</summary>
 <div class="wrap"><table><tr><th>component</th><th>class</th><th>seam</th><th>issue</th><th>registered on</th></tr>
 <tr><td><code>commands/ack.md</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
 <tr><td><code>commands/board.md</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
-<tr><td><code>commands/deploy-cloud.md</code></td><td><span class="tag mixed">mixed</span></td><td>wording only: Rails is named in prose or metadata, no behaviour depends on it</td><td>#2184</td><td></td></tr>
+<tr><td><code>commands/deploy-cloud.md</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
 <tr><td><code>commands/install-hooks.md</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
 <tr><td><code>commands/pipeline.md</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
 <tr><td><code>commands/release.md</code></td><td><span class="tag mixed">mixed</span></td><td>wording only: Rails is named in prose or metadata, no behaviour depends on it</td><td>#2184</td><td></td></tr>
@@ -189,9 +189,8 @@ details{margin:.4em 0}summary{cursor:pointer}.wrap{overflow-x:auto}
 <tr><td><code>commands/setup-pipeline.md</code></td><td><span class="tag mixed">mixed</span></td><td>wording only: Rails is named in prose or metadata, no behaviour depends on it</td><td>#2184</td><td></td></tr>
 <tr><td><code>commands/status.md</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
 </table></div></details>
-<details open><summary><b>agents</b> (2: 1 neutral, 1 rails)</summary>
+<details open><summary><b>agents</b> (1: 1 neutral)</summary>
 <div class="wrap"><table><tr><th>component</th><th>class</th><th>seam</th><th>issue</th><th>registered on</th></tr>
-<tr><td><code>agents/kamal-configurator.md</code></td><td><span class="tag rails">rails</span></td><td></td><td>#2179</td><td></td></tr>
 <tr><td><code>agents/pipeline-coordinator.md</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
 </table></div></details>
 <details open><summary><b>hooks</b> (7: 5 neutral, 2 mixed)</summary>
@@ -204,19 +203,20 @@ details{margin:.4em 0}summary{cursor:pointer}.wrap{overflow-x:auto}
 <tr><td><code>hooks/scripts/lib/trusted-env.sh</code></td><td><span class="tag mixed">mixed</span></td><td>the per-stack scrub list and repo-root markers come from the stack descriptor (#2181, #2183)</td><td>#2183</td><td></td></tr>
 <tr><td><code>hooks/scripts/pipeline-status.sh</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td>SessionStart</td></tr>
 </table></div></details>
-<details open><summary><b>scripts</b> (9: 4 neutral, 1 rails, 4 mixed)</summary>
+<details open><summary><b>scripts</b> (10: 5 neutral, 5 mixed)</summary>
 <div class="wrap"><table><tr><th>component</th><th>class</th><th>seam</th><th>issue</th><th>registered on</th></tr>
 <tr><td><code>scripts/apm_advisory.py</code></td><td><span class="tag mixed">mixed</span></td><td>asks the stack detector (#2163) for the stack&#x27;s commands, paths and source globs instead of hardwiring Rails</td><td>#2184</td><td></td></tr>
 <tr><td><code>scripts/breaker.py</code></td><td><span class="tag mixed">mixed</span></td><td>asks the stack detector (#2163) for the stack&#x27;s commands, paths and source globs instead of hardwiring Rails</td><td>#2184</td><td></td></tr>
+<tr><td><code>scripts/deploy_target.py</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
+<tr><td><code>scripts/detect_stack.py</code></td><td><span class="tag mixed">mixed</span></td><td>pipeline:deploy-cloud asks deploy_target.py, which imports this mirror, which stack declares a deploy agent (#2179)</td><td>#2184</td><td></td></tr>
 <tr><td><code>scripts/fixture_git.py</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
 <tr><td><code>scripts/install-git-guards.sh</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
-<tr><td><code>scripts/kamal_destination.py</code></td><td><span class="tag rails">rails</span></td><td></td><td>#2179</td><td></td></tr>
 <tr><td><code>scripts/release_build.py</code></td><td><span class="tag mixed">mixed</span></td><td>asks the stack detector (#2163) for the stack&#x27;s commands, paths and source globs instead of hardwiring Rails</td><td>#2184</td><td></td></tr>
 <tr><td><code>scripts/scan_committed_secrets.py</code></td><td><span class="tag mixed">mixed</span></td><td>asks the stack detector (#2163) for the stack&#x27;s commands, paths and source globs instead of hardwiring Rails</td><td>#2184</td><td></td></tr>
 <tr><td><code>scripts/status_board.py</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
 <tr><td><code>scripts/status_board_verdicts.json</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
 </table></div></details>
-<details><summary><b>tests</b> (18: 12 neutral, 1 rails, 5 mixed)</summary>
+<details><summary><b>tests</b> (17: 12 neutral, 5 mixed)</summary>
 <div class="wrap"><table><tr><th>component</th><th>class</th><th>seam</th><th>issue</th><th>registered on</th></tr>
 <tr><td><code>scripts/breaker_selftest.py</code></td><td><span class="tag mixed">mixed</span></td><td>asks the stack detector (#2163) for the stack&#x27;s commands, paths and source globs instead of hardwiring Rails</td><td>#2184</td><td></td></tr>
 <tr><td><code>scripts/git_guard_selftest.py</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
@@ -229,7 +229,6 @@ details{margin:.4em 0}summary{cursor:pointer}.wrap{overflow-x:auto}
 <tr><td><code>scripts/mutations/git_guard_pre_push.py</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
 <tr><td><code>scripts/mutations/install_git_guards.py</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
 <tr><td><code>scripts/mutations/install_git_hooks.py</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
-<tr><td><code>scripts/mutations/kamal_destination.py</code></td><td><span class="tag rails">rails</span></td><td></td><td>#2179</td><td></td></tr>
 <tr><td><code>scripts/mutations/pipeline_status_hook.py</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
 <tr><td><code>scripts/mutations/release_build.py</code></td><td><span class="tag mixed">mixed</span></td><td>asks the stack detector (#2163) for the stack&#x27;s commands, paths and source globs instead of hardwiring Rails</td><td>#2184</td><td></td></tr>
 <tr><td><code>scripts/mutations/scan_committed_secrets.py</code></td><td><span class="tag mixed">mixed</span></td><td>asks the stack detector (#2163) for the stack&#x27;s commands, paths and source globs instead of hardwiring Rails</td><td>#2184</td><td></td></tr>
@@ -710,7 +709,11 @@ details{margin:.4em 0}summary{cursor:pointer}.wrap{overflow-x:auto}
 <tr><td><code>templates/label-new-issues.yml</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
 <tr><td><code>templates/post-checkout-graph.sh</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
 </table></div></details>
-<h2><code>rails-stack</code> (10)</h2>
+<h2><code>rails-stack</code> (13)</h2>
+<details open><summary><b>agents</b> (1: 1 rails)</summary>
+<div class="wrap"><table><tr><th>component</th><th>class</th><th>seam</th><th>issue</th><th>registered on</th></tr>
+<tr><td><code>agents/kamal-configurator.md</code></td><td><span class="tag rails">rails</span></td><td></td><td>#2179</td><td></td></tr>
+</table></div></details>
 <details open><summary><b>skills</b> (7: 2 neutral, 2 rails, 3 mixed)</summary>
 <div class="wrap"><table><tr><th>component</th><th>class</th><th>seam</th><th>issue</th><th>registered on</th></tr>
 <tr><td><code>skills/code-review</code></td><td><span class="tag mixed">mixed</span></td><td>stack-neutral doctrine whose examples name Rails; the Rails examples move out when core-skills is split (step 8)</td><td>#2186</td><td></td></tr>
@@ -720,6 +723,14 @@ details{margin:.4em 0}summary{cursor:pointer}.wrap{overflow-x:auto}
 <tr><td><code>skills/parallel-session-lane</code></td><td><span class="tag mixed">mixed</span></td><td>stack-neutral doctrine whose examples name Rails; the Rails examples move out when core-skills is split (step 8)</td><td>#2186</td><td></td></tr>
 <tr><td><code>skills/quality-pass</code></td><td><span class="tag neutral">neutral</span></td><td></td><td></td><td></td></tr>
 <tr><td><code>skills/rails-8</code></td><td><span class="tag rails">rails</span></td><td></td><td>#2182</td><td></td></tr>
+</table></div></details>
+<details open><summary><b>scripts</b> (1: 1 rails)</summary>
+<div class="wrap"><table><tr><th>component</th><th>class</th><th>seam</th><th>issue</th><th>registered on</th></tr>
+<tr><td><code>scripts/kamal_destination.py</code></td><td><span class="tag rails">rails</span></td><td></td><td>#2179</td><td></td></tr>
+</table></div></details>
+<details><summary><b>tests</b> (1: 1 rails)</summary>
+<div class="wrap"><table><tr><th>component</th><th>class</th><th>seam</th><th>issue</th><th>registered on</th></tr>
+<tr><td><code>scripts/mutations/kamal_destination.py</code></td><td><span class="tag rails">rails</span></td><td></td><td>#2179</td><td></td></tr>
 </table></div></details>
 <details><summary><b>supports</b> (3: 3 rails)</summary>
 <div class="wrap"><table><tr><th>component</th><th>class</th><th>seam</th><th>issue</th><th>registered on</th></tr>

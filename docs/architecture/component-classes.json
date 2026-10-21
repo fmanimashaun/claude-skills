@@ -1203,16 +1203,16 @@
    "via": "declared"
   },
   {
-   "class": "mixed",
-   "issue": 2184,
+   "class": "neutral",
+   "issue": null,
    "nextjs_lines": 0,
    "path": "plugins/pipeline/commands/deploy-cloud.md",
    "plugin": "pipeline",
-   "rails_lines": 7,
+   "rails_lines": 0,
    "registered": [],
-   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "seam": "",
    "type": "command",
-   "via": "decision"
+   "via": "declared"
   },
   {
    "class": "neutral",
@@ -1285,18 +1285,6 @@
    "seam": "",
    "type": "command",
    "via": "declared"
-  },
-  {
-   "class": "rails",
-   "issue": 2179,
-   "nextjs_lines": 0,
-   "path": "plugins/pipeline/agents/kamal-configurator.md",
-   "plugin": "pipeline",
-   "rails_lines": 12,
-   "registered": [],
-   "seam": "",
-   "type": "agent",
-   "via": "decision"
   },
   {
    "class": "neutral",
@@ -1426,6 +1414,30 @@
    "class": "neutral",
    "issue": null,
    "nextjs_lines": 0,
+   "path": "plugins/pipeline/scripts/deploy_target.py",
+   "plugin": "pipeline",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "mixed",
+   "issue": 2184,
+   "nextjs_lines": 12,
+   "path": "plugins/pipeline/scripts/detect_stack.py",
+   "plugin": "pipeline",
+   "rails_lines": 23,
+   "registered": [],
+   "seam": "pipeline:deploy-cloud asks deploy_target.py, which imports this mirror, which stack declares a deploy agent (#2179)",
+   "type": "script",
+   "via": "decision"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
    "path": "plugins/pipeline/scripts/fixture_git.py",
    "plugin": "pipeline",
    "rails_lines": 0,
@@ -1445,18 +1457,6 @@
    "seam": "",
    "type": "script",
    "via": "declared"
-  },
-  {
-   "class": "rails",
-   "issue": 2179,
-   "nextjs_lines": 0,
-   "path": "plugins/pipeline/scripts/kamal_destination.py",
-   "plugin": "pipeline",
-   "rails_lines": 21,
-   "registered": [],
-   "seam": "",
-   "type": "script",
-   "via": "decision"
   },
   {
    "class": "mixed",
@@ -1637,18 +1637,6 @@
    "seam": "",
    "type": "test",
    "via": "declared"
-  },
-  {
-   "class": "rails",
-   "issue": 2179,
-   "nextjs_lines": 0,
-   "path": "plugins/pipeline/scripts/mutations/kamal_destination.py",
-   "plugin": "pipeline",
-   "rails_lines": 2,
-   "registered": [],
-   "seam": "",
-   "type": "test",
-   "via": "tests kamal_destination.py"
   },
   {
    "class": "neutral",
@@ -6870,6 +6858,18 @@
    "via": "declared"
   },
   {
+   "class": "rails",
+   "issue": 2179,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/agents/kamal-configurator.md",
+   "plugin": "rails-stack",
+   "rails_lines": 16,
+   "registered": [],
+   "seam": "",
+   "type": "agent",
+   "via": "declared"
+  },
+  {
    "class": "mixed",
    "issue": 2186,
    "nextjs_lines": 0,
@@ -6955,6 +6955,30 @@
   },
   {
    "class": "rails",
+   "issue": 2179,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/kamal_destination.py",
+   "plugin": "rails-stack",
+   "rails_lines": 21,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2179,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/mutations/kamal_destination.py",
+   "plugin": "rails-stack",
+   "rails_lines": 2,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests kamal_destination.py"
+  },
+  {
+   "class": "rails",
    "issue": 2182,
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/.claude-plugin/plugin.json",
@@ -6994,7 +7018,7 @@
  "summary": {
   "by_class": {
    "mixed": 199,
-   "neutral": 268,
+   "neutral": 270,
    "nextjs": 3,
    "rails": 109
   },
@@ -7022,10 +7046,10 @@
    },
    "pipeline": {
     "mixed": 17,
-    "neutral": 31,
+    "neutral": 33,
     "nextjs": 0,
-    "rails": 3,
-    "total": 51
+    "rails": 0,
+    "total": 50
    },
    "qa-flow": {
     "mixed": 52,
@@ -7045,8 +7069,8 @@
     "mixed": 3,
     "neutral": 2,
     "nextjs": 0,
-    "rails": 5,
-    "total": 10
+    "rails": 8,
+    "total": 13
    }
   },
   "by_type": {
@@ -7058,8 +7082,8 @@
     "total": 31
    },
    "command": {
-    "mixed": 26,
-    "neutral": 27,
+    "mixed": 25,
+    "neutral": 28,
     "nextjs": 0,
     "rails": 1,
     "total": 54
@@ -7079,11 +7103,11 @@
     "total": 49
    },
    "script": {
-    "mixed": 57,
-    "neutral": 53,
+    "mixed": 58,
+    "neutral": 54,
     "nextjs": 0,
     "rails": 31,
-    "total": 141
+    "total": 143
    },
    "skill": {
     "mixed": 3,
@@ -7107,6 +7131,6 @@
     "total": 185
    }
   },
-  "components": 579
+  "components": 581
  }
 }

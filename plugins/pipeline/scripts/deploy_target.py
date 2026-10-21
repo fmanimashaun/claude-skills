@@ -4,14 +4,14 @@
 Run:  python3 deploy_target.py [PROJECT]       # JSON: the stacks, the target, the artifact, the agent; exit 0
       python3 deploy_target.py --selftest
 
-WHY THIS EXISTS. `/pipeline:deploy-cloud` was a Kamal-on-Rails command: it named Kamal, `.kamal/deploy.env` and Rails credentials, and
-delegated to one hard-coded agent. The Rails-only part now lives in `rails-stack` (its `kamal-configurator` agent and `kamal_destination.py`),
-and `pipeline` keeps the stack-neutral lifecycle. What decides which agent runs is the stack DESCRIPTOR (`descriptor.deploy`, declared by
-the stack plugin in its `stacks.json`: `target`, `artifact`, `agent`), so a Vercel agent (#2167) is a new descriptor in `nextjs-stack`,
-and nothing here changes.
+WHY THIS EXISTS. `/pipeline:deploy-cloud` was one stack's deploy command: it named that stack's host tool, its briefing
+sheet and its credentials, and delegated to one hard-coded agent. That stack-only part now lives in the stack's own plugin (an
+agent it declares), and `pipeline` keeps the neutral lifecycle. What decides which agent runs is the stack DESCRIPTOR
+(`descriptor.deploy`, declared by a stack plugin in its `stacks.json`: `target`, `artifact`, `agent`), so a second stack's deploy
+agent is a new descriptor in its own plugin, and nothing here changes.
 
-THE DETECTOR IS A MIRRORED COPY. `detect_stack.py` in this directory is byte-identical to `plugins/rails-flow/scripts/detect_stack.py`
-(the canonical one) and `scripts/lint_self_consistency.py` refuses a copy that drifts (rule `detect-stack-drift`). A plugin installs alone
+THE DETECTOR IS A MIRRORED COPY. `detect_stack.py` in this directory is byte-identical to the canonical `detect_stack.py`
+(the flow plugin's) and `scripts/lint_self_consistency.py` refuses a copy that drifts (rule `detect-stack-drift` names the pair). A plugin installs alone
 and cannot import another's code, and this is the one place pipeline needs the detector's answer. It is imported, not re-implemented:
 the sibling-plugin discovery is the detector's own, called once.
 
@@ -20,7 +20,7 @@ EXIT CODES, and what each means to the command that calls this:
   1  there is nothing to deploy with: no stack was detected, or the detected stack declares no `deploy` in its descriptor. STOP.
   2  it cannot judge: a manifest or descriptor is unreadable or wrong, two stacks both declare a deploy target, or the agent a
      descriptor names does not exist. STOP and quote the printed problems.
-  NEVER A DEFAULT. Kamal is not the answer when the answer is unknown: 1 and 2 print why and name no agent, and the command stops.
+  NEVER A DEFAULT. No target is the answer when the answer is unknown: 1 and 2 print why and name no agent, and the command stops.
 
 Stdlib only, no network.
 """
@@ -114,26 +114,26 @@ def selftest() -> int:
                 descriptor["deploy"] = deploy
             return {"id": ident, "name": ident.title(), "all": markers, "descriptor": descriptor}
 
-        kamal = {"target": "kamal", "artifact": "docker-image", "agent": "rails-stack:kamal-configurator"}
-        rails = plugin("rails-stack", [stack("rails", [{"file": "Gemfile"}], kamal)], agents=("kamal-configurator",))
-        rails_roots = [rails.parent]  # one directory holds every fixture plugin, `fixture-agents` among them
-        rails_app = project("rails-app", {"Gemfile": ""})
+        alpha = {"target": "alpha-host", "artifact": "docker-image", "agent": "alpha-stack:deployer"}
+        alpha_plugin = plugin("alpha-stack", [stack("alpha", [{"file": "alpha.toml"}], alpha)], agents=("deployer",))
+        alpha_roots = [alpha_plugin.parent]  # one directory holds every fixture plugin, `fixture-agents` among them
+        alpha_app = project("alpha-app", {"alpha.toml": ""})
 
-        code, report = target(rails_app, [rails], rails_roots)
-        case(code == 0 and report.get("agent") == "rails-stack:kamal-configurator" and report.get("target") == "kamal",
-             f"a Rails project is routed to the descriptor's deploy agent: {code} {report}")
+        code, report = target(alpha_app, [alpha_plugin], alpha_roots)
+        case(code == 0 and report.get("agent") == "alpha-stack:deployer" and report.get("target") == "alpha-host",
+             f"a project of the alpha stack is routed to the descriptor's deploy agent: {code} {report}")
 
-        # EXIT 1, never Kamal: no stack, and a stack no plugin knows.
-        for label, files in (("an empty project", {}), ("a project of a stack no installed plugin declares (Cargo.toml only)", {"Cargo.toml": "[package]\n"})):
-            code, report = target(project(label.split()[1] + str(len(files)), files), [rails], rails_roots)
-            case(code == 1 and "agent" not in report and "kamal" not in json.dumps(report).replace("no deploy target", ""),
-                 f"{label} stops with exit 1 and names no agent, never Kamal: {code} {report}")
+        # EXIT 1, never a known target: no stack, and a stack no plugin knows.
+        for label, files in (("an empty project", {}), ("a project of a stack no installed plugin declares (beta.toml only)", {"beta.toml": ""})):
+            code, report = target(project(label.split()[1] + str(len(files)), files), [alpha_plugin], alpha_roots)
+            case(code == 1 and "agent" not in report and "alpha-host" not in json.dumps(report).replace("no deploy target", ""),
+                 f"{label} stops with exit 1 and names no agent, never a known target: {code} {report}")
 
-        # EXIT 2, never Kamal: an unreadable manifest beside a project that WOULD be Rails.
+        # EXIT 2, never a known target: an unreadable manifest beside a project that WOULD be alpha.
         broken = plugin("broken-stack", [])
         (broken / "stacks.json").write_text("{ not json", encoding="utf-8")
-        code, report = target(rails_app, [rails, broken], rails_roots)
-        case(code == 2 and "agent" not in report and report["problems"], f"an unreadable manifest is exit 2, and a Rails project is NOT defaulted to Kamal: {code} {report}")
+        code, report = target(alpha_app, [alpha_plugin, broken], alpha_roots)
+        case(code == 2 and "agent" not in report and report["problems"], f"an unreadable manifest is exit 2, and a project that WOULD be alpha is NOT defaulted to its target: {code} {report}")
 
         # EXIT 2: the descriptor names an agent that does not exist.
         ghost = plugin("ghost-stack", [stack("ghost", [{"file": "ghost.toml"}], {"target": "x", "artifact": "y", "agent": "ghost-stack:nobody"})])
@@ -142,8 +142,8 @@ def selftest() -> int:
 
         # EXIT 2: two plugins both declare a deploy target for one project (no silent pick).
         other = plugin("other-stack", [stack("other", [{"file": "other.toml"}], {"target": "other", "artifact": "zip", "agent": "other-stack:deployer"})], agents=("deployer",))
-        both = project("both", {"Gemfile": "", "other.toml": ""})
-        code, report = target(both, [rails, other], [rails.parent])
+        both = project("both", {"alpha.toml": "", "other.toml": ""})
+        code, report = target(both, [alpha_plugin, other], [alpha_plugin.parent])
         case(code == 2 and "agent" not in report, f"two stacks that both declare a deploy target are exit 2, not a pick: {code} {report}")
 
         # EXIT 1: a detected stack that declares no deploy.
@@ -152,11 +152,11 @@ def selftest() -> int:
         case(code == 1 and "agent" not in report and any("declares no `deploy`" in p for p in report["problems"]),
              f"a stack that declares no deploy target is exit 1: {code} {report}")
 
-        # THE SEAM: another stack declares itself and is chosen, with no change here (the Vercel agent of #2167 is exactly this).
-        vercel = plugin("nextjs-stack", [stack("vercel", [{"file": "vercel.json"}], {"target": "vercel", "artifact": "git-ref", "agent": "nextjs-stack:vercel-deployer"})],
-                        agents=("vercel-deployer",))
-        code, report = target(project("vercel-app", {"vercel.json": "{}"}), [rails, vercel], [rails.parent])
-        case(code == 0 and report.get("agent") == "nextjs-stack:vercel-deployer" and report.get("target") == "vercel",
+        # THE SEAM: another stack declares itself and is chosen, with no change here (any later stack's deploy agent is exactly this).
+        gamma = plugin("gamma-stack", [stack("gamma", [{"file": "gamma.toml"}], {"target": "gamma", "artifact": "git-ref", "agent": "gamma-stack:gamma-deployer"})],
+                        agents=("gamma-deployer",))
+        code, report = target(project("gamma-app", {"gamma.toml": ""}), [alpha_plugin, gamma], [alpha_plugin.parent])
+        case(code == 0 and report.get("agent") == "gamma-stack:gamma-deployer" and report.get("target") == "gamma",
              f"a stack that declares its own deploy agent is chosen by the descriptor alone: {code} {report}")
 
     # THE SHIPPED CALL SITE: the command asks this script, stops on 1 and 2, and names no stack.
@@ -165,8 +165,23 @@ def selftest() -> int:
     case(bool(text), "commands/deploy-cloud.md exists beside this script")
     case("scripts/deploy_target.py" in text, "deploy-cloud.md asks deploy_target.py which agent to delegate to")
     lowered = text.lower()
-    for word in ("kamal", ".kamal", "rails", "gemfile", "kamal-configurator", "kamal_destination", "credentials.yml"):
-        case(word not in lowered, f"deploy-cloud.md is stack-neutral: it must not name `{word}`")
+    # The words a stack-neutral command must not name are the ones the installed stack plugins declare: every stack id, plugin name,
+    # deploy target and agent name in a sibling `stacks.json`. (Alone, pipeline sees no sibling and this is a weaker check; the
+    # clone, where the gates run, sees them all.)
+    named: set[str] = set()
+    for manifest_dir in ds.manifest_dirs(Path(ds.__file__)):
+        try:
+            declared = json.loads((manifest_dir / "stacks.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        named.add(str(declared.get("plugin", "")).lower())
+        for st in declared.get("stacks", []):
+            named.add(str(st.get("id", "")).lower())
+            deploy = (st.get("descriptor") or {}).get("deploy") or {}
+            named.update({str(deploy.get("target", "")).lower(), str(deploy.get("agent", "")).lower().rpartition(":")[2]})
+    case(not (HERE.parents[1] / "rails-stack" / "stacks.json").is_file() or "kamal" in named, "the clone's declared stack words were collected")
+    for word in sorted(named - {""}):
+        case(word not in lowered, f"deploy-cloud.md is stack-neutral: it must not name `{word}`, which a stack plugin declares")
     for word in ("exit `1`", "exit `2`", "never fall back"):
         case(word in lowered, f"deploy-cloud.md says what to do on {word}")
     for tool in ("BREAKER", "SECRET_SCAN", "APM_ADVISORY", "STOP_CONDITIONS"):

@@ -30,11 +30,6 @@
    "title": "The design-flow ERB / ViewComponent gates and porter",
    "summary": "The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (design-porter, ui-composer). Next.js gets its own design gates under #2171.",
    "issue": 2178
-  },
-  "rails-deploy": {
-   "title": "The Kamal-on-Rails deploy path",
-   "summary": "kamal-configurator and kamal_destination.py route values into Rails credentials and deploy.yml; Vercel deploy (#2167) is its own path.",
-   "issue": 2179
   }
  },
  "rules": [
@@ -132,13 +127,13 @@
   },
   {
    "match": [
-    "plugins/pipeline/agents/kamal-configurator.md",
-    "plugins/pipeline/scripts/kamal_destination.py"
+    "plugins/pipeline/scripts/detect_stack.py"
    ],
-   "decision": "rails-stack",
-   "assumes": "routes deploy values into Rails credentials and config/deploy.yml",
-   "how": "the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector",
-   "move": "rails-deploy"
+   "decision": "detector",
+   "assumes": "the stack detector's own prose and fixtures name Rails and Next.js; the markers it reads are data in each plugin's stacks.json",
+   "how": "a byte-identical mirror of plugins/rails-flow/scripts/detect_stack.py, held by the detect-stack-drift rule (a plugin installs alone and cannot import another's code); reworded only in the canonical copy",
+   "seam": "pipeline:deploy-cloud asks deploy_target.py, which imports this mirror, which stack declares a deploy agent (#2179)",
+   "issues": {"rails-flow": 2183, "qa-flow": 2184, "pipeline": 2184, "design-flow": 2185}
   },
   {
    "match": [
@@ -742,6 +737,16 @@
     "class": "rails",
     "issue": 2182,
     "why": "the rails-stack manifest, its stacks.json and its setup section (both moved from the repo root): they name the Rails doctrine the plugin bundles, the Rails markers the detector reads, and the Rails-only setup repairs (#2180)"
+   },
+   {
+    "match": [
+     "plugins/rails-stack/agents/*",
+     "plugins/rails-stack/scripts/*",
+     "plugins/rails-stack/scripts/mutations/*"
+    ],
+    "class": "rails",
+    "issue": 2179,
+    "why": "the Kamal-on-Rails deploy agent and its destination script (moved from pipeline): they route deploy values into Rails credentials and config/deploy.yml, and a stack declares the agent in its descriptor"
    },
    {
     "match": [

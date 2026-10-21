@@ -8,11 +8,11 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 
 | decision | what it means | files | lines |
 |---|---|---:|---:|
-| `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 68 | 1673 |
-| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 90 | 1228 |
-| `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 63 | 278 |
+| `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 65 | 1638 |
+| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 91 | 1251 |
+| `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 62 | 271 |
 | `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change | 7 | 24 |
-| **all** | | **228** | **3203** |
+| **all** | | **225** | **3184** |
 
 ## By flow
 
@@ -20,17 +20,17 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 |---|---:|---:|---:|---:|---:|---:|
 | `rails-flow` | 135 | 2289 | 47 | 50 | 35 | 3 |
 | `qa-flow` | 36 | 275 | 0 | 29 | 6 | 1 |
-| `pipeline` | 19 | 89 | 3 | 9 | 4 | 3 |
+| `pipeline` | 16 | 70 | 0 | 10 | 3 | 3 |
 | `design-flow` | 38 | 550 | 18 | 2 | 18 | 0 |
 
 ## By what is named
 
 | category | lines naming it |
 |---|---:|
-| tool | 890 |
+| tool | 887 |
 | gem | 138 |
-| path | 1245 |
-| concept | 1966 |
+| path | 1239 |
+| concept | 1957 |
 | hotwire | 104 |
 
 A line that names two things counts once per category it names in this table and once overall in the totals above.
@@ -72,12 +72,6 @@ Files: `commands/graph.md` (rails-flow), `scripts/architecture_graph.py` (rails-
 The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (design-porter, ui-composer). Next.js gets its own design gates under #2171.
 
 Files: `agents/design-porter.md` (design-flow), `agents/ui-composer.md` (design-flow), `scripts/canvas_manifest.py` (design-flow), `scripts/check_component_contract.py` (design-flow), `scripts/check_layout_composition.py` (design-flow), `scripts/check_modal_fit.py` (design-flow), `scripts/check_surface_layout.py` (design-flow), `scripts/check_table_layout.py` (design-flow), `scripts/check_token_drift.py` (design-flow), `scripts/mutations/check_component_contract.py` (design-flow), `scripts/mutations/check_modal_fit.py` (design-flow), `scripts/mutations/check_surface_layout.py` (design-flow), `scripts/mutations/setup_doctrine_crosscheck.py` (design-flow), `scripts/mutations/source_text.py` (design-flow), `scripts/mutations/variant_conformance.py` (design-flow), `scripts/setup_doctrine_crosscheck.py` (design-flow), `scripts/source_text.py` (design-flow), `scripts/variant_conformance.py` (design-flow)
-
-### rails-deploy: The Kamal-on-Rails deploy path (#2179)
-
-kamal-configurator and kamal_destination.py route values into Rails credentials and deploy.yml; Vercel deploy (#2167) is its own path.
-
-Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py` (pipeline), `scripts/mutations/kamal_destination.py` (pipeline)
 
 ## setup-flow, section by section (issue #2180)
 
@@ -285,8 +279,6 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 
 | file | kind | lines | what it assumes | decision | how |
 |---|---|---:|---|---|---|
-| `agents/kamal-configurator.md:15`<br>L15, 30, 34, 37, 38 +7 more | agent | 12 | routes deploy values into Rails credentials and config/deploy.yml | `rails-stack` (rails-deploy) | the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector |
-| `commands/deploy-cloud.md:10`<br>L10, 37, 43, 55, 57 +2 more | command | 7 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
 | `commands/release.md:26`<br>L26, 76, 136 | command | 3 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
 | `commands/setup-cloud.md:25`<br>L25, 37 | command | 2 | text an agent or an operator follows names a Rails command (bin/dev, bin/rails routes or runner, bin/ci, bundle exec rspec) | `detector` | the text says to run the stack's own command, read from the detector's descriptor; a reference example is labelled as an example |
 | `commands/setup-pipeline.md:45`<br>L45 | command | 1 | prose or examples that name Rails, the Gemfile or Rails binstubs | `reword` | reworded to reference the detector's commands |
@@ -296,10 +288,9 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `scripts/apm_advisory.py:4`<br>L4, 17, 45, 63, 77 +3 more | script | 8 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
 | `scripts/breaker.py:6`<br>L6 | script | 1 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
 | `scripts/breaker_selftest.py:146`<br>L146, 153, 158, 159 ↳ | selftest | 4 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
+| `scripts/detect_stack.py:14`<br>L14, 15, 37, 290, 519 +18 more | script | 23 | the stack detector's own prose and fixtures name Rails and Next.js; the markers it reads are data in each plugin's stacks.json | `detector` | a byte-identical mirror of plugins/rails-flow/scripts/detect_stack.py, held by the detect-stack-drift rule (a plugin installs alone and cannot import another's code); reworded only in the canonical copy |
 | `scripts/git_guard_selftest.py:308`<br>L308, 330, 331, 332, 443 +1 more | selftest | 6 | fixture repositories use Rails-shaped sample paths (app/models/user.rb) to exercise a stack-neutral guard, board or hook | `neutral` | nothing to change: the guard under test is neutral and the sample path is arbitrary |
-| `scripts/kamal_destination.py:13`<br>L13, 23, 24, 28, 92 +16 more | script | 21 | routes deploy values into Rails credentials and config/deploy.yml | `rails-stack` (rails-deploy) | the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector |
 | `scripts/mutations/git_guard_pre_commit.py:134`<br>L134, 135, 141 | mutation | 3 | fixture repositories use Rails-shaped sample paths (app/models/user.rb) to exercise a stack-neutral guard, board or hook | `neutral` | nothing to change: the guard under test is neutral and the sample path is arbitrary |
-| `scripts/mutations/kamal_destination.py:58`<br>L58, 59 ↳ | mutation | 2 | routes deploy values into Rails credentials and config/deploy.yml | `rails-stack` (rails-deploy) | the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector |
 | `scripts/release_build.py:307`<br>L307 | script | 1 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
 | `scripts/scan_committed_secrets.py:13`<br>L13, 128 | script | 2 | reads the Gemfile or Ruby files to decide an advisory, a build or a secret scan | `detector` | reads the project's dependency manifest from the detector |
 | `scripts/status_board_selftest.py:376`<br>L376 | selftest | 1 | fixture repositories use Rails-shaped sample paths (app/models/user.rb) to exercise a stack-neutral guard, board or hook | `neutral` | nothing to change: the guard under test is neutral and the sample path is arbitrary |
