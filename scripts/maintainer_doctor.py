@@ -155,7 +155,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #750/#754. Only the SELFTEST is a gate: the live comparison needs a PROJECT's css, which this
     # repo does not have. The check ships for adopters to run; the selftest proves it works.
     ("design-flow token drift selftest",
-     ("python3", "plugins/design-flow/scripts/check_token_drift.py", "--selftest")),
+     ("python3", "plugins/design-flow/ui/viewcomponent-erb/scripts/check_token_drift.py", "--selftest")),
     ("design-flow scale contiguity",
      ("python3", "plugins/design-flow/scripts/check_scale_contiguity.py")),
     ("design-flow scale contiguity selftest",
@@ -324,23 +324,23 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #779 / #778. Two claims the doctrine stated, nothing performed and nothing checked. Both
     # landed missing on two unrelated greenfield apps from clean runs of the documented path --
     # the recurrence is what made them structural rather than user error.
-    ("rails-flow ci runs tests",
-     ("python3", "plugins/rails-flow/scripts/check_ci_runs_tests.py", "--selftest")),
+    ("rails-stack ci runs tests",
+     ("python3", "plugins/rails-stack/scripts/check_ci_runs_tests.py", "--selftest")),
     ("rails-flow mandated gems",
      ("python3", "plugins/rails-flow/scripts/check_mandated_gems.py", "--selftest")),
     # #803. Rails generates the spec/support auto-loader COMMENTED and testing.md:99 says to
     # uncomment it; left as generated, every support file is dead with no error and no output.
-    ("rails-flow spec support wired",
-     ("python3", "plugins/rails-flow/scripts/check_spec_support.py", "--selftest")),
+    ("rails-stack spec support wired",
+     ("python3", "plugins/rails-stack/scripts/check_spec_support.py", "--selftest")),
     # #800. Maintainer decision: "gate is the key, advise can be ignored." A coverage DROP is a
     # measured regression against a recorded baseline, not judgement, so it gates honestly where a
     # fixed threshold never could.
-    ("rails-flow coverage ratchets",
-     ("python3", "plugins/rails-flow/scripts/check_coverage_ratchet.py", "--selftest")),
+    ("rails-stack coverage ratchets",
+     ("python3", "plugins/rails-stack/scripts/check_coverage_ratchet.py", "--selftest")),
     # #799. Situational, resolved by asking at setup and RECORDING the answer — which is what lets
     # the check have a real not-applicable state instead of gating everyone or nobody.
-    ("rails-flow i18n wired",
-     ("python3", "plugins/rails-flow/scripts/check_i18n_setup.py", "--selftest")),
+    ("rails-stack i18n wired",
+     ("python3", "plugins/rails-stack/scripts/check_i18n_setup.py", "--selftest")),
     # #797. The list rails-flow enforces is DERIVED from the rails-8 doctrine that declares it, and
     # committed beside the checker -- a runtime read would cross a plugin boundary, which is #617's
     # class and has already recurred twice. This proves the artifact still matches its source.
@@ -354,10 +354,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/derive_tenancy_cop.py", "--check")),
     ("tenancy cop derived selftest",
      ("python3", "scripts/derive_tenancy_cop.py", "--selftest")),
-    ("rails-flow tenancy cop",
-     ("python3", "plugins/rails-flow/scripts/check_tenancy_cop.py", "--selftest")),
-    ("rails-flow mcp end to end",                                                    # #1930
-     ("python3", "plugins/rails-flow/scripts/check_mcp_end_to_end.py", "--selftest")),
+    ("rails-stack tenancy cop",
+     ("python3", "plugins/rails-stack/scripts/check_tenancy_cop.py", "--selftest")),
+    ("rails-stack mcp end to end",                                                    # #1930
+     ("python3", "plugins/rails-stack/scripts/check_mcp_end_to_end.py", "--selftest")),
     ("rails-flow mcp personal fields",                                               # #1931
      ("python3", "plugins/rails-flow/scripts/check_mcp_personal_fields.py", "--selftest")),
     # #762's neighbour. The curated-doc drift signal is ADVISORY -- it blocks nothing -- and that is
@@ -434,6 +434,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("pipeline tiers", ("python3", "plugins/rails-flow/scripts/check_handoff.py",
                         "--agents", "plugins/pipeline/agents",
                         "--tiers", "plugins/pipeline/reference/model-tiers.md")),
+    ("rails-stack tiers", ("python3", "plugins/rails-flow/scripts/check_handoff.py",
+                           "--agents", "plugins/rails-stack/agents",
+                           "--tiers", "plugins/rails-stack/reference/model-tiers.md")),
     # #128, the pipeline half. Its last checks run against the SHIPPED doctrine and the SHIPPED
     # commands: that reference/stop-conditions.md still states the numbers and the four escapes the
     # script declares, and that every pipeline surface describing an unattended re-run names the
@@ -455,7 +458,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("pipeline committed-secret scan", ("python3", "plugins/pipeline/scripts/scan_committed_secrets.py", "--selftest")),
     # #1465. A Kamal destination is carried through whole: `-d` on every command, the destination's
     # secrets file and overlay, and the credentials environment read from the MERGED config.
-    ("pipeline kamal destination", ("python3", "plugins/pipeline/scripts/kamal_destination.py", "--selftest")),
+    ("rails-stack kamal destination", ("python3", "plugins/rails-stack/scripts/kamal_destination.py", "--selftest")),
     # #1701. The release image build passes the build args and labels pipeline.yml declares (a bare build when it declares
     # none), reads the two keys strictly, and names a Dockerfile ARG nothing feeds.
     ("pipeline release build", ("python3", "plugins/pipeline/scripts/release_build.py", "--selftest")),
@@ -474,7 +477,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1639. Where a worktree stopped: the facts file, HEAD drift, unknown-not-clean, the overall git deadline (#1643 R1).
     ("rails-flow where-stopped helper", ("python3", "plugins/rails-flow/hooks/scripts/lib/where_stopped.py", "--selftest")),
     ("rails-flow technical spec", ("python3", "plugins/rails-flow/scripts/check_spec.py", "--selftest")),
-    ("rails-flow simple-form-only gate", ("python3", "plugins/rails-flow/scripts/check_simple_form_only.py", "--selftest")),
+    ("rails-stack simple-form-only gate", ("python3", "plugins/rails-stack/scripts/check_simple_form_only.py", "--selftest")),
     ("shipped ERB passes simple-form-only", ("python3", "scripts/check_shipped_erb_forms.py")),
     ("shipped ERB forms selftest", ("python3", "scripts/check_shipped_erb_forms.py", "--selftest")),
     ("rails-flow mock-up gate", ("python3", "plugins/rails-flow/scripts/check_mockup_gate.py", "--selftest")),
@@ -512,7 +515,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("registry reader parity selftest", ("python3", "scripts/check_registry_reader_parity.py", "--selftest")),
     ("exit-3 rows", ("python3", "scripts/check_exit3_rows.py")),                                  # #1873
     ("exit-3 rows selftest", ("python3", "scripts/check_exit3_rows.py", "--selftest")),
-    ("design-flow port fidelity gate", ("python3", "plugins/design-flow/scripts/port_fidelity_gate.py", "--selftest")),
+    ("design-flow port fidelity gate", ("python3", "plugins/design-flow/ui/viewcomponent-erb/scripts/port_fidelity_gate.py", "--selftest")),
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),
     # #953. What a page hides INSIDE the viewport, which every boundary assertion passes on.
     ("qa-flow layout fit", ("python3", "plugins/qa-flow/scripts/layout_fit.py", "--selftest")),
@@ -522,17 +525,17 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("qa-flow interaction sweep", ("python3", "plugins/qa-flow/scripts/interaction_report.py", "--selftest")),
     ("qa-flow visual baselines", ("python3", "plugins/qa-flow/scripts/visual_baseline.py", "--selftest")),
     ("qa-flow link audit", ("python3", "plugins/qa-flow/scripts/link_audit.py", "--selftest")),
-    ("design-flow setup cross-check", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--quiet")),
-    ("design-flow setup cross-check selftest", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--selftest")),
+    ("design-flow setup cross-check", ("python3", "plugins/design-flow/ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py", "--quiet")),
+    ("design-flow setup cross-check selftest", ("python3", "plugins/design-flow/ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py", "--selftest")),
     ("design-flow rendered conformance", ("python3", "plugins/design-flow/scripts/rendered_conformance.py", "--selftest")),
     ("rails-flow findings records", ("python3", "plugins/rails-flow/scripts/findings.py", "--selftest")),
     # #1339. The retro counts which review findings recur across PRs; a report over nothing must be exit 2, never "nothing recurs".
     ("rails-flow retro", ("python3", "plugins/rails-flow/scripts/retro.py", "--selftest")),
     # #1391. Tables are master-detail with no horizontal scroll: a scroller around a table, a fixed
     # min-width, and a table with no details target. Driven against a real app on its first run.
-    ("design-flow table layout", ("python3", "plugins/design-flow/scripts/check_table_layout.py", "--selftest")),
+    ("design-flow table layout", ("python3", "plugins/design-flow/ui/viewcomponent-erb/scripts/check_table_layout.py", "--selftest")),
     # #1419. No modal card larger than the viewport or flush with its edge, judged per component.
-    ("design-flow modal fit", ("python3", "plugins/design-flow/scripts/check_modal_fit.py", "--selftest")),
+    ("design-flow modal fit", ("python3", "plugins/design-flow/ui/viewcomponent-erb/scripts/check_modal_fit.py", "--selftest")),
     ("design-flow LLM-tell detector", ("python3", "plugins/design-flow/scripts/llm_tell_detector.py", "--selftest")),
     # #157 criterion 6, and NOT redundant with the selftest above: the selftest proves each rule
     # fires and stays silent on synthetic fixtures, while this runs the whole rule set against the
@@ -543,7 +546,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # marketplace, not a Rails app — a gate pointed at `app/views/design_variants` here would SKIP
     # forever, and a permanent skip reads as a pass. The live check runs in a user's project via
     # design-flow's `checks.json`, where `applies_when` decides applicability honestly.
-    ("design-flow variant conformance", ("python3", "plugins/design-flow/scripts/variant_conformance.py", "--selftest")),
+    ("design-flow variant conformance", ("python3", "plugins/design-flow/ui/viewcomponent-erb/scripts/variant_conformance.py", "--selftest")),
     # The browser collector is a shipped `.js` FILE, so no markdown linter reads it — the fenced-code
     # checkers only see markdown. Its syntax check therefore lives with it, and SKIPS loudly when
     # node is absent instead of failing the sweep for want of a binary (CORPORA_GATES' reasoning).
@@ -600,6 +603,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("component states", ("python3", "scripts/check_component_states.py")),
     ("component states selftest",
      ("python3", "scripts/check_component_states.py", "--selftest")),
+    # #2220. The interface-architecture page ships only rules with a basis that exists: a check that
+    # is a real file, a CONFIRMED claim, or a recorded decision. A row with none is refused.
+    ("architecture rules", ("python3", "scripts/check_architecture_rules.py")),
+    ("architecture rules selftest",
+     ("python3", "scripts/check_architecture_rules.py", "--selftest")),
     # #1085. A SessionStart hook fires again on EVERY COMPACTION, so what it prints is charged
     # each time the context is reclaimed -- exactly when it is scarcest. One hook was 98% of the
     # cost and 85% of that was one file printed verbatim. A ratchet against a fixture project, so

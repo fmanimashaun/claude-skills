@@ -6,7 +6,11 @@ it: `detect_stack.py --descriptor` lists it under `setup_sections` from this plu
 approval**, and stay idempotent.
 
 `${CLAUDE_PLUGIN_ROOT}` below is **rails-flow's** plugin root: the command running this file is rails-flow's setup-flow,
-and the scripts named here ship there.
+and the scripts named with it ship there.
+
+`${STACK_ROOT}` below is **this plugin's** root, rails-stack's: the directory that holds this file's `setup/` folder, which is the
+path `detect_stack.py --descriptor` printed under `setup_sections` for this file, without `setup/rails.md`. Set it once
+(`STACK_ROOT=<that directory>`) before you run a command that names it. The Rails gates and the tenancy scaffold ship there.
 
 ## CLAUDE.md facts
 
@@ -68,7 +72,7 @@ unrelated greenfield apps from clean runs of the documented path.
 suite. The `ci-runs-tests` check answers exactly this and is the same question:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_ci_runs_tests.py"
+python3 "${STACK_ROOT}/scripts/check_ci_runs_tests.py"
 ```
 
 Exit **1** means propose the steps; exit **3** means the project has no `config/ci.rb` and there is
@@ -133,7 +137,7 @@ Write `%w[en]` even for a monolingual app. It is the difference between *"this p
 locale"* and *"nobody thought about it"*, and only the first can be checked.
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_i18n_setup.py"
+python3 "${STACK_ROOT}/scripts/check_i18n_setup.py"
 ```
 
 On a multi-locale answer, propose rails-stack's `skills/rails-8/references/i18n.md` §1–§2 — `available_locales`,
@@ -252,7 +256,7 @@ again, and the `tenancy-cop` check reports not applicable. On yes:
 
    ```bash
    mkdir -p lib/rubocop/cop/tenancy
-   cp "${CLAUDE_PLUGIN_ROOT}/scaffold/tenancy/scoped_lookup.rb" lib/rubocop/cop/tenancy/scoped_lookup.rb
+   cp "${STACK_ROOT}/scaffold/tenancy/scoped_lookup.rb" lib/rubocop/cop/tenancy/scoped_lookup.rb
    ```
 
 2. Add the `.rubocop.yml` block from the rails-8 skill's `references/multi-tenancy.md` §7. Set
@@ -266,7 +270,7 @@ again, and the `tenancy-cop` check reports not applicable. On yes:
    `-- <reason>` form. It takes about 0.3 s per controller:
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_tenancy_cop.py"
+   python3 "${STACK_ROOT}/scripts/check_tenancy_cop.py"
    ```
 
    A tenant-keyed table read across tenants on purpose goes in `"unscoped_tables": {"<table>":
@@ -280,7 +284,7 @@ Offer the files as one approved diff; do not write them unasked.
 Nothing ever makes it realistic, so coverage goes unenforced from the first commit to the last.
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_coverage_ratchet.py"
+python3 "${STACK_ROOT}/scripts/check_coverage_ratchet.py"
 ```
 
 Exit **1** means propose the diff; exit **3** means no `simplecov` and nothing to offer.
@@ -319,7 +323,7 @@ reasons that point somewhere else. `testing.md:99` says to uncomment it; nothing
 had.
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_spec_support.py"
+python3 "${STACK_ROOT}/scripts/check_spec_support.py"
 ```
 
 Exit **1** means propose the wiring; exit **3** means no `spec/` and there is nothing to offer.
