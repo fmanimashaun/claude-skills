@@ -28,6 +28,7 @@ docs do not say whether a dependency's dependencies install.
 
 `rails-stack` keeps a one-line redirect for each skill for two releases, so a project that pins
 `rails-stack:code-review` is told where it went. Their `dist/<skill>.skill` files keep their names.
-`agent-output-contract.md` and `findings.py` have their canonical home in this plugin's
-`reference/` and `scripts/`; the agents that read them keep byte-identical copies, because an agent
-reaches only its own plugin's files.
+`agent-output-contract.md` and `findings.py` are stack-neutral references that this plugin is meant to own. Today
+their canonical copies are still rails-flow's (`reference/agent-output-contract.md`, `scripts/findings.py`), with
+byte-identical copies in qa-flow and rails-stack, because an agent reaches only its own plugin's files; moving
+the canonical home here is #2283.

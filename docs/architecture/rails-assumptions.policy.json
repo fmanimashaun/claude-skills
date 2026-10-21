@@ -894,7 +894,7 @@
     "class": "mixed",
     "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
     "issue": 2186,
-    "why": "a byte-identical vendored copy of rails-flow's findings.py for rails-stack's code-reviewer (no cross-plugin root); its single home is core-skills (#2186); plugins/rails-stack/VENDORED.md"
+    "why": "a byte-identical vendored copy of rails-flow's findings.py for rails-stack's code-reviewer (no cross-plugin root); its canonical home is to become core-skills (#2283); plugins/rails-stack/VENDORED.md"
    },
    {
     "match": [
@@ -913,7 +913,7 @@
     ],
     "class": "neutral",
     "issue": 2186,
-    "why": "a byte-identical vendored copy of rails-flow's output contract, which every moved agent cites; its single home is core-skills (#2186); plugins/rails-stack/VENDORED.md"
+    "why": "a byte-identical vendored copy of rails-flow's output contract, which every moved agent cites; its canonical home is to become core-skills (#2283); plugins/rails-stack/VENDORED.md"
    },
    {
     "match": [

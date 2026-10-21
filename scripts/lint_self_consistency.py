@@ -818,7 +818,7 @@ def check_gate_without_onfailure() -> tuple[list[Finding], int]:
 FINDINGS_COPIES = ("plugins/rails-flow/scripts/findings.py",
                    "plugins/qa-flow/scripts/findings.py",
                    # #2173: rails-stack's code-reviewer moved out of rails-flow and runs its own copy (a plugin sees only its own
-                   # ${CLAUDE_PLUGIN_ROOT}). TEMPORARY: findings.py is a neutral reference whose single home is core-skills (#2186).
+                   # ${CLAUDE_PLUGIN_ROOT}). TEMPORARY: findings.py is a neutral reference whose canonical home is to become core-skills (#2283).
                    "plugins/rails-stack/scripts/findings.py")
 
 
@@ -856,7 +856,7 @@ VENDORED_COPIES = (
     ("plugins/rails-flow/scripts/mockup_records.py", "plugins/qa-flow/scripts/mockup_records.py",
      "qa-flow's release_evidence.py refuses the certification stamp for a shipped design with no `Story:`; it reads the record lines with this file (#2226), and leaves when a shared core plugin owns it"),
     ("plugins/rails-flow/reference/agent-output-contract.md", "plugins/rails-stack/reference/agent-output-contract.md",
-     "every moved agent cites it; a neutral reference whose single home is core-skills (#2186), which removes this copy"),
+     "every moved agent cites it; a neutral reference whose canonical home is to become core-skills (#2283); the copy stays, since an agent reads only its own plugin"),
 )
 
 
