@@ -374,8 +374,10 @@ def main(argv: list[str] | None = None) -> int:
         # the token file is the stack's, so ask its adapter (#2185). No answer is a PROBLEM named in the prompt, never a stack default
         try:
             import ui_adapter
-            theme = Path(ui_adapter.resolve_project(Path.cwd())["tokens_file"] or "")
-            if not str(theme):
+            named = ui_adapter.resolve_project(Path.cwd())["tokens_file"]
+            if named:
+                theme = Path(named)
+            else:
                 theme, theme_problem = None, "the UI adapter names no token file for this stack; pass --theme"
         except (ImportError, KeyError, OSError, getattr(sys.modules.get("ui_adapter"), "Unresolved", RuntimeError)) as exc:
             theme, theme_problem = None, f"cannot find the project's token file ({exc}); pass --theme"

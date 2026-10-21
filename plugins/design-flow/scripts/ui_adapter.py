@@ -125,6 +125,7 @@ def selftest() -> int:
             {"id": "demo-ui", "agents": {"porter": "demo-porter", "composer": "demo-composer"}, "checks": ["token-drift"]}))
         got = resolve("demo-ui", stack="demo", tokens_file="a.css", plugin=plugin)
         check("a declared implementation resolves to its adapter dir", got["dir"].endswith("ui/demo-ui"))
+        check("...and the token file the descriptor named", got["tokens_file"] == "a.css" and got["stack"] == "demo")
         check("...with its agents and checks", got["agents"]["porter"] == "demo-porter" and got["checks"] == ["token-drift"])
         for bad, why in (("nextjs-tsx", "an implementation with no adapter is refused, not defaulted to another stack"),
                          ("../etc", "a path-shaped id cannot escape ui/")):

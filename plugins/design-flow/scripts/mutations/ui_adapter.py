@@ -40,5 +40,11 @@ GUARD = Guard(
             "    if False:",
             "an implementation with no adapter is refused, not defaulted to another stack",
         ),
+        Mutation(
+            "the descriptor's token file is dropped, so design_prompt looks for a default that no stack names",
+            '"stack": stack, "tokens_file": tokens_file}',
+            '"stack": stack, "tokens_file": None}',
+            "...and the token file the descriptor named",
+        ),
     ),
 )

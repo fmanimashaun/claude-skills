@@ -7151,7 +7151,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/stacks.json",
    "plugin": "rails-stack",
-   "rails_lines": 12,
+   "rails_lines": 13,
    "registered": [],
    "seam": "",
    "type": "support",

@@ -43,6 +43,7 @@
         },
         "ui": {
           "implementation": "viewcomponent-erb",
+          "tokens_file": "app/assets/tailwind/application.css",
           "porter": "design-flow:rails-ui-porter",
           "composer": "design-flow:rails-ui-composer"
         },
