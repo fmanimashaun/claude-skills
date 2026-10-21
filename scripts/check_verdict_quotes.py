@@ -623,7 +623,7 @@ def main(argv: list[str] | None = None) -> int:
         findings = format_findings(REPO)
         for f in findings:
             print(f"  {f}")
-        print(f"verdict quotes: {len(findings)} finding(s)" if findings else "verdict quotes: every CONFIRMED verdict of a new audit carries its quotes (or a reasoned waiver)")
+        print(f"verdict quotes: {len(findings)} finding(s)" if findings else "verdict quotes: every verdict of a new audit uses CONFIRMED, REFUTED or INCONCLUSIVE, and every CONFIRMED one carries its quotes (or a reasoned waiver)")
         return 1 if findings else 0
     if a.legacy:
         files = [Path(f) for f in a.files] or sorted((REPO / AUDITS).rglob("*.md"))
