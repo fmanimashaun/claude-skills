@@ -29,7 +29,7 @@ WHERE IT LOOKS. Route files are judged under `app/` / `src/app/`. The other rule
 
 Usage:  python3 check_react_patterns.py [project-dir] [--json]
         python3 check_react_patterns.py --selftest
-Exit 0 nothing found · 1 findings · 2 cannot judge (an unreadable file) · 3 not applicable (no app/ or src/app/).
+Exit 0 nothing found · 1 findings · 2 cannot judge (an unreadable file) · 3 not applicable (no package.json, or no app/ or src/app/).
 """
 from __future__ import annotations
 
@@ -117,6 +117,8 @@ def call_body(text: str, open_paren: int) -> str:
 
 
 def app_dirs(project: Path) -> list[Path]:
+    if not (project / "package.json").is_file():
+        raise NotApplicable(f"{project}: no package.json -- not a JavaScript project")
     found = [d for d in (project / "app", project / "src" / "app") if d.is_dir()]
     if not found:
         raise NotApplicable(f"{project}: no app/ or src/app/ directory -- not an App Router project")
@@ -189,6 +191,7 @@ def selftest() -> int:
     failures = []
     for label, files, expected in cases:
         with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "package.json").write_text("{}")
             for rel, text in files.items():
                 p = Path(tmp) / rel
                 p.parent.mkdir(parents=True, exist_ok=True)
@@ -197,6 +200,7 @@ def selftest() -> int:
         if got != expected:
             failures.append(f"{label}: expected {sorted(expected)}, got {sorted(got)}")
     with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "package.json").write_text("{}")
         try:
             judge(Path(tmp))
             failures.append("a project with no app/ directory must be NOT APPLICABLE, not clean")

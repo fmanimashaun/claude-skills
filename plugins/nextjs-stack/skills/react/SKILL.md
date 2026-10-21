@@ -1,6 +1,6 @@
 ---
 name: react
-description: React and Next.js App Router frontend architecture — how to compose components, where the Server/Client boundary goes, where data and state live, how a page streams and recovers from errors, what keeps the bundle and re-renders small, and the frontend's share of security. Each rule says what it prevents, the fix, and what enforces it. Use when writing or reviewing React components in a Next.js project (the stack detector reports `nextjs`), when placing `"use client"`, when deciding where to fetch data or keep state, or when a review must give a verdict on component structure.
+description: React and Next.js App Router frontend architecture: composition, the Server/Client boundary, data and state, streaming, performance and the frontend's security share, each rule with its enforcement. Use when writing or reviewing React components in a Next.js project.
 ---
 
 # React frontend architecture (Next.js App Router)

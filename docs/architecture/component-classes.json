@@ -1146,7 +1146,127 @@
    "class": "nextjs",
    "issue": 2165,
    "nextjs_lines": 1,
+   "path": "plugins/nextjs-stack/scripts/check_react_lint.py",
+   "plugin": "nextjs-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "nextjs",
+   "issue": 2165,
+   "nextjs_lines": 10,
+   "path": "plugins/nextjs-stack/scripts/check_react_patterns.py",
+   "plugin": "nextjs-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "nextjs",
+   "issue": 2165,
+   "nextjs_lines": 1,
+   "path": "plugins/nextjs-stack/checks.json#react-lint-off-by-default",
+   "plugin": "nextjs-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs check_react_lint.py"
+  },
+  {
+   "class": "nextjs",
+   "issue": 2165,
+   "nextjs_lines": 1,
+   "path": "plugins/nextjs-stack/checks.json#react-lint-off-by-default-selftest",
+   "plugin": "nextjs-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs check_react_lint.py"
+  },
+  {
+   "class": "nextjs",
+   "issue": 2165,
+   "nextjs_lines": 10,
+   "path": "plugins/nextjs-stack/checks.json#react-patterns",
+   "plugin": "nextjs-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs check_react_patterns.py"
+  },
+  {
+   "class": "nextjs",
+   "issue": 2165,
+   "nextjs_lines": 10,
+   "path": "plugins/nextjs-stack/checks.json#react-patterns-selftest",
+   "plugin": "nextjs-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs check_react_patterns.py"
+  },
+  {
+   "class": "nextjs",
+   "issue": 2165,
+   "nextjs_lines": 0,
+   "path": "plugins/nextjs-stack/scripts/mutations/__init__.py",
+   "plugin": "nextjs-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "declared"
+  },
+  {
+   "class": "nextjs",
+   "issue": 2165,
+   "nextjs_lines": 0,
+   "path": "plugins/nextjs-stack/scripts/mutations/check_react_lint.py",
+   "plugin": "nextjs-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests check_react_lint.py"
+  },
+  {
+   "class": "nextjs",
+   "issue": 2165,
+   "nextjs_lines": 1,
+   "path": "plugins/nextjs-stack/scripts/mutations/check_react_patterns.py",
+   "plugin": "nextjs-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests check_react_patterns.py"
+  },
+  {
+   "class": "nextjs",
+   "issue": 2165,
+   "nextjs_lines": 1,
    "path": "plugins/nextjs-stack/.claude-plugin/plugin.json",
+   "plugin": "nextjs-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
+   "class": "nextjs",
+   "issue": 2165,
+   "nextjs_lines": 2,
+   "path": "plugins/nextjs-stack/checks.json",
    "plugin": "nextjs-stack",
    "rails_lines": 0,
    "registered": [],
@@ -1161,6 +1281,18 @@
    "path": "plugins/nextjs-stack/skills/nextjs-supabase-vercel/SKILL.md",
    "plugin": "nextjs-stack",
    "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
+   "class": "nextjs",
+   "issue": 2165,
+   "nextjs_lines": 13,
+   "path": "plugins/nextjs-stack/skills/react/SKILL.md",
+   "plugin": "nextjs-stack",
+   "rails_lines": 1,
    "registered": [],
    "seam": "",
    "type": "support",
@@ -6995,7 +7127,7 @@
   "by_class": {
    "mixed": 199,
    "neutral": 268,
-   "nextjs": 3,
+   "nextjs": 14,
    "rails": 109
   },
   "by_plugin": {
@@ -7016,9 +7148,9 @@
    "nextjs-stack": {
     "mixed": 0,
     "neutral": 0,
-    "nextjs": 3,
+    "nextjs": 14,
     "rails": 0,
-    "total": 3
+    "total": 14
    },
    "pipeline": {
     "mixed": 17,
@@ -7067,9 +7199,9 @@
    "gate": {
     "mixed": 14,
     "neutral": 12,
-    "nextjs": 0,
+    "nextjs": 4,
     "rails": 29,
-    "total": 55
+    "total": 59
    },
    "hook": {
     "mixed": 13,
@@ -7081,9 +7213,9 @@
    "script": {
     "mixed": 57,
     "neutral": 53,
-    "nextjs": 0,
+    "nextjs": 2,
     "rails": 31,
-    "total": 141
+    "total": 143
    },
    "skill": {
     "mixed": 3,
@@ -7095,18 +7227,18 @@
    "support": {
     "mixed": 15,
     "neutral": 34,
-    "nextjs": 3,
+    "nextjs": 5,
     "rails": 5,
-    "total": 57
+    "total": 59
    },
    "test": {
     "mixed": 59,
     "neutral": 96,
-    "nextjs": 0,
+    "nextjs": 3,
     "rails": 30,
-    "total": 185
+    "total": 188
    }
   },
-  "components": 579
+  "components": 590
  }
 }

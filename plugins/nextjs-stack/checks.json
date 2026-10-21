@@ -6,8 +6,9 @@
     "whole registration step and a new plugin needs no change to the runner.",
     "",
     "applies_when: every path must exist in the user's repo, or the check reports NOT APPLICABLE.",
-    "Both checks here decide applicability themselves (exit 3), because a Next.js project's routes",
-    "live in app/ OR src/app/ and its linting may not be installed: one path in applies_when cannot say so.",
+    "Every check here needs a JavaScript project (package.json); past that, each decides the rest itself",
+    "(exit 3): a Next.js project's routes live in app/ OR src/app/, and its linting may not be installed,",
+    "which one path in applies_when cannot say.",
     "requires: executables that must be on PATH. Missing is a FAILURE, not a skip."
   ],
   "checks": [
@@ -15,14 +16,14 @@
       "id": "react-patterns",
       "why": "The React frontend architecture's anti-patterns that a REAL run of eslint-config-next misses (measured, docs/evidence/audits/2026-10-21-react-frontend-claims.md): a client route file with no declared reason (R8), fetch inside a useEffect in a client module (R16), and an internal <a href=\"/...\"> (R6; @next/next/no-html-link-for-pages only reads a pages/ directory). A gate: any finding fails; a client route that is a deliberate trade-off passes by declaring it with a reason. Not applicable outside the App Router.",
       "command": ["python3", "{plugin}/scripts/check_react_patterns.py", "."],
-      "applies_when": [],
+      "applies_when": ["package.json"],
       "requires": ["python3"]
     },
     {
       "id": "react-patterns-selftest",
       "why": "Proves check_react_patterns.py still tells each pattern from its near miss in THIS project's Python.",
       "command": ["python3", "{plugin}/scripts/check_react_patterns.py", "--selftest"],
-      "applies_when": [],
+      "applies_when": ["package.json"],
       "requires": ["python3"],
       "selftest": true
     },
@@ -30,14 +31,14 @@
       "id": "react-lint-off-by-default",
       "why": "Three official eslint-plugin-react rules that eslint-config-next ships OFF, each measured to catch an anti-pattern the React skill names: react/no-array-index-key (R4), react/jsx-no-constructed-context-values (R15, including React 19's <Ctx value> form), react/no-danger (R21). Run alone, through the project's own ESLint, so the project's lint step keeps every other rule. Not applicable where eslint-config-next is not installed.",
       "command": ["python3", "{plugin}/scripts/check_react_lint.py", "."],
-      "applies_when": [],
+      "applies_when": ["package.json"],
       "requires": ["python3", "node"]
     },
     {
       "id": "react-lint-off-by-default-selftest",
       "why": "Proves check_react_lint.py turns exactly those three rules on, keeps every other rule off, and reports a project without ESLint as not applicable.",
       "command": ["python3", "{plugin}/scripts/check_react_lint.py", "--selftest"],
-      "applies_when": [],
+      "applies_when": ["package.json"],
       "requires": ["python3"],
       "selftest": true
     }

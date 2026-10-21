@@ -16,7 +16,7 @@ written OUTSIDE the project and imports by absolute path, because a check must n
 Usage:  python3 check_react_lint.py [project-dir] [--json]
         python3 check_react_lint.py --selftest
 Exit 0 none · 1 findings · 2 ESLint ran but could not judge (crash, unparsable output) · 3 not applicable (no
-eslint-config-next / eslint-plugin-react installed in the project's node_modules: not a linted Next.js project).
+package.json, or no eslint-config-next / eslint-plugin-react installed in the project's node_modules).
 """
 from __future__ import annotations
 
@@ -64,6 +64,8 @@ def findings_from(report: list[dict], project: Path) -> list[dict]:
 
 
 def run(project: Path) -> list[dict]:
+    if not (project / "package.json").is_file():
+        raise NotApplicable(f"{project}: no package.json -- not a JavaScript project")
     missing = [p for p in REQUIRED if not (project / "node_modules" / p).is_dir()]
     if missing:
         raise NotApplicable(f"{project}: {', '.join(missing)} not installed in node_modules -- not a linted Next.js project")
