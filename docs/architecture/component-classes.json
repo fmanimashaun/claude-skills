@@ -85,6 +85,18 @@
    "via": "declared"
   },
   {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/design-flow/commands/interface-audit.md",
+   "plugin": "design-flow",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "command",
+   "via": "declared"
+  },
+  {
    "class": "mixed",
    "issue": 2185,
    "nextjs_lines": 0,
@@ -173,6 +185,18 @@
    "issue": null,
    "nextjs_lines": 0,
    "path": "plugins/design-flow/agents/design-critic.md",
+   "plugin": "design-flow",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "agent",
+   "via": "declared"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/design-flow/agents/interface-auditor.md",
    "plugin": "design-flow",
    "rails_lines": 0,
    "registered": [],
@@ -367,6 +391,30 @@
    "issue": null,
    "nextjs_lines": 0,
    "path": "plugins/design-flow/scripts/generation_gate.py",
+   "plugin": "design-flow",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/design-flow/scripts/interface_audit.py",
+   "plugin": "design-flow",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/design-flow/scripts/interface_collector.js",
    "plugin": "design-flow",
    "rails_lines": 0,
    "registered": [],
@@ -637,6 +685,18 @@
    "seam": "",
    "type": "test",
    "via": "tests generation_gate.py"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/design-flow/scripts/mutations/interface_audit.py",
+   "plugin": "design-flow",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests interface_audit.py"
   },
   {
    "class": "mixed",
