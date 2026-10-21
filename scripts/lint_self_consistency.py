@@ -44,6 +44,8 @@ WHAT IT CHECKS
                               pipeline) differ, or one is missing -- one fixture-git lock, three copies (#1588)
   findings-script-drift       the two shipped copies of scripts/findings.py (rails-flow, qa-flow) differ,
                               or one is missing -- qa-reporter runs its own copy (#1680)
+  detect-stack-drift          the two shipped copies of scripts/detect_stack.py (rails-flow, pipeline) differ,
+                              or one is missing -- pipeline's deploy_target.py imports its own copy (#2179)
   cross-plugin-relative-path  shipped markdown that runs `../<other-plugin>/...`, which resolves in the
                               clone and not in an install's per-plugin cache directories (#1680)
   fixture-git-bypass          a git call with the fixture identity (`t@t`) outside fixture_git -- a fixture's git
@@ -827,6 +829,37 @@ def check_findings_script_drift() -> tuple[list[Finding], int]:
                                     "review records would validate against different rules. Copy the canonical "
                                     "file over it (cp) and re-run"))
     return findings, len(FINDINGS_COPIES)
+
+
+# Rule: detect-stack-drift (#2179)
+# `/pipeline:deploy-cloud` asks which deploy agent the project's stack declares, and the one thing that knows is the stack
+# detector, which rails-flow owns. A plugin installs alone and cannot import another's code, so pipeline ships a copy and
+# `deploy_target.py` imports it (the sibling-plugin discovery is the detector's own, called once, not a third copy of it).
+# A fix to the detector that misses the copy would route a deploy by a stale reading of the descriptor.
+DETECT_STACK_COPIES = ("plugins/rails-flow/scripts/detect_stack.py",
+                       "plugins/pipeline/scripts/detect_stack.py")
+
+
+def check_detect_stack_drift() -> tuple[list[Finding], int]:
+    """The detect_stack.py copies exist and are byte-identical to the rails-flow (canonical) one."""
+    findings: list[Finding] = []
+    texts = {}
+    for rel in DETECT_STACK_COPIES:
+        p = ROOT / rel
+        if not p.is_file():
+            findings.append(Finding("detect-stack-drift", rel, 0,
+                                    "missing -- pipeline's deploy_target.py has no detector to import (#2179); "
+                                    "copy it from plugins/rails-flow/scripts/detect_stack.py"))
+            continue
+        texts[rel] = p.read_bytes()
+    canonical = texts.get(DETECT_STACK_COPIES[0])
+    for rel in DETECT_STACK_COPIES[1:]:
+        if canonical is not None and texts.get(rel, canonical) != canonical:
+            findings.append(Finding("detect-stack-drift", rel, 0,
+                                    f"differs from {DETECT_STACK_COPIES[0]} -- one stack detector, two copies: a deploy "
+                                    "would be routed by a different reading of the descriptors than every other flow's. "
+                                    "Copy the canonical file over it (cp) and re-run"))
+    return findings, len(DETECT_STACK_COPIES)
 
 
 # Rule: cross-plugin-relative-path (#1680)
@@ -4323,6 +4356,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     hook_start, hook_start_examined = check_hook_start_hardened()
     gate_onfail, gate_onfail_examined = check_gate_without_onfailure()
     findings_copy, findings_copies = check_findings_script_drift()
+    detect_copy, detect_copies = check_detect_stack_drift()
     rel_xplugin, rel_xplugin_examined = check_cross_plugin_relative_path()
     fixture_bypass, fixture_bypass_examined = check_fixture_git_bypass(python_sources)
     submod, submod_examined = check_git_status_recurses_submodules()
@@ -4390,6 +4424,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "hook_commands_checked_for_a_hardened_start": hook_start_examined,
         "gate_hooks_checked_for_onfailure": gate_onfail_examined,
         "findings_script_copies": findings_copies,
+        "detect_stack_copies": detect_copies,
         "shipped_markdown_checked_for_cross_plugin_paths": rel_xplugin_examined,
         "fixture_git_identity_lines": fixture_bypass_examined,
         "git_status_diff_calls_in_shipped_code": submod_examined,
@@ -4450,7 +4485,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
-            + findings_copy + rel_xplugin
+            + findings_copy + detect_copy + rel_xplugin
             + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
             coverage)
 
@@ -5616,6 +5651,14 @@ def selftest() -> int:
              only=check_findings_script_drift)
     scenario("a missing qa-flow findings.py is a finding", rule="findings-script-drift", expect_finding=True,
              files={FINDINGS_COPIES[0]: FS}, only=check_findings_script_drift)
+    DS = "def run(project, dirs):\n    pass\n"
+    scenario("identical detect_stack copies are silent", rule="detect-stack-drift", expect_finding=False,
+             files={c: DS for c in DETECT_STACK_COPIES}, only=check_detect_stack_drift)
+    scenario("a detect_stack copy that differs by one byte is a finding", rule="detect-stack-drift",
+             expect_finding=True, files={DETECT_STACK_COPIES[0]: DS, DETECT_STACK_COPIES[1]: DS + "\n"},
+             only=check_detect_stack_drift)
+    scenario("a missing pipeline detect_stack is a finding", rule="detect-stack-drift", expect_finding=True,
+             files={DETECT_STACK_COPIES[0]: DS}, only=check_detect_stack_drift)
     XP = "cross-plugin-relative-path"
     XP_TREE = {"plugins/rails-flow/scripts/findings.py": FS}
     scenario("an agent running ../rails-flow/ from qa-flow is a finding (the #1680 line)", rule=XP,
