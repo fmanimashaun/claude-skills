@@ -105,6 +105,13 @@ GUARD = Guard(
             "an unclosed comment hides the rest",
         ),
         Mutation(
+            # #2131: the rows read comment-stripped text but the headings did not, so a heading hidden in a comment counted.
+            "headings are read from the raw text again",
+            '    heads = {m.group(1).strip().lower() for m in re.finditer(r"^##\\s+(.+?)\\s*$", _uncommented(text), re.M)}',
+            '    heads = {m.group(1).strip().lower() for m in re.finditer(r"^##\\s+(.+?)\\s*$", text, re.M)}',
+            "a heading inside a comment is missing",
+        ),
+        Mutation(
             "a row with no TM-n ID stops being reported",
             "                if not ID_RE.fullmatch(rid):",
             "                if False:",

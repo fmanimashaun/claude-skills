@@ -290,5 +290,45 @@
       "App/Controllers/Sessions_Controller.rb"
     ],
     "boundary": true
+  },
+  {
+    "name": "an author model is not a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/models/author.rb"
+    ],
+    "boundary": false
+  },
+  {
+    "name": "an authors service folder is not a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/services/authors/byline.rb"
+    ],
+    "boundary": false
+  },
+  {
+    "name": "a sessionless helper name is not a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/models/sessionless_cart.rb"
+    ],
+    "boundary": false
+  },
+  {
+    "name": "a dot-dot path to the user model is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/x/../models/user.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "a policies directory without its slash is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/policies"
+    ],
+    "boundary": true
   }
 ]

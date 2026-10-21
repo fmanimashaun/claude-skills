@@ -18,7 +18,7 @@ GUARD = Guard(
         Mutation(
             # #2117: a stack's path rows (its descriptor's boundary_paths) stop being read, so a planned route file owes nothing.
             "a stack's boundary paths are never matched",
-            '            if kind == "path" and name not in seen and rx.search(path):',
+            '            if kind == "path" and name not in seen and (rx.search(path) or rx.search(path.rstrip("/") + "/")):',
             '            if False:',
             "a stack's boundary_paths loads and fires",
         ),
@@ -91,8 +91,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the diff prefixes stop being dropped",
-            '        for prefix in ("./", "../", "a/", "b/"):',
-            '        for prefix in ("./", "../"):',
+            '            for prefix in ("./", "../", "a/", "b/"):',
+            '            for prefix in ("./", "../"):',
             "a diff b/ path is matched",
         ),
         Mutation(
@@ -115,8 +115,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a leading ../ is kept again",
-            '        for prefix in ("./", "../", "a/", "b/"):',
-            '        for prefix in ("./", "a/", "b/"):',
+            '            for prefix in ("./", "../", "a/", "b/"):',
+            '            for prefix in ("./", "a/", "b/"):',
             "a ../ path is matched",
         ),
         Mutation(
@@ -148,6 +148,24 @@ GUARD = Guard(
             "|sign(?:s|ing)?[- ]?in with|without (?:logging|signing) in)",
             ")",
             "sign in with a provider is a boundary",
+        ),
+        Mutation(
+            "a dot-dot inside a path stops being collapsed",
+            '        p = posixpath.normpath(p).lstrip("/") if p else p',
+            '        p = p',
+            "a dot-dot inside a path is collapsed",
+        ),
+        Mutation(
+            "a directory named without its slash stops matching a directory row",
+            '(rx.search(path) or rx.search(path.rstrip("/") + "/"))',
+            'rx.search(path)',
+            "a directory without its slash is matched",
+        ),
+        Mutation(
+            "a bare `tokens` counts as an auth noun again, so design tokens owe a model",
+            "|(?:access|auth|bearer|refresh|reset|session|login|api|magic[- ]link) tokens?|",
+            "|(?:(?:access|auth|bearer|refresh|reset|session|login|api|magic[- ]link) )?tokens?|",
+            "design tokens are not a boundary",
         ),
     ),
 )

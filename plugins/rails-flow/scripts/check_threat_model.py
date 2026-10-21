@@ -84,7 +84,8 @@ def threat_rows(text: str) -> list[tuple[int, str, str]]:
 def check(text: str) -> tuple[list[str], int]:
     """(findings, threat rows read). Zero rows read means the model is unusable, not clean."""
     findings: list[str] = []
-    heads = {m.group(1).strip().lower() for m in re.finditer(r"^##\s+(.+?)\s*$", text, re.M)}
+    # Headings and sections read the same comment-stripped text as the rows: a heading inside `<!-- -->` is not on the page (#2131).
+    heads = {m.group(1).strip().lower() for m in re.finditer(r"^##\s+(.+?)\s*$", _uncommented(text), re.M)}
     for s in SECTIONS:
         if s.lower() not in heads:
             findings.append(f"missing section `## {s}`")
@@ -92,7 +93,7 @@ def check(text: str) -> tuple[list[str], int]:
     for ph in sorted({m_.group(0) for m_ in PLACEHOLDER.finditer(prose)}):
         findings.append(f"template placeholder `{ph}` left in the model")
     for s in SECTIONS:
-        body = _section_body(text, s)
+        body = _section_body(_uncommented(text), s)
         if body is None:
             continue
         lines = [ln.strip() for ln in _uncommented(body).splitlines() if ln.strip()]
@@ -186,6 +187,7 @@ A webhook.
         ("one letter is filler", ok.replace("| webhook | mitigate |", "| q1 | mitigate |"), 1, "no component named"),
         ("the template's own placeholder in a cell is found", ok.replace("signature checked", "<control, or why the risk stays>"), 1, "left in a cell"),
         ("an unclosed comment hides the rest", ok.replace("## Threats", "<!-- draft\n## Threats"), 2, ""),
+        ("a heading inside a comment is missing", ok.replace("## Security requirements\n- verify the signature", "<!--\n## Security requirements\n- verify the signature\n-->"), 1, "missing section `## Security requirements`"),
         ("a table with no rows is unusable, not clean", ok.split("|---|---|---|---|---|")[0] + "|---|---|---|---|---|---|\n## Security requirements\n- x\n", 2, ""),
     ]
     bad = 0

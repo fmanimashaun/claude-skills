@@ -7043,7 +7043,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/security/boundary-cases.json",
    "plugin": "rails-stack",
-   "rails_lines": 27,
+   "rails_lines": 32,
    "registered": [],
    "seam": "",
    "type": "support",

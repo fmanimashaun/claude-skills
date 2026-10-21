@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import posixpath
 import re
 import sys
 from pathlib import Path
@@ -38,7 +39,7 @@ TEXT: tuple[tuple[str, re.Pattern], ...] = (
     ("webhook", re.compile(r"\bwebhooks?\b|\bcallback (?:url|endpoint)\b", re.I)),
     ("mcp-tool", re.compile(r"\bmcp\b|\bmodel context protocol\b", re.I)),
     ("outbound-fetch", re.compile(r"\b(?:outbound (?:fetch|request|call)|fetch(?:es)? (?:a |the )?url|downloads? from (?:a )?url|ssrf)\b", re.I)),
-    ("auth-session-role", re.compile(r"\b(?:add|adds|adding|new|change|changes|changing|replace|remove|grant|revoke|let|lets|allow|allows|enable|rotate|reset|expire|invalidate|issue|implement|build|create|require|enforce|restrict|support|switch|migrate|skip|extend|generate|make)\b[^.\n]{0,50}\b(?:sign[- ]?in|log[- ]?in|sessions?|passwords?|sso|oauth|omniauth|two[- ]factor|2fa|roles?|permissions?|authori[sz]ation|authenticat\w*|(?:access |auth |reset |session |api )?tokens?|impersonat\w*|remember[- ]me|api (?:key|token))\b", re.I)),
+    ("auth-session-role", re.compile(r"\b(?:add|adds|adding|new|change|changes|changing|replace|remove|grant|revoke|let|lets|allow|allows|enable|rotate|reset|expire|invalidate|issue|implement|build|create|require|enforce|restrict|support|switch|migrate|skip|extend|generate|make)\b[^.\n]{0,50}\b(?:sign[- ]?in|log[- ]?in|sessions?|passwords?|sso|oauth|omniauth|two[- ]factor|2fa|roles?|permissions?|authori[sz]ation|authenticat\w*|(?:access|auth|bearer|refresh|reset|session|login|api|magic[- ]link) tokens?|impersonat\w*|remember[- ]me|api (?:key|token))\b", re.I)),
     ("secrets", re.compile(r"\b(?:secrets?|credentials|(?:encryption|signing|private|master|secret) keys?|api[_ ]?keys?|(?:store|storing) (?:the |a )?tokens?)\b", re.I)),
     ("input-parsing", re.compile(r"\bparse[sd]?\b[^.\n]{0,40}\b(?:xml|json|yaml|html|payload|body|params|headers?|input)\b|\b(?:deserializ\w*|unmarshal\w*)", re.I)),
     ("raw-html", re.compile(r"\braw\b[^.\n]{0,40}\bhtml\b|\bhtml\b[^.\n]{0,40}\braw\b|\b(?:skip|disable|turn off|without)\s+sanitiz\w*|\bsanitiz\w*\s+(?:off|disabled)\b|\brender\w*\s+(?:the |a |an )?(?:partner|user|customer|external|supplied|uploaded|third[- ]party)(?:'s|s')?\s+(?:raw )?html\b", re.I)),
@@ -115,13 +116,16 @@ def normalise_path(path: str, project: Path | None = None) -> str:
                 p = cand[len(root):]
                 break
     p = re.sub(r"^[A-Za-z]:/", "", p)
-    while True:
-        for prefix in ("./", "../", "a/", "b/"):
-            if p.startswith(prefix) and len(p) > len(prefix):
-                p = p[len(prefix):]
+    for _ in range(2):  # strip the prefixes, collapse `x/../` and `//`, then strip what the collapse exposed
+        while True:
+            for prefix in ("./", "../", "a/", "b/"):
+                if p.startswith(prefix) and len(p) > len(prefix):
+                    p = p[len(prefix):]
+                    break
+            else:
                 break
-        else:
-            return re.sub(r"/{2,}", "/", p)
+        p = posixpath.normpath(p).lstrip("/") if p else p
+    return p
 
 
 def classify(text: str, paths: list[str], stack: list[Row] | tuple = ()) -> list[str]:
@@ -136,7 +140,7 @@ def classify(text: str, paths: list[str], stack: list[Row] | tuple = ()) -> list
             seen[name] = f"plan names `{m.group(0).strip()}` ({label})"
     for path in (normalise_path(p) for p in paths):
         for name, kind, rx, label in stack:
-            if kind == "path" and name not in seen and rx.search(path):
+            if kind == "path" and name not in seen and (rx.search(path) or rx.search(path.rstrip("/") + "/")):
                 seen[name] = f"planned path `{path}` ({label})"
     return [f"{name}: {why}" for name, why in seen.items()]
 
@@ -176,6 +180,7 @@ def selftest() -> int:
         ("generating an access token is a boundary", "Generate an access token for each partner.", [], 1),
         ("making a page public is a boundary", "Make the report page public.", [], 1),
         ("impersonation is a boundary", "Let support impersonate a user.", [], 1),
+        ("design tokens are not a boundary", "Add the spacing tokens from the design system.", [], 0),
         ("remember me is a boundary", "Add a remember-me checkbox.", [], 1),
         ("sign in with a provider is a boundary", "Users sign in with Google.", [], 1),
         ("without logging in is a boundary", "Visitors see the report without logging in.", [], 1),
@@ -223,6 +228,9 @@ def selftest() -> int:
                          ("a ../ path is matched", bool(classify("Tidy.", ["../hooks/in.py"], rows))),
                          ("a drive-letter path is matched", bool(classify("Tidy.", ["C:\\hooks\\in.py"], rows))),
                          ("a path in another case is matched", bool(classify("Tidy.", ["Hooks/in.py"], rows))),
+                         ("a dot-dot inside a path is collapsed", bool(classify("Tidy.", ["docs/../hooks/in.py"], rows))),
+                         ("a leading double slash is matched", bool(classify("Tidy.", ["//hooks/in.py"], rows))),
+                         ("a directory without its slash is matched", bool(classify("Tidy.", ["hooks"], rows))),
                          ("a padded path is matched", bool(classify("Tidy.", ["  hooks/in.py\n"], rows))),
                          ("an absolute path inside the project is matched", bool(classify("Tidy.", [normalise_path(str(proj.resolve() / "hooks/in.py"), proj)], rows)))):
             if not ok:

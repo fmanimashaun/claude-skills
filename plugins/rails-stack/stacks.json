@@ -68,7 +68,7 @@
               },
               {
                 "boundary": "auth-session-role",
-                "pattern": "(?:^|/)(?:sessions|passwords|registrations|omniauth_callbacks|logins?|magic_links|two_factors?|invitations|confirmations|unlocks)_controller\\.rb$|^app/controllers/application_controller\\.rb$|^app/controllers/concerns/auth[^/]*\\.rb$|^app/(?:policies|abilities?)/|^app/models/(?:session|current|role|user)\\.rb$|^config/initializers/(?:devise|session_store)\\.rb$|^lib/(?:[^/]+/)*auth[^/]*(?:/|\\.rb$)|^app/(?:models|services|jobs)/(?:[^/]+/)*(?:auth[^/]*/|[^/]*(?:token|session|auth)[^/]*\\.rb$)"
+                "pattern": "(?:^|/)(?:sessions|passwords|registrations|omniauth_callbacks|logins?|magic_links|two_factors?|invitations|confirmations|unlocks)_controller\\.rb$|^app/controllers/application_controller\\.rb$|^app/controllers/concerns/auth(?:entication|orization|enticat\\w*)?(?:_[^/]*)?\\.rb$|^app/(?:policies|abilities?)/|^app/models/(?:session|current|role|user)\\.rb$|^config/initializers/(?:devise|session_store)\\.rb$|^lib/(?:[^/]+/)*auth(?:entication|orization|enticat\\w*)?(?:_[^/]*)?(?:/|\\.rb$)|^app/(?:models|services|jobs)/(?:[^/]+/)*(?:auth(?:entication|orization|enticat\\w*)?(?:_[^/]*)?/|(?:[^/]*_)?(?:tokens?|sessions?|auth(?:entication|orization|enticat\\w*)?)(?:_[^/]*)?\\.rb$)"
               },
               {
                 "boundary": "upload-import",
