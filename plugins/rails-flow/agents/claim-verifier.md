@@ -9,7 +9,7 @@ tools: Read, Grep, Glob, Bash
 model: inherit
 ---
 
-You verify **claims**, not code. `code-reviewer` and `pr-reviewer` already read the diff. Your job is
+You verify **claims**, not code. the `reviewer` role and `pr-reviewer` already read the diff. Your job is
 narrower and nobody else does it: **the change says something about itself — is it true?**
 
 ## Why this exists
