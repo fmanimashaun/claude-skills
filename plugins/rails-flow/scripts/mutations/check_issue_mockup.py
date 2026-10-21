@@ -9,9 +9,9 @@ GUARD = Guard(
     name="check_issue_mockup",
     subject="scripts/check_issue_mockup.py",
     selftest="scripts/check_issue_mockup.py",   # --selftest lives in the module itself
-    # It imports the approval rule from check_mockup_gate, which reads the diff through classify_door;
+    # It imports the approval rule from check_mockup_gate, which reads the diff through classify_door and the record reader (mockup_records, #2226);
     # unstaged, the unmutated selftest failed and every mutation read as caught (INERT).
-    needs=("scripts/check_mockup_gate.py", "scripts/classify_door.py"),
+    needs=("scripts/check_mockup_gate.py", "scripts/classify_door.py", "scripts/mockup_records.py"),
     mutations=(
         Mutation(
             "an issue with no section reads as declared",

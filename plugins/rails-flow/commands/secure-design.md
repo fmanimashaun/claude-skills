@@ -56,10 +56,10 @@ Exit 1 names the row: a missing section, a decision outside the four, an `accept
 
 ## 4. Hand on
 
-- The **Security requirements** become acceptance criteria in the next step (`/rails-flow:feature`'s criteria, tagged `[security]` once #2118 lands). Write them as given-when-then like any other.
+- Each `mitigate` row becomes an acceptance criterion in the next step (`/rails-flow:feature`'s criteria), tagged `[security]` and citing the row's ID in its citation slot, `(TM-1)` or `covers: TM-1` at the end of the criterion. The ID is the row's own `ID` cell and never changes. Write them as given-when-then like any other. `check_criteria.py` refuses a `mitigate` row no criterion cites.
 - Commit the model with the unit. It is a living document: a later change to the same boundary edits it in the same PR.
 
 ## What follows (not built by this command)
 
-- Mandatory `security-auditor` against the model before `gh pr ready` when a model exists for the change (#2119, decision D3 on #2115). Until that lands, run `security-auditor` yourself on any unit that has a model.
+- Mandatory `security-auditor` against the model before `gh pr ready` when the change adds or edits one (#2119, decision D3 on #2115): `check_security_review.py`, a sweep gate. `/rails-flow:feature` has the record's shape.
 - Abuse-case charters from the `mitigate` rows for QA (#2126).

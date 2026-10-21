@@ -7,7 +7,7 @@ tell detector. Everything that knows how a particular stack renders UI lives in 
 
 | file | what it is |
 |---|---|
-| `<implementation>/adapter.json` | `id`, `stack`, the `agents` it provides (`porter`, `composer`, plugin agent names) and the `checks` ids it owns |
+| `<implementation>/adapter.json` | `id`, `stack`, `tokens_file` (where the stack keeps its tokens), the `agents` it provides (`porter`, `composer`, plugin agent names) and the `checks` ids it owns |
 | `<implementation>/scripts/` | the checks and gates that read that stack's source |
 | `<implementation>/scripts/mutations/` | their mutation guards, discovered by `scripts/mutation_check.py` with design-flow as the base |
 

@@ -2,11 +2,11 @@
 """Compose the system-carrying half of a Claude Design prompt, from this project's own sources.
 
 Run:  python3 design_prompt.py --surface dashboard
-      python3 design_prompt.py --surface dashboard --theme app/assets/tailwind/application.css
+      python3 design_prompt.py --surface dashboard --theme <the project's token file>
       python3 design_prompt.py --selftest
 
 WHY THIS EXISTS (#745). The inbound half of the loop shipped first: `design-handoff.md` and the
-`rails-ui-porter` agent turn a Claude Design canvas into Rails + Hotwire. But the cost of that port is
+porter agent turn a Claude Design canvas into the project's UI implementation. But the cost of that port is
 decided BEFORE it starts, by the prompt.
 
 Measured on a real artboard: `Ledger auth.dc.html` declares **50 of its own `:root` tokens** and makes
@@ -60,7 +60,6 @@ import doctrine_path  # noqa: E402  -- sibling module, reachable via the line ab
 
 CATALOG = "component-shapes.json"
 ANATOMY = "page-anatomies.md"
-DEFAULT_THEME = Path("app/assets/tailwind/application.css")
 
 # Roles a canvas must be told about by name. Anything else in `:root` is a primitive the design system
 # keeps private, and naming it in a prompt would invite the canvas to bind to it.
@@ -342,7 +341,8 @@ def _selftest() -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--surface", default="surface")
-    ap.add_argument("--theme", type=Path, default=DEFAULT_THEME)
+    ap.add_argument("--theme", type=Path, default=None,
+                    help="the project's token file (default: the UI adapter's `tokens_file`, from the stack descriptor)")
     ap.add_argument("--refs", type=Path,
                     help="design-system references dir (default: resolve from the plugin root)")
     ap.add_argument("--selftest", action="store_true")
@@ -369,7 +369,22 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         refs = found / "references"
     problems: list[str] = []
-    roles, p = project_roles(a.theme)
+    theme, theme_problem = a.theme, None
+    if theme is None:
+        # the token file is the stack's, so ask its adapter (#2185). No answer is a PROBLEM named in the prompt, never a stack default
+        try:
+            import ui_adapter
+            named = ui_adapter.resolve_project(Path.cwd())["tokens_file"]
+            if named:
+                theme = Path(named)
+            else:
+                theme, theme_problem = None, "the UI adapter names no token file for this stack; pass --theme"
+        except (ImportError, KeyError, OSError, getattr(sys.modules.get("ui_adapter"), "Unresolved", RuntimeError)) as exc:
+            theme, theme_problem = None, f"cannot find the project's token file ({exc}); pass --theme"
+    if theme is None:
+        roles, p = [], theme_problem
+    else:
+        roles, p = project_roles(theme)
     if p:
         problems.append(p)
     components, p = catalog(refs)

@@ -46,7 +46,9 @@ wearing a count (#476):
   * `undeclared source`     -- a row points at a file `DOCTRINE_SOURCES` does not list, which means
                               the declared surface is wrong rather than the row.
 
-WHAT IS DELIBERATELY NOT A FAILURE. An `advice` row with no enforcement is correct and common --
+WHAT IS DELIBERATELY NOT A FAILURE. An `advice` row with no enforcement is correct, ONLY WITH A BASIS (#2224): a verified source
+naming the version in scope, or a recorded maintainer decision (`unbased advice` refuses one with neither, beyond the
+shrinking `ADVICE_UNBASED` baseline) --
 `art-direction.md` argues at length that gating judgement is worse than not gating it, and
 `quality-pass` never blocks a merge on purpose. The classification, `guarantee` vs `advice`, is
 `docs/doctrine/harness-doctrine.md`'s existing test ("if a model ignores this, what happens?"), so this file
@@ -65,8 +67,10 @@ Stdlib only.
 from __future__ import annotations
 
 import argparse
+import ast
 import html
 import json
+import os
 import re
 import subprocess
 import sys
@@ -78,6 +82,27 @@ PAGE = "docs/architecture/doctrine-map.html"
 
 GUARANTEE, ADVICE, GAP = "guarantee", "advice", "gap"
 KINDS = (GUARANTEE, ADVICE, GAP)
+
+# ADVICE MUST STAND ON SOMETHING (owner, 2026-10-21, #2224): "advice is not bad but must be tested against best practices or
+# standards". An `advice` row is correct only with a `basis`: a verified source naming the version in scope, or a recorded
+# maintainer decision. These are the advice rows that had neither when the ruling landed (12 of 16), by (stated_in, anchor). The
+# list may only SHRINK: a NEW unbased row is a finding, and so is an entry whose row has since gained a basis, become a guarantee
+# or been deleted, until it is removed here.
+BASIS = re.compile(r"source: \S.* @ \S.*|decision: #(\d+)")
+ADVICE_UNBASED: tuple[tuple[str, str], ...] = (
+    ('CLAUDE.md', 'Versions are assigned at the promotion, never on a merge into `dev`'),
+    ('AGENTS.md', '## Measure before you assert'),
+    ('AGENTS.md', "## Write the mechanism out; don't compress it into a label"),
+    ('AGENTS.md', '## End the analysis with the call, then make it'),
+    ('AGENTS.md', '## Act as an advisor, not an assistant'),
+    ('plugins/rails-stack/skills/parallel-session-lane/SKILL.md', '**Its limit, stated: it protects against accident, not impersonation.**'),
+    ('plugins/rails-stack/skills/parallel-session-lane/SKILL.md', '3. **Clean up when done, with the teardown.**'),
+    ('CLAUDE.md', '**INCONCLUSIVE leaves doctrine unchanged.**'),
+    ('CLAUDE.md', '### An issue body is not an authority'),
+    ('plugins/rails-flow/commands/fix.md', 'classify the failure before you debug it'),
+    ('plugins/rails-stack/skills/quality-pass/SKILL.md', 'It is ADVISORY and never a merge'),
+    ('plugins/rails-stack/skills/quality-pass/SKILL.md', '**Advisory. Always.**'),
+)
 
 
 @dataclass(frozen=True)
@@ -98,6 +123,9 @@ class Claim:
     enforced_by: tuple[str, ...] = ()
     refs: tuple[int, ...] = ()
     note: str = ""
+    # #2224: what an `advice` row stands on. "source: <what was checked> @ <version in scope>" (a doctrine-verifier citation, or a
+    # check run against a named version) or "decision: #<n>" (a maintainer decision recorded on that issue, which `refs` cites).
+    basis: str = ""
 
 
 # Every file whose prose this map considers doctrinal. Declared rather than globbed, because the
@@ -214,6 +242,7 @@ CLAIMS: tuple[Claim, ...] = (
         claim="Prefer expanded conditionals over guard clauses when writing new code (style.md §1).",
         stated_in="plugins/rails-stack/skills/rails-8/references/style.md",
         anchor="No cop can enforce it the other way round, either.",
+        basis="source: no stock cop prefers expanded conditionals, Style/GuardClause has no EnforcedStyle to invert @ rubocop 1.91.0",
         kind=ADVICE,
         note="#1363, verified on rubocop 1.91.0: no stock cop prefers expanded conditionals, and "
              "Style/GuardClause has no EnforcedStyle to invert. The rule's two exceptions (a return "
@@ -226,6 +255,7 @@ CLAIMS: tuple[Claim, ...] = (
               "module is the exception (style.md §5).",
         stated_in="plugins/rails-stack/skills/rails-8/references/style.md",
         anchor="It cannot simply be switched on",
+        basis="source: the indentation cops cover the main shape only @ rubocop 1.91.0, rubocop-rails-omakase 1.1.0",
         kind=ADVICE,
         note="#1363, verified on rubocop 1.91.0 / rubocop-rails-omakase 1.1.0: IndentationWidth + "
              "IndentationConsistency(indented_internal_methods) + EmptyLinesAroundAccessModifier"
@@ -540,6 +570,7 @@ CLAIMS: tuple[Claim, ...] = (
               "not a boundary: it matches the command's text, and a shell gives that text its meaning only when it expands it.",
         stated_in="CLAUDE.md",
         anchor="`git add -A` is blocked either way.",
+        basis="decision: #1793",
         kind=ADVICE,
         enforced_by=("hook:plugins/rails-flow/hooks/scripts/guard-bash.sh",),
         refs=(1788, 1793),
@@ -724,6 +755,26 @@ CLAIMS: tuple[Claim, ...] = (
         refs=(2117,),
         note="Our design, no external claim. The scope check says a model is owed, never that one is right.",
     ),
+    Claim(
+        claim="A `mitigate` row of a unit's threat model with no `[security]` criterion citing it in its slot is refused, and so is a `[security]` criterion that cites no `mitigate` row.",
+        stated_in="plugins/rails-flow/commands/feature.md",
+        anchor="**Security criteria (#2118).**",
+        kind=GUARANTEE,
+        enforced_by=("script:plugins/rails-flow/scripts/check_criteria.py", "mutation:check_criteria"),
+        refs=(2118,),
+        note="Our design, no external claim. The check proves the citation exists, not that the criterion's observable would fail without the control.",
+    ),
+    Claim(
+        claim="A change that adds or edits a threat model cannot be marked ready without a current `security-auditor` record that answers every `mitigate` and `accept` row, "
+              "and a `mitigate` row recorded `not implemented` is a finding for a human.",
+        stated_in="plugins/rails-flow/commands/feature.md",
+        anchor="**verify the threat model**",
+        kind=GUARANTEE,
+        enforced_by=("script:plugins/rails-flow/scripts/check_security_review.py", "mutation:check_security_review"),
+        refs=(2119,),
+        note="Our design, no external claim. It binds `gh pr ready` through the sweep (`project_gates.py` -> `guard-pr-ready.sh`), not by chaining. It proves the record is current, "
+             "complete and cites code that exists, not that the cited line implements the control.",
+    ),
     # ---- what the plugins promise downstream ------------------------------------------------
     Claim(
         claim="An acceptance criterion that no spec cites is unproven, and the work order says so.",
@@ -809,6 +860,7 @@ CLAIMS: tuple[Claim, ...] = (
               "writes from human ones, and how a wrong write is undone (mcp-server.md §6).",
         stated_in="plugins/rails-stack/skills/rails-8/references/mcp-server.md",
         anchor="**If you cannot answer these, do not ship a write tool.**",
+        basis="decision: #2056",
         kind=ADVICE,
         note="Owner ruling on #2056 (option 2: a checklist, not rules). Each spec-cited mechanism is doctrine-verifier "
              "CONFIRMED against MCP 2026-07-28 (#2051); items 3-5 are labelled our design because the spec defines "
@@ -900,12 +952,102 @@ class Resolver:
 # Validation
 # ---------------------------------------------------------------------------------------------
 
+BASE_REF = os.environ.get("DOCTRINE_MAP_BASE", "origin/dev")
+
+
+def base_baseline(source: str | None) -> tuple[set[tuple[str, str]] | None, str]:
+    """What the BASE allows on the unbased list, read from the base's own doctrine_map.py text (#2254 review).
+
+    The list "may only shrink" only means something against a list nobody in this change could edit: the base branch's. If the
+    base already has ADVICE_UNBASED, that is the allowance. If it predates the list, the allowance is its advice rows (an entry
+    may grandfather only a row that already was advice). `None` with a reason when the base cannot be read: never a pass.
+    """
+    if source is None:
+        return None, f"cannot read the base's scripts/doctrine_map.py at {BASE_REF}"
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        return None, f"the base's scripts/doctrine_map.py does not parse ({exc})"
+    for node in tree.body:
+        target = node.target if isinstance(node, ast.AnnAssign) else (node.targets[0] if isinstance(node, ast.Assign) else None)
+        if isinstance(target, ast.Name) and target.id == "ADVICE_UNBASED" and node.value is not None:
+            try:
+                return {tuple(e) for e in ast.literal_eval(node.value)}, ""
+            except ValueError as exc:
+                return None, f"the base's ADVICE_UNBASED is not a literal ({exc})"
+    rows: set[tuple[str, str]] = set()
+    for node in tree.body:
+        target = node.target if isinstance(node, ast.AnnAssign) else (node.targets[0] if isinstance(node, ast.Assign) else None)
+        if not (isinstance(target, ast.Name) and target.id == "CLAIMS" and node.value is not None):
+            continue
+        for call in ast.walk(node.value):
+            if isinstance(call, ast.Call) and getattr(call.func, "id", None) == "Claim":
+                # positional fields first, in Claim's order, so `Claim("c", "doc.md", "x", ADVICE)` reads as `kind=ADVICE`
+                kw = dict(zip(("claim", "stated_in", "anchor", "kind"), call.args))
+                kw.update({k.arg: k.value for k in call.keywords})
+                if isinstance(kw.get("kind"), ast.Name) and kw["kind"].id == "ADVICE":
+                    try:
+                        rows.add((ast.literal_eval(kw["stated_in"]), ast.literal_eval(kw["anchor"])))
+                    except (KeyError, ValueError):
+                        return None, "a base advice row's stated_in or anchor is not a literal"
+        return rows, ""
+    return None, "the base's scripts/doctrine_map.py has neither ADVICE_UNBASED nor CLAIMS"
+
+
+def ratchet_findings(unbased: tuple[tuple[str, str], ...], allowed: set[tuple[str, str]] | None, why: str) -> list[str]:
+    """Every unbased-list entry the base did not allow: a row added in the same change as its own grandfather entry."""
+    if allowed is None:
+        return [f"unbased-advice baseline unchecked — {why}; the list 'may only shrink' cannot be shown, so this is a finding (#2254)"]
+    return [f"unbased-advice baseline raised — {e[0]} :: {e[1]!r} is not on the base's list ({BASE_REF}); a new unbased row is "
+            f"refused, not grandfathered (#2224)" for e in unbased if tuple(e) not in allowed]
+
+
+def comparison_point(ref: str = BASE_REF, git=None) -> tuple[str | None, str]:
+    """The commit this change is measured from (#2254 review): where HEAD left `ref`, never HEAD itself.
+
+    `git merge-base <ref> HEAD` is what the change adds to, even when `ref` moved on after the branch was cut. When that IS HEAD
+    (a push to dev, where HEAD is origin/dev; or DOCTRINE_MAP_BASE=HEAD set by hand), the change is HEAD's last commit, so the point
+    is HEAD's first parent: comparing HEAD with itself would let a list that grew in that commit agree with itself.
+    """
+    def run(*args: str) -> str | None:
+        done = (git or subprocess.run)(["git", "-C", str(REPO), *args], capture_output=True, text=True)
+        return done.stdout.strip() if done.returncode == 0 and done.stdout.strip() else None
+    head = run("rev-parse", "HEAD")
+    point = run("merge-base", ref, "HEAD")
+    if head is None or point is None:
+        return None, f"no common ancestor of {ref} and HEAD"
+    if point == head:
+        point = run("rev-parse", "HEAD^1")
+        if point is None:
+            return None, "HEAD has no parent to compare with"
+    return point, ""
+
+
+def read_base(ref: str = BASE_REF, git=None) -> str | None:
+    point, _ = comparison_point(ref, git)
+    if point is None:
+        return None
+    done = (git or subprocess.run)(["git", "-C", str(REPO), "show", f"{point}:scripts/doctrine_map.py"], capture_output=True, text=True)
+    return done.stdout if done.returncode == 0 else None
+
+
+def check_findings(read=None) -> list[str]:
+    """What `--check` refuses: the registry's own findings plus the ratchet against the base."""
+    return validate() + ratchet_findings(ADVICE_UNBASED, *base_baseline((read or read_base)()))
+
+
 def validate(claims: tuple[Claim, ...] = CLAIMS,
              sources: tuple[str, ...] = DOCTRINE_SOURCES,
              resolver: Resolver | None = None,
-             root: Path = REPO) -> list[str]:
+             root: Path = REPO,
+             unbased: tuple[tuple[str, str], ...] = ADVICE_UNBASED) -> list[str]:
     resolver = resolver or Resolver(root=root)
     findings: list[str] = []
+    still_unbased = {(c.stated_in, c.anchor) for c in claims if c.kind == ADVICE and not c.basis}
+    for entry in unbased:
+        if entry not in still_unbased:
+            findings.append(f"stale unbased-advice baseline — {entry[0]} :: {entry[1]!r} now has a basis, is no longer advice or is "
+                            f"gone; remove it from ADVICE_UNBASED so the count falls (#2224)")
     seen: set[tuple[str, str]] = set()
     cache: dict[str, str | None] = {}
 
@@ -946,6 +1088,17 @@ def validate(claims: tuple[Claim, ...] = CLAIMS,
             else:
                 findings.append(f"unresolved enforcement — {why} — {where}")
 
+        if c.kind == ADVICE:
+            m = BASIS.fullmatch(c.basis) if c.basis else None
+            if c.basis and m is None:
+                findings.append(f"malformed basis — {c.basis!r} is neither `source: <checked> @ <version>` nor `decision: #<n>` — {where}")
+            elif m is not None and not m.group(1) and not c.refs:
+                findings.append(f"source not cited — a `source:` basis must cite the verdict or issue that checked it in `refs` — {where}")
+            elif m is not None and m.group(1) and int(m.group(1)) not in c.refs:
+                findings.append(f"decision not cited — basis names #{m.group(1)} but `refs` does not, so nothing links the row to it — {where}")
+            elif not c.basis and (c.stated_in, c.anchor) not in unbased:
+                findings.append(f"unbased advice — an advice row is correct only with a verified source (`source: … @ <version>`) or a "
+                                f"recorded maintainer decision (`decision: #<n>`) (#2224) — {where}")
         if c.kind == GUARANTEE and not c.enforced_by:
             findings.append(
                 f"unenforced guarantee — nothing is cited; make it `advice`, or a `gap` with an "
@@ -1148,6 +1301,10 @@ def _selftest() -> int:
     import tempfile
     ok, bad = 0, []
 
+    def _v(*a, **k):
+        """validate() on fixture claims: the real ADVICE_UNBASED list names rows the fixtures do not carry."""
+        return validate(*a, **{"unbased": (), **k})
+
     def check(label: str, cond: bool) -> None:
         nonlocal ok
         if cond:
@@ -1169,13 +1326,13 @@ def _selftest() -> int:
         fake = Fake()
         good = Claim("c", "doc.md", "the claim", GUARANTEE, ("gate:g",))
 
-        check("silent on a good row", validate((good,), srcs, fake, root) == [])
+        check("silent on a good row", _v((good,), srcs, fake, root) == [])
 
         def fires(label: str, c: Claim, needle: str) -> None:
-            f = validate((c,), srcs, fake, root)
+            f = _v((c,), srcs, fake, root)
             check(f"{label} fires", any(needle in x for x in f))
             check(f"{label} silent on the good row", not any(needle in x
-                                                            for x in validate((good,), srcs, fake, root)))
+                                                            for x in _v((good,), srcs, fake, root)))
 
         fires("anchor missing", Claim("c", "doc.md", "not present", GUARANTEE, ("gate:g",)),
               "anchor missing")
@@ -1213,16 +1370,68 @@ def _selftest() -> int:
               fake.resolve("hook:.github/workflows/w.yml")[0])
 
         dup = (good, Claim("other wording", "doc.md", "the claim", GUARANTEE, ("gate:g",)))
-        check("duplicate fires", any("duplicate claim" in x for x in validate(dup, srcs, fake, root)))
+        check("duplicate fires", any("duplicate claim" in x for x in _v(dup, srcs, fake, root)))
 
         check("undeclared source fires",
               any("undeclared source" in x
-                  for x in validate((Claim("c", "elsewhere.md", "x", ADVICE),), srcs, fake, root)))
+                  for x in _v((Claim("c", "elsewhere.md", "x", ADVICE),), srcs, fake, root)))
 
-        # advice with nothing behind it is CORRECT and must stay silent -- the negative test for the
-        # unenforced-guarantee rule, without which that rule would be a blanket ban on advisory rows.
-        check("advice with no enforcement stays silent",
-              validate((Claim("c", "doc.md", "the claim", ADVICE),), srcs, fake, root) == [])
+        # #2224: advice is correct with a basis and nothing enforcing it (the negative test for the unenforced-guarantee rule); without
+        # a basis it is refused unless it is on the shrinking baseline, and the baseline cannot hold a row that has since gained one.
+        check("advice with a verified source and no enforcement stays silent",
+              _v((Claim("c", "doc.md", "the claim", ADVICE, refs=(9,), basis="source: the spec's section 3 @ v2.1"),), srcs, fake, root) == [])
+        check("advice with a recorded decision it cites stays silent",
+              _v((Claim("c", "doc.md", "the claim", ADVICE, refs=(7,), basis="decision: #7"),), srcs, fake, root) == [])
+        check("unbased advice fires",
+              any("unbased advice" in x for x in _v((Claim("c", "doc.md", "the claim", ADVICE),), srcs, fake, root)))
+        check("unbased advice on the baseline stays silent",
+              _v((Claim("c", "doc.md", "the claim", ADVICE),), srcs, fake, root, unbased=(("doc.md", "the claim"),)) == [])
+        check("a baseline entry whose row gained a basis fires (the list only shrinks)",
+              any("stale unbased-advice baseline" in x for x in _v((Claim("c", "doc.md", "the claim", ADVICE, basis="source: x @ 1"),),
+                                                                    srcs, fake, root, unbased=(("doc.md", "the claim"),))))
+        check("a raised baseline (an entry no row matches) fires",
+              any("stale unbased-advice baseline" in x for x in _v((), srcs, fake, root, unbased=(("doc.md", "added later"),))))
+        check("a source with no version is malformed",
+              any("malformed basis" in x for x in _v((Claim("c", "doc.md", "the claim", ADVICE, basis="source: the docs"),), srcs, fake, root)))
+        check("a source the row does not cite in refs fires",
+              any("source not cited" in x for x in _v((Claim("c", "doc.md", "the claim", ADVICE, basis="source: x @ 1"),), srcs, fake, root)))
+        # THE BASE IS THE AUTHORITY (#2254 review): a row added together with its own grandfather entry agrees with itself.
+        base_with = 'ADVICE_UNBASED: tuple = (("doc.md", "old row"),)\n'
+        base_before = 'CLAIMS = (\n    Claim(claim="c", stated_in="doc.md", anchor="old row", kind=ADVICE),\n    Claim(claim="g", stated_in="doc.md", anchor="kept", kind=GUARANTEE, enforced_by=("x",)),\n)\n'
+        check("an entry on the base's list passes",
+              ratchet_findings((("doc.md", "old row"),), *base_baseline(base_with)) == [])
+        check("a new row plus its own new entry is refused against the base's list",
+              any("baseline raised" in x for x in ratchet_findings((("doc.md", "old row"), ("doc.md", "new row")), *base_baseline(base_with))))
+        check("before the list existed, an entry may grandfather only a base advice row",
+              ratchet_findings((("doc.md", "old row"),), *base_baseline(base_before)) == []
+              and any("baseline raised" in x for x in ratchet_findings((("doc.md", "kept"),), *base_baseline(base_before))))
+        check("a base row whose kind is positional is read (no false refusal)",
+              ratchet_findings((("doc.md", "pos row"),),
+                               *base_baseline('CLAIMS = (\n    Claim("c", "doc.md", "pos row", ADVICE),\n)\n')) == [])
+
+        # THE COMPARISON POINT (#2254 review): never HEAD itself.
+        class G:
+            def __init__(self, answers):
+                self.answers, self.asked = answers, []
+
+            def __call__(self, cmd, **kw):
+                key = " ".join(cmd[3:])
+                self.asked.append(key)
+                out = self.answers.get(key)
+                return subprocess.CompletedProcess(cmd, 0 if out is not None else 128, out or "", "")
+        g = G({"rev-parse HEAD": "h\n", "merge-base origin/dev HEAD": "m\n"})
+        check("a branch is measured from where it left the base", comparison_point("origin/dev", g) == ("m", ""))
+        g = G({"rev-parse HEAD": "h\n", "merge-base HEAD HEAD": "h\n", "rev-parse HEAD^1": "p\n"})
+        check("a base that is HEAD (DOCTRINE_MAP_BASE=HEAD, or a push to dev) is measured from HEAD's parent, never HEAD",
+              comparison_point("HEAD", g) == ("p", ""))
+        g = G({"rev-parse HEAD": "h\n"})
+        check("a base with no common ancestor is refused", comparison_point("elsewhere", g)[0] is None
+              and any("baseline unchecked" in x for x in ratchet_findings((), *base_baseline(read_base("elsewhere", g)))))
+        check("an unreadable base is a finding, never a pass",
+              any("baseline unchecked" in x for x in ratchet_findings((), *base_baseline(None)))
+              and any("baseline unchecked" in x for x in ratchet_findings((), *base_baseline("def (:\n"))))
+        check("a decision the row does not cite in refs fires",
+              any("decision not cited" in x for x in _v((Claim("c", "doc.md", "the claim", ADVICE, basis="decision: #7"),), srcs, fake, root)))
 
         af, _ = audit_coverage((good,), ("doc.md", "unmapped.md"), root)
         check("audit reports a nonexistent declared source",
@@ -1236,6 +1445,10 @@ def _selftest() -> int:
     # Against the REAL repo, not a fixture: a selftest that only ever sees fixtures is the bug
     # `maintainer_doctor` was written about.
     check("the real registry validates clean", validate() == [])
+    check("--check compares the list against the base (an unreadable base is refused)",
+          any("baseline unchecked" in x for x in check_findings(read=lambda: None)))
+    check("the real ADVICE_UNBASED names exactly the real unbased advice rows",
+          set(ADVICE_UNBASED) == {(c.stated_in, c.anchor) for c in CLAIMS if c.kind == ADVICE and not c.basis})
     rf, _ = audit_coverage()
     check("the real declared sources all have rows", rf == [])
     check("render is a pure function of the data", render(collect()) == render(collect()))
@@ -1299,7 +1512,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.selftest:
         return _selftest()
 
-    findings = validate()
+    findings = check_findings()
     if a.audit_coverage:
         cf, lines = audit_coverage()
         print("rows per declared doctrine source:")

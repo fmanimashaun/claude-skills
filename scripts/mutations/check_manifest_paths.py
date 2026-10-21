@@ -73,5 +73,11 @@ GUARD = Guard(
             "            if path is None:",
             "a setup section that escapes its plugin vouches for nothing",
         ),
+        Mutation(
+            "a UI adapter's procedure files stop being a surface, so a path only they name reads as phantom",
+            '        for path in sorted(adapter.glob("*.md")):',
+            "        for path in []:",
+            "a path only a UI adapter's procedure file names counts for the plugin that ships it",
+        ),
     ),
 )

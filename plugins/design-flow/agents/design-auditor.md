@@ -80,8 +80,8 @@ there for the rest of the session** — it is charged on every later request, no
 `reference/agent-output-contract.md`.
 
 ```
-DRIFT  app/views/admin/show.html.erb:31 — hand-rolled cluster; compose `cluster`
-DRIFT  app/components/ui/modal_component.html.erb:4 — off-catalog variant `ghost-sm`
+DRIFT  src/views/admin/show.html:31 — hand-rolled cluster; compose `cluster`
+DRIFT  src/components/ui/modal.html:4 — off-catalog variant `ghost-sm`
 2 drift findings across 12 views; 0 a11y.
 ```
 

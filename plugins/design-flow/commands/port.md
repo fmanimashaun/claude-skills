@@ -1,5 +1,5 @@
 ---
-description: Port a Claude Design output — JSX/TSX, or a `<x-dc>` canvas export — into this Rails 8 + Hotwire app, faithful to the design and aligned to the design system by construction. Dispatches to the rails-ui-porter agent per design-handoff.
+description: Port a Claude Design output — JSX/TSX, or a `<x-dc>` canvas export — into this app, faithful to the design and aligned to the design system by construction. Dispatches to the UI adapter's porter agent.
 ---
 
 # /design-flow:port
@@ -8,19 +8,24 @@ The inbound half of the design loop. `/design-flow:canvas` composes the prompt t
 brings the result back.
 
 **Why this is a command and not freehand work.** A whole-app audit on a live project found **20
-alignable divergences** — raw hex, bespoke `.field`/`.label`, `form_with` field forms, hand-rolled
+alignable divergences** — raw hex, bespoke field and label styles, hand-built form markup, hand-rolled
 card and grid CSS, CDN fonts — concentrated in exactly the two surfaces that had been ported ad-hoc
-from Claude Design canvases. A `rails-ui-composer` composes *from* the system; nothing owned translating a
+from Claude Design canvases. A composer agent composes *from* the system; nothing owned translating a
 source *into* it, and that step is where all of it entered.
 
+## Which stack renders this
+
+The porting steps are the stack's, not this command's. Resolve the adapter the project's stack descriptor names:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ui_adapter.py"
+```
+
+It prints JSON: `dir` (the adapter directory), `agents.porter` (the agent to dispatch), `tokens_file`. **Exit 2 means it cannot say**
+(no recognised stack, a stack with no UI adapter yet, an unreadable manifest): quote its message and stop. Do not fall back to another
+stack's steps. A project without a stack plugin installed can name the adapter itself with `--implementation <id>`.
+
 ## Preconditions
-
-**rails-stack's `skills/design-system/references/design-handoff.md` is the mapping and it is the law.** It ships in
-**`rails-stack`**, not this plugin, and no `plugin.json` can declare that — there is no `requires`
-field. **If you cannot read it, name what is
-missing (`/plugin install rails-stack@claude-skills`) and stop.** Porting from memory of the mapping is precisely what the 20 divergences were.
-
-You also need `rails-8` and `hotwire`. Same rule.
 
 **Nothing may still sit at an old place (#1779).** design-flow's files moved under `docs/design/`, and a project that has not moved them yet would be misread: it would find no prompt for the surface it is porting (the prompts moved to `docs/design/prompts/`). Run this first:
 
@@ -38,55 +43,8 @@ Exit 1 means an old place still holds files. **Stop**, run the command it prints
 
 ## Run it
 
-**Step 0 — the checklist is extracted, not written.** Before any code:
+Read **`<dir>/port.md`** and follow it: its preconditions, the checklist extraction, the porter's order of work and the
+"before it is done" list are that stack's. Dispatch the **`design-flow:<agents.porter>`** agent it names.
 
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/ui/viewcomponent-erb/scripts/canvas_manifest.py" extract "<canvas>.dc.html" --out "docs/design/<surface>/<canvas>.manifest.json"
-```
-
-Every heading, copy run, control, repeat, conditional, icon and data label the canvas specifies becomes one item
-with a stable id. That manifest is the porter's checklist and the denominator of "done" (#908).
-
-Dispatch the **`rails-ui-porter`** agent. It works the order in `design-handoff.md`:
-
-1. **Identify the source format** — JSX/TSX or `<x-dc>` canvas. They carry the same design and are
-   read differently.
-2. **Classify the artboard** — mailer / static page / interactive page, said out loud with the reason.
-   This decides which Hotwire mechanisms are even available, and **a mailer carries no Turbo and no
-   Stimulus**: mail clients run no JavaScript, so a controller there renders in the preview and does
-   nothing in an inbox.
-3. **Strip the scaffolding** — the `:root` block, the inline styles and the CDN font link. **`support.js`
-   and any `_ds/` bundle are never ported at all**: that file is a generated React runtime for
-   previewing `<x-dc>` in a browser. If the import instruction lists it among "files the selection
-   imports", that means *read to understand*, never *port*.
-4. **Reconcile the tokens** rather than copying values. Where the app's role already equals the canvas
-   literal the substitution is pixel-identical — confirm that rather than assuming it. A value the
-   tokens cannot express is a **token gap to raise**, not a literal to smuggle in.
-5. **Translate through the mapping**, not by resemblance.
-6. **One fact, one owner** if the port spans several surfaces.
-7. **Implement every state** the design shows — empty, loading, error, success.
-
-## Before it is done
-
-- **The port report accounts for every manifest item** — `docs/design/<surface>/<canvas>.port-report.json`, one
-  entry per id: `implemented` + `where`, `reworded` + `where` + `now` + `reason`, `dropped-scaffolding` + `note`,
-  `token-gap`, or `deferred` + the reason the user approved — and this is clean:
-
-  ```bash
-  python3 "${CLAUDE_PLUGIN_ROOT}/ui/viewcomponent-erb/scripts/canvas_manifest.py" check "docs/design/<surface>/<canvas>.manifest.json" --report "docs/design/<surface>/<canvas>.port-report.json"
-  ```
-
-  It refuses while any item is unaccounted for, and an `implemented` whose text is in neither the named file nor
-  `config/locales` is a gap. **Copy you changed on purpose is `reworded`, not `implemented` and not `deferred`**:
-  quote the replacement as `now` and say which decision changed the words, and `check` looks for that replacement
-  the same way. Reaching for `deferred` or `dropped-scaffolding` to get past a rewording is how a report stops
-  meaning anything. To see how far an existing implementation already is, `compare <manifest> --root .`
-  prints found and missing by kind with no report at all.
-- Specs green, including one proving any new behaviour.
-- `/design-flow:audit` clean — no raw hex, no `cdn-font-link`, on-catalogue variants only.
-- Visual parity against the source, in every state.
-- Accessibility: one `h1`, visible focus ring, AA contrast, touch targets.
-
-The agent reports which artboard class it chose, what it dropped as scaffolding, which page owns each
-repeated fact, and any token gap it found. **A port that silently invented a value is worse than one
-that stopped and asked.**
+Whatever the stack, a port that silently invented a value is worse than one that stopped and asked: the porter reports which
+artboard class it chose, what it dropped as scaffolding, which page owns each repeated fact, and any token gap it found.
