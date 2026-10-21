@@ -235,7 +235,7 @@ def detect(project: Path, manifests: list[dict]) -> tuple[list[dict], list[str]]
     return matched, problems
 
 
-STR, INT, STRS = "str", "int", "list[str]"
+STR, INT, STRS, BOOL = "str", "int", "list[str]", "bool"
 # EVERY KEY A FLOW MAY READ, and its shape (#2181). A dict is a block whose keys are the only ones allowed; `{"*": STR}` is a
 # block of free names (scripts) each holding a string. Adding a key a flow needs is an edit HERE, reviewed once, never a key a
 # manifest invents.
@@ -253,9 +253,14 @@ DESCRIPTOR_SCHEMA: dict = {
     # THE STACK'S SECURITY SURFACE (#2117). The secure-design PROCESS is neutral (when to threat-model, the template, TM-n
     # ids, the audit before ready); what to look for is per stack: its checklist, its scanners, and the spellings in a plan
     # or a planned path that mean a boundary in that stack (security_scope.py reads both).
-    "security": {"checklist": STR, "scanners": STRS, "cases": STR,
+    # code_syntax (#2119): what in this stack's files is not code (a block comment, a heredoc), so a security-review citation
+    # `file:line` can be refused when it points inside one; scoped by extension. syntax_cases proves it.
+    "security": {"checklist": STR, "scanners": STRS, "cases": STR, "syntax_cases": STR,
+                 "code_syntax": [{"extensions": STRS, "block_comments": [{"open": STR, "close": STR, "column0": BOOL}], "heredoc": STR}],
                  "boundary_text": [{"boundary": STR, "pattern": STR}],
-                 "boundary_paths": [{"boundary": STR, "pattern": STR}]},
+                 "boundary_paths": [{"boundary": STR, "pattern": STR}],
+                 # data_markers (#2214): a line that is exactly the marker (an end-of-code line such as `__END__`) ends code for the rest of the file.
+                 "data_markers": [{"extensions": STRS, "marker": STR}]},
     "scripts": {"*": STR},
     "review_checklist": STRS,
 }
@@ -276,6 +281,8 @@ def shape_problems(value: object, shape: object, where: str) -> list[str]:
         if not isinstance(value, int) or isinstance(value, bool):
             return [f"{where} must be a whole number"]
         return [] if not where.endswith(".port") or value in PORTS else [f"{where} must be a port, 1-65535 (got {value})"]
+    if shape == BOOL:
+        return [] if isinstance(value, bool) else [f"{where} must be true or false"]
     if shape == STRS:
         ok = isinstance(value, list) and value and all(isinstance(v, str) and v for v in value)
         return [] if ok else [f"{where} must be a non-empty list of strings"]
@@ -419,7 +426,7 @@ def security_problems(manifest: dict, stack: dict, where: str) -> list[str]:
     if not isinstance(value, dict):
         return []                               # absent, or a shape problem shape_problems already reports
     found = []
-    for key in ("checklist", "cases"):
+    for key in ("checklist", "cases", "syntax_cases"):
         named = value.get(key)
         if isinstance(named, str) and named:
             if escapes(named):
@@ -441,6 +448,16 @@ def security_problems(manifest: dict, stack: dict, where: str) -> list[str]:
                     re.compile(row["pattern"])
                 except re.error as err:
                     found.append(f"{where}.security.{key}[{i}].pattern does not compile: {err}")
+    for i, row in enumerate(value.get("code_syntax") or []):
+        if isinstance(row, dict) and isinstance(row.get("heredoc"), str):
+            try:
+                groups = re.compile(row["heredoc"]).groupindex
+            except re.error as err:
+                found.append(f"{where}.security.code_syntax[{i}].heredoc does not compile: {err}")
+            else:
+                # check_security_review reads the terminator from the `id` group (#2214 review): without it the reader would crash, not judge.
+                if "id" not in groups:
+                    found.append(f"{where}.security.code_syntax[{i}].heredoc needs a named group `(?P<id>...)` holding the terminator")
     return found
 
 
@@ -959,6 +976,11 @@ def selftest() -> int:
             ("an empty string is a problem", {"tests": {"command": ["go"], "glob": ""}}, "tests.glob must be a non-empty string"),
             ("a nested list item of the wrong shape is a problem", {"dangerous_commands": [{"pattern": "x", "allowd": "y"}]}, "dangerous_commands[0].allowd is not a declared"),
             ("a list item missing a key a reader takes is a problem", {"dangerous_commands": [{"pattern": "x"}]}, "dangerous_commands[0] needs `allowed`"),
+            ("a heredoc pattern with no `id` group is a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": [{"open": "<", "close": ">", "column0": False}], "heredoc": "<<~(\\w+)"}]}}, "needs a named group `(?P<id>...)`"),
+            ("extensions that are not a list are a problem", {"security": {"code_syntax": [{"extensions": ".x", "block_comments": [{"open": "<", "close": ">", "column0": False}], "heredoc": "(?P<id>X)"}]}}, "extensions must be a non-empty list of strings"),
+            ("block comments that are not a list are a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": {"open": "<"}, "heredoc": "(?P<id>X)"}]}}, "block_comments must be a non-empty list"),
+            ("a column0 that is not true or false is a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": [{"open": "<", "close": ">", "column0": "yes"}], "heredoc": "(?P<id>X)"}]}}, "column0 must be true or false"),
+            ("a block comment with no column0 is a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": [{"open": "<", "close": ">"}], "heredoc": "(?P<id>X)"}]}}, "needs `column0`"),
         )):
             descriptor = {"tests": {"command": ["go"], "glob": "*_test.go"}, "agents": AGENTS, **extra}
             code, report = run(go_app, [plug(f"value-{n}", [{"id": "go", "all": [{"file": "go.mod"}], "descriptor": descriptor}])])

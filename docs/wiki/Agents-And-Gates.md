@@ -25,8 +25,8 @@
 | `brand-guardian` | judgement · inherit | Read, Grep, Glob, Edit, Bash, Skill | `/design-flow:variants` | — |
 | `design-auditor` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/design-flow:audit`, `/design-flow:variants` | — |
 | `design-critic` | judgement · inherit | Read, Grep, Glob, Skill | `/design-flow:critique` | — |
-| `rails-ui-composer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:component`, `/design-flow:mobile`, `/design-flow:port`, `/design-flow:variants` | — |
-| `rails-ui-porter` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:canvas`, `/design-flow:port` | — |
+| `rails-ui-composer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | — | — |
+| `rails-ui-porter` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:canvas` | — |
 
 ### `pipeline`
 
@@ -63,7 +63,7 @@
 | `migration-writer` | judgement · inherit | Read | — | — |
 | `pr-reviewer` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:pr-comments`, `/rails-flow:retro` | — |
 | `rails-developer` | judgement · inherit | Read | — | — |
-| `security-auditor` | judgement · inherit | Read | `/rails-flow:secure-design` | — |
+| `security-auditor` | judgement · inherit | Read | `/rails-flow:feature`, `/rails-flow:secure-design` | — |
 | `skill-curator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/rails-flow:curate` | — |
 | `spec-reviewer` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:retro`, `/rails-flow:spec` | — |
 | `test-runner` | mechanical · haiku | Read | — | `bundle exec rspec` exit status — 0 failures or the gate blocks |
@@ -324,6 +324,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | upstream citation coverage | `repo` | `python3 scripts/check_upstream_docs.py --coverage` | live check |
 | vendored alone | `repo` | `python3 scripts/check_vendored_alone.py` | live check |
 | vendored alone selftest | `repo` | `python3 scripts/check_vendored_alone.py --selftest` | selftest |
+| verdict quotes format | `repo` | `python3 scripts/check_verdict_quotes.py --format-check` | live check |
+| verdict quotes selftest | `repo` | `python3 scripts/check_verdict_quotes.py --selftest` | selftest |
 | wiki reference drift | `repo` | `python3 scripts/build_wiki.py --check` | live check |
 | wiki reference selftest | `repo` | `python3 scripts/build_wiki.py --selftest` | selftest |
 

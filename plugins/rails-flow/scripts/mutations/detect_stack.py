@@ -490,5 +490,18 @@ GUARD = Guard(
             '    unfenced = audit',
             'a verdict line inside a quotes block is not CONFIRMED',
         ),
+        Mutation(
+            # #2214 review: a heredoc pattern without `id` passed validation and crashed check_security_review.
+            "a heredoc pattern with no `id` group passes again",
+            '                if "id" not in groups:',
+            '                if False:',
+            "a heredoc pattern with no `id` group is a problem",
+        ),
+        Mutation(
+            "a non-boolean column0 passes again",
+            "        return [] if isinstance(value, bool) else [f\"{where} must be true or false\"]",
+            "        return []",
+            "a column0 that is not true or false is a problem",
+        ),
     ),
 )

@@ -37,7 +37,7 @@ https://supabase.com/docs/guides/getting-started/api-keys | 2026-10-21 | Never p
 
 ## C-3 — `NEXT_PUBLIC_` exposure
 
-Claim: `NEXT_PUBLIC_` variables are inlined into the JavaScript sent to the browser at `next build`; only direct `process.env.NEXT_PUBLIC_X` references are inlined.
+Claim: `NEXT_PUBLIC_` variables are inlined into the JavaScript sent to the browser at `next build`.
 
 Version: Next.js 16.4.2
 

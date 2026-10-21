@@ -634,6 +634,9 @@ def stop_gate_fixtures() -> None:
     code, out = paths_scenario("docs/product/acceptance/widgets.md")
     check("stop-gate: criteria at docs/product/acceptance/<slug>.md are found (not 'no acceptance criteria')",
           "no acceptance criteria" not in out, f"exit {code}: {out.strip()[:200]!r}")
+    # The criteria pass here (the later exit 2 is the no-spec rule), so the note can only come from the success path.
+    check("stop-gate: criteria that pass with no threat model still say the security check was skipped (#2213)",
+          "security check skipped" in out and "acceptance criteria do not hold" not in out, f"exit {code}: {out.strip()[:300]!r}")
     code, out = paths_scenario("docs/acceptance/widgets.md")
     check("stop-gate: criteria at the pre-layout docs/acceptance/<slug>.md still count",
           "no acceptance criteria" not in out, f"exit {code}: {out.strip()[:200]!r}")
