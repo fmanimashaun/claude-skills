@@ -63,6 +63,6 @@ A flow diagram is attached to the record of the screen it belongs to (linked fro
 `Story:` joins the two stores: `docs/product/mockups/` holds the proposed design, and the story file (or the view) holds the built one. Reviewers compare the two.
 
 - **On the real diff** (`check_mockup_gate.py --base <base>`, Phase 6 and the PR reviewer) a record without a valid `Story:` is held. A route cannot be checked here: the stack's route list comes with the stack descriptor (#2219).
-- **A Next.js project without Storybook cannot satisfy `Story:` until #2219**: only a story file, or a path the gate's built-in Rails-shaped UI paths name, is accepted today. The stack descriptor's UI paths lift this.
+- **A JavaScript front-end project without Storybook cannot satisfy `Story:` until #2219**: only a story file, or a path the gate's built-in Rails-shaped UI paths name, is accepted today. The stack descriptor's UI paths lift this.
 - **Certification** (qa-flow's `release_evidence.py stamp`) refuses the stamp when a record with a `Template:` line and a **closed** `Issue:` names no `Story:`, and when an issue cannot be read (an unjudged audit is not a pass). It reads the records as committed at the stamp's revision. A legacy record (no `Template:`) is never failed for this.
 - **By hand or in CI**: `check_mockup_gate.py --audit` prints the same finding list online, plus the legacy records that name no `Story:`. It exits 1 on a finding and 2 when an issue could not be read.
