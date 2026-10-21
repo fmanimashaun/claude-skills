@@ -1,0 +1,6 @@
+section: Repository hygiene
+- **An advice row in the doctrine map must stand on something — `scripts/doctrine_map.py`** (#2224, owner ruling 2026-10-21: "advice is not bad but must be tested against best practices or standards").
+  - **The new field.** A `Claim` gains a `basis`: either `source: <what was checked> @ <version in scope>`, or `decision: #<n>` (a maintainer decision, which `refs` must cite).
+  - **What is refused.** An advice row with neither is `unbased advice`. A basis of the wrong form is `malformed basis`. A decision `refs` does not cite is `decision not cited`.
+  - **The baseline.** Measured when the ruling landed: 16 advice rows, of which 4 had a basis (two style.md rows verified on rubocop 1.91.0 (#1363); `git add -A` decision #1793; the MCP checklist decision #2056) and 12 had neither. The 12 are `ADVICE_UNBASED`, a list that may only shrink: an entry whose row gains a basis, becomes a guarantee or is deleted is a finding until it is removed.
+  - **Proof.** The selftest has 8 new cases (51 total). The guard has 4 new mutations, 12 of 12 caught.

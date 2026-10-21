@@ -46,7 +46,9 @@ wearing a count (#476):
   * `undeclared source`     -- a row points at a file `DOCTRINE_SOURCES` does not list, which means
                               the declared surface is wrong rather than the row.
 
-WHAT IS DELIBERATELY NOT A FAILURE. An `advice` row with no enforcement is correct and common --
+WHAT IS DELIBERATELY NOT A FAILURE. An `advice` row with no enforcement is correct, ONLY WITH A BASIS (#2224): a verified source
+naming the version in scope, or a recorded maintainer decision (`unbased advice` refuses one with neither, beyond the
+shrinking `ADVICE_UNBASED` baseline) --
 `art-direction.md` argues at length that gating judgement is worse than not gating it, and
 `quality-pass` never blocks a merge on purpose. The classification, `guarantee` vs `advice`, is
 `docs/doctrine/harness-doctrine.md`'s existing test ("if a model ignores this, what happens?"), so this file
@@ -79,6 +81,27 @@ PAGE = "docs/architecture/doctrine-map.html"
 GUARANTEE, ADVICE, GAP = "guarantee", "advice", "gap"
 KINDS = (GUARANTEE, ADVICE, GAP)
 
+# ADVICE MUST STAND ON SOMETHING (owner, 2026-10-21, #2224): "advice is not bad but must be tested against best practices or
+# standards". An `advice` row is correct only with a `basis`: a verified source naming the version in scope, or a recorded
+# maintainer decision. These are the advice rows that had neither when the ruling landed (12 of 16), by (stated_in, anchor). The
+# list may only SHRINK: a NEW unbased row is a finding, and so is an entry whose row has since gained a basis, become a guarantee
+# or been deleted, until it is removed here.
+BASIS = re.compile(r"source: \S.* @ \S.*|decision: #(\d+)")
+ADVICE_UNBASED: tuple[tuple[str, str], ...] = (
+    ('CLAUDE.md', 'Versions are assigned at the promotion, never on a merge into `dev`'),
+    ('AGENTS.md', '## Measure before you assert'),
+    ('AGENTS.md', "## Write the mechanism out; don't compress it into a label"),
+    ('AGENTS.md', '## End the analysis with the call, then make it'),
+    ('AGENTS.md', '## Act as an advisor, not an assistant'),
+    ('plugins/rails-stack/skills/parallel-session-lane/SKILL.md', '**Its limit, stated: it protects against accident, not impersonation.**'),
+    ('plugins/rails-stack/skills/parallel-session-lane/SKILL.md', '3. **Clean up when done, with the teardown.**'),
+    ('CLAUDE.md', '**INCONCLUSIVE leaves doctrine unchanged.**'),
+    ('CLAUDE.md', '### An issue body is not an authority'),
+    ('plugins/rails-flow/commands/fix.md', 'classify the failure before you debug it'),
+    ('plugins/rails-stack/skills/quality-pass/SKILL.md', 'It is ADVISORY and never a merge'),
+    ('plugins/rails-stack/skills/quality-pass/SKILL.md', '**Advisory. Always.**'),
+)
+
 
 @dataclass(frozen=True)
 class Claim:
@@ -98,6 +121,9 @@ class Claim:
     enforced_by: tuple[str, ...] = ()
     refs: tuple[int, ...] = ()
     note: str = ""
+    # #2224: what an `advice` row stands on. "source: <what was checked> @ <version in scope>" (a doctrine-verifier citation, or a
+    # check run against a named version) or "decision: #<n>" (a maintainer decision recorded on that issue, which `refs` cites).
+    basis: str = ""
 
 
 # Every file whose prose this map considers doctrinal. Declared rather than globbed, because the
@@ -213,6 +239,7 @@ CLAIMS: tuple[Claim, ...] = (
         claim="Prefer expanded conditionals over guard clauses when writing new code (style.md §1).",
         stated_in="plugins/rails-stack/skills/rails-8/references/style.md",
         anchor="No cop can enforce it the other way round, either.",
+        basis="source: no stock cop prefers expanded conditionals, Style/GuardClause has no EnforcedStyle to invert @ rubocop 1.91.0",
         kind=ADVICE,
         note="#1363, verified on rubocop 1.91.0: no stock cop prefers expanded conditionals, and "
              "Style/GuardClause has no EnforcedStyle to invert. The rule's two exceptions (a return "
@@ -225,6 +252,7 @@ CLAIMS: tuple[Claim, ...] = (
               "module is the exception (style.md §5).",
         stated_in="plugins/rails-stack/skills/rails-8/references/style.md",
         anchor="It cannot simply be switched on",
+        basis="source: the indentation cops cover the main shape only @ rubocop 1.91.0, rubocop-rails-omakase 1.1.0",
         kind=ADVICE,
         note="#1363, verified on rubocop 1.91.0 / rubocop-rails-omakase 1.1.0: IndentationWidth + "
              "IndentationConsistency(indented_internal_methods) + EmptyLinesAroundAccessModifier"
@@ -539,6 +567,7 @@ CLAIMS: tuple[Claim, ...] = (
               "not a boundary: it matches the command's text, and a shell gives that text its meaning only when it expands it.",
         stated_in="CLAUDE.md",
         anchor="`git add -A` is blocked either way.",
+        basis="decision: #1793",
         kind=ADVICE,
         enforced_by=("hook:plugins/rails-flow/hooks/scripts/guard-bash.sh",),
         refs=(1788, 1793),
@@ -797,6 +826,7 @@ CLAIMS: tuple[Claim, ...] = (
               "writes from human ones, and how a wrong write is undone (mcp-server.md §6).",
         stated_in="plugins/rails-stack/skills/rails-8/references/mcp-server.md",
         anchor="**If you cannot answer these, do not ship a write tool.**",
+        basis="decision: #2056",
         kind=ADVICE,
         note="Owner ruling on #2056 (option 2: a checklist, not rules). Each spec-cited mechanism is doctrine-verifier "
              "CONFIRMED against MCP 2026-07-28 (#2051); items 3-5 are labelled our design because the spec defines "
@@ -891,9 +921,15 @@ class Resolver:
 def validate(claims: tuple[Claim, ...] = CLAIMS,
              sources: tuple[str, ...] = DOCTRINE_SOURCES,
              resolver: Resolver | None = None,
-             root: Path = REPO) -> list[str]:
+             root: Path = REPO,
+             unbased: tuple[tuple[str, str], ...] = ADVICE_UNBASED) -> list[str]:
     resolver = resolver or Resolver(root=root)
     findings: list[str] = []
+    still_unbased = {(c.stated_in, c.anchor) for c in claims if c.kind == ADVICE and not c.basis}
+    for entry in unbased:
+        if entry not in still_unbased:
+            findings.append(f"stale unbased-advice baseline — {entry[0]} :: {entry[1]!r} now has a basis, is no longer advice or is "
+                            f"gone; remove it from ADVICE_UNBASED so the count falls (#2224)")
     seen: set[tuple[str, str]] = set()
     cache: dict[str, str | None] = {}
 
@@ -934,6 +970,15 @@ def validate(claims: tuple[Claim, ...] = CLAIMS,
             else:
                 findings.append(f"unresolved enforcement — {why} — {where}")
 
+        if c.kind == ADVICE:
+            m = BASIS.fullmatch(c.basis) if c.basis else None
+            if c.basis and m is None:
+                findings.append(f"malformed basis — {c.basis!r} is neither `source: <checked> @ <version>` nor `decision: #<n>` — {where}")
+            elif m is not None and m.group(1) and int(m.group(1)) not in c.refs:
+                findings.append(f"decision not cited — basis names #{m.group(1)} but `refs` does not, so nothing links the row to it — {where}")
+            elif not c.basis and (c.stated_in, c.anchor) not in unbased:
+                findings.append(f"unbased advice — an advice row is correct only with a verified source (`source: … @ <version>`) or a "
+                                f"recorded maintainer decision (`decision: #<n>`) (#2224) — {where}")
         if c.kind == GUARANTEE and not c.enforced_by:
             findings.append(
                 f"unenforced guarantee — nothing is cited; make it `advice`, or a `gap` with an "
@@ -1136,6 +1181,10 @@ def _selftest() -> int:
     import tempfile
     ok, bad = 0, []
 
+    def _v(*a, **k):
+        """validate() on fixture claims: the real ADVICE_UNBASED list names rows the fixtures do not carry."""
+        return validate(*a, **{"unbased": (), **k})
+
     def check(label: str, cond: bool) -> None:
         nonlocal ok
         if cond:
@@ -1157,13 +1206,13 @@ def _selftest() -> int:
         fake = Fake()
         good = Claim("c", "doc.md", "the claim", GUARANTEE, ("gate:g",))
 
-        check("silent on a good row", validate((good,), srcs, fake, root) == [])
+        check("silent on a good row", _v((good,), srcs, fake, root) == [])
 
         def fires(label: str, c: Claim, needle: str) -> None:
-            f = validate((c,), srcs, fake, root)
+            f = _v((c,), srcs, fake, root)
             check(f"{label} fires", any(needle in x for x in f))
             check(f"{label} silent on the good row", not any(needle in x
-                                                            for x in validate((good,), srcs, fake, root)))
+                                                            for x in _v((good,), srcs, fake, root)))
 
         fires("anchor missing", Claim("c", "doc.md", "not present", GUARANTEE, ("gate:g",)),
               "anchor missing")
@@ -1201,16 +1250,31 @@ def _selftest() -> int:
               fake.resolve("hook:.github/workflows/w.yml")[0])
 
         dup = (good, Claim("other wording", "doc.md", "the claim", GUARANTEE, ("gate:g",)))
-        check("duplicate fires", any("duplicate claim" in x for x in validate(dup, srcs, fake, root)))
+        check("duplicate fires", any("duplicate claim" in x for x in _v(dup, srcs, fake, root)))
 
         check("undeclared source fires",
               any("undeclared source" in x
-                  for x in validate((Claim("c", "elsewhere.md", "x", ADVICE),), srcs, fake, root)))
+                  for x in _v((Claim("c", "elsewhere.md", "x", ADVICE),), srcs, fake, root)))
 
-        # advice with nothing behind it is CORRECT and must stay silent -- the negative test for the
-        # unenforced-guarantee rule, without which that rule would be a blanket ban on advisory rows.
-        check("advice with no enforcement stays silent",
-              validate((Claim("c", "doc.md", "the claim", ADVICE),), srcs, fake, root) == [])
+        # #2224: advice is correct with a basis and nothing enforcing it (the negative test for the unenforced-guarantee rule); without
+        # a basis it is refused unless it is on the shrinking baseline, and the baseline cannot hold a row that has since gained one.
+        check("advice with a verified source and no enforcement stays silent",
+              _v((Claim("c", "doc.md", "the claim", ADVICE, basis="source: the spec's section 3 @ v2.1"),), srcs, fake, root) == [])
+        check("advice with a recorded decision it cites stays silent",
+              _v((Claim("c", "doc.md", "the claim", ADVICE, refs=(7,), basis="decision: #7"),), srcs, fake, root) == [])
+        check("unbased advice fires",
+              any("unbased advice" in x for x in _v((Claim("c", "doc.md", "the claim", ADVICE),), srcs, fake, root)))
+        check("unbased advice on the baseline stays silent",
+              _v((Claim("c", "doc.md", "the claim", ADVICE),), srcs, fake, root, unbased=(("doc.md", "the claim"),)) == [])
+        check("a baseline entry whose row gained a basis fires (the list only shrinks)",
+              any("stale unbased-advice baseline" in x for x in _v((Claim("c", "doc.md", "the claim", ADVICE, basis="source: x @ 1"),),
+                                                                    srcs, fake, root, unbased=(("doc.md", "the claim"),))))
+        check("a raised baseline (an entry no row matches) fires",
+              any("stale unbased-advice baseline" in x for x in _v((), srcs, fake, root, unbased=(("doc.md", "added later"),))))
+        check("a source with no version is malformed",
+              any("malformed basis" in x for x in _v((Claim("c", "doc.md", "the claim", ADVICE, basis="source: the docs"),), srcs, fake, root)))
+        check("a decision the row does not cite in refs fires",
+              any("decision not cited" in x for x in _v((Claim("c", "doc.md", "the claim", ADVICE, basis="decision: #7"),), srcs, fake, root)))
 
         af, _ = audit_coverage((good,), ("doc.md", "unmapped.md"), root)
         check("audit reports a nonexistent declared source",

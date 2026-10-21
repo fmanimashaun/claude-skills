@@ -71,5 +71,30 @@ GUARD = Guard(
             '            return True, ""',
             "an existing but unwired hook does not resolve",
         ),
+        Mutation(
+            # #2224: advice must stand on a verified source or a recorded decision.
+            "unbased advice beyond the baseline is accepted",
+            "            elif not c.basis and (c.stated_in, c.anchor) not in unbased:",
+            "            elif False:",
+            "unbased advice fires",
+        ),
+        Mutation(
+            "the unbased baseline can keep a row that gained a basis, so the count never has to fall",
+            "        if entry not in still_unbased:",
+            "        if False:",
+            "a baseline entry whose row gained a basis fires",
+        ),
+        Mutation(
+            "a source with no version passes as a basis",
+            'BASIS = re.compile(r"source: \\S.* @ \\S.*|decision: #(\\d+)")',
+            'BASIS = re.compile(r"source: \\S.*|decision: #(\\d+)")',
+            "a source with no version is malformed",
+        ),
+        Mutation(
+            "a decision basis need not be cited in refs",
+            "            elif m is not None and m.group(1) and int(m.group(1)) not in c.refs:",
+            "            elif False:",
+            "a decision the row does not cite in refs fires",
+        ),
     ),
 )
