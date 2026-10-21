@@ -11,6 +11,71 @@
       "descriptor": {
         "runner_prefix": ["bundle", "exec"],
         "setup_section": "setup/rails.md",
+        "security": {
+            "checklist": "security/rails.md",
+            "cases": "security/boundary-cases.json",
+            "scanners": [
+              "brakeman",
+              "bundler-audit",
+              "importmap audit"
+            ],
+            "boundary_text": [
+              {
+                "boundary": "public-route",
+                "pattern": "\\ballow_unauthenticated_access\\b"
+              },
+              {
+                "boundary": "upload-import",
+                "pattern": "\\bhas_(?:one|many)_attached\\b"
+              },
+              {
+                "boundary": "outbound-fetch",
+                "pattern": "\\b(?:net::http|faraday|open-uri)\\b"
+              },
+              {
+                "boundary": "secrets",
+                "pattern": "\\b(?:encrypts|has_secure_password|rails credentials)\\b"
+              },
+              {
+                "boundary": "input-parsing",
+                "pattern": "\\b(?:yaml\\.load|marshal\\.load)"
+              },
+              {
+                "boundary": "raw-html",
+                "pattern": "\\bhtml_safe\\b|\\braw\\(|<%==?\\s*raw\\b"
+              },
+              {
+                "boundary": "redirect-param",
+                "pattern": "\\bredirect_to\\s*\\(?\\s*params\\b"
+              }
+            ],
+            "boundary_paths": [
+              {
+                "boundary": "public-route",
+                "pattern": "^app/controllers/(?:public|pages|home)_controller\\.rb$"
+              },
+              {
+                "boundary": "webhook",
+                "pattern": "^app/controllers/(?:[^/]+/)*webhooks?/|_webhooks?_controller\\.rb$"
+              },
+              {
+                "boundary": "mcp-tool",
+                "pattern": "^app/(?:[^/]+/)*mcp/"
+              },
+              {
+                "boundary": "auth-session-role",
+                "pattern": "^app/controllers/concerns/authentication\\.rb$|^app/controllers/(?:sessions|passwords|registrations|omniauth_callbacks)_controller\\.rb$|^app/(?:policies|abilities?)/|^app/models/(?:session|current|role)\\.rb$"
+              },
+              {
+                "boundary": "upload-import",
+                "pattern": "^app/(?:[^/]+/)*uploads?/|^app/(?:models|services|jobs)/(?:[^/]+/)*[^/]*(?:import|intake|upload)[^/]*\\.rb$"
+              },
+              {
+                "boundary": "api",
+                "pattern": "^app/controllers/api/"
+              }
+            ]
+          },
         "tests": {
           "command": ["rspec", "--fail-fast", "--no-color"],
           "glob": "spec/**/*_spec.rb",

@@ -1,0 +1,44 @@
+[
+  {
+    "name": "a planned auth path is a boundary even when the prose is silent",
+    "plan": "Tidy the controller.",
+    "paths": [
+      "app/controllers/sessions_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "a planned webhook path is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/webhooks/zoho_sign_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "a spec path is not a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "spec/requests/sessions_spec.rb"
+    ],
+    "boundary": false
+  },
+  {
+    "name": "encrypts is a boundary",
+    "plan": "Encrypt the notes column with encrypts.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "html_safe is a boundary",
+    "plan": "Mark the note body html_safe so links work.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "a redirect to a param is a boundary",
+    "plan": "After sign-out, redirect_to params[:next].",
+    "paths": [],
+    "boundary": true
+  }
+]

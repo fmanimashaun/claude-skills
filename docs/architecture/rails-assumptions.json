@@ -3221,12 +3221,12 @@
     "hotwire": 1
    },
    "invokes": [
-    237
+    238
    ],
    "kind": "command",
    "lines": [
-    225,
-    237
+    226,
+    238
    ],
    "move": ""
   },
@@ -3450,7 +3450,7 @@
    "kind": "command",
    "lines": [
     29,
-    73
+    75
    ],
    "move": ""
   },
@@ -6217,26 +6217,26 @@
     14,
     15,
     37,
-    290,
-    519,
-    520,
-    534,
-    535,
-    537,
-    539,
+    296,
+    567,
+    568,
+    582,
     583,
-    584,
-    591,
-    638,
-    665,
-    703,
-    705,
-    709,
-    712,
-    716,
-    718,
-    734,
-    748
+    585,
+    587,
+    631,
+    632,
+    639,
+    686,
+    713,
+    751,
+    753,
+    757,
+    760,
+    764,
+    766,
+    782,
+    796
    ],
    "move": ""
   },
@@ -6317,35 +6317,35 @@
    "invokes": [],
    "kind": "script",
    "lines": [
-    54,
-    76,
-    84,
-    460,
-    465,
-    706,
-    708,
-    711,
-    713,
-    716,
+    55,
+    77,
+    85,
+    461,
+    466,
+    707,
+    709,
+    712,
+    714,
     717,
-    720,
+    718,
     721,
-    723,
+    722,
     724,
     725,
     726,
-    729,
-    731,
+    727,
+    730,
     732,
     733,
     734,
-    736,
+    735,
     737,
     738,
     739,
     740,
-    809,
-    810
+    741,
+    810,
+    811
    ],
    "move": ""
   },
@@ -7242,6 +7242,25 @@
    ],
    "move": ""
   },
+  "plugins/rails-flow/scripts/mutations/security_scope.py": {
+   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "categories": {
+    "path": 2
+   },
+   "decision": "reword",
+   "followed": "plugins/rails-flow/scripts/security_scope.py",
+   "how": "reworded in the slice that touches the file; no code changes",
+   "ids": {
+    "app-layers": 2
+   },
+   "invokes": [],
+   "kind": "mutation",
+   "lines": [
+    18,
+    19
+   ],
+   "move": ""
+  },
   "plugins/rails-flow/scripts/mutations/self_consistency.py": {
    "assumes": "hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test",
    "categories": {
@@ -7525,6 +7544,29 @@
     241,
     251,
     279
+   ],
+   "move": ""
+  },
+  "plugins/rails-flow/scripts/security_scope.py": {
+   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
+   "categories": {
+    "concept": 4,
+    "path": 2
+   },
+   "decision": "reword",
+   "how": "reworded in the slice that touches the file; no code changes",
+   "ids": {
+    "app-layers": 1,
+    "rails-word": 2,
+    "ruby-file": 2,
+    "spec-dir": 1
+   },
+   "invokes": [],
+   "kind": "script",
+   "lines": [
+    53,
+    154,
+    187
    ],
    "move": ""
   },
@@ -8144,10 +8186,10 @@
  "policy": "docs/architecture/rails-assumptions.policy.json",
  "summary": {
   "by_category": {
-   "concept": 1966,
+   "concept": 1970,
    "gem": 138,
    "hotwire": 104,
-   "path": 1245,
+   "path": 1249,
    "tool": 890
   },
   "by_decision": {
@@ -8164,8 +8206,8 @@
     "lines": 1673
    },
    "reword": {
-    "files": 63,
-    "lines": 278
+    "files": 65,
+    "lines": 283
    }
   },
   "by_flow": {
@@ -8195,11 +8237,11 @@
    },
    "rails-flow": {
     "detector": 50,
-    "files": 135,
-    "lines": 2289,
+    "files": 137,
+    "lines": 2294,
     "neutral": 3,
     "rails-stack": 47,
-    "reword": 35
+    "reword": 37
    }
   },
   "by_kind": {
@@ -8228,8 +8270,8 @@
     "lines": 2
    },
    "mutation": {
-    "files": 44,
-    "lines": 261
+    "files": 45,
+    "lines": 263
    },
    "reference": {
     "files": 8,
@@ -8240,8 +8282,8 @@
     "lines": 11
    },
    "script": {
-    "files": 88,
-    "lines": 2247
+    "files": 89,
+    "lines": 2250
    },
    "selftest": {
     "files": 16,
@@ -8254,7 +8296,7 @@
   },
   "by_pattern": {
    "active-framework": 20,
-   "app-layers": 602,
+   "app-layers": 605,
    "bin-rails": 125,
    "binstub": 53,
    "brakeman": 8,
@@ -8268,17 +8310,17 @@
    "hotwire": 104,
    "rails-config": 109,
    "rails-idiom": 53,
-   "rails-word": 313,
+   "rails-word": 315,
    "rake": 56,
    "routes": 37,
    "rspec": 186,
    "rubocop": 84,
    "rubocop-yml": 2,
    "ruby": 215,
-   "ruby-file": 1220,
-   "spec-dir": 182
+   "ruby-file": 1222,
+   "spec-dir": 183
   },
-  "files": 228,
-  "lines": 3203
+  "files": 230,
+  "lines": 3208
  }
 }

@@ -6,6 +6,8 @@ GUARD = Guard(
     subject="scripts/security_scope.py",
     selftest="scripts/security_scope.py",
     selftest_args=("--selftest",),
+    # security_scope imports its sibling detect_stack (#2117: stack patterns come from the descriptor), so stage it too.
+    needs=("scripts/detect_stack.py",),
     mutations=(
         Mutation(
             "the upload spelling stops matching, so an upload plan owes no threat model",
@@ -14,10 +16,17 @@ GUARD = Guard(
             "an upload is a boundary",
         ),
         Mutation(
-            "the webhook path stops matching, so a planned webhook controller owes nothing",
-            'r"^app/controllers/(?:[^/]+/)*webhooks?/',
-            'r"^app/controllers/(?:[^/]+/)*webhookz?/',
-            "a planned webhook path is a boundary",
+            # #2117: a stack's path rows (its descriptor's boundary_paths) stop being read, so a planned route file owes nothing.
+            "a stack's boundary paths are never matched",
+            '            if kind == "path" and name not in seen and rx.search(path):',
+            '            if False:',
+            "a stack's boundary_paths loads and fires",
+        ),
+        Mutation(
+            "a stack's boundary text is never matched, so a stack-only spelling owes nothing",
+            '        if kind == "text" and name not in seen and (m := rx.search(text)):',
+            '        if False and (m := rx.search(text)):',
+            "a stack's boundary_text loads and fires",
         ),
         Mutation(
             "the trailing word boundary goes, so a word that merely starts with `role` fires",
@@ -63,15 +72,15 @@ GUARD = Guard(
         ),
         Mutation(
             "raw html stops being a boundary",
-            '("raw-html", re.compile(r"\\bhtml_safe\\b|',
-            '("raw-html", re.compile(r"(?!)\\bhtml_safe\\b|',
-            "html_safe is a boundary",
+            '    ("raw-html", re.compile(r"\\braw\\b[^.\\n]{0,40}\\bhtml\\b|\\bhtml\\b[^.\\n]{0,40}\\braw\\b|\\b(?:skip|disable|turn off|without)\\s+sanitiz\\w*|\\bsanitiz\\w*\\s+(?:off|disabled)\\b|\\brender\\w*\\s+(?:the |a |an )?(?:partner|user|customer|external|supplied|uploaded|third[- ]party)(?:\'s|s\')?\\s+(?:raw )?html\\b", re.I)),',
+            '    ("raw-html", re.compile(r"(?!)", re.I)),',
+            "raw as a word beside html is a boundary",
         ),
         Mutation(
             "a redirect to a supplied url stops being a boundary",
-            '    ("redirect-param", re.compile(r"\\bredirect_to\\s*\\(?\\s*params\\b|\\breturn[_ ]url\\b|\\b(?:return_to|redirect_url|redirect_uri|back_url|next_url|return_path)\\b|\\b(?:next|return|redirect|back)\\s+param(?:eter)?s?\\b|\\bredirect\\w*[^.\\n]{0,40}\\bparams?\\b|\\bsend (?:them|the user|the person) back to (?:the |a )?(?:url|link|page) (?:in|from|they|the user)|\\bredirects? (?:back )?to (?:a |the )?(?:param|url the user|url (?:in|from) the)", re.I)),',
+            '    ("redirect-param", re.compile(r"\\breturn[_ ]url\\b|\\b(?:return_to|redirect_url|redirect_uri|back_url|next_url|return_path)\\b|\\b(?:next|return|redirect|back)\\s+param(?:eter)?s?\\b|\\bredirect\\w*[^.\\n]{0,40}\\bparams?\\b|\\bsend (?:them|the user|the person) back to (?:the |a )?(?:url|link|page) (?:in|from|they|the user)|\\bredirects? (?:back )?to (?:a |the )?(?:param|url the user|url (?:in|from) the)", re.I)),',
             '    ("redirect-param", re.compile(r"(?!)", re.I)),',
-            "a redirect to a param is a boundary",
+            "a return_to param is a boundary",
         ),
     ),
 )

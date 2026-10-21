@@ -21,7 +21,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/security_scope.py" --plan "<scratch file>
 | 1 | a boundary is named (reasons on stdout). Continue. |
 | **2** | **nothing to classify. This is NOT "no boundary". Give it the plan text.** |
 
-It is a keyword scan over prose and paths (read the LIMITS in its header): it over-fires on a plan that only mentions "session" and misses a boundary the plan never names. If you can name a boundary it did not, continue anyway.
+Its own patterns are plain language and name no stack; each stack the project is detected as adds its own spellings and paths
+from that stack's descriptor (`security.boundary_text`, `security.boundary_paths`; `--project`, default the current directory). It is a keyword scan over prose and paths (read the LIMITS in its header): it over-fires on a plan that only mentions "session" and misses a boundary the plan never names. If you can name a boundary it did not, continue anyway.
 
 ## 2. Write the model
 
@@ -32,7 +33,18 @@ Copy `${CLAUDE_PLUGIN_ROOT}/templates/threat-model.md` to `docs/security/threat-
 3. **What do we do about it?** Each row's decision: `mitigate` (name the control), `transfer` (name who holds it), `eliminate` (name what was removed), `accept` (the reason the risk stays, mandatory).
 4. **Did we do a good enough job?** Not yet answerable: the requirements below become `[security]` criteria and the model is verified after the build (see "What follows").
 
-Read the code and the existing models first (`docs/security/threat-models/`, `docs/brain/`, `rails-8`'s `auth-security.md`). Do not invent a control the project does not have: a row that says `mitigate` by something that is not there is the failure this exists to stop.
+Read the code and the existing models first (`docs/security/threat-models/`, `docs/brain/`). Then read **each detected stack's
+security checklist**, the questions a STRIDE pass asks of that stack, and note its scanners:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/detect_stack.py" . --json
+```
+
+Every entry under `security` names a `checklist` file (rails-stack's is `security/rails.md`) and the `scanners` that stack runs.
+Answer each checklist question that the boundary touches as a row. The process here is the same for every stack; only the
+checklist differs. No stack detected, or a stack with no `security` block: the four questions alone, and say so in the model.
+Do not invent a control the project does not have: a row that says `mitigate` by something that is not there is the failure this
+exists to stop.
 
 ## 3. Check it
 
