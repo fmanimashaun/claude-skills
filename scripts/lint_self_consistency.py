@@ -46,7 +46,7 @@ WHAT IT CHECKS
                               pipeline) differ, or one is missing -- one fixture-git lock, three copies (#1588)
   findings-script-drift       the two shipped copies of scripts/findings.py (rails-flow, qa-flow) differ,
                               or one is missing -- qa-reporter runs its own copy (#1680)
-  vendored-copy-drift         a file rails-stack vendors from rails-flow (triage_failures.py, check_simple_form_only.py,
+  vendored-copy-drift         a file rails-stack vendors from rails-flow (triage_failures.py, dev_baseline.py,
                               agent-output-contract.md) differs from its canonical copy, or one is missing (#2173)
   detect-stack-drift          the two shipped copies of scripts/detect_stack.py (rails-flow, pipeline) differ,
                               or one is missing -- pipeline's deploy_target.py imports its own copy (#2179)
@@ -850,8 +850,6 @@ VENDORED_COPIES = (
      "rails-stack's test-runner runs it; it leaves when the flows' triage reads the descriptor and rails-stack owns the original"),
     ("plugins/rails-flow/scripts/dev_baseline.py", "plugins/rails-stack/scripts/dev_baseline.py",
      "the vendored triage_failures.py imports it; it leaves with that copy, when the flows' triage reads the descriptor (#2183)"),
-    ("plugins/rails-flow/scripts/check_simple_form_only.py", "plugins/rails-stack/scripts/check_simple_form_only.py",
-     "rails-stack's design-auditor runs it; step 4 (#2175) moves the original and its checks.json row and deletes this copy"),
     ("plugins/rails-flow/reference/agent-output-contract.md", "plugins/rails-stack/reference/agent-output-contract.md",
      "every moved agent cites it; a neutral reference whose single home is core-skills (#2186), which removes this copy"),
 )
@@ -2540,6 +2538,10 @@ def _setup_sections() -> set[str]:
 _DECLARED_PLUGIN_ROOT = re.compile(r"`\$\{CLAUDE_PLUGIN_ROOT\}` below is \*\*([a-z][a-z0-9-]*)'s\*\* plugin root")
 _PLUGIN_ROOT_POINTER = re.compile(
     r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9._/-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+)")
+# A stack's setup section names the files its own plugin ships as `${STACK_ROOT}/...`: the section is run by rails-flow's setup-flow, where `${CLAUDE_PLUGIN_ROOT}` is
+# rails-flow's, so the stack's own scripts and scaffold need a variable of their own (#2175). It is the root of the plugin that HOLDS the section.
+_STACK_ROOT_POINTER = re.compile(
+    r"\$\{STACK_ROOT\}/([A-Za-z0-9._/-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+)")
 CLONE_SKILLS = "plugins/rails-stack/skills/"
 _SKILL_POINTER = re.compile(
     # The lookbehind rejects a path that is only a SUFFIX of a longer one -- `.claude/skills/…`
@@ -2632,6 +2634,17 @@ def check_doc_pointers() -> tuple[list[Finding], int]:
                     "broken-doc-pointer", rel(path), body[:match.start()].count("\n") + 1,
                     f"points at `{match.group(0)}`, which does not exist in "
                     f"{owning_plugin.name} -- an agent told to read it finds nothing",
+                ))
+        # `${STACK_ROOT}` in a stack's setup section is that stack plugin's own root, and the pointer is checked there (#2175).
+        if rel(path) in setup_sections and owning_plugin is not None:
+            stack_root = ROOT / parts[0] / parts[1]
+            for match in _STACK_ROOT_POINTER.finditer(body):
+                examined += 1
+                if (stack_root / match.group(1)).exists():
+                    continue
+                findings.append(Finding(
+                    "broken-doc-pointer", rel(path), body[:match.start()].count("\n") + 1,
+                    f"points at `{match.group(0)}`, which does not exist in {stack_root.name} -- an agent told to run or copy it finds nothing",
                 ))
         # SHIPPED TEXT (anything under plugins/) is read by agents in an INSTALL, where rails-stack's skills/
         # sits at its plugin root: there a `skills/<name>/…` pointer means rails-stack's, and the clone path
@@ -6902,6 +6915,12 @@ def selftest() -> int:
              files={"CHANGELOG.md": "# C\n\n## rails-stack\n\n### 1.0.0 (release v1.0.0)\n\n- moved `skills/x/references/y.md`\n"})
     scenario("...but a broken path in an Unreleased block is a finding", rule=P, expect_finding=True,
              files={"CHANGELOG.md": "# C\n\n## rails-stack\n\n### Unreleased\n\n- see `skills/x/references/y.md`\n"})
+    scenario("a ${STACK_ROOT} pointer in a setup section resolves against the plugin that holds it", rule=P, expect_finding=False,
+             files={**STACKS, "plugins/rails-stack/setup/rails.md": DECL + "Run `${STACK_ROOT}/scripts/y.py`.\n",
+                    "plugins/rails-stack/scripts/y.py": "pass\n"})
+    scenario("...and a ${STACK_ROOT} pointer to a file that plugin does not ship is a finding", rule=P, expect_finding=True,
+             files={**STACKS, "plugins/rails-stack/setup/rails.md": DECL + "Run `${STACK_ROOT}/scripts/gone.py`.\n",
+                    "plugins/rails-flow/scripts/gone.py": "pass\n"})
     scenario("...and with no declaration it resolves against the file's own plugin", rule=P, expect_finding=True,
              files={"plugins/rails-stack/setup/rails.md": "Run `${CLAUDE_PLUGIN_ROOT}/scripts/x.py`.\n",
                     "plugins/rails-flow/scripts/x.py": "pass\n"})

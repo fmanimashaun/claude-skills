@@ -254,7 +254,7 @@ CLAIMS: tuple[Claim, ...] = (
         stated_in="plugins/rails-stack/skills/rails-8/references/testing.md",
         anchor="There is nothing to",
         kind=GUARANTEE,
-        enforced_by=("script:plugins/rails-flow/scripts/check_ci_runs_tests.py",
+        enforced_by=("script:plugins/rails-stack/scripts/check_ci_runs_tests.py",
                      "mutation:check_ci_runs_tests"),
         refs=(391, 779),
         note="#391 fixed the doctrine and said the enforcement half was still open. The gate keys "
@@ -267,7 +267,7 @@ CLAIMS: tuple[Claim, ...] = (
         stated_in="plugins/rails-stack/skills/rails-8/references/testing.md",
         anchor="Auto-load spec/support/**",
         kind=GUARANTEE,
-        enforced_by=("script:plugins/rails-flow/scripts/check_spec_support.py",
+        enforced_by=("script:plugins/rails-stack/scripts/check_spec_support.py",
                      "mutation:check_spec_support"),
         refs=(803,),
         note="Same shape as the `Tests:` step Rails omits under --skip-test: a generated default "
@@ -280,7 +280,7 @@ CLAIMS: tuple[Claim, ...] = (
         stated_in="plugins/rails-stack/skills/rails-8/references/testing.md",
         anchor="refuse_coverage_drop",
         kind=GUARANTEE,
-        enforced_by=("script:plugins/rails-flow/scripts/check_coverage_ratchet.py",
+        enforced_by=("script:plugins/rails-stack/scripts/check_coverage_ratchet.py",
                      "mutation:check_coverage_ratchet"),
         refs=(800,),
         note="Maintainer decision: \"gate is the key, advise can be ignored\". Consistent with "
@@ -295,7 +295,7 @@ CLAIMS: tuple[Claim, ...] = (
         kind=GUARANTEE,
         enforced_by=("script:plugins/rails-flow/scripts/check_mandated_gems.py",
                      "mutation:check_mandated_gems",
-                     "script:plugins/rails-flow/scripts/check_simple_form_only.py",
+                     "script:plugins/rails-stack/scripts/check_simple_form_only.py",
                      "mutation:check_simple_form_only"),
         refs=(778, 1383),
         note="Two halves. `check_mandated_gems` proves the gem is INSTALLED; until #1383 that was the "
