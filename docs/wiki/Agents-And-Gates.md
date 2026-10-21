@@ -173,31 +173,23 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | qa-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/qa-flow/agents --tiers plugins/qa-flow/reference/model-tiers.md` | live check |
 | rails-flow PR-template sections | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/pr_template.py --selftest` | selftest |
 | rails-flow case in diff | `rails-flow` | `python3 plugins/rails-flow/scripts/check_case_in_diff.py --selftest` | selftest |
-| rails-flow ci runs tests | `rails-flow` | `python3 plugins/rails-flow/scripts/check_ci_runs_tests.py --selftest` | selftest |
 | rails-flow claim extraction | `rails-flow` | `python3 plugins/rails-flow/scripts/extract_claims.py --selftest` | selftest |
 | rails-flow coordination record | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/coordination.py --selftest` | selftest |
-| rails-flow coverage ratchets | `rails-flow` | `python3 plugins/rails-flow/scripts/check_coverage_ratchet.py --selftest` | selftest |
 | rails-flow escalation loop | `rails-flow` | `python3 plugins/rails-flow/scripts/escalation.py --selftest` | selftest |
 | rails-flow findings records | `rails-flow` | `python3 plugins/rails-flow/scripts/findings.py --selftest` | selftest |
 | rails-flow guide | `rails-flow` | `python3 plugins/rails-flow/scripts/check_guide.py --selftest` | selftest |
-| rails-flow i18n wired | `rails-flow` | `python3 plugins/rails-flow/scripts/check_i18n_setup.py --selftest` | selftest |
 | rails-flow issue mock-up declaration | `rails-flow` | `python3 plugins/rails-flow/scripts/check_issue_mockup.py --selftest` | selftest |
 | rails-flow lane assigner selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/assign_lanes.py --selftest` | selftest |
 | rails-flow mandated gems | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mandated_gems.py --selftest` | selftest |
-| rails-flow mcp end to end | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mcp_end_to_end.py --selftest` | selftest |
-| rails-flow mcp personal fields | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mcp_personal_fields.py --selftest` | selftest |
 | rails-flow mock-up gate | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mockup_gate.py --selftest` | selftest |
 | rails-flow one-way door classifier | `rails-flow` | `python3 plugins/rails-flow/scripts/classify_door.py --selftest` | selftest |
 | rails-flow product brief | `rails-flow` | `python3 plugins/rails-flow/scripts/check_brief.py --selftest` | selftest |
 | rails-flow registry closed gate | `rails-flow` | `python3 plugins/rails-flow/scripts/check_registry_closed.py --selftest` | selftest |
 | rails-flow retro | `rails-flow` | `python3 plugins/rails-flow/scripts/retro.py --selftest` | selftest |
 | rails-flow self-consistency | `rails-flow` | `python3 plugins/rails-flow/scripts/self_consistency.py --selftest` | selftest |
-| rails-flow simple-form-only gate | `rails-flow` | `python3 plugins/rails-flow/scripts/check_simple_form_only.py --selftest` | selftest |
 | rails-flow slice plan | `rails-flow` | `python3 plugins/rails-flow/scripts/check_slices.py --selftest` | selftest |
-| rails-flow spec support wired | `rails-flow` | `python3 plugins/rails-flow/scripts/check_spec_support.py --selftest` | selftest |
 | rails-flow spec-review citations | `rails-flow` | `python3 plugins/rails-flow/scripts/check_spec_review.py --selftest` | selftest |
 | rails-flow technical spec | `rails-flow` | `python3 plugins/rails-flow/scripts/check_spec.py --selftest` | selftest |
-| rails-flow tenancy cop | `rails-flow` | `python3 plugins/rails-flow/scripts/check_tenancy_cop.py --selftest` | selftest |
 | rails-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/rails-flow/agents --tiers plugins/rails-flow/reference/model-tiers.md` | live check |
 | rails-flow toolchain version | `rails-flow` | `python3 plugins/rails-flow/scripts/toolchain_version.py --selftest` | selftest |
 | rails-flow where-stopped helper | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/where_stopped.py --selftest` | selftest |
@@ -207,6 +199,14 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | stack manifests valid | `rails-flow` | `python3 plugins/rails-flow/scripts/detect_stack.py --check` | live check |
 | status line | `rails-flow` | `python3 plugins/rails-flow/scripts/statusline.py --selftest` | selftest |
 | worktree teardown wording | `rails-flow` | `python3 plugins/rails-flow/scripts/worktree_teardown.py --check-wording` | live check |
+| rails-stack ci runs tests | `rails-stack` | `python3 plugins/rails-stack/scripts/check_ci_runs_tests.py --selftest` | selftest |
+| rails-stack coverage ratchets | `rails-stack` | `python3 plugins/rails-stack/scripts/check_coverage_ratchet.py --selftest` | selftest |
+| rails-stack i18n wired | `rails-stack` | `python3 plugins/rails-stack/scripts/check_i18n_setup.py --selftest` | selftest |
+| rails-stack mcp end to end | `rails-stack` | `python3 plugins/rails-stack/scripts/check_mcp_end_to_end.py --selftest` | selftest |
+| rails-stack mcp personal fields | `rails-stack` | `python3 plugins/rails-stack/scripts/check_mcp_personal_fields.py --selftest` | selftest |
+| rails-stack simple-form-only gate | `rails-stack` | `python3 plugins/rails-stack/scripts/check_simple_form_only.py --selftest` | selftest |
+| rails-stack spec support wired | `rails-stack` | `python3 plugins/rails-stack/scripts/check_spec_support.py --selftest` | selftest |
+| rails-stack tenancy cop | `rails-stack` | `python3 plugins/rails-stack/scripts/check_tenancy_cop.py --selftest` | selftest |
 | agent output contract | `repo` | `python3 scripts/check_agent_output_contract.py` | live check |
 | agent output contract selftest | `repo` | `python3 scripts/check_agent_output_contract.py --selftest` | selftest |
 | always-on cost | `repo` | `python3 scripts/check_always_on_cost.py` | live check |

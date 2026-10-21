@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Derive rails-flow's shipped tenancy cop from the rails-8 doctrine that declares it (#1361).
+"""Derive rails-stack's shipped tenancy cop from the rails-8 doctrine that declares it (#1361).
 
 WHY THIS IS AN ARTIFACT AND NOT A RUNTIME READ. The cop's source of truth is the fenced block in
-`plugins/rails-stack/skills/rails-8/references/multi-tenancy.md` §7, which ships in the **rails-stack** plugin; the
-checker that compares a project's installed copy against it ships in **rails-flow**. A runtime read
-across that boundary is #617's class (a clone and an install differ in depth), so the cop is
-COMMITTED beside the checker and this script fails on any disagreement. Same shape, and same reasons,
-as `derive_mandated_gems.py`.
+`plugins/rails-stack/skills/rails-8/references/multi-tenancy.md` §7, and the checker that compares a project's
+installed copy against it is `plugins/rails-stack/scripts/check_tenancy_cop.py`. Until #2175 they shipped in two
+plugins (the checker in rails-flow), and a runtime read across that boundary is #617's class (a clone and an install
+differ in depth); both are rails-stack's now, and the cop stays COMMITTED beside the checker, unchanged, so this script
+still fails on any disagreement. Same shape, and same reasons, as `derive_mandated_gems.py`.
 
 ANCHORED ON CONTENT. The ```ruby fence containing `class ScopedLookup < Base` -- not "the first ruby
 fence" in §7, which would silently follow an edit that inserted an earlier one. The spec's fence names
@@ -22,7 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCTRINE = ROOT / "plugins" / "rails-stack" / "skills" / "rails-8" / "references" / "multi-tenancy.md"
-ARTIFACT = ROOT / "plugins" / "rails-flow" / "scaffold" / "tenancy" / "scoped_lookup.rb"
+ARTIFACT = ROOT / "plugins" / "rails-stack" / "scaffold" / "tenancy" / "scoped_lookup.rb"
 
 FENCE_ANCHOR = "class ScopedLookup < Base"
 
