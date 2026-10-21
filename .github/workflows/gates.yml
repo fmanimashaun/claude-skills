@@ -172,15 +172,17 @@ jobs:
           echo "dist/ matches a clean build."
 
   # THE FULL MUTATION SWEEP, AS PARALLEL SHARDS (#1739). One job ran every guard in about 64 minutes against a 120-minute cap, and was the critical
-  # path of every release. Now N=4 jobs each run the guards `mutation_check.py --shard I/4` assigns them: a split by RECORDED COST (largest guard
+  # path of every release. Now N=6 jobs each run the guards `mutation_check.py --shard I/6` assigns them: a split by RECORDED COST (largest guard
   # first onto the lightest shard), the same on every machine, so no shard is much longer than the others. Each shard applies the incremental skip
   # (a guard unchanged since the recorded full run on this OS is skipped, reported as a skip and never as a pass, #1738) and the cost ratchet as
   # a WARNING in every automated run (it blocks only a bare `--ratchet`, which a maintainer runs by hand; pull request CI runs no mutation job). Only the full sweep runs them: a pull request and a push to
-  # dev run --fast and skip them, exactly as they skipped the single job. The matrix size, 4, is also the `--expect-shards` below: change both.
+  # dev run --fast and skip them, exactly as they skipped the single job. The matrix size, 6, is also the `--expect-shards` below: change both.
   mutation:
     if: ${{ !(github.event_name == 'pull_request' || github.ref == 'refs/heads/dev') }}
     runs-on: ubuntu-latest
-    # About a quarter of the 64 minutes the single job took, with room for a slow runner; re-set from a measured run, never to get green.
+    # MEASURED: at 4 shards, shard 4 grew 46, 53, 46, 57 min over four releases and hit this cap at 75 min (v1.158.0, run 39559272291) while
+    # shards 1-3 took 16-48 min: the cost record names 24 of 277 guards, so the rest are weighed at the floor. 6 shards spread the same work;
+    # the cap is unchanged. Re-set from a measured run, never to get green.
     timeout-minutes: 75
     # Reads the `mutation-proof/<os>` commit status a skip rests on, and believes it only with the Actions run behind it (a run of release.yml or mutation-weekly.yml that succeeded on main for that commit, #1738).
     permissions:
@@ -189,7 +191,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -215,14 +217,14 @@ jobs:
           command -v zsh >/dev/null || { echo "::error::zsh did not install"; exit 1; }
           echo "zsh: $(zsh --version)"
 
-      - name: Mutation guards, one shard of 4
+      - name: Mutation guards, one shard of 6
         env:
           SHARD: ${{ matrix.shard }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p shard-out
-          python3 scripts/mutation_check.py --shard "${SHARD}/4" --ratchet-warn --shard-out "shard-out/shard-${SHARD}.json"
+          python3 scripts/mutation_check.py --shard "${SHARD}/6" --ratchet-warn --shard-out "shard-out/shard-${SHARD}.json"
 
       # The summary reads every shard's result from these. A failed shard uploads nothing, and the summary fails anyway.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -233,7 +235,7 @@ jobs:
           retention-days: 14
 
   # THE `mutation coverage` VERDICT (#1739). Named for the gate it stands in for. It `needs` every shard and runs `if: always()`, so a failed, cancelled or
-  # never-run shard cannot skip it into a pass: the verdict is read from `needs.mutation.result`, and the merge then checks that shards 1..4 are ALL present for
+  # never-run shard cannot skip it into a pass: the verdict is read from `needs.mutation.result`, and the merge then checks that shards 1..6 are ALL present for
   # one commit and that together they cover every guard exactly once. A missing shard is a failure. In a --fast run no shard is expected, and the verdict says
   # so. The proof and cost record are written only from a complete set in which no guard was skipped, and are uploaded for a person to commit (#1738).
   mutation-coverage:
@@ -273,7 +275,7 @@ jobs:
         if: ${{ needs.mutation.result == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/mutation_check.py --merge-shards shard-in --expect-shards 4
+        run: python3 scripts/mutation_check.py --merge-shards shard-in --expect-shards 6
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ needs.mutation.result == 'success' }}
