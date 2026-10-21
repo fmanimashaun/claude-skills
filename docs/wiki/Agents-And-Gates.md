@@ -25,8 +25,8 @@
 | `brand-guardian` | judgement · inherit | Read, Grep, Glob, Edit, Bash, Skill | `/design-flow:variants` | — |
 | `design-auditor` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/design-flow:audit`, `/design-flow:variants` | — |
 | `design-critic` | judgement · inherit | Read, Grep, Glob, Skill | `/design-flow:critique` | — |
-| `rails-ui-composer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:component`, `/design-flow:mobile`, `/design-flow:port`, `/design-flow:variants` | — |
-| `rails-ui-porter` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:canvas`, `/design-flow:port` | — |
+| `rails-ui-composer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | — | — |
+| `rails-ui-porter` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:canvas` | — |
 
 ### `pipeline`
 

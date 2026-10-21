@@ -16,8 +16,8 @@ tokens_file}`. `dir` is the adapter directory; a command reads `<dir>/<command>.
 steps.
 
 EXIT 0 resolved. EXIT 2 it cannot say, with the reason on stderr and nothing on stdout: the detector could not judge the project, the detected stacks declare no `ui.implementation`, two
-stacks declare different ones, or the named implementation has no adapter in this plugin (a Next.js project
-has none until #2171 ships one). There is no default adapter: "no answer" is never "Rails".
+stacks declare different ones, or the named implementation has no adapter in this plugin (a stack whose adapter has not shipped
+yet, #2171). There is no default adapter: "no answer" is never a stack.
 """
 from __future__ import annotations
 
@@ -76,6 +76,19 @@ def resolve(implementation: str, stack: str | None = None, tokens_file: str | No
             "checks": spec.get("checks", []), "stack": stack, "tokens_file": tokens_file}
 
 
+def resolve_project(project: Path) -> dict:
+    """Detect the project's stack and resolve its adapter: what `main` does, for a caller that wants the dict."""
+    detected = detect(project)
+    impls = implementations(detected)
+    if not impls:
+        raise Unresolved("the detected stack(s) "
+                         f"{[s.get('id') for s in detected['stacks']]} declare no ui.implementation, so there is no UI adapter to run")
+    if len(impls) > 1:
+        raise Unresolved(f"the detected stacks declare different ui.implementation values {sorted(impls)}; pass --implementation <id>")
+    ui = detected["descriptor"]["ui"]
+    return resolve(next(iter(impls)), stack=",".join(s.get("id", "") for s in detected["stacks"]), tokens_file=ui.get("tokens_file"))
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("project", nargs="?", default=None, help="the project directory (default: $CLAUDE_PROJECT_DIR, else the working directory)")
@@ -89,15 +102,7 @@ def main(argv: list[str] | None = None) -> int:
             result = resolve(args.implementation)
         else:
             project = Path(args.project or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
-            detected = detect(project)
-            impls = implementations(detected)
-            if not impls:
-                raise Unresolved("the detected stack(s) "
-                                 f"{[s.get('id') for s in detected['stacks']]} declare no ui.implementation, so there is no UI adapter to run")
-            if len(impls) > 1:
-                raise Unresolved(f"the detected stacks declare different ui.implementation values {sorted(impls)}; pass --implementation <id>")
-            ui = detected["descriptor"]["ui"]
-            result = resolve(next(iter(impls)), stack=",".join(s.get("id", "") for s in detected["stacks"]), tokens_file=ui.get("tokens_file"))
+            result = resolve_project(project)
     except Unresolved as exc:
         print(f"ui_adapter: {exc}", file=sys.stderr)
         return 2
@@ -118,13 +123,13 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         plugin = root / "plugins" / "design-flow"
-        (plugin / "ui" / "viewcomponent-erb").mkdir(parents=True)
-        (plugin / "ui" / "viewcomponent-erb" / "adapter.json").write_text(json.dumps(
-            {"id": "viewcomponent-erb", "agents": {"porter": "rails-ui-porter", "composer": "rails-ui-composer"}, "checks": ["token-drift"]}))
-        got = resolve("viewcomponent-erb", stack="rails", tokens_file="a.css", plugin=plugin)
-        check("a declared implementation resolves to its adapter dir", got["dir"].endswith("ui/viewcomponent-erb"))
-        check("...with its agents and checks", got["agents"]["porter"] == "rails-ui-porter" and got["checks"] == ["token-drift"])
-        for bad, why in (("nextjs-tsx", "an implementation with no adapter is refused, not defaulted to Rails"),
+        (plugin / "ui" / "demo-ui").mkdir(parents=True)
+        (plugin / "ui" / "demo-ui" / "adapter.json").write_text(json.dumps(
+            {"id": "demo-ui", "agents": {"porter": "demo-porter", "composer": "demo-composer"}, "checks": ["token-drift"]}))
+        got = resolve("demo-ui", stack="demo", tokens_file="a.css", plugin=plugin)
+        check("a declared implementation resolves to its adapter dir", got["dir"].endswith("ui/demo-ui"))
+        check("...with its agents and checks", got["agents"]["porter"] == "demo-porter" and got["checks"] == ["token-drift"])
+        for bad, why in (("nextjs-tsx", "an implementation with no adapter is refused, not defaulted to another stack"),
                          ("../etc", "a path-shaped id cannot escape ui/")):
             try:
                 resolve(bad, plugin=plugin)
@@ -146,7 +151,7 @@ def selftest() -> int:
         fake = root / "fake_detector.py"
         for code, payload, label in ((1, {"stacks": [], "problems": []}, "exit 1 (no stack) is refused"),
                                      (2, {"stacks": [], "problems": ["manifest unreadable"]}, "exit 2 (cannot judge) is refused"),
-                                     (0, {"stacks": [{"id": "rails"}], "problems": ["conflict"], "descriptor": {}}, "problems beside stacks are refused")):
+                                     (0, {"stacks": [{"id": "demo"}], "problems": ["conflict"], "descriptor": {}}, "problems beside stacks are refused")):
             fake.write_text(f"import sys, json\nprint(json.dumps({payload!r}))\nsys.exit({code})\n")
             try:
                 detect(root, fake)
@@ -159,12 +164,15 @@ def selftest() -> int:
             check("a detector that prints no JSON is refused", False)
         except Unresolved:
             check("a detector that prints no JSON is refused", True)
-        fake.write_text('import json\nprint(json.dumps({"stacks": [{"id": "rails"}], "problems": [], "descriptor": {"ui": {"implementation": "viewcomponent-erb"}}}))\n')
-        check("a clean answer is returned", detect(root, fake)["stacks"][0]["id"] == "rails")
+        fake.write_text('import json\nprint(json.dumps({"stacks": [{"id": "demo"}], "problems": [], "descriptor": {"ui": {"implementation": "demo-ui"}}}))\n')
+        check("a clean answer is returned", detect(root, fake)["stacks"][0]["id"] == "demo")
 
-    # the shipped adapter exists and is what the Rails descriptor names
-    real = resolve("viewcomponent-erb")
-    check("the shipped viewcomponent-erb adapter resolves", real["agents"].get("porter") == "rails-ui-porter")
+    # every adapter this plugin ships resolves, and names its porter and composer
+    shipped = sorted(p.parent.name for p in (PLUGIN / "ui").glob("*/adapter.json"))
+    check("at least one adapter ships", bool(shipped))
+    for name in shipped:
+        got = resolve(name)
+        check(f"the shipped adapter {name} names a porter and a composer", bool(got["agents"].get("porter") and got["agents"].get("composer")))
     if failures:
         print("ui_adapter selftest FAILED:\n  - " + "\n  - ".join(failures))
         return 1

@@ -126,7 +126,10 @@
     "plugins/design-flow/agents/rails-ui-porter.md",
     "plugins/design-flow/agents/rails-ui-composer.md",
     "plugins/design-flow/ui/viewcomponent-erb/adapter.json",
-    "plugins/design-flow/ui/viewcomponent-erb/scripts/port_fidelity_gate.py"
+    "plugins/design-flow/ui/viewcomponent-erb/scripts/port_fidelity_gate.py",
+    "plugins/design-flow/checks.json",
+    "plugins/design-flow/ui/viewcomponent-erb/*.md",
+    "plugins/design-flow/ui/viewcomponent-erb/*.json"
    ],
    "decision": "rails-stack",
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
@@ -293,8 +296,7 @@
     "plugins/rails-flow/commands/handoff.md",
     "plugins/qa-flow/commands/smoke.md",
     "plugins/qa-flow/commands/verify.md",
-    "plugins/qa-flow/commands/setup-qa.md",
-    "plugins/design-flow/commands/audit.md"
+    "plugins/qa-flow/commands/setup-qa.md"
    ],
    "decision": "detector",
    "assumes": "instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command",
@@ -357,15 +359,7 @@
   },
   {
    "match": [
-    "plugins/rails-flow/.claude-plugin/plugin.json",
-    "plugins/design-flow/.claude-plugin/plugin.json",
-    "plugins/design-flow/README.md",
-    "plugins/design-flow/commands/*",
-    "plugins/design-flow/agents/brand-guardian.md",
-    "plugins/design-flow/agents/design-auditor.md",
-    "plugins/design-flow/checks.json",
-    "plugins/design-flow/hooks/scripts/design-tells.sh",
-    "plugins/design-flow/scripts/*"
+    "plugins/rails-flow/.claude-plugin/plugin.json"
    ],
    "decision": "reword",
    "assumes": "describes the plugin or a command as Rails 8 + Hotwire, or uses ERB examples in prose and heuristics",
@@ -451,6 +445,36 @@
     "plugins/rails-flow/tests/lane-band.test.ts": 3,
     "plugins/rails-flow/tests/lane-band.unit.mjs": 4,
     "plugins/rails-flow/tests/session-reset.unit.mjs": 3
+   }
+  },
+  {
+   "match": [
+    "plugins/design-flow/scripts/llm_tell_detector.py",
+    "plugins/design-flow/scripts/prompt_library.py",
+    "plugins/design-flow/hooks/scripts/design-tells.sh"
+   ],
+   "decision": "neutral",
+   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path",
+   "how": "nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding",
+   "lines": {
+    "plugins/design-flow/scripts/llm_tell_detector.py": 5,
+    "plugins/design-flow/scripts/prompt_library.py": 1,
+    "plugins/design-flow/hooks/scripts/design-tells.sh": 4
+   }
+  },
+  {
+   "match": [
+    "plugins/design-flow/scripts/detect_stack.py"
+   ],
+   "decision": "detector",
+   "assumes": "a byte-identical mirror of rails-flow's stack detector (the detect-stack-drift rule holds it equal); its docstring and fixtures name Rails markers",
+   "how": "stays a mirror so design-flow resolves its UI adapter with no other plugin installed; it is reworded where the canonical copy is (#2215), never here alone",
+   "seam": "asks the stack detector (#2163) for the stack's commands instead of naming Rails ones",
+   "issues": {
+    "rails-flow": 2183,
+    "qa-flow": 2184,
+    "pipeline": 2184,
+    "design-flow": 2185
    }
   }
  ],
@@ -538,6 +562,15 @@
     "class": "rails",
     "issue": 2178,
     "why": "the Rails UI adapter: its checks and gates read .erb and app/components, selected by descriptor ui.implementation; the whole directory is Rails by path"
+   },
+   {
+    "match": [
+     "plugins/design-flow/.claude-plugin/*",
+     "plugins/design-flow/README.md",
+     "plugins/design-flow/ui/README.md"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
    },
    {
     "match": [
