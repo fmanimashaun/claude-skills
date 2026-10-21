@@ -57,5 +57,48 @@
       2,
       3
     ]
+  },
+  {
+    "name": "ERB `<%# %>` and HTML `<!-- -->` comments are not code, on one line or several; the output tag between them is",
+    "file": "app/views/notes/show.html.erb",
+    "lines": [
+      "<%# secret %>",
+      "<%= raw @note.body %>",
+      "<!-- note",
+      "still a comment",
+      "-->",
+      "<%# a",
+      "b %>",
+      "<p>done</p>"
+    ],
+    "non_code": [
+      1,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "name": "an indented `=begin` is code: Ruby honours it only at column 0",
+    "file": "app/models/d.rb",
+    "lines": [
+      "def x",
+      "  =begin",
+      "  y = 1",
+      "end"
+    ],
+    "non_code": []
+  },
+  {
+    "name": "`=begin` in an ERB file is not a block comment there",
+    "file": "app/views/a.html.erb",
+    "lines": [
+      "=begin",
+      "<%= raw x %>",
+      "=end"
+    ],
+    "non_code": []
   }
 ]

@@ -52,10 +52,11 @@ EVIDENCE_RE = re.compile(r"([\w./@+-]+\.\w+):(\d+)")
 # WHAT IS NOT CODE (#2119; stack-neutral per #2162). The neutral rules: a blank line, a `#` or `//` comment, a `/* */` span.
 # Each stack adds its own (a language's own block comment, a heredoc) in its descriptor's `security.code_syntax`, scoped by file
 # extension, so this script names no language. A heredoc pattern names the terminator as the group `id`.
-NEUTRAL_BLOCKS: tuple[tuple[str, str], ...] = (("/*", "*/"),)
+# (open, close, column0): a column0 opener counts only at the very start of the raw line, for a language that honours it only there (#2214 review).
+NEUTRAL_BLOCKS: tuple[tuple[str, str, bool], ...] = (("/*", "*/", False),)
 
 
-def non_code_lines(lines: list[str], blocks: tuple[tuple[str, str], ...] = NEUTRAL_BLOCKS, heredoc: "re.Pattern | None" = None) -> set[int]:
+def non_code_lines(lines: list[str], blocks: tuple[tuple[str, str, bool], ...] = NEUTRAL_BLOCKS, heredoc: "re.Pattern | None" = None) -> set[int]:
     """1-based numbers of lines that are not code: blank, a `#` or `//` comment, inside a block comment (`blocks`: open, close),
     or the body (and terminator) of a heredoc (`heredoc`). A line-by-line reading, not a parser: a heredoc opener inside a string
     or a comment still opens one, and a comment marker inside a string closes nothing."""
@@ -74,7 +75,7 @@ def non_code_lines(lines: list[str], blocks: tuple[tuple[str, str], ...] = NEUTR
             if closing in raw:
                 closing = None
             continue
-        opened = next(((o, c) for o, c in blocks if t.startswith(o)), None)
+        opened = next(((o, c) for o, c, col0 in blocks if (raw if col0 else t).startswith(o)), None)
         if opened:
             out.add(n)
             if opened[1] not in t[len(opened[0]):]:
@@ -101,12 +102,12 @@ def code_syntax(root: Path) -> list[dict]:
 _SYNTAX: dict[str, list[dict]] = {}
 
 
-def rules_for(path: str, rows: list[dict]) -> tuple[tuple[tuple[str, str], ...], "re.Pattern | None"]:
+def rules_for(path: str, rows: list[dict]) -> tuple[tuple[tuple[str, str, bool], ...], "re.Pattern | None"]:
     """The block comments and heredoc pattern that apply to `path`: the neutral blocks plus every row for its extension."""
     blocks, heredoc = list(NEUTRAL_BLOCKS), None
     for row in rows:
         if any(path.endswith(ext) for ext in row.get("extensions") or []):
-            blocks += [(b["open"], b["close"]) for b in row.get("block_comments") or []]
+            blocks += [(b["open"], b["close"], bool(b.get("column0"))) for b in row.get("block_comments") or []]
             heredoc = heredoc or (re.compile(row["heredoc"]) if row.get("heredoc") else None)
     return tuple(blocks), heredoc
 
@@ -377,6 +378,14 @@ def selftest() -> int:
             bad += 1
             print(f"FAIL an unreadable model is exit 2: got {got}")
     # Every stack this script can see proves its own syntax: its syntax_cases name which lines of a sample are not code.
+    # A column0 opener counts only at the start of the raw line (#2214 review), stack-neutral so the staged guard sees it.
+    col0 = (("=open", "=close", True),)
+    for label, lines, want in (("a column0 opener at column 0 opens a block", ["=open", "hidden", "=close", "code"], {1, 2, 3}),
+                               ("an indented column0 opener is code", ["  =open", "code", "=close"], set())):
+        got = non_code_lines(lines, col0)
+        if got != want:
+            bad += 1
+            print(f"FAIL {label}: non-code lines {sorted(got)}, expected {sorted(want)}")
     import detect_stack  # noqa: E402
     manifests, _ = detect_stack.load_manifests(detect_stack.manifest_dirs(Path(__file__).resolve()))
     ran = 0

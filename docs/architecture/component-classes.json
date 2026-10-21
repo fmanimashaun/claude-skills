@@ -7391,7 +7391,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/security/syntax-cases.json",
    "plugin": "rails-stack",
-   "rails_lines": 3,
+   "rails_lines": 9,
    "registered": [],
    "seam": "",
    "type": "support",

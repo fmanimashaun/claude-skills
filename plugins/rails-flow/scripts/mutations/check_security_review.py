@@ -105,5 +105,12 @@ GUARD = Guard(
             '    proc = type("P", (), {"returncode": 0 if (root / p).is_file() else 1, "stdout": (root / p).read_bytes() if (root / p).is_file() else b""})()',
             "evidence in a file that exists only in the working tree is refused",
         ),
+        Mutation(
+            # #2214 review: a column0 opener (a language that honours it only there) matched after indentation and hid real code.
+            "a column0 block opener is matched after indentation again",
+            "        opened = next(((o, c) for o, c, col0 in blocks if (raw if col0 else t).startswith(o)), None)",
+            "        opened = next(((o, c) for o, c, col0 in blocks if t.startswith(o)), None)",
+            "an indented column0 opener is code",
+        ),
     ),
 )

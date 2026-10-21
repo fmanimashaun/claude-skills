@@ -19,13 +19,31 @@
                 {
                   "extensions": [
                     ".rb",
-                    ".rake",
-                    ".erb"
+                    ".rake"
                   ],
                   "block_comments": [
                     {
                       "open": "=begin",
-                      "close": "=end"
+                      "close": "=end",
+                      "column0": true
+                    }
+                  ],
+                  "heredoc": "<<[~-]?([\"']?)(?P<id>[A-Z_][A-Z0-9_]*)\\1"
+                },
+                {
+                  "extensions": [
+                    ".erb"
+                  ],
+                  "block_comments": [
+                    {
+                      "open": "<%#",
+                      "close": "%>",
+                      "column0": false
+                    },
+                    {
+                      "open": "<!--",
+                      "close": "-->",
+                      "column0": false
                     }
                   ],
                   "heredoc": "<<[~-]?([\"']?)(?P<id>[A-Z_][A-Z0-9_]*)\\1"
