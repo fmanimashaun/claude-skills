@@ -1,0 +1,545 @@
+{
+ "derived_from": "plugins/rails-stack/skills/design-system/references/architecture.md",
+ "rules": [
+  {
+   "id": "A1",
+   "layer": "shell",
+   "rule": "A page has at most one non-hidden `main` landmark.",
+   "basis": "claim",
+   "ref": "C2",
+   "source": "HTML spec, *the main element*",
+   "authority": "standard"
+  },
+  {
+   "id": "A2",
+   "layer": "shell",
+   "rule": "A skip link is first in `body`, and the shell keeps its toast region.",
+   "basis": "decision",
+   "ref": "D7",
+   "source": "WCAG 2.4.1 asks for *a* bypass mechanism (C1); the skip link is our rule",
+   "authority": "house"
+  },
+  {
+   "id": "A3",
+   "layer": "shell",
+   "rule": "Every UI change ships a mock-up in the app's own shell before the code.",
+   "basis": "decision",
+   "ref": "D6",
+   "source": "#2211",
+   "authority": "house"
+  },
+  {
+   "id": "A4",
+   "layer": "navigation",
+   "rule": "The link to the current page in the primary navigation has `aria-current` set to `page`.",
+   "basis": "claim",
+   "ref": "C5",
+   "source": "WAI-ARIA 1.2 `aria-current`; APG breadcrumb",
+   "authority": "standard"
+  },
+  {
+   "id": "A5",
+   "layer": "navigation",
+   "rule": "Navigation is at most three levels deep from the shell.",
+   "basis": "decision",
+   "ref": "D4",
+   "source": "ours",
+   "authority": "house"
+  },
+  {
+   "id": "A6",
+   "layer": "navigation",
+   "rule": "Navigation repeated across pages keeps the same relative order.",
+   "basis": "claim",
+   "ref": "C3",
+   "source": "WCAG 2.2 SC 3.2.3",
+   "authority": "standard"
+  },
+  {
+   "id": "A7",
+   "layer": "navigation",
+   "rule": "More than one way to locate a page is offered, except for steps in a process.",
+   "basis": "claim",
+   "ref": "C4",
+   "source": "WCAG 2.2 SC 2.4.5",
+   "authority": "standard"
+  },
+  {
+   "id": "A8",
+   "layer": "navigation",
+   "rule": "A list's sort, filter and page are URL state.",
+   "basis": "decision",
+   "ref": "D7",
+   "source": "ours (`page-anatomies.md`)",
+   "authority": "house"
+  },
+  {
+   "id": "A9",
+   "layer": "navigation",
+   "rule": "After a client-side route change, focus moves to a heading in the new content.",
+   "basis": "claim",
+   "ref": "C31'",
+   "source": "Chrome Lighthouse *managed-focus*",
+   "authority": "standard"
+  },
+  {
+   "id": "A10",
+   "layer": "template",
+   "rule": "A screen is one of the nine templates in layer 3.",
+   "basis": "decision",
+   "ref": "D3",
+   "source": "ours",
+   "authority": "house"
+  },
+  {
+   "id": "A11",
+   "layer": "template",
+   "rule": "A table is master-detail and does not scroll sideways.",
+   "basis": "check",
+   "ref": "plugins/design-flow/ui/viewcomponent-erb/scripts/check_table_layout.py",
+   "source": "ours",
+   "authority": "house"
+  },
+  {
+   "id": "A12",
+   "layer": "regions",
+   "rule": "Layout is composed from the declared primitives, not hand-rolled.",
+   "basis": "check",
+   "ref": "plugins/design-flow/ui/viewcomponent-erb/scripts/check_layout_composition.py",
+   "source": "ours",
+   "authority": "house"
+  },
+  {
+   "id": "A13",
+   "layer": "regions",
+   "rule": "A surface does not impose layout on the content it is handed.",
+   "basis": "check",
+   "ref": "plugins/design-flow/ui/viewcomponent-erb/scripts/check_surface_layout.py",
+   "source": "ours",
+   "authority": "house"
+  },
+  {
+   "id": "A14",
+   "layer": "state",
+   "rule": "Every catalogue component declares its states or says which do not apply.",
+   "basis": "check",
+   "ref": "scripts/check_component_states.py",
+   "source": "ours",
+   "authority": "house"
+  },
+  {
+   "id": "A15",
+   "layer": "state",
+   "rule": "An error is identified in text, with a suggestion where one is known.",
+   "basis": "claim",
+   "ref": "C14",
+   "source": "WCAG 2.2 SC 3.3.1, 3.3.3",
+   "authority": "standard"
+  },
+  {
+   "id": "A16",
+   "layer": "state",
+   "rule": "A status message reaches assistive technology without taking focus.",
+   "basis": "claim",
+   "ref": "C15",
+   "source": "WCAG 2.2 SC 4.1.3 (technique ARIA22, `role=status`)",
+   "authority": "standard"
+  },
+  {
+   "id": "A17",
+   "layer": "state",
+   "rule": "A first-run state says specifically what will appear and the next action.",
+   "basis": "claim",
+   "ref": "C10",
+   "source": "Carbon *Empty states pattern*",
+   "authority": "standard"
+  },
+  {
+   "id": "A18",
+   "layer": "state",
+   "rule": "A permission-denied state says the user lacks permission and suggests how to request access.",
+   "basis": "claim",
+   "ref": "C17'",
+   "source": "Carbon *Empty states pattern*",
+   "authority": "standard"
+  },
+  {
+   "id": "A19",
+   "layer": "cross-cutting",
+   "rule": "Text contrast is at least 4.5:1, and 3:1 for large text and for UI components.",
+   "basis": "claim",
+   "ref": "C18",
+   "source": "WCAG 2.2 SC 1.4.3, 1.4.11",
+   "authority": "standard"
+  },
+  {
+   "id": "A20",
+   "layer": "cross-cutting",
+   "rule": "Targets are at least 24 by 24 CSS pixels, within the SC's exceptions.",
+   "basis": "claim",
+   "ref": "C19",
+   "source": "WCAG 2.2 SC 2.5.8",
+   "authority": "standard"
+  },
+  {
+   "id": "A21",
+   "layer": "cross-cutting",
+   "rule": "Focus is visible and is not entirely hidden by author content.",
+   "basis": "claim",
+   "ref": "C20",
+   "source": "WCAG 2.2 SC 2.4.7, 2.4.11",
+   "authority": "standard"
+  },
+  {
+   "id": "A22",
+   "layer": "cross-cutting",
+   "rule": "Content reflows at 320 CSS pixels without two-dimensional scrolling, except content that needs it (data tables, maps, video).",
+   "basis": "claim",
+   "ref": "C21",
+   "source": "WCAG 2.2 SC 1.4.10",
+   "authority": "standard"
+  },
+  {
+   "id": "A23",
+   "layer": "cross-cutting",
+   "rule": "A page hides nothing inside the viewport.",
+   "basis": "check",
+   "ref": "plugins/qa-flow/scripts/layout_fit.py",
+   "source": "ours",
+   "authority": "house"
+  },
+  {
+   "id": "A24",
+   "layer": "cross-cutting",
+   "rule": "Enlarged text newly hides nothing.",
+   "basis": "check",
+   "ref": "plugins/qa-flow/scripts/text_resize.py",
+   "source": "ours",
+   "authority": "house"
+  },
+  {
+   "id": "A25",
+   "layer": "cross-cutting",
+   "rule": "One theme does not break what the other renders.",
+   "basis": "check",
+   "ref": "plugins/qa-flow/scripts/theme_parity.py",
+   "source": "ours",
+   "authority": "house"
+  },
+  {
+   "id": "A26",
+   "layer": "cross-cutting",
+   "rule": "No link points at nothing and no asset goes missing.",
+   "basis": "check",
+   "ref": "plugins/qa-flow/scripts/link_audit.py",
+   "source": "ours",
+   "authority": "house"
+  },
+  {
+   "id": "A27",
+   "layer": "cross-cutting",
+   "rule": "Performance budgets default to LCP at most 2.5 s, INP at most 200 ms and CLS at most 0.1 at the 75th percentile.",
+   "basis": "claim",
+   "ref": "C33",
+   "source": "web.dev *Web Vitals*",
+   "authority": "standard"
+  },
+  {
+   "id": "A28",
+   "layer": "cross-cutting",
+   "rule": "An error message says what went wrong and how to fix it.",
+   "basis": "claim",
+   "ref": "C29'",
+   "source": "GOV.UK *Error message*",
+   "authority": "standard"
+  },
+  {
+   "id": "A29",
+   "layer": "template",
+   "rule": "A multi-step flow asks one question per page.",
+   "basis": "claim",
+   "ref": "C34",
+   "source": "GOV.UK *Question pages*",
+   "authority": "standard"
+  },
+  {
+   "id": "A30",
+   "layer": "template",
+   "rule": "A page that asks several related things has a statement as its heading.",
+   "basis": "claim",
+   "ref": "C35",
+   "source": "GOV.UK *Question pages*",
+   "authority": "standard"
+  },
+  {
+   "id": "A31",
+   "layer": "template",
+   "rule": "Every question page has a back link at the top.",
+   "basis": "claim",
+   "ref": "C36",
+   "source": "GOV.UK *Question pages*",
+   "authority": "standard"
+  },
+  {
+   "id": "A32",
+   "layer": "template",
+   "rule": "The back link goes to the previous page the user was on, in the state they last saw it, except after an action that should happen only once (such as a payment).",
+   "basis": "claim",
+   "ref": "C37",
+   "source": "GOV.UK *Question pages*",
+   "authority": "standard"
+  },
+  {
+   "id": "A33",
+   "layer": "template",
+   "rule": "No two pages in a flow share a heading.",
+   "basis": "claim",
+   "ref": "C38",
+   "source": "GOV.UK *Question pages*",
+   "authority": "standard"
+  },
+  {
+   "id": "A34",
+   "layer": "template",
+   "rule": "The forward button on a question page is labelled \"Continue\", not \"Next\".",
+   "basis": "claim",
+   "ref": "C39",
+   "source": "GOV.UK *Question pages*",
+   "authority": "standard"
+  },
+  {
+   "id": "A35",
+   "layer": "template",
+   "rule": "The check-answers page offers a Change link beside each section.",
+   "basis": "claim",
+   "ref": "C41",
+   "source": "GOV.UK *Check answers*",
+   "authority": "standard"
+  },
+  {
+   "id": "A36",
+   "layer": "template",
+   "rule": "Each Change link carries hidden text naming what it changes.",
+   "basis": "claim",
+   "ref": "C42",
+   "source": "GOV.UK *Check answers*",
+   "authority": "standard"
+  },
+  {
+   "id": "A37",
+   "layer": "template",
+   "rule": "One check-answers page comes immediately before the confirmation.",
+   "basis": "claim",
+   "ref": "C43",
+   "source": "GOV.UK *Check answers*",
+   "authority": "standard"
+  },
+  {
+   "id": "A38",
+   "layer": "template",
+   "rule": "The check-answers page says the transaction is not complete until the user confirms.",
+   "basis": "claim",
+   "ref": "C44",
+   "source": "GOV.UK *Check answers*",
+   "authority": "standard"
+  },
+  {
+   "id": "A39",
+   "layer": "template",
+   "rule": "After a change, Continue returns to the check-answers page.",
+   "basis": "claim",
+   "ref": "C45",
+   "source": "GOV.UK *Check answers*",
+   "authority": "standard"
+  },
+  {
+   "id": "A40",
+   "layer": "template",
+   "rule": "A statement of what the user is confirming sits above the submit button.",
+   "basis": "claim",
+   "ref": "C46",
+   "source": "GOV.UK *Check answers*",
+   "authority": "standard"
+  },
+  {
+   "id": "A41",
+   "layer": "template",
+   "rule": "The confirmation shows a reference number when there is one.",
+   "basis": "claim",
+   "ref": "C49",
+   "source": "GOV.UK *Confirmation pages*",
+   "authority": "standard"
+  },
+  {
+   "id": "A42",
+   "layer": "template",
+   "rule": "The confirmation says what happens next and when.",
+   "basis": "claim",
+   "ref": "C50",
+   "source": "GOV.UK *Confirmation pages*",
+   "authority": "standard"
+  },
+  {
+   "id": "A43",
+   "layer": "template",
+   "rule": "A task list is used only for a longer transaction of several tasks.",
+   "basis": "claim",
+   "ref": "C52",
+   "source": "GOV.UK *Complete multiple tasks*",
+   "authority": "standard"
+  },
+  {
+   "id": "A44",
+   "layer": "template",
+   "rule": "A task page has one task list per group of tasks.",
+   "basis": "claim",
+   "ref": "C53",
+   "source": "GOV.UK *Complete multiple tasks*",
+   "authority": "standard"
+  },
+  {
+   "id": "A45",
+   "layer": "template",
+   "rule": "Where possible, task names start with a verb.",
+   "basis": "claim",
+   "ref": "C54",
+   "source": "GOV.UK *Complete multiple tasks*",
+   "authority": "standard"
+  },
+  {
+   "id": "A46",
+   "layer": "template",
+   "rule": "Every task shows its status.",
+   "basis": "claim",
+   "ref": "C55",
+   "source": "GOV.UK *Complete multiple tasks*",
+   "authority": "standard"
+  },
+  {
+   "id": "A47",
+   "layer": "template",
+   "rule": "A task that cannot be started yet is not a link.",
+   "basis": "claim",
+   "ref": "C56",
+   "source": "GOV.UK *Complete multiple tasks*",
+   "authority": "standard"
+  },
+  {
+   "id": "A48",
+   "layer": "template",
+   "rule": "Tasks can be completed in any order where possible.",
+   "basis": "claim",
+   "ref": "C57",
+   "source": "GOV.UK *Complete multiple tasks*",
+   "authority": "standard"
+  },
+  {
+   "id": "A49",
+   "layer": "template",
+   "rule": "A user can always go back into a task to change an answer.",
+   "basis": "claim",
+   "ref": "C58",
+   "source": "GOV.UK *Complete multiple tasks*",
+   "authority": "standard"
+  },
+  {
+   "id": "A50",
+   "layer": "template",
+   "rule": "The user moves on from the task list only when every task is Completed.",
+   "basis": "claim",
+   "ref": "C60",
+   "source": "GOV.UK *Task list*",
+   "authority": "standard"
+  },
+  {
+   "id": "A51",
+   "layer": "template",
+   "rule": "A task list is not used for a flow that must be done in a fixed order.",
+   "basis": "claim",
+   "ref": "C64",
+   "source": "GOV.UK *Task list*",
+   "authority": "standard"
+  },
+  {
+   "id": "A52",
+   "layer": "template",
+   "rule": "A task list is never the way answers are shown; a description list is.",
+   "basis": "claim",
+   "ref": "C65",
+   "source": "GOV.UK *Task list*",
+   "authority": "standard"
+  },
+  {
+   "id": "A53",
+   "layer": "template",
+   "rule": "A search-results page has a results count, pagination when there are several pages, and a no-results message.",
+   "basis": "claim",
+   "ref": "C66",
+   "source": "Scottish Government Design System *Search results*",
+   "authority": "standard"
+  },
+  {
+   "id": "A54",
+   "layer": "template",
+   "rule": "The results count is at the top of the list and names the search terms.",
+   "basis": "claim",
+   "ref": "C67",
+   "source": "Scottish Government Design System *Search results*",
+   "authority": "standard"
+  },
+  {
+   "id": "A55",
+   "layer": "template",
+   "rule": "A no-results state says plainly that there are no results and offers hints.",
+   "basis": "claim",
+   "ref": "C69",
+   "source": "Scottish Government Design System *Search results*",
+   "authority": "standard"
+  },
+  {
+   "id": "A56",
+   "layer": "template",
+   "rule": "A sort control sits above the results and offers only a sort that applies to all content.",
+   "basis": "claim",
+   "ref": "C70",
+   "source": "Scottish Government Design System *Search results*",
+   "authority": "standard"
+  },
+  {
+   "id": "A57",
+   "layer": "template",
+   "rule": "Results paginate at more than ten, ten to a page, with pagination at the bottom.",
+   "basis": "claim",
+   "ref": "C71",
+   "source": "Scottish Government Design System *Search results*",
+   "authority": "standard"
+  },
+  {
+   "id": "A58",
+   "layer": "template",
+   "rule": "When results update in part, the heading carrying the total count is `aria-live` and focus moves to the start of the changed content.",
+   "basis": "claim",
+   "ref": "C73",
+   "source": "Scottish Government Design System *Search results*",
+   "authority": "standard"
+  },
+  {
+   "id": "A59",
+   "layer": "state",
+   "rule": "On a failed submit the page shows an error summary at the top and moves keyboard focus to it, with an error message next to each field in error.",
+   "basis": "claim",
+   "ref": "C26'",
+   "source": "GOV.UK *Validation*; *Error summary*",
+   "authority": "standard"
+  },
+  {
+   "id": "A60",
+   "layer": "state",
+   "rule": "A field is not validated when the user moves away from it; it is validated on submit.",
+   "basis": "claim",
+   "ref": "C26'",
+   "source": "GOV.UK *Validation*",
+   "authority": "standard"
+  }
+ ]
+}

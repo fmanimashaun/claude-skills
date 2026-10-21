@@ -46,6 +46,7 @@ BUILDERS = (
     ("dist/*.skill", "package_core.py", ("dist/",)),
     ("maintainer skill mirrors", "build_maintainer_skills.py", (".claude/skills/",)),
     ("mandated gems", "derive_mandated_gems.py", ("plugins/rails-flow/mandated_gems.json",)),
+    ("architecture rules", "derive_architecture_rules.py", ("plugins/design-flow/reference/architecture-rules.json",)),
     ("tenancy cop", "derive_tenancy_cop.py", ("plugins/rails-flow/scaffold/",)),
 )
 

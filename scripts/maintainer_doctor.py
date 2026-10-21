@@ -348,6 +348,13 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/derive_mandated_gems.py", "--check")),
     ("mandated gems derived selftest",
      ("python3", "scripts/derive_mandated_gems.py", "--selftest")),
+    # #2221. The rule registry the interface audit cites is DERIVED from the framework page that
+    # declares it and committed in design-flow -- a plugin reaches only its own files. This proves
+    # the artifact still matches its source, and that an audit's authority comes from the table.
+    ("architecture rules derived",
+     ("python3", "scripts/derive_architecture_rules.py", "--check")),
+    ("architecture rules derived selftest",
+     ("python3", "scripts/derive_architecture_rules.py", "--selftest")),
     # #1361. The tenancy cop rails-flow installs is DERIVED from rails-8's multi-tenancy.md §7 and
     # committed beside its checker -- the same cross-plugin reason as the mandated gems above.
     ("tenancy cop derived",
