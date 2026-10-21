@@ -1069,6 +1069,22 @@ def selftest() -> int:
                     sys.modules.pop("mockup_records", None)
                 else:
                     sys.modules["mockup_records"] = saved
+            # The same, as the install would see it: this script staged ALONE (no reader beside it), run as the release gate runs it.
+            with tempfile.TemporaryDirectory() as alone:
+                staged = Path(alone) / "release_evidence.py"
+                staged.write_text(Path(__file__).read_text(encoding="utf-8"), encoding="utf-8")
+                put({**base, **ev})
+                record("a.md", "#2")
+                commit_records("a record, reader absent")
+                done = subprocess.run([sys.executable, str(staged), "stamp", "--rev", "HEAD"], cwd=proj, capture_output=True, text=True)
+                check("stamp #2226: staged without the reader, with records present, the real CLI refuses the stamp by name",
+                      done.returncode == 1 and "mockup_records.py" in done.stderr and "Traceback" not in done.stderr,
+                      (done.returncode, done.stdout, done.stderr))
+                (recdir / "a.md").unlink(missing_ok=True)
+                commit_records("no records, staged alone")
+                done = subprocess.run([sys.executable, str(staged), "stamp", "--rev", "HEAD"], cwd=proj, capture_output=True, text=True)
+                check("stamp #2226 CONTROL: staged without the reader and no records, the CLI passes: nothing needed it",
+                      done.returncode == 0, (done.returncode, done.stdout, done.stderr))
             (recdir / "a.md").unlink(missing_ok=True)
             commit_records("no records")
             rc, out, err = run("--rev", "HEAD")

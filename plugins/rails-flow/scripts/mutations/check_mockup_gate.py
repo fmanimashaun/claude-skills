@@ -738,5 +738,11 @@ GUARD = Guard(
             'require_story=True)',
             'at plan time (--paths) the same record needs no Story, through main()',
         ),
+        Mutation(
+            'every record in the folder is judged, not only the ones the branch changes',
+            'sorted(p for p in changed if p.startswith(RECORD_DIR) and p.endswith(".md")',
+            'sorted(p for p in changed + [x.relative_to(root).as_posix() for x in (root / RECORD_DIR).glob("*.md")] if p.startswith(RECORD_DIR) and p.endswith(".md")',
+            'an invalid record already on the base is left alone when the branch changes a different record',
+        ),
     ),
 )

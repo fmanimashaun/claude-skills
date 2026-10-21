@@ -1454,6 +1454,42 @@ def selftest() -> int:
         except Unusable:
             pass
 
+    # #2226: an invalid record already on the base is left alone when the branch changes a different record (history is never re-judged).
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import fixture_git as _fg
+        def git(*a: str) -> None:
+            _fg.init(root, *a[2:]) if a[:2] == ("init", "-q") else _fg.run(root, *a)
+        git("init", "-q", "-b", "dev")
+        recdir = root / "docs/product/mockups"
+        recdir.mkdir(parents=True)
+        (recdir / "shell-a.html").write_text(SHELL_A)
+        (recdir / "shell-b.html").write_text(SHELL_B)
+        code, msg = adopt_shell(root, ["docs/product/mockups/shell-a.html", "docs/product/mockups/shell-b.html"],
+                                APPROVAL, "@owner", "#1", "1280, 390", "default")
+        check_that("#2226 CONTROL: the shell is adopted for the history fixture", code == 0, msg)
+        (root / "app/views/invoices").mkdir(parents=True)
+        (root / "app/views/invoices/index.html.erb").write_text("<table></table>\n")
+        old_text = as_screen(GOOD, "old screen").replace(next(l for l in GOOD.split("\n") if l.startswith("States:")), "States: nope")
+        (recdir / "old.md").write_text(old_text)
+        (recdir / "new.md").write_text(as_screen(GOOD, "new screen") + "Story: app/views/invoices/index.html.erb\n")
+        (root / "README.md").write_text("x\n")
+        git("add", "README.md", "app/views/invoices/index.html.erb", "docs/product/mockups/shell-a.html", "docs/product/mockups/shell-b.html",
+            "docs/product/mockups/shell.md", "docs/product/mockups/old.md", "docs/product/mockups/new.md")
+        git("commit", "-qm", "base: an invalid old record, a valid new one")
+        git("checkout", "-q", "-b", "feature")
+        (recdir / "new.md").write_text((recdir / "new.md").read_text().replace("Widths: 1280, 390", "Widths: 1280, 480"))
+        (root / "app/views/invoices/index.html.erb").write_text("<table class=\"x\"></table>\n")
+        script = str(Path(__file__).resolve())
+        done = subprocess.run([sys.executable, script, "--root", str(root), "--base", "dev"], capture_output=True, text=True)
+        check_that("#2226: an invalid record already on the base is left alone when the branch changes a different record",
+                   done.returncode == 0 and "old.md" not in done.stdout + done.stderr, (done.returncode, done.stdout, done.stderr))
+        check_that("#2226 CONTROL: the fixture's old record really is invalid when judged", record_problems(root, "docs/product/mockups/old.md") != [])
+        (recdir / "old.md").write_text(old_text + "\n")
+        done = subprocess.run([sys.executable, script, "--root", str(root), "--base", "dev"], capture_output=True, text=True)
+        check_that("#2226 CONTROL: once the branch CHANGES the invalid record it is judged and held",
+                   done.returncode == 1 and "old.md" in done.stdout, (done.returncode, done.stdout, done.stderr))
+
     # #2226: the online audit, with the issue lookup replaced.
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
