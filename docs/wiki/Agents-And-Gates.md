@@ -58,7 +58,7 @@
 | `adversary` | adversarial · fable | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix` | — |
 | `claim-verifier` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:issues` | — |
 | `claude-skills-reporter` | judgement · inherit | Read, Grep, Glob, Bash, Write, Skill | `/rails-flow:report`, `/rails-flow:setup-flow` | — |
-| `code-reviewer` | judgement · inherit | Read | `/rails-flow:retro` | — |
+| `code-reviewer` | judgement · inherit | Read | — | — |
 | `design-auditor` | mechanical · haiku | Read | — | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical · haiku | Read, Grep, Glob, Edit, Write, Bash | `/rails-flow:explain`, `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:setup-flow` | `architecture_graph.py` regenerates and its digest guard fails on drift |
 | `migration-writer` | judgement · inherit | Read | — | — |
@@ -67,7 +67,7 @@
 | `security-auditor` | judgement · inherit | Read | — | — |
 | `skill-curator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/rails-flow:curate` | — |
 | `spec-reviewer` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:retro`, `/rails-flow:spec` | — |
-| `test-runner` | mechanical · haiku | Read | `/rails-flow:setup-flow` | `bundle exec rspec` exit status — 0 failures or the gate blocks |
+| `test-runner` | mechanical · haiku | Read | — | `bundle exec rspec` exit status — 0 failures or the gate blocks |
 
 ### `rails-stack`
 
