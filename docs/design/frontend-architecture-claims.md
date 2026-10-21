@@ -95,3 +95,22 @@ Three verifier runs fetched the sources. C = CONFIRMED, R = REFUTED (wording mus
 | C31' | CONFIRMED | developer.chrome.com/docs/lighthouse/accessibility/managed-focus (web.dev/managed-focus redirects here) | after a route change that fetches new content, "find a good heading in the newly loaded content and direct focus to it". Cite the developer.chrome.com URL |
 
 **Updated tally (33):** 25 CONFIRMED (C17 and C31 join the 23; C28 ships only in its reworded Carbon form, counted below), 2 REFUTED as worded (C26, C32), 3 INCONCLUSIVE and out (C8, C16, C30), 1 PARTIAL reworded (C28), 2 maintainer decisions (C9, C25). Total 33.
+
+## C9 detail: the final template set, and what each cites (doctrine-verifier, 2026-10-21)
+
+The set (list, detail with list-detail as a layout variant, create/edit, multi-step, dashboard/home, settings, search results, sign-in, system pages) is our maintainer decision (a2, 2026-10-21). First-run is a state (layer 5), not a template. Each template cites a public system only where a source was fetched; the rest stay uncited and are labelled ours. m3.material.io and lightningdesignsystem.com render in JavaScript, so Material 3 is cited through Google's Android docs and Lightning page types through Trailhead.
+
+| Template | Verdict | Citation (exact name) |
+|---|---|---|
+| list/index | CONFIRMED as a component only | SLDS "Data Tables" (v1.lightningdesignsystem.com/components/data-tables/); no page-template source: ours |
+| detail; list-detail as a variant | CONFIRMED | Material 3 canonical layouts "List-detail", "Supporting pane", "Feed" (developer.android.com/develop/ui/compose/layouts/adaptive/canonical-layouts); Lightning "Record Page" (Trailhead) |
+| create/edit | INCONCLUSIVE | GOV.UK "Question pages" covers form pages only: ours |
+| multi-step | CONFIRMED | GOV.UK "Question pages", "Check answers", "Confirmation pages", "Complete multiple tasks" (design-system.service.gov.uk/patterns/…) |
+| dashboard/home | CONFIRMED | Salesforce "Home Page" and "App Page" Lightning page types (Trailhead lightning_app_builder_intro) |
+| settings | INCONCLUSIVE | no GOV.UK or Material settings pattern fetched: ours |
+| search results | INCONCLUSIVE | Material 3 "Search" component exists, no quotable text; GOV.UK has none: ours |
+| sign-in | CONFIRMED (weak) | GOV.UK "Create accounts" and "Start using a service": covered inside account patterns |
+| system: not found | CONFIRMED | GOV.UK "Page not found pages" |
+| system: error | CONFIRMED | GOV.UK "There is a problem with the service pages" |
+| system: maintenance | CONFIRMED | GOV.UK "Service unavailable pages" |
+| system: no permission | INCONCLUSIVE at GOV.UK | none; Carbon's permissions empty state is C17' (cite that, not GOV.UK) |
