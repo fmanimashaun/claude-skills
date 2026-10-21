@@ -820,7 +820,8 @@
    },
    {
     "match": [
-     "plugins/rails-stack/reference/agent-output-contract.md"
+     "plugins/rails-stack/reference/agent-output-contract.md",
+     "plugins/rails-stack/scripts/fixture_git.py"
     ],
     "class": "neutral",
     "issue": 2186,
