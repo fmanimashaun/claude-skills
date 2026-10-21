@@ -320,6 +320,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | upstream citation coverage | `repo` | `python3 scripts/check_upstream_docs.py --coverage` | live check |
 | vendored alone | `repo` | `python3 scripts/check_vendored_alone.py` | live check |
 | vendored alone selftest | `repo` | `python3 scripts/check_vendored_alone.py --selftest` | selftest |
+| verdict quotes format | `repo` | `python3 scripts/check_verdict_quotes.py --format-check` | live check |
+| verdict quotes selftest | `repo` | `python3 scripts/check_verdict_quotes.py --selftest` | selftest |
 | wiki reference drift | `repo` | `python3 scripts/build_wiki.py --check` | live check |
 | wiki reference selftest | `repo` | `python3 scripts/build_wiki.py --selftest` | selftest |
 

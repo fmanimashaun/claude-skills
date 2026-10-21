@@ -214,6 +214,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1344. Every shipped frontmatter must be valid YAML: two command descriptions held an unquoted
     # `: ` and a strict reader refused them. Stdlib, because CI has no PyYAML.
     ("frontmatter is valid YAML", ("python3", "scripts/check_frontmatter.py")),
+    # #2233. A CONFIRMED verdict quotes only what the cited page says: the checker fetches and matches (a verifier's tool, networked), and these two run offline.
+    ("verdict quotes selftest", ("python3", "scripts/check_verdict_quotes.py", "--selftest")),
+    ("verdict quotes format", ("python3", "scripts/check_verdict_quotes.py", "--format-check")),
     ("frontmatter selftest", ("python3", "scripts/check_frontmatter.py", "--selftest")),
     # #1334. Every plugin hook command must survive an install path containing a space: the four
     # fail-closed guards stop guarding when their command splits. Local and deterministic, so it
