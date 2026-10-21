@@ -9,6 +9,8 @@ argument-hint: <feature description> [--pack small|standard]
 
 # /rails-flow:feature — $ARGUMENTS
 
+Agents are named by **role** (`developer`, `migrations`, `test_runner`, `reviewer`, `security`, `design_auditor`), resolved from the project's stack: see `reference/stack-roles.md`. When the stack names no agent for a role, STOP and ask; never use a Rails agent by default.
+
 Build the requested feature end-to-end using the orchestrated flow below. You are the
 orchestrator: delegate to the rails-flow subagents, keep your own context lean, and never
 skip a gate. Hooks enforce the guardrails mechanically — do not fight them.
@@ -23,10 +25,10 @@ one-line guard, a rename.
 |---|---|---|
 | plan, criteria, spec-first loop | yes | yes |
 | **Phase 4 quality gates** | **all of them** | **all of them** |
-| `code-reviewer` | yes | yes |
+| the `reviewer` role | yes | yes |
 | `spec-reviewer` | yes | yes |
-| `security-auditor`, `design-auditor` | only if their trigger fires | only if their trigger fires |
-| substantial units delegated to `rails-developer` | you may do them directly | delegated |
+| the `security` role, the `design_auditor` role | only if their trigger fires | only if their trigger fires |
+| substantial units delegated to the `developer` role | you may do them directly | delegated |
 
 **Three things this is not.** It does not skip a gate — Phase 4 is identical at every size, because
 pack size is about *how many specialists review*, not *whether the work is proven*. It is not three
@@ -35,7 +37,7 @@ choose its own size**: scope is the human's call, and an agent that downgraded i
 *looked* small would be judging exactly the thing it is worst at.
 
 **A smaller pack must say what it did not run.** The final report names the specialists that were
-skipped — *"reviewed by code-reviewer only; security-auditor not run (no auth/API/data change)"*. A
+skipped — *"reviewed by the `reviewer` role only; the `security` role not run (no auth/API/data change)"*. A
 run that quietly did less is the failure mode; a run that says so is a decision the reviewer can see.
 
 **The default is unchanged**, deliberately. A flag you must opt *out* of to get rigour is the wrong
@@ -70,7 +72,7 @@ which models/controllers/views/jobs the feature touches, existing patterns to re
 schema impact. Then produce a short plan:
 
 - Units of work, ordered — each unit is one spec + its implementation
-- Migrations needed (these go to `migration-writer`)
+- Migrations needed (these go to the `migrations` role)
 - Risks / invariants in play (tenancy scoping, authorization, module gates)
 - **Security scope** — run `${CLAUDE_PLUGIN_ROOT}/scripts/security_scope.py` over the plan text and the planned paths (#2117). Exit 0: record `Security: no new boundary`. Exit 1 (a public or token route, upload, webhook, MCP tool, outbound fetch, auth or role change, personal column): run `/rails-flow:secure-design` NOW, before the criteria below; its Security requirements become criteria. Exit 2 is "could not classify", not "none".
 
@@ -209,8 +211,8 @@ as complete is worse than a stop, because it spends the reviewer's trust as well
    A criterion no spec cites is an unproven criterion, and the Stop gate says so.
    **A project with a QA catalogue (`qa/test-cases.csv`) also gets the manual case** that proves the new behaviour, in this same PR: add or update the case, and put the issue
    in its `Source` (`defect:#n`). No feature is built without a way to test it in QA (owner rule, #1853); see `reference/case-per-change.md`.
-2. Implement — delegate substantial units to `rails-developer`; schema changes to
-   `migration-writer` (round-trip proven). Small edits you may do directly.
+2. Implement — delegate substantial units to the `developer` role; schema changes to
+   the `migrations` role (round-trip proven). Small edits you may do directly.
 3. Run the unit's specs to green, then `git add <specific files>` and commit with an
    imperative message. One unit per commit.
 
@@ -218,20 +220,20 @@ as complete is worse than a stop, because it spends the reviewer's trust as well
 
 Run in order; loop fixes back through Phase 3 until every gate passes:
 
-1. `code-reviewer` on the branch diff → must end `VERDICT: CLEAN`
+1. the `reviewer` role on the branch diff → must end `VERDICT: CLEAN`
 1b. `spec-reviewer` with `docs/product/acceptance/<slug>.md`, the base, and its own file
    `docs/evidence/reviews/prs/<branch-slug>/spec-reviewer-findings.jsonl` → must end `VERDICT: CLEAN`, with
    `check_spec_review.py` exit 0 (#1370). It asks only whether the diff does what the criteria
    *say*: criteria missing, partial or misread, and behaviour nobody asked for. Report it under its
-   own **Spec** heading beside `code-reviewer`'s **Standards**, and never merge or re-rank the two.
+   own **Spec** heading beside the `reviewer` role's **Standards**, and never merge or re-rank the two.
    A change can pass one and fail the other, and a merged list lets one hide the other.
-2. `test-runner` → FULL suite, 0 failures
-3. `security-auditor` → only if auth, authorization, APIs, or data handling changed
-4. `design-auditor` → only if views/partials/Stimulus changed
+2. the `test_runner` role → FULL suite, 0 failures
+3. the `security` role → only if auth, authorization, APIs, or data handling changed
+4. the `design_auditor` role → only if views/partials/Stimulus changed
 
 ### 4b. Would the specs have caught it? — advisory, and it does not block
 
-`test-runner` proves the suite is **green**. Green says nothing about whether the specs would catch a
+the `test_runner` role proves the suite is **green**. Green says nothing about whether the specs would catch a
 regression: `expect(invoice).to be_present` passes forever and proves nothing. Phase 3 already makes
 the mapping from criterion to proof mechanical — the spec cites `AC-2` — and the **citation is
 enforced while the proof is not.** A spec can cite `AC-2` and assert something trivially true.

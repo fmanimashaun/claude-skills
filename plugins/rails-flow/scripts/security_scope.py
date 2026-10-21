@@ -27,18 +27,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import posixpath
 import re
 import sys
 from pathlib import Path
 
 # (boundary, what in the PLAN TEXT names it)
 TEXT: tuple[tuple[str, re.Pattern], ...] = (
-    ("public-route", re.compile(r"\b(?:public (?:route|page|endpoint|url|link)|unauthenticated|token (?:link|url|route)|magic link|signed (?:link|url))\b", re.I)),
+    ("public-route", re.compile(r"\b(?:public (?:route|page|endpoint|url|link)|unauthenticated|token (?:link|url|route)|magic link|signed (?:link|url)|sign(?:s|ing)?[- ]?in with|without (?:logging|signing) in)\b|\bmake\b[^.\n]{0,40}\bpublic\b", re.I)),
     ("upload-import", re.compile(r"\b(?:uploads?|csv|file input|attachments?|multipart|(?:bulk |data )import|imports? (?:an? |the |their |that |this )?(?:files?|csv|spreadsheets?|data|records?|rows?))\b", re.I)),
     ("webhook", re.compile(r"\bwebhooks?\b|\bcallback (?:url|endpoint)\b", re.I)),
     ("mcp-tool", re.compile(r"\bmcp\b|\bmodel context protocol\b", re.I)),
     ("outbound-fetch", re.compile(r"\b(?:outbound (?:fetch|request|call)|fetch(?:es)? (?:a |the )?url|downloads? from (?:a )?url|ssrf)\b", re.I)),
-    ("auth-session-role", re.compile(r"\b(?:add|adds|adding|new|change|changes|changing|replace|remove|grant|revoke|let|lets|allow|allows|enable|rotate|reset|expire|invalidate|issue|implement|build|create|require|enforce|restrict|support|switch|migrate)\b[^.\n]{0,50}\b(?:sign[- ]?in|log[- ]?in|sessions?|passwords?|sso|oauth|omniauth|two[- ]factor|2fa|roles?|permissions?|authori[sz]ation|api (?:key|token))\b", re.I)),
+    ("auth-session-role", re.compile(r"\b(?:add|adds|adding|new|change|changes|changing|replace|remove|grant|revoke|let|lets|allow|allows|enable|rotate|reset|expire|invalidate|issue|implement|build|create|require|enforce|restrict|support|switch|migrate|skip|extend|generate|make)\b[^.\n]{0,50}\b(?:sign[- ]?in|log[- ]?in|sessions?|passwords?|sso|oauth|omniauth|two[- ]factor|2fa|roles?|permissions?|authori[sz]ation|authenticat\w*|(?:access|auth|bearer|refresh|reset|session|login|api|magic[- ]link) tokens?|impersonat\w*|remember[- ]me|api (?:key|token))\b", re.I)),
     ("secrets", re.compile(r"\b(?:secrets?|credentials|(?:encryption|signing|private|master|secret) keys?|api[_ ]?keys?|(?:store|storing) (?:the |a )?tokens?)\b", re.I)),
     ("input-parsing", re.compile(r"\bparse[sd]?\b[^.\n]{0,40}\b(?:xml|json|yaml|html|payload|body|params|headers?|input)\b|\b(?:deserializ\w*|unmarshal\w*)", re.I)),
     ("raw-html", re.compile(r"\braw\b[^.\n]{0,40}\bhtml\b|\bhtml\b[^.\n]{0,40}\braw\b|\b(?:skip|disable|turn off|without)\s+sanitiz\w*|\bsanitiz\w*\s+(?:off|disabled)\b|\brender\w*\s+(?:the |a |an )?(?:partner|user|customer|external|supplied|uploaded|third[- ]party)(?:'s|s')?\s+(?:raw )?html\b", re.I)),
@@ -66,8 +67,12 @@ def stack_rows(project: Path, dirs: list[Path] | None = None) -> tuple[list[Row]
         label = f"{surface.get('plugin')}:{surface.get('stack')}"
         for kind, key in (("text", "boundary_text"), ("path", "boundary_paths")):
             for entry in surface.get(key) or []:
-                rows.append((entry["boundary"], kind, re.compile(entry["pattern"], re.I if kind == "text" else 0), label))
+                rows.append((entry["boundary"], kind, re.compile(entry["pattern"], re.I), label))
     notes = [] if code != 2 else [f"stack not judged ({'; '.join(report.get('problems') or [])}): neutral signals only"]
+    if code != 2:
+        labels = sorted({r[3] for r in rows})
+        notes.append(f"stack rows: {len(rows)} from {', '.join(labels)}" if rows else
+                     "stack rows: none loaded (no detected stack declares `security`, the project is a sub-directory, or its plugin was not found): neutral signals only")
     return rows, notes
 
 
@@ -84,7 +89,7 @@ def stack_case_failures(dirs: list[Path]) -> tuple[list[str], int]:
             if not isinstance(sec, dict) or not isinstance(sec.get("cases"), str):
                 continue
             label = f"{manifest['plugin']}:{stack.get('id')}"
-            rows = [(e["boundary"], kind, re.compile(e["pattern"], re.I if kind == "text" else 0), label)
+            rows = [(e["boundary"], kind, re.compile(e["pattern"], re.I), label)
                     for kind, key in (("text", "boundary_text"), ("path", "boundary_paths")) for e in sec.get(key) or []]
             try:
                 cases = json.loads((detect_stack.plugin_root(manifest) / sec["cases"]).read_text(encoding="utf-8"))
@@ -98,6 +103,31 @@ def stack_case_failures(dirs: list[Path]) -> tuple[list[str], int]:
     return failures, ran
 
 
+def normalise_path(path: str, project: Path | None = None) -> str:
+    """A planned path as the stack patterns expect it: trimmed, posix, relative to the project, no `./` or diff `a/` `b/` prefix (#2117 adversary)."""
+    p = path.strip().replace("\\", "/")
+    if p.startswith("~/"):
+        p = str(Path(p).expanduser()).replace("\\", "/")
+    if project is not None and p.startswith("/"):
+        root = str(project.resolve()).replace("\\", "/").rstrip("/") + "/"
+        real = str(Path(p).resolve()).replace("\\", "/")
+        for cand in (p, real):
+            if cand.startswith(root):
+                p = cand[len(root):]
+                break
+    p = re.sub(r"^[A-Za-z]:/", "", p)
+    for _ in range(2):  # strip the prefixes, collapse `x/../` and `//`, then strip what the collapse exposed
+        while True:
+            for prefix in ("./", "../", "a/", "b/"):
+                if p.startswith(prefix) and len(p) > len(prefix):
+                    p = p[len(prefix):]
+                    break
+            else:
+                break
+        p = posixpath.normpath(p).lstrip("/") if p else p
+    return p
+
+
 def classify(text: str, paths: list[str], stack: list[Row] | tuple = ()) -> list[str]:
     """One line per boundary named, `<boundary>: <what named it>`; empty when none."""
     seen: dict[str, str] = {}
@@ -108,9 +138,9 @@ def classify(text: str, paths: list[str], stack: list[Row] | tuple = ()) -> list
     for name, kind, rx, label in stack:
         if kind == "text" and name not in seen and (m := rx.search(text)):
             seen[name] = f"plan names `{m.group(0).strip()}` ({label})"
-    for path in paths:
+    for path in (normalise_path(p) for p in paths):
         for name, kind, rx, label in stack:
-            if kind == "path" and name not in seen and rx.search(path):
+            if kind == "path" and name not in seen and (rx.search(path) or rx.search(path.rstrip("/") + "/")):
                 seen[name] = f"planned path `{path}` ({label})"
     return [f"{name}: {why}" for name, why in seen.items()]
 
@@ -145,6 +175,15 @@ def selftest() -> int:
         ("documenting the roles is not a boundary", "Document the roles in the README.", [], 0),
         ("importing a spreadsheet is a boundary", "Import the spreadsheet of enrollees.", [], 1),
         ("a word inside another word is not a match", "Add the rolesque helper.", [], 0),
+        ("skipping authentication is a boundary", "Skip authentication on the status endpoint.", [], 1),
+        ("extending a session is a boundary", "Extend the session to thirty days.", [], 1),
+        ("generating an access token is a boundary", "Generate an access token for each partner.", [], 1),
+        ("making a page public is a boundary", "Make the report page public.", [], 1),
+        ("impersonation is a boundary", "Let support impersonate a user.", [], 1),
+        ("design tokens are not a boundary", "Add the spacing tokens from the design system.", [], 0),
+        ("remember me is a boundary", "Add a remember-me checkbox.", [], 1),
+        ("sign in with a provider is a boundary", "Users sign in with Google.", [], 1),
+        ("without logging in is a boundary", "Visitors see the report without logging in.", [], 1),
     ]
     bad = 0
     # STACK-NEUTRAL (#2117): with no stack detected, plain words still fire and a stack's own spelling does not.
@@ -165,15 +204,35 @@ def selftest() -> int:
         (plug / "sec.md").write_text("# checklist\n", encoding="utf-8")
         (plug / "stacks.json").write_text(
             '{"plugin": "stk", "stacks": [{"id": "s", "name": "S", "all": [{"file": "marker.txt"}], "descriptor": '
-            '{"security": {"checklist": "sec.md", "scanners": ["x"], "boundary_text": [{"boundary": "raw-html", "pattern": "\\\\bzap_html\\\\b"}], '
+            '{"security": {"checklist": "sec.md", "scanners": ["x"], "cases": "cases.json", "boundary_text": [{"boundary": "raw-html", "pattern": "\\\\bzap_html\\\\b"}], '
             '"boundary_paths": [{"boundary": "webhook", "pattern": "^hooks/"}]}}}]}', encoding="utf-8")
+        (plug / "cases.json").write_text('[{"name": "an upper-case path is matched by its own stack", "plan": "Tidy.", "paths": ["HOOKS/in.py"], "boundary": true}]', encoding="utf-8")
+        own_failures, own_ran = stack_case_failures([plug])
+        if own_failures or own_ran != 1:
+            bad += 1
+            print(f"FAIL a stack's own cases run case-insensitively: ran {own_ran}, {own_failures}")
         proj.mkdir()
         (proj / "marker.txt").write_text("x", encoding="utf-8")
         rows, notes = stack_rows(proj, [plug])
+        link = Path(td) / "link"
+        link.symlink_to(proj, target_is_directory=True)
         for name, ok in (("a stack's boundary_text loads and fires", bool(classify("Use zap_html here.", [], rows))),
                          ("a stack's boundary_paths loads and fires", bool(classify("Tidy.", ["hooks/in.py"], rows))),
                          ("and nothing fires without them", not classify("Use zap_html here.", ["hooks/in.py"])),
-                         ("no note when the stack is judged", notes == [])):
+                         ("the note names the rows used", notes == ["stack rows: 2 from stk:s"]),
+                         ("a ./ path is matched", bool(classify("Tidy.", ["./hooks/in.py"], rows))),
+                         ("a diff b/ path is matched", bool(classify("Tidy.", ["b/hooks/in.py"], rows))),
+                         ("a backslash path is matched", bool(classify("Tidy.", ["hooks\\in.py"], rows))),
+                         ("an unresolved absolute path (a symlinked temp root) is matched",
+                          bool(classify("Tidy.", [normalise_path(str(link / "hooks" / "in.py"), proj)], rows))),
+                         ("a ../ path is matched", bool(classify("Tidy.", ["../hooks/in.py"], rows))),
+                         ("a drive-letter path is matched", bool(classify("Tidy.", ["C:\\hooks\\in.py"], rows))),
+                         ("a path in another case is matched", bool(classify("Tidy.", ["Hooks/in.py"], rows))),
+                         ("a dot-dot inside a path is collapsed", bool(classify("Tidy.", ["docs/../hooks/in.py"], rows))),
+                         ("a leading double slash is matched", bool(classify("Tidy.", ["//hooks/in.py"], rows))),
+                         ("a directory without its slash is matched", bool(classify("Tidy.", ["hooks"], rows))),
+                         ("a padded path is matched", bool(classify("Tidy.", ["  hooks/in.py\n"], rows))),
+                         ("an absolute path inside the project is matched", bool(classify("Tidy.", [normalise_path(str(proj.resolve() / "hooks/in.py"), proj)], rows)))):
             if not ok:
                 bad += 1
                 print(f"FAIL {name}: rows={rows} notes={notes}")
@@ -221,7 +280,7 @@ def main(argv: list[str]) -> int:
     rows, notes = stack_rows(Path(args.project))
     for note in notes:
         print(note, file=sys.stderr)
-    found = classify(text, args.path, rows)
+    found = classify(text, [normalise_path(p, Path(args.project)) for p in args.path], rows)
     if found:
         print("\n".join(found))
         return 1

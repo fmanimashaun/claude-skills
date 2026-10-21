@@ -51,7 +51,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 
 # The shipped reference implementations. Both are consumed as copy-me-verbatim code by
-# `ui-composer` and `design-porter`, so a fixed keyword list here becomes one in a user's app.
+# `rails-ui-composer` and `rails-ui-porter`, so a fixed keyword list here becomes one in a user's app.
 SOURCES = (
     "plugins/rails-stack/skills/design-system/references/component-implementations.md",
     "plugins/rails-stack/skills/design-system/references/reference-implementation.md",
@@ -259,7 +259,7 @@ def _selftest() -> int:
                 if (isinstance(n, _ast.FunctionDef) and n.name in names)
                 or (isinstance(n, _ast.Assign) and any(getattr(t, "id", "") in names for t in n.targets))]
     names = ("NESTED", "ONE_LINER", "HEREDOC", "_code", "own_lines")
-    shipped = REPO / "plugins/design-flow/scripts/check_component_contract.py"
+    shipped = REPO / "plugins/design-flow/ui/viewcomponent-erb/scripts/check_component_contract.py"
     expect("own_lines() and its patterns are identical in the shipped design-flow copy",
            shipped.is_file() and _src(shipped, names) == _src(Path(__file__), names)
            and len(_src(Path(__file__), names)) == len(names))

@@ -39,8 +39,21 @@ PLACEHOLDER = re.compile(r"<[^<>\n`]{1,80}>")
 BULLET_SECTIONS = ("Trust boundaries", "Security requirements")
 
 
+CELL_PLACEHOLDER = re.compile(r"<(?!%)[^<>`\n]{1,120}>")
+_FILLER_WORDS = {w for f in FILLERS for w in re.sub(r"[^\w\s]", " ", f).split()} | {
+    "fill", "in", "yet", "wip", "to", "be", "decided", "determined", "pending", "placeholder", "here", "out", "up", "the", "a"}
+
+
 def _is_filler(cell: str) -> bool:
-    return cell.strip().strip(".").lower() in FILLERS
+    """Fewer than two letters, or every word a filler or a stop word (`TBD!`, `TODO: fill in`, `none yet`; #2117 adversary)."""
+    if len(re.findall(r"[^\W\d_]", cell)) < 2:
+        return True
+    return all(w in _FILLER_WORDS for w in re.sub(r"[^\w\s]", " ", cell).lower().split())
+
+
+def _uncommented(text: str) -> str:
+    """Comments removed; an unclosed `<!--` runs to the end of the file, as it does when rendered."""
+    return re.sub(r"<!--.*?(?:-->|\Z)", "", text, flags=re.S)
 
 
 def _section_body(text: str, name: str) -> str | None:
@@ -54,7 +67,7 @@ def _cells(line: str) -> list[str]:
 
 def threat_rows(text: str) -> list[tuple[int, str, str]]:
     """(TM number, threat, decision) per row of `## Threats`, the number read from the row's own ID cell (#2118). Empty when the table cannot be read."""
-    m = re.search(r"^##\s+Threats\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    m = re.search(r"^##\s+Threats\s*$(.*?)(?=^##\s|\Z)", _uncommented(text), re.M | re.S)
     lines = [ln for ln in m.group(1).splitlines() if ln.strip().startswith("|")] if m else []
     if not lines or [h.lower() for h in _cells(lines[0])[:6]] != ["id", "threat", "stride", "component", "decision", "reason"]:
         return []
@@ -71,25 +84,26 @@ def threat_rows(text: str) -> list[tuple[int, str, str]]:
 def check(text: str) -> tuple[list[str], int]:
     """(findings, threat rows read). Zero rows read means the model is unusable, not clean."""
     findings: list[str] = []
-    heads = {m.group(1).strip().lower() for m in re.finditer(r"^##\s+(.+?)\s*$", text, re.M)}
+    # Headings and sections read the same comment-stripped text as the rows: a heading inside `<!-- -->` is not on the page (#2131).
+    heads = {m.group(1).strip().lower() for m in re.finditer(r"^##\s+(.+?)\s*$", _uncommented(text), re.M)}
     for s in SECTIONS:
         if s.lower() not in heads:
             findings.append(f"missing section `## {s}`")
-    prose = re.sub(r"`[^`\n]*`", "", re.sub(r"<!--.*?-->", "", text, flags=re.S))
+    prose = re.sub(r"`[^`\n]*`", "", _uncommented(text))
     for ph in sorted({m_.group(0) for m_ in PLACEHOLDER.finditer(prose)}):
         findings.append(f"template placeholder `{ph}` left in the model")
     for s in SECTIONS:
-        body = _section_body(text, s)
+        body = _section_body(_uncommented(text), s)
         if body is None:
             continue
-        lines = [ln.strip() for ln in re.sub(r"<!--.*?-->", "", body, flags=re.S).splitlines() if ln.strip()]
+        lines = [ln.strip() for ln in _uncommented(body).splitlines() if ln.strip()]
         if s != "Threats" and not [ln for ln in lines if not _is_filler(ln.lstrip("-* "))]:
             findings.append(f"section `## {s}` is empty or only a filler word")
         if s in BULLET_SECTIONS:
             bullets = [ln.lstrip("-* ").strip() for ln in lines if ln[:1] in "-*" and len(ln) > 1]
             if not [b for b in bullets if not _is_filler(b)]:
                 findings.append(f"section `## {s}` needs at least one `-` bullet with content")
-    m = re.search(r"^##\s+Threats\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    m = re.search(r"^##\s+Threats\s*$(.*?)(?=^##\s|\Z)", _uncommented(text), re.M | re.S)
     rows = 0
     if m:
         lines = [ln for ln in m.group(1).splitlines() if ln.strip().startswith("|")]
@@ -107,6 +121,8 @@ def check(text: str) -> tuple[list[str], int]:
                 cells += [""] * (6 - len(cells))
                 rid, threat, stride, component, decision, reason = cells[:6]
                 label = f"threat row `{threat[:50] or '(blank)'}`"
+                for ph in sorted({p_.group(0) for c in cells[:6] for p_ in CELL_PLACEHOLDER.finditer(c.replace("`", ""))}):
+                    findings.append(f"{label}: template placeholder `{ph}` left in a cell")
                 if not ID_RE.fullmatch(rid):
                     findings.append(f"{label}: the ID must look like TM-1, got `{rid}`")
                 elif rid.upper() in ids:
@@ -161,6 +177,17 @@ A webhook.
         ("a filler component is found", ok.replace("| webhook | mitigate |", "| n/a | mitigate |"), 1, "no component named"),
         ("an accept whose reason is a filler is found", ok.replace("| accept | idempotent, harmless |", "| accept | TBD |"), 1, "an `accept` needs a reason"),
         ("a filler reason on a mitigate is found", ok.replace("signature checked", "todo"), 1, "only a filler word"),
+        ("a punctuated filler is found", ok.replace("signature checked", "TBD!"), 1, "only a filler word"),
+        ("a reason with no letter is found", ok.replace("| accept | idempotent, harmless |", "| accept | 42 |"), 1, "an `accept` needs a reason"),
+        ("a backticked placeholder in a threat cell is found", ok.replace("| Forged callback |", "| `<threat>` |"), 1, "left in a cell"),
+        ("backticked code in a cell is not a placeholder", ok.replace("signature checked", "`<%= h(x) %>` escapes"), 0, ""),
+        ("a commented-out table is no rows", ok.replace("| ID |", "<!--\n| ID |").replace("| idempotent, harmless |\n", "| idempotent, harmless |\n-->\n"), 2, ""),
+        ("a stop-word filler is found", ok.replace("signature checked", "TODO: fill in"), 1, "only a filler word"),
+        ("a filler with a stop word is found", ok.replace("| accept | idempotent, harmless |", "| accept | none yet |"), 1, "an `accept` needs a reason"),
+        ("one letter is filler", ok.replace("| webhook | mitigate |", "| q1 | mitigate |"), 1, "no component named"),
+        ("the template's own placeholder in a cell is found", ok.replace("signature checked", "<control, or why the risk stays>"), 1, "left in a cell"),
+        ("an unclosed comment hides the rest", ok.replace("## Threats", "<!-- draft\n## Threats"), 2, ""),
+        ("a heading inside a comment is missing", ok.replace("## Security requirements\n- verify the signature", "<!--\n## Security requirements\n- verify the signature\n-->"), 1, "missing section `## Security requirements`"),
         ("a table with no rows is unusable, not clean", ok.split("|---|---|---|---|---|")[0] + "|---|---|---|---|---|---|\n## Security requirements\n- x\n", 2, ""),
     ]
     bad = 0

@@ -70,7 +70,7 @@ facets are never recolored/stretched/rotated (brand.md don'ts).
 
 Prioritized: **breaks-consistency > a11y > polish**. Each finding: `file:line`, the rule
 violated, the exact replacement, and (optional) a one-line diff. List confirmed-clean areas so
-the audit is evidence, not just a bug list. Offer to fix via ui-composer / `/design-flow:component`.
+the audit is evidence, not just a bug list. Offer to fix via rails-ui-composer / `/design-flow:component`.
 Do not auto-fix in place.
 
 ## Output

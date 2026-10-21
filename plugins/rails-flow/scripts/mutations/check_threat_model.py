@@ -57,9 +57,59 @@ GUARD = Guard(
         ),
         Mutation(
             "a filler word stops counting as filler",
-            "    return cell.strip().strip(\".\").lower() in FILLERS",
+            "    return all(w in _FILLER_WORDS for w in re.sub(r\"[^\\w\\s]\", \" \", cell).lower().split())",
             "    return False",
             "a filler threat is found",
+        ),
+        Mutation(
+            # #2117 adversary: `TODO: fill in` and `none yet` passed as content.
+            "a stop word beside a filler hides it again",
+            '    "fill", "in", "yet", "wip",',
+            '    "zz1",',
+            "a stop-word filler is found",
+        ),
+        Mutation(
+            "one letter stops counting as filler",
+            "    if len(re.findall(r\"[^\\W\\d_]\", cell)) < 2:",
+            "    if len(re.findall(r\"[^\\W\\d_]\", cell)) < 1:",
+            "one letter is filler",
+        ),
+        Mutation(
+            "a cell with no letter stops counting as filler",
+            "    if len(re.findall(r\"[^\\W\\d_]\", cell)) < 2:",
+            "    if False:",
+            "a reason with no letter is found",
+        ),
+        Mutation(
+            "a placeholder wrapped in backticks inside a threat cell passes again",
+            "for p_ in CELL_PLACEHOLDER.finditer(c.replace(\"`\", \"\"))}):",
+            "for p_ in CELL_PLACEHOLDER.finditer(re.sub(r\"`[^`]*`\", \"\", c))}):",
+            "a backticked placeholder in a threat cell is found",
+        ),
+        Mutation(
+            "a placeholder with punctuation in it passes again, so the template's own reason cell is content",
+            'CELL_PLACEHOLDER = re.compile(r"<(?!%)[^<>`\\n]{1,120}>")',
+            'CELL_PLACEHOLDER = re.compile(r"<(?!%)[\\w /-]{1,120}>")',
+            "the template's own placeholder in a cell is found",
+        ),
+        Mutation(
+            "a placeholder exemption widens past `<%`, so text starting with a letter hides a placeholder",
+            'CELL_PLACEHOLDER = re.compile(r"<(?!%)[^<>`\\n]{1,120}>")',
+            'CELL_PLACEHOLDER = re.compile(r"<(?!%)(?![a-z])[^<>`\\n]{1,120}>")',
+            "a backticked placeholder in a threat cell is found",
+        ),
+        Mutation(
+            "an unclosed comment stops hiding the rest of the file",
+            '    return re.sub(r"<!--.*?(?:-->|\\Z)", "", text, flags=re.S)',
+            '    return re.sub(r"<!--.*?-->", "", text, flags=re.S)',
+            "an unclosed comment hides the rest",
+        ),
+        Mutation(
+            # #2131: the rows read comment-stripped text but the headings did not, so a heading hidden in a comment counted.
+            "headings are read from the raw text again",
+            '    heads = {m.group(1).strip().lower() for m in re.finditer(r"^##\\s+(.+?)\\s*$", _uncommented(text), re.M)}',
+            '    heads = {m.group(1).strip().lower() for m in re.finditer(r"^##\\s+(.+?)\\s*$", text, re.M)}',
+            "a heading inside a comment is missing",
         ),
         Mutation(
             "a row with no TM-n ID stops being reported",

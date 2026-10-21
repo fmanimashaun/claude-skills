@@ -204,7 +204,7 @@ GUARD = Guard(
             'a run with a shard missing is a proof',
             '    return (set(shards) == set(range(1, EXPECTED_SHARDS + 1)) and all(all(v) for v in shards.values())',
             '    return (bool(shards) and all(all(v) for v in shards.values())',
-            'one of the 4 shards missing',
+            'one of the shards missing',
         ),
         Mutation(
             'a shard that did not succeed is a proof',

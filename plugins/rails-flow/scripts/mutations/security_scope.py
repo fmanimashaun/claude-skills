@@ -18,7 +18,7 @@ GUARD = Guard(
         Mutation(
             # #2117: a stack's path rows (its descriptor's boundary_paths) stop being read, so a planned route file owes nothing.
             "a stack's boundary paths are never matched",
-            '            if kind == "path" and name not in seen and rx.search(path):',
+            '            if kind == "path" and name not in seen and (rx.search(path) or rx.search(path.rstrip("/") + "/")):',
             '            if False:',
             "a stack's boundary_paths loads and fires",
         ),
@@ -30,8 +30,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the trailing word boundary goes, so a word that merely starts with `role` fires",
-            '|authori[sz]ation|api (?:key|token))\\b", re.I)),',
-            '|authori[sz]ation|api (?:key|token))", re.I)),',
+            '|remember[- ]me|api (?:key|token))\\b", re.I)),',
+            '|remember[- ]me|api (?:key|token))", re.I)),',
             "a word inside another word is not a match",
         ),
         Mutation(
@@ -81,6 +81,91 @@ GUARD = Guard(
             '    ("redirect-param", re.compile(r"\\breturn[_ ]url\\b|\\b(?:return_to|redirect_url|redirect_uri|back_url|next_url|return_path)\\b|\\b(?:next|return|redirect|back)\\s+param(?:eter)?s?\\b|\\bredirect\\w*[^.\\n]{0,40}\\bparams?\\b|\\bsend (?:them|the user|the person) back to (?:the |a )?(?:url|link|page) (?:in|from|they|the user)|\\bredirects? (?:back )?to (?:a |the )?(?:param|url the user|url (?:in|from) the)", re.I)),',
             '    ("redirect-param", re.compile(r"(?!)", re.I)),',
             "a return_to param is a boundary",
+        ),
+        Mutation(
+            # #2117 adversary: `./app/...`, `b/app/...` and `app\\...` slipped past every stack path pattern.
+            "planned paths are matched verbatim again",
+            '    p = path.strip().replace("\\\\", "/")',
+            '    return path',
+            "a ./ path is matched",
+        ),
+        Mutation(
+            "the diff prefixes stop being dropped",
+            '            for prefix in ("./", "../", "a/", "b/"):',
+            '            for prefix in ("./", "../"):',
+            "a diff b/ path is matched",
+        ),
+        Mutation(
+            "the newer auth verbs stop counting, so skipping authentication owes nothing",
+            "|switch|migrate|skip|extend|generate|make)",
+            "|switch|migrate)",
+            "skipping authentication is a boundary",
+        ),
+        Mutation(
+            "impersonation stops being an auth noun",
+            "|impersonat\\w*|",
+            "|",
+            "impersonation is a boundary",
+        ),
+        Mutation(
+            "the stderr note stops naming the stack rows used",
+            '        notes.append(f"stack rows: {len(rows)} from {\', \'.join(labels)}" if rows else',
+            '        notes.append("" if rows else',
+            "the note names the rows used",
+        ),
+        Mutation(
+            "a leading ../ is kept again",
+            '            for prefix in ("./", "../", "a/", "b/"):',
+            '            for prefix in ("./", "a/", "b/"):',
+            "a ../ path is matched",
+        ),
+        Mutation(
+            "a drive letter is kept again",
+            '    p = re.sub(r"^[A-Za-z]:/", "", p)',
+            '    pass',
+            "a drive-letter path is matched",
+        ),
+        Mutation(
+            "an absolute path is compared unresolved again, so a symlinked project root misses",
+            '        for cand in (p, real):',
+            '        for cand in (p,):',
+            "an unresolved absolute path (a symlinked temp root) is matched",
+        ),
+        Mutation(
+            "a stack's own cases run with case-sensitive paths again",
+            '            rows = [(e["boundary"], kind, re.compile(e["pattern"], re.I), label)',
+            '            rows = [(e["boundary"], kind, re.compile(e["pattern"], re.I if kind == "text" else 0), label)',
+            "a stack's own cases run case-insensitively",
+        ),
+        Mutation(
+            "stack rows load case-sensitive paths again",
+            '                rows.append((entry["boundary"], kind, re.compile(entry["pattern"], re.I), label))',
+            '                rows.append((entry["boundary"], kind, re.compile(entry["pattern"], re.I if kind == "text" else 0), label))',
+            "a path in another case is matched",
+        ),
+        Mutation(
+            "sign in with a provider stops being a boundary",
+            "|sign(?:s|ing)?[- ]?in with|without (?:logging|signing) in)",
+            ")",
+            "sign in with a provider is a boundary",
+        ),
+        Mutation(
+            "a dot-dot inside a path stops being collapsed",
+            '        p = posixpath.normpath(p).lstrip("/") if p else p',
+            '        p = p',
+            "a dot-dot inside a path is collapsed",
+        ),
+        Mutation(
+            "a directory named without its slash stops matching a directory row",
+            '(rx.search(path) or rx.search(path.rstrip("/") + "/"))',
+            'rx.search(path)',
+            "a directory without its slash is matched",
+        ),
+        Mutation(
+            "a bare `tokens` counts as an auth noun again, so design tokens owe a model",
+            "|(?:access|auth|bearer|refresh|reset|session|login|api|magic[- ]link) tokens?|",
+            "|(?:(?:access|auth|bearer|refresh|reset|session|login|api|magic[- ]link) )?tokens?|",
+            "design tokens are not a boundary",
         ),
     ),
 )

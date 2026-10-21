@@ -5,7 +5,7 @@ name: Mutation weekly
 # operating systems once a week, so a guard that only fails on one OS fails here, on a Monday, and not in a release. It is also the forced
 # re-proof the incremental skip relies on: a guard skipped for being unchanged was last proven by a full run, and this is how often that is at most.
 #
-# The sweep is sharded exactly as gates.yml shards it (#1739): the same cost-balanced `--shard I/4`, per OS, with a summary per OS that fails when a
+# The sweep is sharded exactly as gates.yml shards it (#1739): the same cost-balanced `--shard I/6`, per OS, with a summary per OS that fails when a
 # shard failed, was cancelled or is missing. Cost growth is a WARNING here (`--ratchet-warn`), as in the release. Each OS's summary uploads the
 # proof and cost record its full run produced, for a person to commit; nothing here writes to a branch.
 
@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     steps:
@@ -48,13 +48,13 @@ jobs:
           gem install --user-install --no-document kamal -v 2.12.0
           ruby -e 'require "kamal"; puts "kamal: #{Kamal::VERSION}"'
 
-      - name: Mutation guards, every one, one shard of 4
+      - name: Mutation guards, every one, one shard of 6
         env:
           SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
           mkdir -p shard-out
-          python3 scripts/mutation_check.py --full --shard "${SHARD}/4" --ratchet-warn --shard-out "shard-out/shard-${SHARD}.json"
+          python3 scripts/mutation_check.py --full --shard "${SHARD}/6" --ratchet-warn --shard-out "shard-out/shard-${SHARD}.json"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -102,7 +102,7 @@ jobs:
       - name: Every shard present, every guard covered once
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/mutation_check.py --merge-shards shard-in --expect-shards 4
+        run: python3 scripts/mutation_check.py --merge-shards shard-in --expect-shards 6
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

@@ -38,21 +38,25 @@
               },
               {
                 "boundary": "input-parsing",
-                "pattern": "\\b(?:yaml\\.load|marshal\\.load)"
+                "pattern": "\\b(?:yaml\\.(?:safe_)?load|marshal\\.load|json\\.parse\\s*\\(?\\s*request\\.(?:body|raw_post))"
               },
               {
                 "boundary": "raw-html",
-                "pattern": "\\bhtml_safe\\b|\\braw\\(|<%==?\\s*raw\\b"
+                "pattern": "\\bhtml_safe\\b|\\braw\\(|<%==?\\s*raw\\b|\\brender\\s*\\(?\\s*(?:html|inline):"
+              },
+              {
+                "boundary": "auth-session-role",
+                "pattern": "\\b(?:require_authentication|require_login|skip_before_action\\s+:authenticate\\w*|protect_from_forgery|skip_forgery_protection|csrf|cors)\\b|\\bauthenticate_user!"
               },
               {
                 "boundary": "redirect-param",
-                "pattern": "\\bredirect_to\\s*\\(?\\s*params\\b"
+                "pattern": "\\bredirect_to\\s*\\(?\\s*(?:params\\b|session\\[|request\\.referr?er\\b)"
               }
             ],
             "boundary_paths": [
               {
                 "boundary": "public-route",
-                "pattern": "^app/controllers/(?:public|pages|home)_controller\\.rb$"
+                "pattern": "^app/controllers/(?:public|pages|home)_controller\\.rb$|^config/routes\\.rb$"
               },
               {
                 "boundary": "webhook",
@@ -60,19 +64,19 @@
               },
               {
                 "boundary": "mcp-tool",
-                "pattern": "^app/(?:[^/]+/)*mcp/"
+                "pattern": "^app/(?:[^/]+/)*mcp/|^app/controllers/(?:[^/]+/)*mcp(?:_[^/]*)?_controller\\.rb$"
               },
               {
                 "boundary": "auth-session-role",
-                "pattern": "^app/controllers/concerns/authentication\\.rb$|^app/controllers/(?:sessions|passwords|registrations|omniauth_callbacks)_controller\\.rb$|^app/(?:policies|abilities?)/|^app/models/(?:session|current|role)\\.rb$"
+                "pattern": "(?:^|/)(?:sessions|passwords|registrations|omniauth_callbacks|logins?|magic_links|two_factors?|invitations|confirmations|unlocks)_controller\\.rb$|^app/controllers/application_controller\\.rb$|^app/controllers/concerns/auth(?:entication|orization|enticat\\w*)?(?:_[^/]*)?\\.rb$|^app/(?:policies|abilities?)/|^app/models/(?:session|current|role|user)\\.rb$|^config/initializers/(?:devise|session_store)\\.rb$|^lib/(?:[^/]+/)*auth(?:entication|orization|enticat\\w*)?(?:_[^/]*)?(?:/|\\.rb$)|^app/(?:models|services|jobs)/(?:[^/]+/)*(?:auth(?:entication|orization|enticat\\w*)?(?:_[^/]*)?/|(?:[^/]*_)?(?:tokens?|sessions?|auth(?:entication|orization|enticat\\w*)?)(?:_[^/]*)?\\.rb$)"
               },
               {
                 "boundary": "upload-import",
-                "pattern": "^app/(?:[^/]+/)*uploads?/|^app/(?:models|services|jobs)/(?:[^/]+/)*[^/]*(?:import|intake|upload)[^/]*\\.rb$"
+                "pattern": "^app/(?:[^/]+/)*uploads?/|^app/(?:models|services|jobs)/(?:[^/]+/)*[^/]*(?:import|intake|upload)[^/]*\\.rb$|^app/controllers/(?:[^/]+/)*(?:uploads?|attachments?|imports?|intakes?)_controller\\.rb$"
               },
               {
                 "boundary": "api",
-                "pattern": "^app/controllers/api/"
+                "pattern": "^app/controllers/api/|^app/controllers/(?:api|webhook)_controller\\.rb$"
               }
             ]
           },
@@ -94,22 +98,22 @@
           "routes": ["/", "/up"]
         },
         "agents": {
-          "developer": "rails-flow:rails-developer",
-          "migrations": "rails-flow:migration-writer",
-          "test_runner": "rails-flow:test-runner",
-          "security": "rails-flow:security-auditor",
-          "reviewer": "rails-flow:code-reviewer",
-          "design_auditor": "rails-flow:design-auditor"
+          "developer": "rails-stack:rails-developer",
+          "migrations": "rails-stack:migration-writer",
+          "test_runner": "rails-stack:test-runner",
+          "security": "rails-stack:security-auditor",
+          "reviewer": "rails-stack:code-reviewer",
+          "design_auditor": "rails-stack:design-auditor"
         },
         "deploy": {
           "target": "kamal",
           "artifact": "docker-image",
-          "agent": "pipeline:kamal-configurator"
+          "agent": "rails-stack:kamal-configurator"
         },
         "ui": {
           "implementation": "viewcomponent-erb",
-          "porter": "design-flow:design-porter",
-          "composer": "design-flow:ui-composer"
+          "porter": "design-flow:rails-ui-porter",
+          "composer": "design-flow:rails-ui-composer"
         },
         "dangerous_commands": [
           { "pattern": "db:reset", "allowed": "RAILS_ENV=test bin/rails db:reset" }

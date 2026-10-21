@@ -22,7 +22,6 @@ GUARD = Guard(
         "commands/setup-cloud.md",
         "commands/setup-pipeline.md",
         "commands/status.md",
-        "agents/kamal-configurator.md",
         "agents/pipeline-coordinator.md",
     ),
     mutations=(
