@@ -17,6 +17,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -26,9 +28,13 @@ PLUGIN = Path(__file__).resolve().parent.parent
 INSTALLER = PLUGIN / "scripts" / "install-git-guards.sh"
 MIB = 1024 * 1024
 
-FAILURES: list[str] = []
+FAILURES: list[tuple[int, str]] = []
 CHECKS = 0
 CASES: list[tuple[str, object]] = []
+# Cases run on a thread pool (#2265): each builds its own repositories under its own directory and spends its time waiting on
+# git and bash processes, so they overlap. The shared tallies take this lock; failures are reported in case order.
+LOCK = threading.Lock()
+CASE_OF = threading.local()
 
 
 def case(label: str):
@@ -40,9 +46,10 @@ def case(label: str):
 
 def check(label: str, ok: bool, detail: str = "") -> None:
     global CHECKS
-    CHECKS += 1
-    if not ok:
-        FAILURES.append(f"{label}: {detail}" if detail else label)
+    with LOCK:
+        CHECKS += 1
+        if not ok:
+            FAILURES.append((getattr(CASE_OF, "n", -1), f"{label}: {detail}" if detail else label))
 
 
 def _env(home: Path) -> dict[str, str]:
@@ -595,22 +602,39 @@ def run(argv: list[str]) -> int:
     if "--match" in argv:
         i = argv.index("--match")
         match = argv[i + 1] if i + 1 < len(argv) else ""
+    jobs = min(8, os.cpu_count() or 1)
+    if "--jobs" in argv:
+        i = argv.index("--jobs")
+        try:
+            jobs = int(argv[i + 1])
+        except (IndexError, ValueError):
+            jobs = 0
+        if jobs < 1:
+            print("SELFTEST FAILED -- --jobs takes a whole number of at least 1", file=sys.stderr)
+            return 2
     chosen = [(label, fn) for label, fn in CASES if match in label]
     if not chosen:
         print(f"SELFTEST FAILED -- no case's label contains {match!r}", file=sys.stderr)
         return 2
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
-        for n, (label, fn) in enumerate(chosen):
+
+        def one(n: int, label: str, fn) -> None:
+            CASE_OF.n = n
             sub = base / f"c{n}"
             sub.mkdir()
             try:
                 fn(sub)
             except Exception as exc:  # a case that cannot run is a failure, never a pass
-                FAILURES.append(f"{label}: the case itself failed to run: {type(exc).__name__}: {str(exc)[:300]}")
+                with LOCK:
+                    FAILURES.append((n, f"{label}: the case itself failed to run: {type(exc).__name__}: {str(exc)[:300]}"))
+
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            for future in [pool.submit(one, n, label, fn) for n, (label, fn) in enumerate(chosen)]:
+                future.result()
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} failure(s) in {len(chosen)} case(s), {CHECKS} checks:", file=sys.stderr)
-        for failure in FAILURES:
+        for _, failure in sorted(FAILURES, key=lambda f: f[0]):
             print(f"  - {failure}", file=sys.stderr)
         return 1
     print(f"git-guard selftest: {CHECKS} checks passed in {len(chosen)} case(s)")
