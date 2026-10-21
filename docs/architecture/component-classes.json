@@ -5215,6 +5215,19 @@
    "class": "neutral",
    "issue": null,
    "nextjs_lines": 0,
+   "path": "plugins/rails-flow/scripts/check_security_review.py",
+   "plugin": "rails-flow",
+   "proven": false,
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/check_slices.py",
    "plugin": "rails-flow",
    "proven": false,
@@ -5966,6 +5979,19 @@
    "via": "runs check_registry_closed.py"
   },
   {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-flow/checks.json#security-review",
+   "plugin": "rails-flow",
+   "proven": false,
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs check_security_review.py"
+  },
+  {
    "class": "mixed",
    "issue": 2183,
    "nextjs_lines": 0,
@@ -6406,6 +6432,19 @@
    "seam": "",
    "type": "test",
    "via": "tests check_registry_closed.py"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-flow/scripts/mutations/check_security_review.py",
+   "plugin": "rails-flow",
+   "proven": false,
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests check_security_review.py"
   },
   {
    "class": "neutral",
@@ -8248,6 +8287,19 @@
    "class": "rails",
    "issue": 2182,
    "nextjs_lines": 0,
+   "path": "plugins/rails-stack/security/syntax-cases.json",
+   "plugin": "rails-stack",
+   "proven": false,
+   "rails_lines": 15,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2182,
+   "nextjs_lines": 0,
    "path": "plugins/rails-stack/setup/rails.md",
    "plugin": "rails-stack",
    "proven": false,
@@ -8264,7 +8316,7 @@
    "path": "plugins/rails-stack/stacks.json",
    "plugin": "rails-stack",
    "proven": false,
-   "rails_lines": 21,
+   "rails_lines": 26,
    "registered": [],
    "seam": "",
    "type": "support",
