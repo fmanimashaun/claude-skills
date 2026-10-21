@@ -40,5 +40,135 @@
     "plan": "After sign-out, redirect_to params[:next].",
     "paths": [],
     "boundary": true
+  },
+  {
+    "name": "a namespaced sessions controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/admin/sessions_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "a magic-link controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/magic_links_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "a two-factor controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/two_factor_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an invitations controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/invitations_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "the application controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/application_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an auth concern is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/concerns/authorization.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "the user model is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/models/user.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "the devise initializer is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "config/initializers/devise.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "the session store initializer is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "config/initializers/session_store.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an auth library is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "lib/acme/auth/token_verifier.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an uploads controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/uploads_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an attachments controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/admin/attachments_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an mcp controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/mcp_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "a users index view is not a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/views/users/index.html.erb"
+    ],
+    "boundary": false
+  },
+  {
+    "name": "render html: is a boundary",
+    "plan": "Show the partner block with render html: body.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "render inline: is a boundary",
+    "plan": "Use render inline: template for the preview.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "redirect_to request.referer is a boundary",
+    "plan": "After save, redirect_to request.referer.",
+    "paths": [],
+    "boundary": true
   }
 ]

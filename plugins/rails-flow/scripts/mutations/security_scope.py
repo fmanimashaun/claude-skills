@@ -30,8 +30,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the trailing word boundary goes, so a word that merely starts with `role` fires",
-            '|authori[sz]ation|api (?:key|token))\\b", re.I)),',
-            '|authori[sz]ation|api (?:key|token))", re.I)),',
+            '|remember[- ]me|api (?:key|token))\\b", re.I)),',
+            '|remember[- ]me|api (?:key|token))", re.I)),',
             "a word inside another word is not a match",
         ),
         Mutation(
@@ -81,6 +81,37 @@ GUARD = Guard(
             '    ("redirect-param", re.compile(r"\\breturn[_ ]url\\b|\\b(?:return_to|redirect_url|redirect_uri|back_url|next_url|return_path)\\b|\\b(?:next|return|redirect|back)\\s+param(?:eter)?s?\\b|\\bredirect\\w*[^.\\n]{0,40}\\bparams?\\b|\\bsend (?:them|the user|the person) back to (?:the |a )?(?:url|link|page) (?:in|from|they|the user)|\\bredirects? (?:back )?to (?:a |the )?(?:param|url the user|url (?:in|from) the)", re.I)),',
             '    ("redirect-param", re.compile(r"(?!)", re.I)),',
             "a return_to param is a boundary",
+        ),
+        Mutation(
+            # #2117 adversary: `./app/...`, `b/app/...` and `app\\...` slipped past every stack path pattern.
+            "planned paths are matched verbatim again",
+            '    p = path.strip().replace("\\\\", "/")',
+            '    return path',
+            "a ./ path is matched",
+        ),
+        Mutation(
+            "the diff prefixes stop being dropped",
+            '        for prefix in ("./", "a/", "b/"):',
+            '        for prefix in ("./",):',
+            "a diff b/ path is matched",
+        ),
+        Mutation(
+            "the newer auth verbs stop counting, so skipping authentication owes nothing",
+            "|switch|migrate|skip|extend|generate|make)",
+            "|switch|migrate)",
+            "skipping authentication is a boundary",
+        ),
+        Mutation(
+            "impersonation stops being an auth noun",
+            "|impersonat\\w*|",
+            "|",
+            "impersonation is a boundary",
+        ),
+        Mutation(
+            "the stderr note stops naming the stack rows used",
+            '        notes.append(f"stack rows: {len(rows)} from {\', \'.join(labels)}" if rows else',
+            '        notes.append("" if rows else',
+            "the note names the rows used",
         ),
     ),
 )

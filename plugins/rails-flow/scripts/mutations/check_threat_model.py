@@ -57,9 +57,34 @@ GUARD = Guard(
         ),
         Mutation(
             "a filler word stops counting as filler",
-            "    return cell.strip().strip(\".\").lower() in FILLERS",
+            '    return " ".join(re.sub(r"[^\\w\\s]", " ", cell).split()).lower() in _FILLER_CORES',
             "    return False",
             "a filler threat is found",
+        ),
+        Mutation(
+            # #2117 adversary: only dots were stripped, so `TBD!` passed as a reason.
+            "punctuation around a filler word hides it again",
+            '    return " ".join(re.sub(r"[^\\w\\s]", " ", cell).split()).lower() in _FILLER_CORES',
+            "    return cell.strip().strip(\".\").lower() in FILLERS",
+            "a punctuated filler is found",
+        ),
+        Mutation(
+            "a cell with no letter stops counting as filler",
+            "    if not re.search(r\"[^\\W\\d_]\", cell):",
+            "    if False:",
+            "a reason with no letter is found",
+        ),
+        Mutation(
+            "a placeholder wrapped in backticks inside a threat cell passes again",
+            "for p_ in CELL_PLACEHOLDER.finditer(c.replace(\"`\", \"\"))}):",
+            "for p_ in CELL_PLACEHOLDER.finditer(re.sub(r\"`[^`]*`\", \"\", c))}):",
+            "a backticked placeholder in a threat cell is found",
+        ),
+        Mutation(
+            "a threats table inside an HTML comment counts as rows again",
+            '    m = re.search(r"^##\\s+Threats\\s*$(.*?)(?=^##\\s|\\Z)", _uncommented(text), re.M | re.S)\n    rows = 0',
+            '    m = re.search(r"^##\\s+Threats\\s*$(.*?)(?=^##\\s|\\Z)", text, re.M | re.S)\n    rows = 0',
+            "a commented-out table is no rows",
         ),
         Mutation(
             "a row with no TM-n ID stops being reported",

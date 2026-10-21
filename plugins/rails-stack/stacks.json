@@ -42,11 +42,11 @@
               },
               {
                 "boundary": "raw-html",
-                "pattern": "\\bhtml_safe\\b|\\braw\\(|<%==?\\s*raw\\b"
+                "pattern": "\\bhtml_safe\\b|\\braw\\(|<%==?\\s*raw\\b|\\brender\\s*\\(?\\s*(?:html|inline):"
               },
               {
                 "boundary": "redirect-param",
-                "pattern": "\\bredirect_to\\s*\\(?\\s*params\\b"
+                "pattern": "\\bredirect_to\\s*\\(?\\s*(?:params\\b|request\\.referr?er\\b)"
               }
             ],
             "boundary_paths": [
@@ -60,15 +60,15 @@
               },
               {
                 "boundary": "mcp-tool",
-                "pattern": "^app/(?:[^/]+/)*mcp/"
+                "pattern": "^app/(?:[^/]+/)*mcp/|^app/controllers/(?:[^/]+/)*mcp(?:_[^/]*)?_controller\\.rb$"
               },
               {
                 "boundary": "auth-session-role",
-                "pattern": "^app/controllers/concerns/authentication\\.rb$|^app/controllers/(?:sessions|passwords|registrations|omniauth_callbacks)_controller\\.rb$|^app/(?:policies|abilities?)/|^app/models/(?:session|current|role)\\.rb$"
+                "pattern": "(?:^|/)(?:sessions|passwords|registrations|omniauth_callbacks|logins?|magic_links|two_factors?|invitations|confirmations|unlocks)_controller\\.rb$|^app/controllers/application_controller\\.rb$|^app/controllers/concerns/auth[^/]*\\.rb$|^app/(?:policies|abilities?)/|^app/models/(?:session|current|role|user)\\.rb$|^config/initializers/(?:devise|session_store)\\.rb$|^lib/(?:[^/]+/)*auth[^/]*(?:/|\\.rb$)"
               },
               {
                 "boundary": "upload-import",
-                "pattern": "^app/(?:[^/]+/)*uploads?/|^app/(?:models|services|jobs)/(?:[^/]+/)*[^/]*(?:import|intake|upload)[^/]*\\.rb$"
+                "pattern": "^app/(?:[^/]+/)*uploads?/|^app/(?:models|services|jobs)/(?:[^/]+/)*[^/]*(?:import|intake|upload)[^/]*\\.rb$|^app/controllers/(?:[^/]+/)*(?:uploads?|attachments?|imports?|intakes?)_controller\\.rb$"
               },
               {
                 "boundary": "api",

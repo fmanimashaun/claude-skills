@@ -39,8 +39,19 @@ PLACEHOLDER = re.compile(r"<[^<>\n`]{1,80}>")
 BULLET_SECTIONS = ("Trust boundaries", "Security requirements")
 
 
+CELL_PLACEHOLDER = re.compile(r"<[A-Za-z][\w /-]{0,79}>")
+_FILLER_CORES = {" ".join(re.sub(r"[^\w\s]", " ", f).split()) for f in FILLERS}
+
+
 def _is_filler(cell: str) -> bool:
-    return cell.strip().strip(".").lower() in FILLERS
+    """A filler word with any punctuation around it, or a cell with no letter at all (#2117 adversary)."""
+    if not re.search(r"[^\W\d_]", cell):
+        return True
+    return " ".join(re.sub(r"[^\w\s]", " ", cell).split()).lower() in _FILLER_CORES
+
+
+def _uncommented(text: str) -> str:
+    return re.sub(r"<!--.*?-->", "", text, flags=re.S)
 
 
 def _section_body(text: str, name: str) -> str | None:
@@ -54,7 +65,7 @@ def _cells(line: str) -> list[str]:
 
 def threat_rows(text: str) -> list[tuple[int, str, str]]:
     """(TM number, threat, decision) per row of `## Threats`, the number read from the row's own ID cell (#2118). Empty when the table cannot be read."""
-    m = re.search(r"^##\s+Threats\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    m = re.search(r"^##\s+Threats\s*$(.*?)(?=^##\s|\Z)", _uncommented(text), re.M | re.S)
     lines = [ln for ln in m.group(1).splitlines() if ln.strip().startswith("|")] if m else []
     if not lines or [h.lower() for h in _cells(lines[0])[:6]] != ["id", "threat", "stride", "component", "decision", "reason"]:
         return []
@@ -89,7 +100,7 @@ def check(text: str) -> tuple[list[str], int]:
             bullets = [ln.lstrip("-* ").strip() for ln in lines if ln[:1] in "-*" and len(ln) > 1]
             if not [b for b in bullets if not _is_filler(b)]:
                 findings.append(f"section `## {s}` needs at least one `-` bullet with content")
-    m = re.search(r"^##\s+Threats\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    m = re.search(r"^##\s+Threats\s*$(.*?)(?=^##\s|\Z)", _uncommented(text), re.M | re.S)
     rows = 0
     if m:
         lines = [ln for ln in m.group(1).splitlines() if ln.strip().startswith("|")]
@@ -107,6 +118,8 @@ def check(text: str) -> tuple[list[str], int]:
                 cells += [""] * (6 - len(cells))
                 rid, threat, stride, component, decision, reason = cells[:6]
                 label = f"threat row `{threat[:50] or '(blank)'}`"
+                for ph in sorted({p_.group(0) for c in cells[:6] for p_ in CELL_PLACEHOLDER.finditer(c.replace("`", ""))}):
+                    findings.append(f"{label}: template placeholder `{ph}` left in a cell")
                 if not ID_RE.fullmatch(rid):
                     findings.append(f"{label}: the ID must look like TM-1, got `{rid}`")
                 elif rid.upper() in ids:
@@ -161,6 +174,11 @@ A webhook.
         ("a filler component is found", ok.replace("| webhook | mitigate |", "| n/a | mitigate |"), 1, "no component named"),
         ("an accept whose reason is a filler is found", ok.replace("| accept | idempotent, harmless |", "| accept | TBD |"), 1, "an `accept` needs a reason"),
         ("a filler reason on a mitigate is found", ok.replace("signature checked", "todo"), 1, "only a filler word"),
+        ("a punctuated filler is found", ok.replace("signature checked", "TBD!"), 1, "only a filler word"),
+        ("a reason with no letter is found", ok.replace("| accept | idempotent, harmless |", "| accept | 42 |"), 1, "an `accept` needs a reason"),
+        ("a backticked placeholder in a threat cell is found", ok.replace("| Forged callback |", "| `<threat>` |"), 1, "left in a cell"),
+        ("backticked code in a cell is not a placeholder", ok.replace("signature checked", "`<%= h(x) %>` escapes"), 0, ""),
+        ("a commented-out table is no rows", ok.replace("| ID |", "<!--\n| ID |").replace("| idempotent, harmless |\n", "| idempotent, harmless |\n-->\n"), 2, ""),
         ("a table with no rows is unusable, not clean", ok.split("|---|---|---|---|---|")[0] + "|---|---|---|---|---|---|\n## Security requirements\n- x\n", 2, ""),
     ]
     bad = 0
