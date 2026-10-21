@@ -103,7 +103,7 @@ externally verifiable claim, read for omissions, decide a no-upstream claim as o
 back and the next promotion cannot merge at all (v1.83.0 → v1.84.0: six phantom conflicts). Repair, if
 it happens: merge `origin/main` into `dev`, resolve every conflict to dev's side, and assert
 `git diff --cached <dev-before> --stat` is **empty**. The full doctor's *the last promotion carried dev's
-ancestry* check asserts both halves; `--gates-only` skips it, so run the full doctor before promoting.
+ancestry* check asserts both halves; `--gates-only` skips it, so run the plain doctor (no flags) for that check before promoting.
 
 ### A promotion is two steps, and only the second publishes
 

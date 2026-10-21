@@ -98,8 +98,8 @@ jobs:
       # a runner's situation. That was built for a maintainer without the kits; CI inherits it free.
       # A pull request AND a push to dev run --fast, which skips exactly PR_SKIPPED_GATES (`mutation
       # coverage`, most of the sweep's time, and the full tier of the guard-bash cases) and REPORTS the skip. The full sweep runs where it is
-      # published from: locally before a promotion (`--require-slow --record-proof`, #1635), and in
-      # release.yml, which reuses that record only when it names the exact tree being released and
+      # published from: release.yml on this public repo (owner rule 2026-10-21: a local `--require-slow --record-proof`
+      # is for private repos, #1635). release.yml reuses a recorded proof only when it names the exact tree being released and
       # otherwise calls this workflow from `main`, where the condition below picks the full sweep.
       # (`github.ref` is the CALLER's ref under workflow_call: `refs/heads/main` in a release.)
       - name: Gate sweep
