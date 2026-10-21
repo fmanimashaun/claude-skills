@@ -7,6 +7,8 @@ This file is only the Supabase **surface**: the questions a STRIDE pass asks, ea
 decision. It adds no doctrine of its own. Each question that rests on a framework fact cites it as `(C-n)`, a CONFIRMED
 row of `docs/evidence/audits/2026-10-21-nextjs-security-claims.md` in the claude-skills repository.
 
+Hand-off: how to ANSWER a question below (writing an RLS policy, an Edge Function, tuning Postgres) is the vendor's to teach: the `supabase` and `supabase-postgres-best-practices` skills (supabase/agent-skills).
+
 ## Spoofing — who is this request from?
 
 - Each Edge Function this boundary adds or changes: does it keep `verify_jwt` on? If it is off (a webhook, say), how
