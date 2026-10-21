@@ -33,7 +33,17 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SHIPPED = ROOT / "plugins" / "rails-stack" / "skills"  # #2182: rails-stack is its own plugin dir
+# #2182: rails-stack is its own plugin dir; #2186: four of its skills moved to core-skills, which comes first so a
+# redirect stub left in rails-stack never stands for the real skill.
+SHIPPED_DIRS = (ROOT / "plugins" / "core-skills" / "skills", ROOT / "plugins" / "rails-stack" / "skills")
+
+
+def shipped_skill(name: str) -> Path | None:
+    """The real SKILL.md of a shipped skill, or None when no plugin ships that name."""
+    for d in SHIPPED_DIRS:
+        if (d / name / "SKILL.md").exists():
+            return d / name / "SKILL.md"
+    return None
 
 # source -> derived. One entry today; the list is the mechanism, not the special case.
 MIRRORED = {
@@ -143,7 +153,7 @@ def unregistered_mirrors() -> list[str]:
     registered = {derived.as_posix() for derived in MIRRORED.values()}
     strays = []
     for skill_dir in sorted(p for p in (ROOT / ".claude" / "skills").glob("*") if p.is_dir()):
-        if not (SHIPPED / skill_dir.name / "SKILL.md").exists():
+        if shipped_skill(skill_dir.name) is None:
             continue
         for derived in sorted(f for f in skill_dir.rglob("*") if f.is_file()):
             relative = derived.relative_to(ROOT).as_posix()
@@ -328,7 +338,7 @@ def selftest() -> int:
     # The stray arm: a copy of a shipped skill that no MIRRORED entry governs, HEAD clean.
     shipped = sorted(
         s.parent.name
-        for s in (SHIPPED).glob("*/SKILL.md")
+        for d in SHIPPED_DIRS for s in d.glob("*/SKILL.md")
         if not (ROOT / ".claude" / "skills" / s.parent.name).exists()
     )
     if shipped:
@@ -336,11 +346,11 @@ def selftest() -> int:
         try:
             stray.parent.mkdir(parents=True)
             stray.write_text(
-                (SHIPPED / shipped[0] / "SKILL.md").read_text(encoding="utf-8"),
+                shipped_skill(shipped[0]).read_text(encoding="utf-8"),
                 encoding="utf-8",
             )
             if check_against(rendered) == 0:
-                failures.append(f"--check passed against an unregistered copy of plugins/rails-stack/skills/{shipped[0]}")
+                failures.append(f"--check passed against an unregistered copy of the shipped skill {shipped[0]}")
         finally:
             stray.unlink(missing_ok=True)
             stray.parent.rmdir()

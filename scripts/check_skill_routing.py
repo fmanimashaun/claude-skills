@@ -82,6 +82,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SKILLS_DIR = REPO / "plugins" / "rails-stack" / "skills"
+CORE_SKILLS_DIR = REPO / "plugins" / "core-skills" / "skills"  # #2186: four skills moved here; rails-stack keeps a stub for each
 
 # Claude Code's documented Level-2 budget. See the module docstring for the two quotes and why the
 # stricter (whole-file) reading is the one measured.
@@ -170,7 +171,10 @@ def run() -> int:
     try:
         if not SKILLS_DIR.is_dir():
             raise Unreadable(f"{SKILLS_DIR} is not a directory")
-        skill_dirs = sorted(d for d in SKILLS_DIR.iterdir() if d.is_dir())
+        # core-skills first: a redirect stub left in rails-stack under a moved name is not the skill.
+        core_dirs = sorted(d for d in CORE_SKILLS_DIR.iterdir() if d.is_dir()) if CORE_SKILLS_DIR.is_dir() else []
+        moved = {d.name for d in core_dirs}
+        skill_dirs = sorted(core_dirs + [d for d in SKILLS_DIR.iterdir() if d.is_dir() and d.name not in moved])
         if not skill_dirs:
             raise Unreadable(f"{SKILLS_DIR} contains no skill directories")
 
@@ -181,7 +185,7 @@ def run() -> int:
             unpinned = sorted(found - SHIPPED_SKILLS)
             vanished = sorted(SHIPPED_SKILLS - found)
             raise Unreadable(
-                "plugins/rails-stack/skills/ no longer matches SHIPPED_SKILLS — "
+                "plugins/{core-skills,rails-stack}/skills/ no longer match SHIPPED_SKILLS — "
                 + (f"unpinned: {unpinned} " if unpinned else "")
                 + (f"missing: {vanished} " if vanished else "")
                 + "(add or remove it deliberately, with a reason)"
