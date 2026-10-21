@@ -962,7 +962,9 @@ def base_baseline(source: str | None) -> tuple[set[tuple[str, str]] | None, str]
             continue
         for call in ast.walk(node.value):
             if isinstance(call, ast.Call) and getattr(call.func, "id", None) == "Claim":
-                kw = {k.arg: k.value for k in call.keywords}
+                # positional fields first, in Claim's order, so `Claim("c", "doc.md", "x", ADVICE)` reads as `kind=ADVICE`
+                kw = dict(zip(("claim", "stated_in", "anchor", "kind"), call.args))
+                kw.update({k.arg: k.value for k in call.keywords})
                 if isinstance(kw.get("kind"), ast.Name) and kw["kind"].id == "ADVICE":
                     try:
                         rows.add((ast.literal_eval(kw["stated_in"]), ast.literal_eval(kw["anchor"])))
@@ -980,8 +982,32 @@ def ratchet_findings(unbased: tuple[tuple[str, str], ...], allowed: set[tuple[st
             f"refused, not grandfathered (#2224)" for e in unbased if tuple(e) not in allowed]
 
 
-def read_base(ref: str = BASE_REF) -> str | None:
-    done = subprocess.run(["git", "-C", str(REPO), "show", f"{ref}:scripts/doctrine_map.py"], capture_output=True, text=True)
+def comparison_point(ref: str = BASE_REF, git=None) -> tuple[str | None, str]:
+    """The commit this change is measured from (#2254 review): where HEAD left `ref`, never HEAD itself.
+
+    `git merge-base <ref> HEAD` is what the change adds to, even when `ref` moved on after the branch was cut. When that IS HEAD
+    (a push to dev, where HEAD is origin/dev; or DOCTRINE_MAP_BASE=HEAD set by hand), the change is HEAD's last commit, so the point
+    is HEAD's first parent: comparing HEAD with itself would let a list that grew in that commit agree with itself.
+    """
+    def run(*args: str) -> str | None:
+        done = (git or subprocess.run)(["git", "-C", str(REPO), *args], capture_output=True, text=True)
+        return done.stdout.strip() if done.returncode == 0 and done.stdout.strip() else None
+    head = run("rev-parse", "HEAD")
+    point = run("merge-base", ref, "HEAD")
+    if head is None or point is None:
+        return None, f"no common ancestor of {ref} and HEAD"
+    if point == head:
+        point = run("rev-parse", "HEAD^1")
+        if point is None:
+            return None, "HEAD has no parent to compare with"
+    return point, ""
+
+
+def read_base(ref: str = BASE_REF, git=None) -> str | None:
+    point, _ = comparison_point(ref, git)
+    if point is None:
+        return None
+    done = (git or subprocess.run)(["git", "-C", str(REPO), "show", f"{point}:scripts/doctrine_map.py"], capture_output=True, text=True)
     return done.stdout if done.returncode == 0 else None
 
 
@@ -1359,6 +1385,28 @@ def _selftest() -> int:
         check("before the list existed, an entry may grandfather only a base advice row",
               ratchet_findings((("doc.md", "old row"),), *base_baseline(base_before)) == []
               and any("baseline raised" in x for x in ratchet_findings((("doc.md", "kept"),), *base_baseline(base_before))))
+        check("a base row whose kind is positional is read (no false refusal)",
+              ratchet_findings((("doc.md", "pos row"),),
+                               *base_baseline('CLAIMS = (\n    Claim("c", "doc.md", "pos row", ADVICE),\n)\n')) == [])
+
+        # THE COMPARISON POINT (#2254 review): never HEAD itself.
+        class G:
+            def __init__(self, answers):
+                self.answers, self.asked = answers, []
+
+            def __call__(self, cmd, **kw):
+                key = " ".join(cmd[3:])
+                self.asked.append(key)
+                out = self.answers.get(key)
+                return subprocess.CompletedProcess(cmd, 0 if out is not None else 128, out or "", "")
+        g = G({"rev-parse HEAD": "h\n", "merge-base origin/dev HEAD": "m\n"})
+        check("a branch is measured from where it left the base", comparison_point("origin/dev", g) == ("m", ""))
+        g = G({"rev-parse HEAD": "h\n", "merge-base HEAD HEAD": "h\n", "rev-parse HEAD^1": "p\n"})
+        check("a base that is HEAD (DOCTRINE_MAP_BASE=HEAD, or a push to dev) is measured from HEAD's parent, never HEAD",
+              comparison_point("HEAD", g) == ("p", ""))
+        g = G({"rev-parse HEAD": "h\n"})
+        check("a base with no common ancestor is refused", comparison_point("elsewhere", g)[0] is None
+              and any("baseline unchecked" in x for x in ratchet_findings((), *base_baseline(read_base("elsewhere", g)))))
         check("an unreadable base is a finding, never a pass",
               any("baseline unchecked" in x for x in ratchet_findings((), *base_baseline(None)))
               and any("baseline unchecked" in x for x in ratchet_findings((), *base_baseline("def (:\n"))))
