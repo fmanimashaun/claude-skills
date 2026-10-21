@@ -1,0 +1,19 @@
+[
+ {"name": "a migration is a boundary", "plan": "Tidy.", "paths": ["supabase/migrations/20261021120000_invoices.sql"], "boundary": true},
+ {"name": "a declarative schema file is a boundary", "plan": "Tidy.", "paths": ["supabase/schemas/invoices.sql"], "boundary": true},
+ {"name": "an edge function is a boundary", "plan": "Tidy.", "paths": ["supabase/functions/stripe-webhook/index.ts"], "boundary": true},
+ {"name": "config.toml is a boundary", "plan": "Tidy.", "paths": ["supabase/config.toml"], "boundary": true},
+ {"name": "seed data is not a boundary", "plan": "Tidy.", "paths": ["supabase/seed.sql"], "boundary": false},
+ {"name": "a migrations readme is not a migration", "plan": "Tidy.", "paths": ["supabase/migrations/README.md"], "boundary": false},
+ {"name": "a file outside supabase/ named like one is not", "plan": "Tidy.", "paths": ["docs/supabase/functions.md"], "boundary": false},
+ {"name": "an RLS policy in prose is a boundary", "plan": "Add an RLS policy so members read their own rows.", "paths": [], "boundary": true},
+ {"name": "create policy is a boundary", "plan": "create policy \"own rows\" on invoices for select.", "paths": [], "boundary": true},
+ {"name": "security_invoker is a boundary", "plan": "Recreate the summary view with security_invoker.", "paths": [], "boundary": true},
+ {"name": "the service role key is a boundary", "plan": "Use SUPABASE_SERVICE_ROLE_KEY in the cron job.", "paths": [], "boundary": true},
+ {"name": "an edge function in prose is a boundary", "plan": "Write an edge function that sends the receipt.", "paths": [], "boundary": true},
+ {"name": "turning verify_jwt off is a boundary", "plan": "Set verify_jwt = false for the webhook function.", "paths": [], "boundary": true},
+ {"name": "auth.getSession in server code is a boundary", "plan": "Read auth.getSession in the layout.", "paths": [], "boundary": true},
+ {"name": "a public bucket is a boundary", "plan": "Create a public bucket for avatars.", "paths": [], "boundary": true},
+ {"name": "a plain column rename is not a boundary", "plan": "Rename the invoices.total column to amount.", "paths": [], "boundary": false},
+ {"name": "a word containing rls is not RLS", "plan": "Fix the curls in the logo.", "paths": [], "boundary": false}
+]

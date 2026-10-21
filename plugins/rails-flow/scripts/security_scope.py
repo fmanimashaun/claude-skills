@@ -92,7 +92,7 @@ def case_shape_problems(cases: object) -> list[str]:
         if set(case) != set(CASE_KEYS):
             found.append(f"case {i} keys {sorted(case)} must be exactly {sorted(CASE_KEYS)}")
             continue
-        wrong = [k for k, t in CASE_KEYS.items() if type(case[k]) is not t]   # `type is`, so `true` is no str and `1` no bool
+        wrong = [k for k, t in CASE_KEYS.items() if type(case[k]) is not t]
         if not wrong and not case["name"].strip():
             wrong = ["name"]
         if not wrong and not all(type(p) is str and p.strip() for p in case["paths"]):

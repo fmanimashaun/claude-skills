@@ -328,5 +328,53 @@ GUARD = Guard(
             '        print(json.dumps({"stacks": [{"id": s["id"]} for s in report["stacks"]], "fresh": report["fresh"],',
             "--descriptor names each stack's plugin",
         ),
+        Mutation(
+            'an HTML comment in a checklist passes',
+            '        if "<!--" in line or "-->" in line:',
+            '        if "<!--x" in line:',
+            'a checklist with an HTML comment is refused',
+        ),
+        Mutation(
+            "a comment's closing half passes",
+            '        if "<!--" in line or "-->" in line:',
+            '        if "<!--" in line:',
+            'a comment closing on a later line is refused',
+        ),
+        Mutation(
+            'a fence in a checklist passes',
+            '        if re.match(r"\\s*(?:`{3,}|~{3,})", line):',
+            '        if re.match(r"(?:~{3,})", line):',
+            'a fenced block is refused',
+        ),
+        Mutation(
+            'an indented fence passes',
+            '        if re.match(r"\\s*(?:`{3,}|~{3,})", line):',
+            '        if re.match(r"(?:`{3,}|~{3,})", line):',
+            'an indented fence is refused',
+        ),
+        Mutation(
+            'an indented table row passes',
+            '        if line.lstrip().startswith("|") and not line.startswith("|"):',
+            '        if False:',
+            'an indented table row is refused',
+        ),
+        Mutation(
+            'a claim id anywhere passes',
+            '        if CLAIM_ID.search(outside):',
+            '        if False:',
+            'a claim id mid-line is refused',
+        ),
+        Mutation(
+            'the slot need not end the line',
+            'CITATION_SLOT = re.compile(r"\\((C-\\d+(?:, C-\\d+)*)\\)\\s*$")',
+            'CITATION_SLOT = re.compile(r"\\((C-\\d+(?:, C-\\d+)*)\\)")',
+            'a slot that is not at the end is refused',
+        ),
+        Mutation(
+            'the checklist is never read for its format',
+            '                    found.extend(f"{where}.security.checklist {named}:{p}" for p in checklist_format_problems(text))',
+            '                    pass',
+            'a checklist with an HTML comment is refused',
+        ),
     ),
 )

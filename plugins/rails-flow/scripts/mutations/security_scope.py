@@ -167,5 +167,41 @@ GUARD = Guard(
             "|(?:(?:access|auth|bearer|refresh|reset|session|login|api|magic[- ]link) )?tokens?|",
             "design tokens are not a boundary",
         ),
+        Mutation(
+            'a cases file with an extra key passes the shape check',
+            '        if set(case) != set(CASE_KEYS):',
+            '        if not set(CASE_KEYS) <= set(case):',
+            'a case with an extra key is refused',
+        ),
+        Mutation(
+            'types are not enforced, so a string boundary passes',
+            '        wrong = [k for k, t in CASE_KEYS.items() if type(case[k]) is not t]',
+            '        wrong = []',
+            'a string boundary is refused',
+        ),
+        Mutation(
+            'an empty path passes',
+            'p.strip() for p in case["paths"])',
+            'p for p in case["paths"])',
+            'an empty path is refused',
+        ),
+        Mutation(
+            'a repeated case name passes',
+            '        if case["name"] in seen:',
+            '        if False:',
+            'a repeated name is refused',
+        ),
+        Mutation(
+            'an empty cases list passes',
+            '    if not isinstance(cases, list) or not cases:',
+            '    if not isinstance(cases, list):',
+            'an empty cases list is refused',
+        ),
+        Mutation(
+            'a misshapen cases file is still run',
+            '                continue\n            for case in cases:',
+            '                pass\n            for case in cases:',
+            'a stack whose cases break the shape fails without running them',
+        ),
     ),
 )
