@@ -771,7 +771,8 @@
      "plugins/rails-stack/stacks.json",
      "plugins/rails-stack/setup/rails.md",
      "plugins/rails-stack/security/rails.md",
-     "plugins/rails-stack/security/boundary-cases.json"
+     "plugins/rails-stack/security/boundary-cases.json",
+     "plugins/rails-stack/security/syntax-cases.json"
     ],
     "class": "rails",
     "issue": 2182,
@@ -830,7 +831,8 @@
      "plugins/nextjs-stack/stacks.json",
      "plugins/nextjs-stack/checks.json",
      "plugins/nextjs-stack/scripts/*",
-     "plugins/nextjs-stack/scripts/mutations/*"
+     "plugins/nextjs-stack/scripts/mutations/*",
+     "plugins/nextjs-stack/security/*"
     ],
     "class": "nextjs",
     "issue": 2165,
