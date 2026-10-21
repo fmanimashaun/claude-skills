@@ -114,6 +114,21 @@ case "$branch" in
         esac
       fi
     fi
+    # THE PLAN ADVISORY (#2262). Once the unit has criteria, a plan that crosses a security boundary, changes structure, the data
+    # model or a dependency, or spans six or more components needs a recorded, disposed `advisor` (Fable) pass for the plan as it
+    # is now. Exit 1 from the check blocks; exit 2 (no plan, an unreadable record) blocks too: an unknown plan is not "not required".
+    if [ -f "$criteria" ] && command -v python3 >/dev/null 2>&1; then
+      achecker="${CLAUDE_PLUGIN_ROOT:-}/scripts/advisory_scope.py"
+      if [ -f "$achecker" ]; then
+        if ! aout="$(python3 "$achecker" --slug "$slug" --root . 2>&1)"; then
+          {
+            echo "rails-flow stop gate: the plan advisory is owed."
+            printf '%s\n' "$aout"
+          } >&2
+          exit 2
+        fi
+      fi
+    fi
     # ---------------------------------------------------------------------------------
     # The work order (#127), validated ONLY when one exists.
     #

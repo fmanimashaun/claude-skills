@@ -4291,6 +4291,19 @@
    "class": "neutral",
    "issue": null,
    "nextjs_lines": 0,
+   "path": "plugins/rails-flow/agents/advisor.md",
+   "plugin": "rails-flow",
+   "proven": false,
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "agent",
+   "via": "declared"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
    "path": "plugins/rails-flow/agents/claim-verifier.md",
    "plugin": "rails-flow",
    "proven": false,
@@ -4874,6 +4887,19 @@
    "via": "declared"
   },
   {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-flow/scripts/advisory_scope.py",
+   "plugin": "rails-flow",
+   "proven": false,
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
    "class": "rails",
    "issue": 2177,
    "nextjs_lines": 0,
@@ -5036,7 +5062,7 @@
    "path": "plugins/rails-flow/scripts/check_hook_gates.py",
    "plugin": "rails-flow",
    "proven": false,
-   "rails_lines": 206,
+   "rails_lines": 207,
    "registered": [],
    "seam": "discovers the hooks of every installed stack plugin instead of a fixed Rails list",
    "type": "script",
@@ -5925,6 +5951,19 @@
    "seam": "",
    "type": "gate",
    "via": "runs check_migration_order.py"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-flow/checks.json#plan-advisory",
+   "plugin": "rails-flow",
+   "proven": false,
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs advisory_scope.py"
   },
   {
    "class": "rails",

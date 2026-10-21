@@ -637,6 +637,37 @@ def stop_gate_fixtures() -> None:
     # The criteria pass here (the later exit 2 is the no-spec rule), so the note can only come from the success path.
     check("stop-gate: criteria that pass with no threat model still say the security check was skipped (#2213)",
           "security check skipped" in out and "acceptance criteria do not hold" not in out, f"exit {code}: {out.strip()[:300]!r}")
+    # THE PLAN ADVISORY (#2262): criteria naming a security boundary owe a recorded advisor pass, so the gate blocks without one.
+    def advisory_scenario(record: str | None) -> tuple[int, str]:
+        with scratch_dir() as td:
+            repo = Path(td) / "repo"
+            _git_repo(repo)
+            _run(["git", "checkout", "-q", "-b", "feature/widgets"], cwd=repo, check=True, capture_output=True)
+            (repo / "spec").mkdir()
+            (repo / "app").mkdir()
+            (repo / "app" / "widget.rb").write_text("class Widget; end\n")
+            acc = repo / "docs/product/acceptance/widgets.md"
+            acc.parent.mkdir(parents=True)
+            acc.write_text("- **AC-1** Given a partner, when it posts to the webhook, then the widget is saved.\n"
+                           "- **AC-2** Given a bad signature, when the partner posts to the webhook, then it is rejected with an error message.\n")
+            if record is not None:
+                env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+                _run([sys.executable, str(HOOKS.parents[1] / "scripts" / "advisory_scope.py"), "--begin", "--slug", "widgets", "--root", str(repo)],
+                     check=True, capture_output=True, env=env)
+                rec = repo / "docs/evidence/reviews/plans/widgets/advisor.md"
+                rec.write_text(rec.read_text() + record)
+            stubs = Path(td) / "bin"
+            stubs.mkdir()
+            _stub(stubs, "bundle", passing)
+            return run_hook("stop-gate.sh", cwd=repo, stdin="{}", path_prefix=[stubs],
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})
+
+    code, out = advisory_scenario(None)
+    check("stop-gate: criteria naming a webhook with no advisor record block (#2262)",
+          code == 2 and "plan advisory is owed" in out, f"exit {code}: {out.strip()[:240]!r}")
+    code, out = advisory_scenario("- A-1 trusts the body\nVERDICT: PROCEED\nDisposition A-1: accepted | verify the signature before parsing\n")
+    check("stop-gate: a disposed advisor record lets the plan through (#2262)",
+          "plan advisory is owed" not in out, f"exit {code}: {out.strip()[:240]!r}")
     code, out = paths_scenario("docs/acceptance/widgets.md")
     check("stop-gate: criteria at the pre-layout docs/acceptance/<slug>.md still count",
           "no acceptance criteria" not in out, f"exit {code}: {out.strip()[:200]!r}")

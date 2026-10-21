@@ -20,6 +20,9 @@ GUARD = Guard(
            # guard-claims.sh runs extract_claims.py; without it the harness's two claim
            # fixtures fail in the staged tempdir and every mutation reads as caught (#1109).
            'plugins/rails-flow/scripts/check_criteria.py',
+           # the stop gate runs advisory_scope.py (#2262), which reads these siblings
+           'plugins/rails-flow/scripts/advisory_scope.py', 'plugins/rails-flow/scripts/security_scope.py',
+           'plugins/rails-flow/scripts/check_threat_model.py', 'plugins/rails-flow/scripts/detect_stack.py',
            'plugins/rails-flow/scripts/check_handoff.py',
            'plugins/qa-flow/scripts/read_certification.py',
            'plugins/qa-flow/scripts/push_targets.py',  # release-gate.sh runs it (#1410)
@@ -51,6 +54,13 @@ GUARD = Guard(
             '          *"security check skipped"*)',
             '          *"security check skipped NEVER"*)',
             "criteria that pass with no threat model still say the security check was skipped",
+        ),
+        Mutation(
+            # #2262: the plan advisory is checked once criteria exist; dropping the block lets a required advisory slide.
+            "the stop gate stops checking the plan advisory",
+            '        if ! aout="$(python3 "$achecker" --slug "$slug" --root . 2>&1)"; then',
+            '        if false; then',
+            "criteria naming a webhook with no advisor record block",
         ),
     ),
 )

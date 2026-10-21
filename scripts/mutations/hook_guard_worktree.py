@@ -15,7 +15,8 @@ GUARD = Guard(
     # Each mutant runs only the fixture its `expects` names (#1599); the ones marked `narrow=False` depend on state an
     # earlier fixture builds, cannot run alone, and run the whole sub-group (#1581, surveyed one by one).
     narrow_with="--match",
-    needs=("plugins/rails-flow/scripts/fixture_git.py", 
+    needs=("plugins/rails-flow/scripts/advisory_scope.py", "plugins/rails-flow/scripts/security_scope.py", "plugins/rails-flow/scripts/check_threat_model.py", "plugins/rails-flow/scripts/detect_stack.py",  # stop-gate.sh runs advisory_scope.py (#2262)
+           "plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/qa-flow/scripts/remote_evidence.py',  # #1581 merge: run by session-start.sh / release-gate.sh
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # session-start.sh runs all three (#1581, #1828: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362

@@ -204,7 +204,7 @@ TIER_MODELS: dict[str, str] = {"judgement": "inherit", "mechanical": "haiku"}
 # `adversarial` only if it is a key here, and its `model:` must be exactly the value here. Work orders stay two-valued
 # (TIER_MODELS); this is a table-row tier and nothing else.
 ADVERSARIAL_TIER = "adversarial"
-PINNED_UP: dict[str, str] = {"adversary": "fable"}
+PINNED_UP: dict[str, str] = {"adversary": "fable", "advisor": "fable"}  # advisor: #2262
 # Aliases that select a MORE expensive model than the session already chose. Shipping one spends a
 # stranger's money on our authority. Where their availableModels allowlist blocks it, a family alias
 # (`opus`, `sonnet`, `haiku`, `fable`) runs on the newest version of that family the allowlist permits,
