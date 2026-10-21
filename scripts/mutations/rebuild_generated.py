@@ -29,6 +29,8 @@ GUARD = Guard(
         "scripts/extract_release_notes.py",
         "scripts/rails_assumptions.py",           # registered in BUILDERS by #2164
         "scripts/component_classes.py",           # registered in BUILDERS by #2192
+        "scripts/derive_architecture_rules.py",   # registered in BUILDERS (architecture rules); missing here it made this guard INERT on dev
+        "plugins/design-flow/reference/architecture-rules.json",   # its declared output
         "scripts/build_component_axes.py",        # registered in BUILDERS by #2272
         "scripts/check_component_shapes.py",      # imported by build_component_axes.py
         "plugins/rails-stack/skills/design-system/references/components.md",          # build_component_axes.py's declared outputs

@@ -122,5 +122,23 @@ GUARD = Guard(
             '    prose = section',
             'a name the prose never mentions is reported (the generated line does not count)',
         ),
+        Mutation(
+            "#2272: a section that names a `Ui::` component may exempt itself with `drawable: false`",
+            '    named = sorted(set(re.findall(r"Ui::\\w+", section)))',
+            "    named = []",
+            "a non-drawable entry whose section names a `Ui::` component is refused",
+        ),
+        Mutation(
+            "#2272: a section that states a Variants or Sizes line may exempt itself with `drawable: false`",
+            '    states = re.search(r"\\*\\*(?:variants?|sizes?)\\b", section, re.I)',
+            "    states = None",
+            "a non-drawable entry whose section carries a Variants line is refused",
+        ),
+        Mutation(
+            "#2272: the hidden-component rule is not applied to any non-drawable entry",
+            "            problems += hidden_component(name, by_heading.get(name))",
+            "            problems += []",
+            "a non-drawable entry whose section names a `Ui::` component is refused",
+        ),
     ),
 )

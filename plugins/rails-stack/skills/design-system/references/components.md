@@ -333,6 +333,7 @@ against it, and the `inset-viewport` utility
 - **One badge mechanism** — this replaces auctioneer's two (partial + helper) and their divergent palettes.
 
 ## Alert / Banner
+- **Catalog axes** (generated from the catalog's `component-shapes.json`, do not edit): variants `info` · `success` · `warning` · `error` · `default`. <!-- axes -->
 - **Intents:** `info · success · warning · error` (+ neutral `default`). Recipe: `box` +
   `border-l-4` accent + `[&_svg]:text-{intent}` icon + `stack` body; dismissible via the `dismiss` mixin.
   `role="alert"` (assertive) or `role="status"` (polite). Colored by role token, text stays `foreground`.
@@ -944,6 +945,7 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   that produced this rule.
 
 ## Tabs
+- **Catalog axes** (generated from the catalog's `component-shapes.json`, do not edit): variants `underline` · `pill` · `full-width`; sizes `sm` · `md`. <!-- axes -->
 - **AT MOST FOUR TABS, IN ONE ROW THAT NEVER WRAPS AND NEVER SCROLLS** (#1391, the maintainer's
   decision; it replaces "fit one row at the narrowest width" as the capacity rule). An area holds at
   most four tabs, and a fifth is a sign the area answers more than one question — regroup (below),
@@ -1837,6 +1839,7 @@ can carry.
   table's existing `aria-live` count line — no second live region.
 
 ## Empty state
+- **Catalog axes** (generated from the catalog's `component-shapes.json`, do not edit): variants `First use` · `Cleared / no results` · `Error`. <!-- axes -->
 - `cover > center > stack`: icon chip `size-16 rounded-full bg-muted`, title, `max-w-md` `text-muted-foreground`
   description, optional primary action (opens in the `modal` frame). One `Ui::EmptyState` component.
 - **a11y:** the icon chip is decoration — `aria-hidden="true"`, never an `alt` describing it. The

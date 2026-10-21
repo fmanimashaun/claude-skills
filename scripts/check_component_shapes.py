@@ -70,6 +70,20 @@ def sections(md: str) -> dict[str, str]:
     return {block.split("\n", 1)[0].strip(): block for block in re.split(r"^## ", md, flags=re.M)[1:]}
 
 
+def hidden_component(name: str, section: str | None) -> list[str]:
+    """A section that names a `Ui::` component, or states a Variants or Sizes line, is a component: an entry cannot exempt it from the variant and size
+    declaration by calling itself `drawable: false` (#2272). The rules and doctrine sections that really are not components name neither."""
+    if section is None:
+        return []
+    named = sorted(set(re.findall(r"Ui::\w+", section)))
+    states = re.search(r"\*\*(?:variants?|sizes?)\b", section, re.I)
+    if not named and not states:
+        return []
+    why = f"names the component `{named[0]}`" if named else "carries a Variants or Sizes line"
+    return [f"`{name}` is marked `drawable: false`, but its components.md section {why}: it is a component hiding behind the exemption. Declare its `variants` "
+            f"and `sizes` and draw it, or move the component out of that section"]
+
+
 def axis_problems(name: str, entry: dict, section: str | None) -> list[str]:
     """What is wrong with one drawable entry's `variants` and `sizes`, and with its generated line in the prose (#2272)."""
     found: list[str] = []
@@ -152,6 +166,7 @@ def check(md: str, shapes: dict, roles: set[str]) -> list[str]:
             if not str(entry.get("why", "")).strip():
                 problems.append(f"`{name}` is marked non-drawable with no `why`. The reason is the "
                                 f"whole value: without it nobody can tell a decision from a gap.")
+            problems += hidden_component(name, by_heading.get(name))
             continue
         problems += axis_problems(name, entry, by_heading.get(name))
         shape = entry.get("shape")
@@ -291,6 +306,15 @@ def selftest() -> int:
     expect("a `none` with no reason is reported", "must be a list of names or" in axes_findings({**BTN, "sizes": {"none": " "}}))
     expect("a `none` with another key is reported", "must be a list of names or" in axes_findings({**BTN, "sizes": {"none": "r", "extra": 1}}))
     expect("a non-drawable entry needs no variants or sizes", check(MD, {**OK, "Card": {"drawable": False, "why": "a rule"}}, ROLES) == [])
+    HID = {**OK, "Card": {"drawable": False, "why": "a rule"}}
+    expect("a non-drawable entry whose section names a `Ui::` component is refused",
+           "hiding behind the exemption" in " ".join(check("## Button\n- stuff\n\n## Card\n- built as `Ui::Card`\n", HID, ROLES)))
+    expect("a non-drawable entry whose section carries a Variants line is refused",
+           "carries a Variants or Sizes line" in " ".join(check("## Button\n- stuff\n\n## Card\n- **Variants:** `a` · `b`\n", HID, ROLES)))
+    expect("a non-drawable entry whose section carries a Sizes line is refused",
+           "carries a Variants or Sizes line" in " ".join(check("## Button\n- stuff\n\n## Card\n- **Sizes** `sm/md`\n", HID, ROLES)))
+    expect("a non-drawable entry whose section names neither is accepted",
+           check("## Button\n- stuff\n\n## Card\n- a rule, in prose; sizes of type are discussed, not stated\n", HID, ROLES) == [])
     expect("a missing generated line is reported", "missing, duplicated or differs" in axes_findings(BTN, AMD.replace(LINE + "\n", "")))
     expect("a hand-edited generated line is reported", "missing, duplicated or differs" in axes_findings(BTN, AMD.replace("`ghost`", "`GHOST`")))
     expect("a duplicated generated line is reported", "missing, duplicated or differs" in axes_findings(BTN, AMD.replace(LINE + "\n", LINE + "\n" + LINE + "\n")))

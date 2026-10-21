@@ -65,7 +65,7 @@
     "parts": [{"kind": "text", "label": "Badge", "size": 12, "weight": "600"}]
   },
   "Alert / Banner": {
-    "variants": {"none": "not stated in components.md: to decide"}, "sizes": {"none": "not stated in components.md: to decide"},
+    "variants": ["info", "success", "warning", "error", "default"], "sizes": {"none": "not stated in components.md: to decide"},
     "shape": "banner",
     "parts": [{"kind": "text", "label": "Alert message", "size": 14}]
   },
@@ -277,7 +277,7 @@
               {"kind": "text", "label": "Settings", "size": 14, "color": "muted-foreground"}]
   },
   "Tabs": {
-    "variants": {"none": "not stated in components.md: to decide"}, "sizes": {"none": "not stated in components.md: to decide"},
+    "variants": ["underline", "pill", "full-width"], "sizes": ["sm", "md"],
     "shape": "bar", "width": 360,
     "parts": [{"kind": "pill", "label": "Active", "fill": "background", "color": "foreground"},
               {"kind": "text", "label": "Second", "size": 14, "color": "muted-foreground"},
@@ -532,7 +532,7 @@
               {"kind": "pill", "label": "Custom", "fill": "secondary", "color": "secondary-foreground"}]
   },
   "Empty state": {
-    "variants": {"none": "not stated in components.md: to decide"}, "sizes": {"none": "not stated in components.md: to decide"},
+    "variants": ["First use", "Cleared / no results", "Error"], "sizes": {"none": "not stated in components.md: to decide"},
     "shape": "surface", "width": 360,
     "parts": [{"kind": "icon-slot", "size": 40, "fill": "muted-foreground"},
               {"kind": "text", "label": "No invoices yet", "size": 16, "weight": "600"},
