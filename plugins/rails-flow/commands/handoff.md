@@ -5,6 +5,8 @@ argument-hint: "[blank to infer from the branch | <slug>]"
 
 # /rails-flow:handoff — $ARGUMENTS
 
+Agents are named by **role** (`developer`, `migrations`, `test_runner`, `reviewer`, `security`, `design_auditor`), resolved from the project's stack: see `reference/stack-roles.md`. When the stack names no agent for a role, STOP and ask; never use a Rails agent by default.
+
 Everything an executor needs today is spread across `CLAUDE.md`, `GUARDRAILS.md`, the phase plan,
 `docs/brain/`, `docs/product/acceptance/<slug>.md` — and the conversation. That last one is the problem.
 Context that lives in chat evaporates on a fresh session, on a resume after a crash, on a second
@@ -161,7 +163,7 @@ Status: in-progress
 Last green: `a1b2c3d`
 Current step: AC-2, the 422 path
 Next step: run the full suite
-Pending gates: code-reviewer, test-runner
+Pending gates: the `reviewer` role, the `test_runner` role
 ```
 
 `Status` is `not-started`, `in-progress`, `stopped` or `done`; `Last green` is the last commit every gate passed on, or `none`; the

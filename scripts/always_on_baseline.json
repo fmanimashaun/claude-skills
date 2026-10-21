@@ -23,8 +23,8 @@
       "est_tokens": 0
     },
     "nextjs-stack": {
-      "chars": 545,
-      "est_tokens": 182
+      "chars": 817,
+      "est_tokens": 272
     },
     "pipeline": {
       "chars": 1538,
@@ -35,8 +35,8 @@
       "est_tokens": 1853
     },
     "rails-flow": {
-      "chars": 8496,
-      "est_tokens": 2832
+      "chars": 8580,
+      "est_tokens": 2860
     },
     "rails-stack": {
       "chars": 5416,

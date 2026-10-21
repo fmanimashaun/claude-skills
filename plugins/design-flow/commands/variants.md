@@ -15,7 +15,7 @@ argument-hint: "<brief>  [--variants N]   [e.g. pricing page --variants 3]"
 # /design-flow:variants — $ARGUMENTS
 
 Generate **N genuinely different compositions of one brief** (default 3) and a switcher to
-compare them live in the real app. Delegate composition to the **ui-composer** agent, one
+compare them live in the real app. Delegate composition to the **rails-ui-composer** agent, one
 dispatch per variant; delegate the brand verdict to **brand-guardian**.
 
 **Exploring before you pay N × ERB?** That is `/design-flow:canvas` — it writes a Claude Design
@@ -78,7 +78,7 @@ scale, and for a marketing surface the three mandatory references (`marketing-co
 `visual-assets.md`, `motion.md`). Variant mode changes *how many* outputs there are, not *what
 the doctrine is*.
 
-Dispatch `ui-composer` **once per variant, in parallel**, each with the same brief and the same
+Dispatch `rails-ui-composer` **once per variant, in parallel**, each with the same brief and the same
 pack, plus an explicit **composition axis** to move along so the set does not collapse into
 three renderings of one idea:
 
@@ -179,7 +179,7 @@ Run it. **"They look consistent" is not a verdict** — the whole reason the con
 mechanical is that three plausible screens are exactly the input a human review waves through.
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variant_conformance.py" .
+python3 "${CLAUDE_PLUGIN_ROOT}/ui/viewcomponent-erb/scripts/variant_conformance.py" .
 ```
 
 Exit 0 clean · 1 findings · 2 unusable. It runs the **#157 LLM-tell detector against every
@@ -212,7 +212,7 @@ Once chosen:
 3. Prove it, rather than believing it — an un-run discard looks exactly like a completed one:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variant_conformance.py" --verify-discard .
+python3 "${CLAUDE_PLUGIN_ROOT}/ui/viewcomponent-erb/scripts/variant_conformance.py" --verify-discard .
 ```
 
 4. **The chosen variant still goes through `/design-flow:audit`.** Variants are a way of making a
