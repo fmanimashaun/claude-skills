@@ -755,6 +755,15 @@ CLAIMS: tuple[Claim, ...] = (
         refs=(2117,),
         note="Our design, no external claim. The scope check says a model is owed, never that one is right.",
     ),
+    Claim(
+        claim="A `mitigate` row of a unit's threat model with no `[security]` criterion citing it in its slot is refused, and so is a `[security]` criterion that cites no `mitigate` row.",
+        stated_in="plugins/rails-flow/commands/feature.md",
+        anchor="**Security criteria (#2118).**",
+        kind=GUARANTEE,
+        enforced_by=("script:plugins/rails-flow/scripts/check_criteria.py", "mutation:check_criteria"),
+        refs=(2118,),
+        note="Our design, no external claim. The check proves the citation exists, not that the criterion's observable would fail without the control.",
+    ),
     # ---- what the plugins promise downstream ------------------------------------------------
     Claim(
         claim="An acceptance criterion that no spec cites is unproven, and the work order says so.",
