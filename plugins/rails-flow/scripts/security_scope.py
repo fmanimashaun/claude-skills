@@ -33,7 +33,7 @@ from pathlib import Path
 
 # (boundary, what in the PLAN TEXT names it)
 TEXT: tuple[tuple[str, re.Pattern], ...] = (
-    ("public-route", re.compile(r"\b(?:public (?:route|page|endpoint|url|link)|unauthenticated|token (?:link|url|route)|magic link|signed (?:link|url))\b|\bmake\b[^.\n]{0,40}\bpublic\b", re.I)),
+    ("public-route", re.compile(r"\b(?:public (?:route|page|endpoint|url|link)|unauthenticated|token (?:link|url|route)|magic link|signed (?:link|url)|sign(?:s|ing)?[- ]?in with|without (?:logging|signing) in)\b|\bmake\b[^.\n]{0,40}\bpublic\b", re.I)),
     ("upload-import", re.compile(r"\b(?:uploads?|csv|file input|attachments?|multipart|(?:bulk |data )import|imports? (?:an? |the |their |that |this )?(?:files?|csv|spreadsheets?|data|records?|rows?))\b", re.I)),
     ("webhook", re.compile(r"\bwebhooks?\b|\bcallback (?:url|endpoint)\b", re.I)),
     ("mcp-tool", re.compile(r"\bmcp\b|\bmodel context protocol\b", re.I)),
@@ -66,7 +66,7 @@ def stack_rows(project: Path, dirs: list[Path] | None = None) -> tuple[list[Row]
         label = f"{surface.get('plugin')}:{surface.get('stack')}"
         for kind, key in (("text", "boundary_text"), ("path", "boundary_paths")):
             for entry in surface.get(key) or []:
-                rows.append((entry["boundary"], kind, re.compile(entry["pattern"], re.I if kind == "text" else 0), label))
+                rows.append((entry["boundary"], kind, re.compile(entry["pattern"], re.I), label))
     notes = [] if code != 2 else [f"stack not judged ({'; '.join(report.get('problems') or [])}): neutral signals only"]
     if code != 2:
         labels = sorted({r[3] for r in rows})
@@ -88,7 +88,7 @@ def stack_case_failures(dirs: list[Path]) -> tuple[list[str], int]:
             if not isinstance(sec, dict) or not isinstance(sec.get("cases"), str):
                 continue
             label = f"{manifest['plugin']}:{stack.get('id')}"
-            rows = [(e["boundary"], kind, re.compile(e["pattern"], re.I if kind == "text" else 0), label)
+            rows = [(e["boundary"], kind, re.compile(e["pattern"], re.I), label)
                     for kind, key in (("text", "boundary_text"), ("path", "boundary_paths")) for e in sec.get(key) or []]
             try:
                 cases = json.loads((detect_stack.plugin_root(manifest) / sec["cases"]).read_text(encoding="utf-8"))
@@ -105,12 +105,18 @@ def stack_case_failures(dirs: list[Path]) -> tuple[list[str], int]:
 def normalise_path(path: str, project: Path | None = None) -> str:
     """A planned path as the stack patterns expect it: trimmed, posix, relative to the project, no `./` or diff `a/` `b/` prefix (#2117 adversary)."""
     p = path.strip().replace("\\", "/")
+    if p.startswith("~/"):
+        p = str(Path(p).expanduser()).replace("\\", "/")
     if project is not None and p.startswith("/"):
         root = str(project.resolve()).replace("\\", "/").rstrip("/") + "/"
-        if p.startswith(root):
-            p = p[len(root):]
+        real = str(Path(p).resolve()).replace("\\", "/")
+        for cand in (p, real):
+            if cand.startswith(root):
+                p = cand[len(root):]
+                break
+    p = re.sub(r"^[A-Za-z]:/", "", p)
     while True:
-        for prefix in ("./", "a/", "b/"):
+        for prefix in ("./", "../", "a/", "b/"):
             if p.startswith(prefix) and len(p) > len(prefix):
                 p = p[len(prefix):]
                 break
@@ -171,6 +177,8 @@ def selftest() -> int:
         ("making a page public is a boundary", "Make the report page public.", [], 1),
         ("impersonation is a boundary", "Let support impersonate a user.", [], 1),
         ("remember me is a boundary", "Add a remember-me checkbox.", [], 1),
+        ("sign in with a provider is a boundary", "Users sign in with Google.", [], 1),
+        ("without logging in is a boundary", "Visitors see the report without logging in.", [], 1),
     ]
     bad = 0
     # STACK-NEUTRAL (#2117): with no stack detected, plain words still fire and a stack's own spelling does not.
@@ -191,11 +199,18 @@ def selftest() -> int:
         (plug / "sec.md").write_text("# checklist\n", encoding="utf-8")
         (plug / "stacks.json").write_text(
             '{"plugin": "stk", "stacks": [{"id": "s", "name": "S", "all": [{"file": "marker.txt"}], "descriptor": '
-            '{"security": {"checklist": "sec.md", "scanners": ["x"], "boundary_text": [{"boundary": "raw-html", "pattern": "\\\\bzap_html\\\\b"}], '
+            '{"security": {"checklist": "sec.md", "scanners": ["x"], "cases": "cases.json", "boundary_text": [{"boundary": "raw-html", "pattern": "\\\\bzap_html\\\\b"}], '
             '"boundary_paths": [{"boundary": "webhook", "pattern": "^hooks/"}]}}}]}', encoding="utf-8")
+        (plug / "cases.json").write_text('[{"name": "an upper-case path is matched by its own stack", "plan": "Tidy.", "paths": ["HOOKS/in.py"], "boundary": true}]', encoding="utf-8")
+        own_failures, own_ran = stack_case_failures([plug])
+        if own_failures or own_ran != 1:
+            bad += 1
+            print(f"FAIL a stack's own cases run case-insensitively: ran {own_ran}, {own_failures}")
         proj.mkdir()
         (proj / "marker.txt").write_text("x", encoding="utf-8")
         rows, notes = stack_rows(proj, [plug])
+        link = Path(td) / "link"
+        link.symlink_to(proj, target_is_directory=True)
         for name, ok in (("a stack's boundary_text loads and fires", bool(classify("Use zap_html here.", [], rows))),
                          ("a stack's boundary_paths loads and fires", bool(classify("Tidy.", ["hooks/in.py"], rows))),
                          ("and nothing fires without them", not classify("Use zap_html here.", ["hooks/in.py"])),
@@ -203,6 +218,11 @@ def selftest() -> int:
                          ("a ./ path is matched", bool(classify("Tidy.", ["./hooks/in.py"], rows))),
                          ("a diff b/ path is matched", bool(classify("Tidy.", ["b/hooks/in.py"], rows))),
                          ("a backslash path is matched", bool(classify("Tidy.", ["hooks\\in.py"], rows))),
+                         ("an unresolved absolute path (a symlinked temp root) is matched",
+                          bool(classify("Tidy.", [normalise_path(str(link / "hooks" / "in.py"), proj)], rows))),
+                         ("a ../ path is matched", bool(classify("Tidy.", ["../hooks/in.py"], rows))),
+                         ("a drive-letter path is matched", bool(classify("Tidy.", ["C:\\hooks\\in.py"], rows))),
+                         ("a path in another case is matched", bool(classify("Tidy.", ["Hooks/in.py"], rows))),
                          ("a padded path is matched", bool(classify("Tidy.", ["  hooks/in.py\n"], rows))),
                          ("an absolute path inside the project is matched", bool(classify("Tidy.", [normalise_path(str(proj.resolve() / "hooks/in.py"), proj)], rows)))):
             if not ok:

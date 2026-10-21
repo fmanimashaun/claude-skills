@@ -39,19 +39,21 @@ PLACEHOLDER = re.compile(r"<[^<>\n`]{1,80}>")
 BULLET_SECTIONS = ("Trust boundaries", "Security requirements")
 
 
-CELL_PLACEHOLDER = re.compile(r"<[A-Za-z][\w /-]{0,79}>")
-_FILLER_CORES = {" ".join(re.sub(r"[^\w\s]", " ", f).split()) for f in FILLERS}
+CELL_PLACEHOLDER = re.compile(r"<(?!%)[^<>`\n]{1,120}>")
+_FILLER_WORDS = {w for f in FILLERS for w in re.sub(r"[^\w\s]", " ", f).split()} | {
+    "fill", "in", "yet", "wip", "to", "be", "decided", "determined", "pending", "placeholder", "here", "out", "up", "the", "a"}
 
 
 def _is_filler(cell: str) -> bool:
-    """A filler word with any punctuation around it, or a cell with no letter at all (#2117 adversary)."""
-    if not re.search(r"[^\W\d_]", cell):
+    """Fewer than two letters, or every word a filler or a stop word (`TBD!`, `TODO: fill in`, `none yet`; #2117 adversary)."""
+    if len(re.findall(r"[^\W\d_]", cell)) < 2:
         return True
-    return " ".join(re.sub(r"[^\w\s]", " ", cell).split()).lower() in _FILLER_CORES
+    return all(w in _FILLER_WORDS for w in re.sub(r"[^\w\s]", " ", cell).lower().split())
 
 
 def _uncommented(text: str) -> str:
-    return re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    """Comments removed; an unclosed `<!--` runs to the end of the file, as it does when rendered."""
+    return re.sub(r"<!--.*?(?:-->|\Z)", "", text, flags=re.S)
 
 
 def _section_body(text: str, name: str) -> str | None:
@@ -86,14 +88,14 @@ def check(text: str) -> tuple[list[str], int]:
     for s in SECTIONS:
         if s.lower() not in heads:
             findings.append(f"missing section `## {s}`")
-    prose = re.sub(r"`[^`\n]*`", "", re.sub(r"<!--.*?-->", "", text, flags=re.S))
+    prose = re.sub(r"`[^`\n]*`", "", _uncommented(text))
     for ph in sorted({m_.group(0) for m_ in PLACEHOLDER.finditer(prose)}):
         findings.append(f"template placeholder `{ph}` left in the model")
     for s in SECTIONS:
         body = _section_body(text, s)
         if body is None:
             continue
-        lines = [ln.strip() for ln in re.sub(r"<!--.*?-->", "", body, flags=re.S).splitlines() if ln.strip()]
+        lines = [ln.strip() for ln in _uncommented(body).splitlines() if ln.strip()]
         if s != "Threats" and not [ln for ln in lines if not _is_filler(ln.lstrip("-* "))]:
             findings.append(f"section `## {s}` is empty or only a filler word")
         if s in BULLET_SECTIONS:
@@ -179,6 +181,11 @@ A webhook.
         ("a backticked placeholder in a threat cell is found", ok.replace("| Forged callback |", "| `<threat>` |"), 1, "left in a cell"),
         ("backticked code in a cell is not a placeholder", ok.replace("signature checked", "`<%= h(x) %>` escapes"), 0, ""),
         ("a commented-out table is no rows", ok.replace("| ID |", "<!--\n| ID |").replace("| idempotent, harmless |\n", "| idempotent, harmless |\n-->\n"), 2, ""),
+        ("a stop-word filler is found", ok.replace("signature checked", "TODO: fill in"), 1, "only a filler word"),
+        ("a filler with a stop word is found", ok.replace("| accept | idempotent, harmless |", "| accept | none yet |"), 1, "an `accept` needs a reason"),
+        ("one letter is filler", ok.replace("| webhook | mitigate |", "| q1 | mitigate |"), 1, "no component named"),
+        ("the template's own placeholder in a cell is found", ok.replace("signature checked", "<control, or why the risk stays>"), 1, "left in a cell"),
+        ("an unclosed comment hides the rest", ok.replace("## Threats", "<!-- draft\n## Threats"), 2, ""),
         ("a table with no rows is unusable, not clean", ok.split("|---|---|---|---|---|")[0] + "|---|---|---|---|---|---|\n## Security requirements\n- x\n", 2, ""),
     ]
     bad = 0

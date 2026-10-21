@@ -91,8 +91,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the diff prefixes stop being dropped",
-            '        for prefix in ("./", "a/", "b/"):',
-            '        for prefix in ("./",):',
+            '        for prefix in ("./", "../", "a/", "b/"):',
+            '        for prefix in ("./", "../"):',
             "a diff b/ path is matched",
         ),
         Mutation(
@@ -112,6 +112,42 @@ GUARD = Guard(
             '        notes.append(f"stack rows: {len(rows)} from {\', \'.join(labels)}" if rows else',
             '        notes.append("" if rows else',
             "the note names the rows used",
+        ),
+        Mutation(
+            "a leading ../ is kept again",
+            '        for prefix in ("./", "../", "a/", "b/"):',
+            '        for prefix in ("./", "a/", "b/"):',
+            "a ../ path is matched",
+        ),
+        Mutation(
+            "a drive letter is kept again",
+            '    p = re.sub(r"^[A-Za-z]:/", "", p)',
+            '    pass',
+            "a drive-letter path is matched",
+        ),
+        Mutation(
+            "an absolute path is compared unresolved again, so a symlinked project root misses",
+            '        for cand in (p, real):',
+            '        for cand in (p,):',
+            "an unresolved absolute path (a symlinked temp root) is matched",
+        ),
+        Mutation(
+            "a stack's own cases run with case-sensitive paths again",
+            '            rows = [(e["boundary"], kind, re.compile(e["pattern"], re.I), label)',
+            '            rows = [(e["boundary"], kind, re.compile(e["pattern"], re.I if kind == "text" else 0), label)',
+            "a stack's own cases run case-insensitively",
+        ),
+        Mutation(
+            "stack rows load case-sensitive paths again",
+            '                rows.append((entry["boundary"], kind, re.compile(entry["pattern"], re.I), label))',
+            '                rows.append((entry["boundary"], kind, re.compile(entry["pattern"], re.I if kind == "text" else 0), label))',
+            "a path in another case is matched",
+        ),
+        Mutation(
+            "sign in with a provider stops being a boundary",
+            "|sign(?:s|ing)?[- ]?in with|without (?:logging|signing) in)",
+            ")",
+            "sign in with a provider is a boundary",
         ),
     ),
 )

@@ -170,5 +170,125 @@
     "plan": "After save, redirect_to request.referer.",
     "paths": [],
     "boundary": true
+  },
+  {
+    "name": "an api token model is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/models/api_token.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "a session token model is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/models/session_token.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "a session issuer service is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/services/session_issuer.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an auth service folder is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/services/auth/token_minter.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "the routes file is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "config/routes.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "an api controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/api_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "a webhook controller is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/controllers/webhook_controller.rb"
+    ],
+    "boundary": true
+  },
+  {
+    "name": "require_authentication is a boundary",
+    "plan": "Call require_authentication in the base controller.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "require_login is a boundary",
+    "plan": "Add require_login to reports.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "csrf is a boundary",
+    "plan": "Turn off the CSRF check for the form.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "cors is a boundary",
+    "plan": "Allow CORS from the partner origin.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "JSON.parse(request.body) is a boundary",
+    "plan": "Read JSON.parse(request.body) in the action.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "YAML.safe_load is a boundary",
+    "plan": "Load the upload with YAML.safe_load.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "redirect_to session[ is a boundary",
+    "plan": "Finish with redirect_to session[:return].",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "a token helper view is not a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "app/views/tokens/_row.html.erb"
+    ],
+    "boundary": false
+  },
+  {
+    "name": "authenticate_user! is a boundary",
+    "plan": "Drop authenticate_user! from the index.",
+    "paths": [],
+    "boundary": true
+  },
+  {
+    "name": "an upper-case auth path is a boundary",
+    "plan": "Tidy.",
+    "paths": [
+      "App/Controllers/Sessions_Controller.rb"
+    ],
+    "boundary": true
   }
 ]
