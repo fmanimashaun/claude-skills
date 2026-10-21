@@ -30,7 +30,7 @@ A finding is a row a script can refuse. Every finding names a rule id (A#) from 
 |---|---|---|
 | landmarks, skip link, one `h1`, toast region (A1, A2) | 1 mechanical | new collector: DOM facts; judge refuses a finding with no evidence |
 | `aria-current` on the current primary-nav item (A4) | 1 | collector |
-| contrast, target size, reflow, hidden-in-viewport, text resize, theme parity, links (A19, A20, A22–A26) | 1, **reuse** | read the existing qa-flow evidence JSON and map each judge's finding to its rule id; no new measurement |
+| hidden-in-viewport, text resize, theme parity, links (A23–A26) | 1, **reuse** | read the existing qa-flow judge `--json` output and map each finding to its rule id; no new measurement. **Correction after building slice 1:** contrast, target size and reflow (A19, A20, A22) come from axe in the `a11y-auditor` agent, not from a qa-flow judge with JSON output, so they are not reused in slice 1 and join when an axe-result judge exists |
 | focus visible (A21) | 1 | **#2228** (axe has no focus rule); until it ships the row is absent, not advisory |
 | no card in a card | 1 | **#2227** |
 | each declared state renders distinct (A59, state rows) | 1 | **#2229** and the `States:` line of #2226 |
