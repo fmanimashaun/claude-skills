@@ -24,6 +24,11 @@ WHAT THIS GUARANTEES
     error-path criterion. And with --specs, every criterion id appears in some spec file --
     a real 1:1 mapping, which is what makes "the spec proves the criteria" checkable.
 
+SECURITY (#2118). A unit whose threat model (docs/security/threat-models/<slug>.md, each row has an `ID` cell, `TM-n`) has `mitigate`
+    rows must carry a `[security]` criterion citing each such row in the criterion's citation slot, `(TM-n)` or `covers: TM-n` at its end
+    (a tag or id inside an HTML comment or a code span, or a mention elsewhere in the sentence, does not count); a `[security]` criterion citing no row, or a row that is not
+    a `mitigate` row of the model, is a finding. Without a model nothing changes: the step fires only when security_scope.py does (#2117).
+
 WHAT IT DOES NOT
     It cannot tell whether a spec citing `AC-3` actually ASSERTS AC-3's observable; only that
     the claim is traceable. It also cannot know whether the criteria were written before the
@@ -109,6 +114,18 @@ RUBY_FAILURE = re.compile(
 )
 
 
+SECURITY_TAG = "[security]"
+# A citation counts only in the criterion's own slot: `(TM-1)`, `(TM-1, TM-3)` or `covers: TM-1` at the END of the line. `[security] (unlike TM-1 ...)`,
+# a TM-n inside a comment or a code span, or one mentioned mid-sentence is not a citation (review of #2133).
+_TM_LIST = r"TM-\d+(?:\s*,\s*TM-\d+)*"
+SLOT_RE = re.compile(rf"(?:\(\s*({_TM_LIST})\s*\)|\bcovers:\s*({_TM_LIST}))\s*[.;]?\s*$", re.I)
+HIDDEN_RE = re.compile(r"<!--.*?-->|`[^`\n]*`", re.S)
+
+
+def _visible(text: str) -> str:
+    return HIDDEN_RE.sub(" ", text)
+
+
 class Unusable(Exception):
     """The input cannot be checked -- never report clean for it."""
 
@@ -137,13 +154,53 @@ class Criterion:
         return rest.strip(" ,.;:`*")
 
 
+NO_COMMENTS = "no HTML comments in security tables or criteria; delete the row or criterion instead"
+
+
+def _strict_lines(text: str, path: Path) -> str:
+    """The criteria file in the one shape we read, or Unusable (#2213 adversary: hand-parsed Markdown always has another edge, so a shape
+    outside this one is refused, never interpreted). No `<!--` anywhere; a fence closes on a line holding only its marker, and is closed
+    before the end; no criterion indented as code. Lines inside a closed fence are blanked: a renderer shows them as code, not criteria."""
+    if "<!--" in text:
+        raise Unusable(f"{path}: {NO_COMMENTS}")
+    out, fence, opened_at = [], "", 0
+    for n, line in enumerate(text.split("\n"), start=1):
+        # A fence anywhere but column 0 (indented, or after `>` or a list marker) means something different in each container, so it is
+        # refused, never interpreted (#2213 adversary: a fence inside a blockquote hid a live-looking criterion from a renderer).
+        inner = re.sub(r"^(?:[ \t]*>|[ \t]*(?:[-*+]|\d+[.)])(?=[ \t]))+[ \t]*", "", line)
+        if re.match(r"\s+(?:`{3,}|~{3,})", line) or (inner != line and re.match(r"`{3,}|~{3,}", inner)):
+            raise Unusable(f"{path}:{n} write a fence at the start of its line: an indented, quoted or listed one means different things in different containers")
+        mark = re.match(r"(`{3,}|~{3,})(.*)$", line)
+        if not fence and mark and mark.group(1)[0] == "`" and "`" in mark.group(2):
+            raise Unusable(f"{path}:{n} a backtick in a backtick fence's info string makes it no fence to a renderer: remove it")
+        if fence:
+            if mark and mark.group(1)[0] == fence[0] and len(mark.group(1)) >= len(fence):
+                if mark.group(2).strip():
+                    raise Unusable(f"{path}:{n} a fence closes on a line holding only its marker, got `{line.strip()[:40]}`")
+                fence = ""
+            out.append("")
+        elif mark:
+            fence, opened_at = mark.group(1), n
+            out.append("")
+        else:
+            # Any indentation or container: a list item's continuation can open an HTML block at four spaces or a tab (security review).
+            if re.match(r"[ \t]*<(?:[A-Za-z][\w-]*|/[A-Za-z]|[!?])", inner):
+                raise Unusable(f"{path}:{n} no raw HTML blocks in a criteria file (`{line.strip()[:30]}`): a renderer and this check read them differently")
+            if re.match(r"(?: {4}|\t)", line) and (BOLD_ID_RE.search(line) or DEF_RE.match(line.strip())):
+                raise Unusable(f"{path}:{n} a criterion indented four spaces is a code block to a renderer: write it at the start of the line")
+            out.append(line)
+    if fence:
+        raise Unusable(f"{path}:{opened_at} a fence opened here never closes, so everything after it is code")
+    return "\n".join(out)
+
+
 def parse(path: Path) -> list[Criterion]:
     if not path.is_file():
         raise Unusable(f"no such file: {path}")
 
     unit = ""
     out: list[Criterion] = []
-    for line_no, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for line_no, raw in enumerate(_strict_lines(path.read_text(encoding="utf-8"), path).splitlines(), start=1):
         heading = UNIT_RE.match(raw)
         if heading:
             unit = heading.group(1)
@@ -196,8 +253,38 @@ def _is_error_path(text: str) -> bool:
     return any(h in low for h in ERROR_HINTS) or bool(RUBY_FAILURE.search(text))
 
 
-def check(criteria: list[Criterion], spec_root: Path | None = None) -> list[str]:
+def check_security(criteria: list[Criterion], rows: list[tuple[int, str, str]]) -> list[str]:
+    """Map `[security]` criteria to the `mitigate` rows of the unit's threat model, both ways."""
     findings: list[str] = []
+    mitigate = {n: threat for n, threat, decision in rows if decision == "mitigate"}
+    known = {n for n, _, _ in rows}
+    tagged = [c for c in criteria if SECURITY_TAG in _visible(c.text).lower()]
+    cited: set[int] = set()
+    for c in tagged:
+        slot = SLOT_RE.search(_visible(c.text))
+        refs = {int(n) for n in re.findall(r"TM-(\d+)", slot.group(1) or slot.group(2), re.I)} if slot else set()
+        if not refs:
+            findings.append(f"{where_of(c)}: a {SECURITY_TAG} criterion cites no threat-model row -- end it with `(TM-n)` or `covers: TM-n`")
+        for n in sorted(refs):
+            if n not in known:
+                findings.append(f"{where_of(c)}: cites TM-{n}, which is not a row of the threat model ({len(known)} row(s))")
+            elif n not in mitigate:
+                findings.append(f"{where_of(c)}: cites TM-{n}, which is not a `mitigate` row -- only a mitigation is proven by a criterion")
+        cited |= refs
+    for n, threat in sorted(mitigate.items()):
+        if n not in cited:
+            findings.append(
+                f"threat model row TM-{n} (`{threat[:50]}`) is `mitigate` and no {SECURITY_TAG} criterion cites it -- "
+                "a requirement nobody turned into a criterion is not proven by the spec"
+            )
+    return findings
+
+
+def check(criteria: list[Criterion], spec_root: Path | None = None,
+          threat_rows: list[tuple[int, str, str]] | None = None) -> list[str]:
+    findings: list[str] = []
+    if threat_rows:
+        findings.extend(check_security(criteria, threat_rows))
 
     # ---- duplicate ids would silently merge two criteria into one traceable claim --------
     seen: dict[int, Criterion] = {}
@@ -287,6 +374,16 @@ def where_of(c: Criterion) -> str:
     return f"{c.cid} (line {c.line_no})"
 
 
+def default_threat_model(criteria_path: Path) -> tuple[Path | None, str]:
+    """`docs/security/threat-models/<slug>.md` at the repository root above the criteria file (the first directory holding `.git`),
+    wherever under the tree the criteria sit; `(None, why)` when there is no repository root."""
+    start = criteria_path.resolve().parent
+    for d in (start, *start.parents):
+        if (d / ".git").exists():
+            return d / "docs" / "security" / "threat-models" / criteria_path.name, ""
+    return None, f"no repository root (a directory holding .git) above {criteria_path}, so no default threat model"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Validate acceptance criteria, and that specs cite them."
@@ -295,6 +392,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--specs", metavar="DIR",
         help="also require every AC-n to be cited by a spec under DIR (usually `spec`)",
+    )
+    parser.add_argument(
+        "--threat-model", metavar="FILE",
+        help="the unit's threat model; default docs/security/threat-models/<slug>.md at the repository root above the criteria file; a missing default is reported as a skipped check",
     )
     parser.add_argument("--selftest", action="store_true", help="prove the rules fire AND stay silent")
     args = parser.parse_args(argv)
@@ -314,7 +415,38 @@ def main(argv: list[str] | None = None) -> int:
         print(f"UNUSABLE: {exc}", file=sys.stderr)
         return 2
 
-    findings = check(criteria, Path(args.specs) if args.specs else None)
+    if args.threat_model:
+        model, why = Path(args.threat_model), ""
+    else:
+        model, why = default_threat_model(Path(args.criteria_path))
+    rows: list[tuple[int, str, str]] = []
+    if model is not None and model.is_file():
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import check_threat_model as tm
+
+        model_text = model.read_text(encoding="utf-8")
+        rows = tm.threat_rows(model_text)
+        # threat_rows skips a row it cannot read, and a skipped row would drop its requirement silently: a model check_threat_model
+        # does not pass is refused whole (#2213 adversary).
+        table_findings = tm.check(model_text)[0]
+        if table_findings:
+            print(f"UNUSABLE: {model} has threat rows this check cannot trust -- fix them first:", file=sys.stderr)
+            for f in table_findings:
+                print(f"  - {f}", file=sys.stderr)
+            return 2
+        if not rows:
+            print(f"UNUSABLE: {model} exists but has no readable `## Threats` table (ID | Threat | STRIDE | Component | Decision | Reason) -- "
+                  "an unreadable model is not a clean one", file=sys.stderr)
+            return 2
+    elif args.threat_model:
+        print(f"UNUSABLE: no such threat model: {model}", file=sys.stderr)
+        return 2
+    else:
+        # Said out loud (#2213 review): a silent skip reads as "no security criteria owed" when the model was simply not found.
+        others = sorted(p.name for p in model.parent.glob("*.md")) if model is not None and model.parent.is_dir() else []
+        hint = f" ({len(others)} other model(s) there: {', '.join(others[:5])}; is one this unit's?)" if others else ""
+        print(f"security check skipped: {why or f'no threat model at {model}'}{hint}; pass --threat-model FILE if the unit has one", file=sys.stderr)
+    findings = check(criteria, Path(args.specs) if args.specs else None, rows)
 
     if findings:
         print(

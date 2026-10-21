@@ -43,5 +43,23 @@ GUARD = Guard(
             "    if agent:\n        return len(name) + len(fm.get(\"description\", \"\")[:LISTING_CAP])\n",
             "measure: an agent's description is NOT capped at 1,536",
         ),
+        Mutation(
+            "#2231: a manifest skill path is read from the repo root again, so a plugin whose source is not the root measures 0 for its skills",
+            '            skill = (base / s / "SKILL.md")',
+            '            skill = (root / s / "SKILL.md")',
+            "measure: a skill under a plugin whose source is NOT the repo root is counted",
+        ),
+        Mutation(
+            "#2231: a skill that exists on disk but is not measured goes unreported",
+            "            if f.resolve() not in seen:",
+            "            if False:",
+            "unmeasured: a plugin measuring 0 while its skill exists on disk is a finding",
+        ),
+        Mutation(
+            "#2231: a manifest skill path that names no SKILL.md goes unreported",
+            '            if not (base / s / "SKILL.md").is_file():',
+            "            if False:",
+            "unmeasured: a manifest skill path naming no SKILL.md is a finding",
+        ),
     ),
 )
