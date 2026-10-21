@@ -574,9 +574,9 @@ primitives and catalog compose it. **Stacked shell** (no rail: a flow has nowher
 - **Confirmation** — says the transaction is complete, shows the reference number when there is one,
   and says what happens next and when.
 
-The state contract (`architecture.md`, layer 5) applies to each question page; its error state is
-the field's error ([forms.md](forms.md)). Whether a page also shows an error summary is not settled
-here: the GOV.UK pattern defers it to its separate validation pattern, which is not yet verified.
+The state contract (`architecture.md`, layer 5) applies to each question page. Its error state is
+an error message next to each field in error plus, on a failed submit, an error summary at the top of
+the page with keyboard focus moved to it (rules A59, A60; [forms.md](forms.md) for the fields).
 
 ## Search results
 

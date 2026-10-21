@@ -99,7 +99,7 @@ plugin, since escaping, content-security policy and action authorization are sta
 | A1 | shell | A page has at most one non-hidden `main` landmark. | claim: C2 | HTML spec, *the main element* |
 | A2 | shell | A skip link is first in `body`, and the shell keeps its toast region. | decision: D7 | WCAG 2.4.1 asks for *a* bypass mechanism (C1); the skip link is our rule |
 | A3 | shell | Every UI change ships a mock-up in the app's own shell before the code. | decision: D6 | #2211 |
-| A4 | navigation | The current item of the primary navigation carries `aria-current="page"`. | claim: C5 | WAI-ARIA 1.2 `aria-current`; APG breadcrumb |
+| A4 | navigation | The link to the current page in the primary navigation has `aria-current` set to `page`. | claim: C5 | WAI-ARIA 1.2 `aria-current`; APG breadcrumb |
 | A5 | navigation | Navigation is at most three levels deep from the shell. | decision: D4 | ours |
 | A6 | navigation | Navigation repeated across pages keeps the same relative order. | claim: C3 | WCAG 2.2 SC 3.2.3 |
 | A7 | navigation | More than one way to locate a page is offered, except for steps in a process. | claim: C4 | WCAG 2.2 SC 2.4.5 |
@@ -123,7 +123,7 @@ plugin, since escaping, content-security policy and action authorization are sta
 | A25 | cross-cutting | One theme does not break what the other renders. | check: plugins/qa-flow/scripts/theme_parity.py | ours |
 | A26 | cross-cutting | No link points at nothing and no asset goes missing. | check: plugins/qa-flow/scripts/link_audit.py | ours |
 | A27 | cross-cutting | Performance budgets default to LCP at most 2.5 s, INP at most 200 ms and CLS at most 0.1 at the 75th percentile. | claim: C33 | web.dev *Web Vitals* |
-| A28 | cross-cutting | Error messages say what went wrong and how to fix it; button labels lead with a verb. | claim: C29 | GOV.UK *Validation*; Polaris *Error messages* |
+| A28 | cross-cutting | An error message says what went wrong and how to fix it. | claim: C29' | GOV.UK *Error message* |
 | A29 | template | A multi-step flow asks one question per page. | claim: C34 | GOV.UK *Question pages* |
 | A30 | template | A page that asks several related things has a statement as its heading. | claim: C35 | GOV.UK *Question pages* |
 | A31 | template | Every question page has a back link at the top. | claim: C36 | GOV.UK *Question pages* |
@@ -154,6 +154,8 @@ plugin, since escaping, content-security policy and action authorization are sta
 | A56 | template | A sort control sits above the results and offers only a sort that applies to all content. | claim: C70 | Scottish Government Design System *Search results* |
 | A57 | template | Results paginate at more than ten, ten to a page, with pagination at the bottom. | claim: C71 | Scottish Government Design System *Search results* |
 | A58 | template | When results update in part, the heading carrying the total count is `aria-live` and focus moves to the start of the changed content. | claim: C73 | Scottish Government Design System *Search results* |
+| A59 | state | On a failed submit the page shows an error summary at the top and moves keyboard focus to it, with an error message next to each field in error. | claim: C26' | GOV.UK *Validation*; *Error summary* |
+| A60 | state | A field is not validated when the user moves away from it; it is validated on submit. | claim: C26' | GOV.UK *Validation* |
 
 ## Arrives with its enforcement
 

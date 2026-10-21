@@ -179,3 +179,20 @@ GOV.UK has no search-results pattern, so a2 chose the Scottish Government Design
 | C72 | I | designsystem.gov.scot/patterns/search-results | Related searches and spelling suggestions: not carried as a rule (optional content). |
 | C73 | C | designsystem.gov.scot/patterns/search-results | On a partial update, apply `aria-live` to the heading that gives the total number of results and move focus to the start of the changed content. |
 | C74 | I | designsystem.gov.scot/patterns/search-results | Result item content: delegated to a separate page not fetched; examples only. |
+
+## Raw-HTML check of C1-C33 (2026-10-21)
+
+The same bar as C34-C73: each cited page was fetched with `curl` (raw HTML, tags stripped, whitespace and curly quotes normalised) and every quoted phrase searched for verbatim. 49 phrases across 22 pages; 43 matched on the first pass, six did not and are resolved below. Carbon, web.dev, WCAG, WAI-ARIA, the HTML spec, NN/g, Every Layout, Atomic Design, GOV.UK and Chrome Lighthouse all returned their text in the raw HTML. **Shopify Polaris does not**: `polaris.shopify.com/content/error-messages` and `/content/actionable-language` both returned the same 337,729-byte application shell with no page text, so nothing on Polaris is verified here.
+
+| Claim | Result | Resolution |
+|---|---|---|
+| claim C5 | wording | APG breadcrumb says "the link to the current page has aria-current set to page", and "if the element representing the current page is not a link, aria-current is optional". The rule is worded that way. |
+| claims C23, C33 | typo in source | web.dev prints "a cls of 0.1. or less" (stray full stop); the value 0.1 is verbatim. |
+| claim C26 | quotes replaced | The validation pattern says "show an error summary component at the top of the page, and move keyboard focus to it", "show error message components next to fields with errors" and "do not validate when the user moves away from a field"; it also says "do not add 'required' to your input fields". The verifier's earlier quotes "Always show an error summary" and "next to each answer" are not on that page (the first is on the Error summary component page). Re-recorded as C26' below. |
+| claim C29 | half verified | "In the error message explain what went wrong and how to fix it" is verbatim on the GOV.UK Error message component page (C29'). The Polaris half ("lead with a strong verb") is **rendered page; not verified; marked for re-verification** and is dropped from the rule. |
+
+| # | Verdict | Citation | Use as |
+|---|---|---|---|
+| C26' | C | design-system.service.gov.uk/patterns/validation; /components/error-summary | on a failed validation, show an error summary component at the top of the page and move keyboard focus to it, with an error message next to each field in error; do not validate when the user moves away from a field. The error-summary component page adds "always show an error summary when there is a validation error, even if there's only one" |
+| C29' | C | design-system.service.gov.uk/components/error-message | in the error message, explain what went wrong and how to fix it |
+| C29 (Polaris half) | I, re-verify | polaris.shopify.com/content/error-messages | rendered page, not verified: "buttons lead with a strong verb" is out of the doctrine until verified by another method |
