@@ -48,7 +48,6 @@ DIRECTIVE = re.compile(r"""\A(?:\s|//[^\n]*\n|/\*.*?\*/)*(['"])use client\1""", 
 CLIENT_ROUTE_DECLARED = re.compile(r"react-architecture:[ \t]*client-route[ \t]*(?:--|—|:)[ \t]*\S")   # the reason on the SAME line
 EFFECT_CALL = re.compile(r"\buseEffect\s*\(")
 INTERNAL_ANCHOR = re.compile(r"""<a\b[^>]*\bhref\s*=\s*\{?\s*(['"`])/(?!/)""")
-COMMENT = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
 
 
 class Unjudgeable(Exception):
@@ -60,7 +59,38 @@ class NotApplicable(Exception):
 
 
 def strip_comments(text: str) -> str:
-    return COMMENT.sub(lambda m: " " * len(m.group(0)), text)
+    """Blank out // and /* */ comments, NOT the same characters inside a string or template literal: a regex alone
+    erased `href="//cdn..."` and every `https://` as if they were comments (found by the mutation guard)."""
+    out, i, quote, n = [], 0, None, len(text)
+    while i < n:
+        ch = text[i]
+        if quote:
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+        elif ch in "'\"`":
+            quote = ch
+            out.append(ch)
+            i += 1
+        elif text.startswith("//", i):
+            j = text.find("\n", i)
+            j = n if j == -1 else j
+            out.append(" " * (j - i))
+            i = j
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j == -1 else j + 2
+            out.append(re.sub(r"[^\n]", " ", text[i:j]))
+            i = j
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
 
 
 def call_body(text: str, open_paren: int) -> str:
