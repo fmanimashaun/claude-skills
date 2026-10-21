@@ -6,34 +6,14 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 
 ## Decisions
 
-| decision | what it means | files | lines |
-|---|---|---:|---:|
-| `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 70 | 1596 |
-| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 91 | 1257 |
-| `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 62 | 284 |
-| `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change | 7 | 24 |
-| **all** | | **230** | **3161** |
+| decision | what it means |
+|---|---|
+| `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest |
+| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) |
+| `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched |
+| `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change |
 
-## By flow
-
-| flow | files | lines | `rails-stack` | `detector` | `reword` | `neutral` |
-|---|---:|---:|---:|---:|---:|---:|
-| `rails-flow` | 134 | 2217 | 45 | 50 | 36 | 3 |
-| `qa-flow` | 36 | 275 | 0 | 29 | 6 | 1 |
-| `pipeline` | 16 | 70 | 0 | 10 | 3 | 3 |
-| `design-flow` | 44 | 599 | 25 | 2 | 17 | 0 |
-
-## By what is named
-
-| category | lines naming it |
-|---|---:|
-| tool | 850 |
-| gem | 130 |
-| path | 1212 |
-| concept | 1986 |
-| hotwire | 95 |
-
-A line that names two things counts once per category it names in this table and once overall in the totals above.
+The counts (files and lines per decision, per flow, per thing named) are not stored in this page or in `rails-assumptions.json`: a stored total is a line every pull request rewrites. `python3 scripts/rails_assumptions.py --status` computes them from the inventory below. A line that names two things counts once per category it names there and once overall.
 
 ## The moves (each is an issue under #2162)
 
@@ -41,31 +21,106 @@ A line that names two things counts once per category it names in this table and
 
 Agents whose whole job is a Rails task (implement in Rails, write migrations, run RSpec, audit with Brakeman, review against Rails practice). They are loaded by every rails-flow install; a Next.js project would see agents it can never use.
 
-Files: `agents/code-reviewer.md` (rails-flow), `agents/design-auditor.md` (rails-flow), `agents/migration-writer.md` (rails-flow), `agents/rails-developer.md` (rails-flow), `agents/security-auditor.md` (rails-flow), `agents/test-runner.md` (rails-flow)
+Files:
+
+- `agents/code-reviewer.md` (rails-flow)
+- `agents/design-auditor.md` (rails-flow)
+- `agents/migration-writer.md` (rails-flow)
+- `agents/rails-developer.md` (rails-flow)
+- `agents/security-auditor.md` (rails-flow)
+- `agents/test-runner.md` (rails-flow)
 
 ### rails-gates: The Rails project gates (#2175)
 
 Gate scripts that read a Rails project (simple_form, migrations order, tenancy cop, privacy inventory, production config, MCP checks, i18n, CI-runs-tests, coverage ratchet, spec support, layer structure, herb) and their checks.json registrations. project_gates.py already discovers checks.json from sibling plugins, so this is a move, not new machinery.
 
-Files: `scaffold/tenancy/scoped_lookup.rb` (rails-flow), `scripts/check_ci_runs_tests.py` (rails-flow), `scripts/check_coverage_ratchet.py` (rails-flow), `scripts/check_i18n_setup.py` (rails-flow), `scripts/check_layer_structure.py` (rails-flow), `scripts/check_mcp_annotations.py` (rails-flow), `scripts/check_mcp_end_to_end.py` (rails-flow), `scripts/check_mcp_personal_fields.py` (rails-flow), `scripts/check_migration_order.py` (rails-flow), `scripts/check_privacy_inventory.py` (rails-flow), `scripts/check_production_config.py` (rails-flow), `scripts/check_simple_form_only.py` (rails-flow), `scripts/check_spec_support.py` (rails-flow), `scripts/check_tenancy_cop.py` (rails-flow), `scripts/check_unauthenticated_writes.py` (rails-flow), `scripts/herb_lint.py` (rails-flow), `scripts/mutations/check_ci_runs_tests.py` (rails-flow), `scripts/mutations/check_coverage_ratchet.py` (rails-flow), `scripts/mutations/check_i18n_setup.py` (rails-flow), `scripts/mutations/check_layer_structure.py` (rails-flow), `scripts/mutations/check_mcp_annotations.py` (rails-flow), `scripts/mutations/check_mcp_end_to_end.py` (rails-flow), `scripts/mutations/check_migration_order.py` (rails-flow), `scripts/mutations/check_privacy_inventory.py` (rails-flow), `scripts/mutations/check_production_config.py` (rails-flow), `scripts/mutations/check_simple_form_only.py` (rails-flow), `scripts/mutations/check_spec_support.py` (rails-flow), `scripts/mutations/check_tenancy_cop.py` (rails-flow), `scripts/mutations/herb_lint.py` (rails-flow), `scripts/structure_ratchet.py` (rails-flow)
+Files:
+
+- `scaffold/tenancy/scoped_lookup.rb` (rails-flow)
+- `scripts/check_ci_runs_tests.py` (rails-flow)
+- `scripts/check_coverage_ratchet.py` (rails-flow)
+- `scripts/check_i18n_setup.py` (rails-flow)
+- `scripts/check_layer_structure.py` (rails-flow)
+- `scripts/check_mcp_annotations.py` (rails-flow)
+- `scripts/check_mcp_end_to_end.py` (rails-flow)
+- `scripts/check_mcp_personal_fields.py` (rails-flow)
+- `scripts/check_migration_order.py` (rails-flow)
+- `scripts/check_privacy_inventory.py` (rails-flow)
+- `scripts/check_production_config.py` (rails-flow)
+- `scripts/check_simple_form_only.py` (rails-flow)
+- `scripts/check_spec_support.py` (rails-flow)
+- `scripts/check_tenancy_cop.py` (rails-flow)
+- `scripts/check_unauthenticated_writes.py` (rails-flow)
+- `scripts/herb_lint.py` (rails-flow)
+- `scripts/mutations/check_ci_runs_tests.py` (rails-flow)
+- `scripts/mutations/check_coverage_ratchet.py` (rails-flow)
+- `scripts/mutations/check_i18n_setup.py` (rails-flow)
+- `scripts/mutations/check_layer_structure.py` (rails-flow)
+- `scripts/mutations/check_mcp_annotations.py` (rails-flow)
+- `scripts/mutations/check_mcp_end_to_end.py` (rails-flow)
+- `scripts/mutations/check_migration_order.py` (rails-flow)
+- `scripts/mutations/check_privacy_inventory.py` (rails-flow)
+- `scripts/mutations/check_production_config.py` (rails-flow)
+- `scripts/mutations/check_simple_form_only.py` (rails-flow)
+- `scripts/mutations/check_spec_support.py` (rails-flow)
+- `scripts/mutations/check_tenancy_cop.py` (rails-flow)
+- `scripts/mutations/herb_lint.py` (rails-flow)
+- `scripts/structure_ratchet.py` (rails-flow)
 
 ### rails-mandated-gems: The mandated-gems policy (#2176)
 
 mandated_gems.json and the scripts that read or derive it. The list is Rails doctrine by definition; a Node stack needs a different list under its own name.
 
-Files: `mandated_gems.json` (rails-flow), `scripts/check_mandated_gems.py` (rails-flow), `scripts/mutations/check_mandated_gems.py` (rails-flow)
+Files:
+
+- `mandated_gems.json` (rails-flow)
+- `scripts/check_mandated_gems.py` (rails-flow)
+- `scripts/mutations/check_mandated_gems.py` (rails-flow)
 
 ### rails-docs-generators: The Rails documentation generators (#2177)
 
 architecture_graph.py (routes/app/db graph, /rails-flow:graph) and build_project_wiki.py read Rails sources to draw the architecture and the wiki.
 
-Files: `commands/graph.md` (rails-flow), `scripts/architecture_graph.py` (rails-flow), `scripts/build_help.py` (rails-flow), `scripts/build_project_wiki.py` (rails-flow), `scripts/mutations/architecture_graph.py` (rails-flow), `scripts/mutations/build_project_wiki.py` (rails-flow)
+Files:
+
+- `commands/graph.md` (rails-flow)
+- `scripts/architecture_graph.py` (rails-flow)
+- `scripts/build_help.py` (rails-flow)
+- `scripts/build_project_wiki.py` (rails-flow)
+- `scripts/mutations/architecture_graph.py` (rails-flow)
+- `scripts/mutations/build_project_wiki.py` (rails-flow)
 
 ### design-flow-erb: The design-flow Rails UI adapter (ERB / ViewComponent gates and porter) (#2178)
 
 The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (rails-ui-porter, rails-ui-composer). They do NOT move to rails-stack: they live in design-flow's own Rails UI adapter, plugins/design-flow/ui/viewcomponent-erb/, which a stack descriptor selects with ui.implementation, so design stays neutral (owner, via the coordinator, 2026-10-21). Next.js gets its own adapter under #2171.
 
-Files: `agents/rails-ui-composer.md` (design-flow), `agents/rails-ui-porter.md` (design-flow), `ui/viewcomponent-erb/adapter.json` (design-flow), `ui/viewcomponent-erb/scripts/canvas_manifest.py` (design-flow), `ui/viewcomponent-erb/scripts/check_component_contract.py` (design-flow), `ui/viewcomponent-erb/scripts/check_layout_composition.py` (design-flow), `ui/viewcomponent-erb/scripts/check_modal_fit.py` (design-flow), `ui/viewcomponent-erb/scripts/check_surface_layout.py` (design-flow), `ui/viewcomponent-erb/scripts/check_table_layout.py` (design-flow), `ui/viewcomponent-erb/scripts/check_token_drift.py` (design-flow), `ui/viewcomponent-erb/scripts/content_floors.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/canvas_manifest.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_component_contract.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_layout_composition.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_modal_fit.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_surface_layout.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_table_layout.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/content_floors.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/port_fidelity_gate.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/setup_doctrine_crosscheck.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/source_text.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/variant_conformance.py` (design-flow), `ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py` (design-flow), `ui/viewcomponent-erb/scripts/source_text.py` (design-flow), `ui/viewcomponent-erb/scripts/variant_conformance.py` (design-flow)
+Files:
+
+- `agents/rails-ui-composer.md` (design-flow)
+- `agents/rails-ui-porter.md` (design-flow)
+- `ui/viewcomponent-erb/adapter.json` (design-flow)
+- `ui/viewcomponent-erb/scripts/canvas_manifest.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_component_contract.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_layout_composition.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_modal_fit.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_surface_layout.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_table_layout.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/check_token_drift.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/content_floors.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/canvas_manifest.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/check_component_contract.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/check_layout_composition.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/check_modal_fit.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/check_surface_layout.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/check_table_layout.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/content_floors.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/port_fidelity_gate.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/setup_doctrine_crosscheck.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/source_text.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/mutations/variant_conformance.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/source_text.py` (design-flow)
+- `ui/viewcomponent-erb/scripts/variant_conformance.py` (design-flow)
 
 ## setup-flow, section by section (issue #2180)
 
