@@ -20,7 +20,7 @@ GUARD = Guard(
             "a row with no shape is reported",
         ),
         Mutation(
-            "a shape with no catalogue row goes unreported, so pen offers what ui-composer cannot build",
+            "a shape with no catalogue row goes unreported, so pen offers what rails-ui-composer cannot build",
             "    orphans = [name for name in entries if name not in rows]",
             "    orphans = []",
             "a shape with no row is reported",

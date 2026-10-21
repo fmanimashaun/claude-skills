@@ -6,11 +6,6 @@
    "summary": "Agents whose whole job is a Rails task (implement in Rails, write migrations, run RSpec, audit with Brakeman, review against Rails practice). They are loaded by every rails-flow install; a Next.js project would see agents it can never use.",
    "issue": 2173
   },
-  "rails-hooks": {
-   "title": "The Rails-only hooks",
-   "summary": "Hooks that fire on a Rails artifact: guard-migrate.sh on a new db/migrate file, lint-ruby.sh on a .rb edit. They register through the plugin's hooks.json, so the stack plugin must register them instead.",
-   "issue": 2174
-  },
   "rails-gates": {
    "title": "The Rails project gates",
    "summary": "Gate scripts that read a Rails project (simple_form, migrations order, tenancy cop, privacy inventory, production config, MCP checks, i18n, CI-runs-tests, coverage ratchet, spec support, layer structure, herb) and their checks.json registrations. project_gates.py already discovers checks.json from sibling plugins, so this is a move, not new machinery.",
@@ -27,14 +22,9 @@
    "issue": 2177
   },
   "design-flow-erb": {
-   "title": "The design-flow ERB / ViewComponent gates and porter",
-   "summary": "The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (design-porter, ui-composer). Next.js gets its own design gates under #2171.",
+   "title": "The design-flow Rails UI adapter (ERB / ViewComponent gates and porter)",
+   "summary": "The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (rails-ui-porter, rails-ui-composer). They do NOT move to rails-stack: they live in design-flow's own Rails UI adapter, plugins/design-flow/ui/viewcomponent-erb/, which a stack descriptor selects with ui.implementation, so design stays neutral (owner, via the coordinator, 2026-10-21). Next.js gets its own adapter under #2171.",
    "issue": 2178
-  },
-  "rails-deploy": {
-   "title": "The Kamal-on-Rails deploy path",
-   "summary": "kamal-configurator and kamal_destination.py route values into Rails credentials and deploy.yml; Vercel deploy (#2167) is its own path.",
-   "issue": 2179
   }
  },
  "rules": [
@@ -51,16 +41,6 @@
    "assumes": "an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit)",
    "how": "moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay",
    "move": "rails-agents"
-  },
-  {
-   "match": [
-    "plugins/rails-flow/hooks/scripts/guard-migrate.sh",
-    "plugins/rails-flow/hooks/scripts/lint-ruby.sh"
-   ],
-   "decision": "rails-stack",
-   "assumes": "fires on db/migrate files and .rb edits; runs bin/rails and rubocop",
-   "how": "its hooks.json entry moves to the stack plugin",
-   "move": "rails-hooks"
   },
   {
    "match": [
@@ -112,33 +92,36 @@
   },
   {
    "match": [
-    "plugins/design-flow/scripts/check_component_contract.py",
-    "plugins/design-flow/scripts/check_layout_composition.py",
-    "plugins/design-flow/scripts/check_modal_fit.py",
-    "plugins/design-flow/scripts/check_surface_layout.py",
-    "plugins/design-flow/scripts/check_table_layout.py",
-    "plugins/design-flow/scripts/variant_conformance.py",
-    "plugins/design-flow/scripts/source_text.py",
-    "plugins/design-flow/scripts/canvas_manifest.py",
-    "plugins/design-flow/scripts/setup_doctrine_crosscheck.py",
-    "plugins/design-flow/scripts/check_token_drift.py",
-    "plugins/design-flow/agents/design-porter.md",
-    "plugins/design-flow/agents/ui-composer.md"
+    "plugins/design-flow/ui/viewcomponent-erb/scripts/check_component_contract.py",
+    "plugins/design-flow/ui/viewcomponent-erb/scripts/check_layout_composition.py",
+    "plugins/design-flow/ui/viewcomponent-erb/scripts/check_modal_fit.py",
+    "plugins/design-flow/ui/viewcomponent-erb/scripts/check_surface_layout.py",
+    "plugins/design-flow/ui/viewcomponent-erb/scripts/check_table_layout.py",
+    "plugins/design-flow/ui/viewcomponent-erb/scripts/variant_conformance.py",
+    "plugins/design-flow/ui/viewcomponent-erb/scripts/source_text.py",
+    "plugins/design-flow/ui/viewcomponent-erb/scripts/canvas_manifest.py",
+    "plugins/design-flow/ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py",
+    "plugins/design-flow/ui/viewcomponent-erb/scripts/check_token_drift.py",
+    "plugins/design-flow/ui/viewcomponent-erb/scripts/content_floors.py",
+    "plugins/design-flow/agents/rails-ui-porter.md",
+    "plugins/design-flow/agents/rails-ui-composer.md",
+    "plugins/design-flow/ui/viewcomponent-erb/adapter.json",
+    "plugins/design-flow/ui/viewcomponent-erb/scripts/port_fidelity_gate.py"
    ],
    "decision": "rails-stack",
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
-   "how": "moves with its checks.json row",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "move": "design-flow-erb"
   },
   {
    "match": [
-    "plugins/pipeline/agents/kamal-configurator.md",
-    "plugins/pipeline/scripts/kamal_destination.py"
+    "plugins/pipeline/scripts/detect_stack.py"
    ],
-   "decision": "rails-stack",
-   "assumes": "routes deploy values into Rails credentials and config/deploy.yml",
-   "how": "the Vercel path (#2167) is a separate agent; the pipeline coordinator picks by detector",
-   "move": "rails-deploy"
+   "decision": "detector",
+   "assumes": "the stack detector's own prose and fixtures name Rails and Next.js; the markers it reads are data in each plugin's stacks.json",
+   "how": "a byte-identical mirror of plugins/rails-flow/scripts/detect_stack.py, held by the detect-stack-drift rule (a plugin installs alone and cannot import another's code); reworded only in the canonical copy",
+   "seam": "pipeline:deploy-cloud asks deploy_target.py, which imports this mirror, which stack declares a deploy agent (#2179)",
+   "issues": {"rails-flow": 2183, "qa-flow": 2184, "pipeline": 2184, "design-flow": 2185}
   },
   {
    "match": [
@@ -349,7 +332,8 @@
     "rails-flow": 2183,
     "qa-flow": 2183,
     "pipeline": 2183,
-    "design-flow": 2183
+    "design-flow": 2183,
+    "rails-stack": 2183
    }
   },
   {
@@ -527,6 +511,14 @@
     ],
     "class": "neutral",
     "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
+     "plugins/design-flow/ui/*"
+    ],
+    "class": "rails",
+    "issue": 2178,
+    "why": "the Rails UI adapter: its checks and gates read .erb and app/components, selected by descriptor ui.implementation; the whole directory is Rails by path"
    },
    {
     "match": [
@@ -737,11 +729,23 @@
     "match": [
      "plugins/rails-stack/.claude-plugin/*",
      "plugins/rails-stack/stacks.json",
-     "plugins/rails-stack/setup/rails.md"
+     "plugins/rails-stack/setup/rails.md",
+     "plugins/rails-stack/security/rails.md",
+     "plugins/rails-stack/security/boundary-cases.json"
     ],
     "class": "rails",
     "issue": 2182,
-    "why": "the rails-stack manifest, its stacks.json and its setup section (both moved from the repo root): they name the Rails doctrine the plugin bundles, the Rails markers the detector reads, and the Rails-only setup repairs (#2180)"
+    "why": "the rails-stack manifest, its stacks.json and its setup section (both moved from the repo root): they name the Rails doctrine the plugin bundles, the Rails markers the detector reads, and the Rails-only setup repairs (#2180); its security surface: the STRIDE checklist and the cases proving its boundary spellings (#2117)"
+   },
+   {
+    "match": [
+     "plugins/rails-stack/agents/kamal-configurator.md",
+     "plugins/rails-stack/scripts/kamal_destination.py",
+     "plugins/rails-stack/scripts/mutations/kamal_destination.py"
+    ],
+    "class": "rails",
+    "issue": 2179,
+    "why": "the Kamal-on-Rails deploy agent and its destination script (moved from pipeline): they route deploy values into Rails credentials and config/deploy.yml, and a stack declares the agent in its descriptor"
    },
    {
     "match": [
@@ -788,6 +792,62 @@
     "class": "nextjs",
     "issue": 2165,
     "why": "the nextjs-stack plugin: Next.js + Supabase + Vercel conventions and the stack's markers; they name those platforms by design"
+   },
+   {
+    "match": [
+     "plugins/rails-stack/agents/*",
+     "plugins/rails-stack/VENDORED.md",
+     "plugins/rails-stack/reference/model-tiers.md"
+    ],
+    "class": "rails",
+    "issue": 2173,
+    "why": "the Rails specialist agents (implement in Rails, migrations, RSpec, Brakeman, Rails review, simple_form audit), moved here from rails-flow"
+   },   {
+    "match": [
+     "plugins/rails-stack/hooks/hooks.json",
+     "plugins/rails-stack/hooks/scripts/guard-migrate.sh",
+     "plugins/rails-stack/hooks/scripts/lint-ruby.sh"
+    ],
+    "class": "rails",
+    "issue": 2174,
+    "why": "the Rails-only hooks (a migration guard on a new db/migrate file, rubocop auto-correct on a .rb edit) and the manifest that registers them, moved here from rails-flow"
+   },
+
+   {
+    "match": [
+     "plugins/rails-stack/scripts/findings.py"
+    ],
+    "class": "mixed",
+    "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+    "issue": 2186,
+    "why": "a byte-identical vendored copy of rails-flow's findings.py for rails-stack's code-reviewer (no cross-plugin root); its single home is core-skills (#2186); plugins/rails-stack/VENDORED.md"
+   },
+   {
+    "match": [
+     "plugins/rails-stack/scripts/triage_failures.py",
+     "plugins/rails-stack/scripts/dev_baseline.py"
+    ],
+    "class": "mixed",
+    "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
+    "issue": 2183,
+    "why": "a byte-identical vendored copy of rails-flow's triage_failures.py for rails-stack's test-runner; it leaves when the flows' triage reads the descriptor (#2183); plugins/rails-stack/VENDORED.md"
+   },
+   {
+    "match": [
+     "plugins/rails-stack/reference/agent-output-contract.md",
+     "plugins/rails-stack/scripts/fixture_git.py"
+    ],
+    "class": "neutral",
+    "issue": 2186,
+    "why": "a byte-identical vendored copy of rails-flow's output contract, which every moved agent cites; its single home is core-skills (#2186); plugins/rails-stack/VENDORED.md"
+   },
+   {
+    "match": [
+     "plugins/rails-stack/scripts/check_simple_form_only.py"
+    ],
+    "class": "rails",
+    "issue": 2175,
+    "why": "a vendored copy of rails-flow's simple_form gate for rails-stack's design-auditor; step 4 (#2175) moves the original and deletes this copy"
    }
   ]
  }

@@ -18,7 +18,7 @@
       "why": "A surface takes arbitrary content and cannot know what it will hold, so it must not arrange it. Measured where this was found: a card wrapped its content in `stack` with a hardcoded --space, and 77 of its 112 call sites had already declared their own spacing on the same element -- the component's inner value won, silently, with no error and no visual glitch on most screens. Four grid layouts also collapsed to one column, because a grid cannot survive a flex column. The flattening is eventually visible; the override is not, and every individual template still reads correctly, which is why review misses it. A COMPOSITION whose layout IS the component declares itself with `# composition: <why>` and the check stands aside.",
       "command": [
         "python3",
-        "{plugin}/scripts/check_surface_layout.py"
+        "{plugin}/ui/viewcomponent-erb/scripts/check_surface_layout.py"
       ],
       "applies_when": [
         "app/components"
@@ -32,7 +32,7 @@
       "why": "Every table is master-detail and none scrolls sideways (#1391). The skill once said to wrap a table in overflow-x-auto, pin its identifier columns and link the id to a show page; an app built exactly that and the owner rejected it. Measured there: 22 table call sites passed a fixed min_width, plus one inside the table component itself, so tables scrolled sideways on tablets and laptops that had room for them. This refuses a table inside a horizontal scroller, a table given a fixed minimum width, a table whose directory has no row opening a record into the modal frame, and a tab strip that scrolls (role=tablist, or a scroller in a file named for tabs). A scroller is Tailwind's overflow classes OR any @utility the app's own CSS defines with overflow-x auto/scroll -- the app above wrapped every table in its own `scroll-x`, and a check that knew only Tailwind's names called it clean. A table that is not a record index declares itself with `table-without-details: <why>`; mailer views are not judged, because email is laid out with tables.",
       "command": [
         "python3",
-        "{plugin}/scripts/check_table_layout.py"
+        "{plugin}/ui/viewcomponent-erb/scripts/check_table_layout.py"
       ],
       "applies_when": [
         "app/views"
@@ -46,7 +46,7 @@
       "why": "No modal card is ever larger than the viewport, or flush with its edge (#1391, #1419): the maintainer's words, 'no modal card should be longer than the viewport vertically and horizontally, and every modal card should have a margin away from the viewport edges.' The doctrine carries it as an `inset-viewport` wrapper and a `max-h-full` panel whose body alone scrolls. Measured on the app behind the issue: its modal capped height with `max-h-[calc(100vh-3rem)]`, had no inset, and pinned its drawer to the edge with `fixed inset-y-0`; its privacy-policy <dialog> had no max height at all. Judged per dialog component, reading the template and its sibling .rb together.",
       "command": [
         "python3",
-        "{plugin}/scripts/check_modal_fit.py"
+        "{plugin}/ui/viewcomponent-erb/scripts/check_modal_fit.py"
       ],
       "applies_when": [
         "app/components",
@@ -61,7 +61,7 @@
       "why": "The doctrine is a priority order -- fluid, then intrinsic, then breakpoints as an exception that must justify itself -- and until now it was prose that nothing checked. Measured on a consumer app that declares 20-odd primitives of its own: grid-auto used 21 times, so the idea took, and 31 elements still hand-roll `flex` + an alignment + a gap, which is what cluster IS. Three more change the layout axis at a breakpoint where switcher, Sidebar and grid-auto adapt with no query. Sizing breakpoints are not flagged because the doctrine prescribes them, and a genuine structural swap is exempt when it is DECLARED.",
       "command": [
         "python3",
-        "{plugin}/scripts/check_layout_composition.py"
+        "{plugin}/ui/viewcomponent-erb/scripts/check_layout_composition.py"
       ],
       "applies_when": [
         "app/views"
@@ -75,7 +75,7 @@
       "why": "The component mandate was prose, and prose drifts where nothing checks it. Measured on a consumer app: ZERO raw form fields, where a request spec asserted anatomy; EIGHTEEN raw buttons, where only a sentence did. Nine retyped the class string and one copy appeared three times, omitting a class the component had gained because a table action column broke mid-word -- carrying the exact defect the component was fixed for, unable to receive the fix. The second rule is the cause of the first: a component that cannot take a caller's data- or form- attribute is one a developer writes by hand instead.",
       "command": [
         "python3",
-        "{plugin}/scripts/check_component_contract.py"
+        "{plugin}/ui/viewcomponent-erb/scripts/check_component_contract.py"
       ],
       "applies_when": [
         "app/components"
@@ -89,7 +89,7 @@
       "why": "Variants that differ in anything but composition are a fork of the design system, and a switcher route left reachable in production ships every rejected screen.",
       "command": [
         "python3",
-        "{plugin}/scripts/variant_conformance.py",
+        "{plugin}/ui/viewcomponent-erb/scripts/variant_conformance.py",
         "."
       ],
       "applies_when": [
@@ -104,7 +104,7 @@
       "why": "A pack moves upstream and the project stands still — drift enters with NO local edit, so no change-triggered mechanism can catch it. Only an unconditional check can.",
       "command": [
         "python3",
-        "{plugin}/scripts/check_token_drift.py"
+        "{plugin}/ui/viewcomponent-erb/scripts/check_token_drift.py"
       ],
       "applies_when": [
         "app/assets/tailwind/application.css"
@@ -118,7 +118,7 @@
       "why": "A port that implements three of an artboard's seven sections passes the design-system audit and can say it is done; the manifest extracted from the canvas is the denominator, and the port report must account for every item by id, with implemented text found where it says.",
       "command": [
         "python3",
-        "{plugin}/scripts/port_fidelity_gate.py",
+        "{plugin}/ui/viewcomponent-erb/scripts/port_fidelity_gate.py",
         "docs/design"
       ],
       "applies_when": [
