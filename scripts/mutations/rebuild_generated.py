@@ -29,6 +29,14 @@ GUARD = Guard(
         "scripts/extract_release_notes.py",
         "scripts/rails_assumptions.py",           # registered in BUILDERS by #2164
         "scripts/component_classes.py",           # registered in BUILDERS by #2192
+        "scripts/check_architecture_rules.py",    # imported by derive_architecture_rules.py
+        "scripts/derive_architecture_rules.py",   # registered in BUILDERS (architecture rules); missing here it made this guard INERT on dev
+        "plugins/design-flow/reference/architecture-rules.json",   # its declared output
+        "scripts/build_component_axes.py",        # registered in BUILDERS by #2272
+        "scripts/check_component_shapes.py",      # imported by build_component_axes.py
+        "plugins/rails-stack/skills/design-system/references/components.md",          # build_component_axes.py's declared outputs
+        "plugins/rails-stack/skills/design-system/references/components-commerce.md",
+        "scripts/prove_neutral.py",              # excluded from rebuilding by #2205
         "scripts/changelog_fragments.py",         # registered as not-a-generator by #1825; the selftest asserts it exists (#1893)
         "docs/evidence/coverage.html",
         "docs/wiki/",
@@ -41,7 +49,7 @@ GUARD = Guard(
         "dist/",
         ".claude/skills/",
         "plugins/rails-flow/mandated_gems.json",
-        "plugins/rails-flow/scaffold/",           # derive_tenancy_cop.py's declared output
+        "plugins/rails-stack/scaffold/",          # derive_tenancy_cop.py's declared output
     ),
     mutations=(
         Mutation(

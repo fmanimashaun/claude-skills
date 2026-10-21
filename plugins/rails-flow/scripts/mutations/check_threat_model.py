@@ -119,7 +119,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a repeated ID stops being reported",
-            "                elif rid.upper() in ids:",
+            "                elif _tm_number(rid) in ids:  # TM-1 and TM-01 are one number, so one citation would cover both (#2213 adversary)",
             "                elif False:",
             "a repeated ID is found",
         ),
@@ -128,6 +128,36 @@ GUARD = Guard(
             "            out.append((int(cells[0][3:]), cells[1], cells[4].lower()))",
             "            out.append((len(out) + 1, cells[1], cells[4].lower()))",
             "threat_rows reads each row's own ID, not its position",
+        ),
+        Mutation(
+            "TM-1 and TM-01 count as two IDs again",
+            "                    ids.add(_tm_number(rid))",
+            "                    ids.add(rid.upper())",
+            "TM-1 and TM-01 are the same ID",
+        ),
+        Mutation(
+            "a second Threats section passes again",
+            '    if len(re.findall(r"^##\\s+Threats\\s*$", _uncommented(text), re.M)) > 1:',
+            '    if False:',
+            "a second Threats section is found",
+        ),
+        Mutation(
+            "a row without a leading pipe is ignored again",
+            '        if ln.strip() and not ln.startswith("|"):',
+            '        if False:',
+            "a row without a leading pipe is refused",
+        ),
+        Mutation(
+            "an HTML comment in the Threats section is allowed again",
+            '    if raw and "<!--" in raw.group(1):',
+            '    if False:',
+            "a comment inside a cell is refused",
+        ),
+        Mutation(
+            "a row with the wrong number of cells is padded and read again",
+            "                if len(cells) != 6:",
+            "                if False:",
+            "a row with five cells is refused",
         ),
     ),
 )

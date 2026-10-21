@@ -26,9 +26,9 @@ Hotwire reference: Turbo (Drive, Frames, Streams, morphing page refreshes, broad
 
 ## `design-system`
 
-The design system — how to build consistent, modern, responsive UI in Rails 8 + Hotwire + Tailwind CSS v4, brand-parameterised via brand packs.
+The design system — how to architect and build consistent, modern, responsive interfaces, brand-parameterised via brand packs.
 
-24 reference file(s): `art-direction`, `brand`, `component-implementations`, `components-commerce`, `components`, `coverage`, `crud-modal-pattern`, `data-viz`, `design-handoff`, `forms`, `foundations-tokens`, `interaction-stimulus`, `layout-primitives`, `marketing-copy`, `mobile-reference-implementation`, `mobile`, `motion`, `native-tokens`, `page-anatomies`, `reference-implementation`, `reference-research`, `reference-sources`, `responsive`, `visual-assets`
+25 reference file(s): `architecture`, `art-direction`, `brand`, `component-implementations`, `components-commerce`, `components`, `coverage`, `crud-modal-pattern`, `data-viz`, `design-handoff`, `forms`, `foundations-tokens`, `interaction-stimulus`, `layout-primitives`, `marketing-copy`, `mobile-reference-implementation`, `mobile`, `motion`, `native-tokens`, `page-anatomies`, `reference-implementation`, `reference-research`, `reference-sources`, `responsive`, `visual-assets`
 
 
 ## `code-review`

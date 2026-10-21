@@ -28,18 +28,12 @@ The failure this stack invites is a server-only Supabase key reaching the browse
 
 So the rule for this stack: **the publishable key may carry `NEXT_PUBLIC_`; the secret key never does**, and it is read only in server code. A secret key under a `NEXT_PUBLIC_` name is a leak, whatever the code around it does.
 
-## 3. The vendor commands for each step
+## 3. The vendor steps are the vendors' to teach
 
-The commands to use for these steps, rather than rebuilding them; the flows do not drive them yet:
+The CLI steps are not copied here: each vendor ships them, kept current against its own releases. The flows do not drive them yet.
 
-| Step | Command | Source |
-|---|---|---|
-| Local Supabase for development and tests (needs Docker) | `supabase start` | [Supabase CLI getting started](https://supabase.com/docs/guides/local-development/cli/getting-started) |
-| A new migration | `supabase migration new <name>` | [Supabase CLI reference](https://supabase.com/docs/reference/cli/introduction) |
-| Schema changes as SQL | `supabase db diff` | [Supabase CLI reference](https://supabase.com/docs/reference/cli/introduction) |
-| TypeScript types from the database schema | `supabase gen types --lang typescript` | [Supabase CLI reference](https://supabase.com/docs/reference/cli/introduction) |
-| Link this directory to its Vercel project | `vercel link` | [vercel link](https://vercel.com/docs/cli/link) |
-| Pull the development environment variables | `vercel env pull .env.local` (name the file: the default is described both as `.env` and `.env.local`) | [vercel env](https://vercel.com/docs/cli/env) |
+- Hand-off: for the Supabase CLI steps (the local stack, migrations, schema diffs, generated types, advisors) use the vendor's `supabase` skill (supabase/agent-skills, installed in section 1); its "Supabase CLI" section owns the commands.
+- Hand-off: for the Vercel steps (linking this directory to its project, pulling environment variables, deploying, project status) use the vendor plugin's commands `/vercel:bootstrap`, `/vercel:env`, `/vercel:deploy` and `/vercel:status` (vercel/vercel-plugin, installed in section 1).
 
 Generated types are the contract between the database and the app: regenerate them with each migration, so the TypeScript build catches a schema change the code has not followed.
 

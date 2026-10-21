@@ -1,0 +1,235 @@
+{
+  "plugin": "rails-stack",
+  "comment": [
+    "Checks this plugin can run against a USER'S repo, for project_gates.py to discover.",
+    "A plugin declares its own; the runner never hardcodes a list, so adding a check here is the",
+    "whole registration step and a new plugin needs no change to the runner.",
+    "These are the Rails project gates, moved here from rails-flow (#2175): installing rails-stack adds them.",
+    "",
+    "applies_when: every path must exist in the user's repo, or the check reports NOT APPLICABLE",
+    "with that reason. An empty list means it always applies. Not-applicable is never a pass.",
+    "A path nothing writes is therefore a PERMANENT not-applicable -- a gate that cannot fail, and",
+    "indistinguishable from one that correctly found nothing to do. scripts/check_manifest_paths.py",
+    "reconciles every path below against the paths this plugin's own scripts and commands name (#423).",
+    "requires: executables that must be on PATH. Missing is a FAILURE, not a skip -- in CI a skip",
+    "is indistinguishable from a pass unless something asserts the dependency is there."
+  ],
+  "checks": [
+    {
+      "id": "layer-structure",
+      "why": "rails-flow gates what is IN a file and said nothing about where a file should LIVE, so nothing drifted -- a flat app/controllers root is not a violation, it is an absence. The check PRINTS the per-layer flat/namespaced table; no counts are quoted here, because a copy of a number this script computes goes stale silently and this one already had (#1124). Read ACROSS the rows: layers that disagree with each other are the finding, so one flow's job, controller, views and models end up in unrelated places. The table is ADVISORY because projects legitimately differ; the one FAILURE is a controller whose directory contradicts the module its route declares -- via scope module:, namespace, or an explicit to: -- which is derivable with no configuration and is drift rather than taste.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_layer_structure.py"
+      ],
+      "applies_when": [
+        "app"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "structure-ratchet",
+      "why": "The companion to layer-structure, and the only STRUCTURE gate that fails. It counts files at the ROOT of each app/ layer and refuses a rise: a directory already this flat may not get flatter. It has no opinion about folder names, because the right grouping for one app is its domains and another's is different -- a gate that dictates names is wrong everywhere it was not written for, and the first team it is wrong for switches it off. Two arms: a RISE above the floor, and a floor left ABOVE the real count, which is STALE and means the ratchet has quietly stopped ratcheting. A layer with no floor recorded is reported, never failed -- growth is not regression. n/a until a project runs --set-floor and commits .rails-flow/structure-floors.json, so adoption is green on day one.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/structure_ratchet.py"
+      ],
+      "applies_when": [
+        "app"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "architecture-boundaries",
+      "why": "A forbidden dependency the doctrine states and nothing checks is a preference.",
+      "command": [
+        "bundle",
+        "exec",
+        "archspec",
+        "check"
+      ],
+      "applies_when": [
+        "Archspec.rb"
+      ],
+      "requires": [
+        "bundle"
+      ]
+    },
+    {
+      "id": "erb-parse-safety",
+      "why": "ERB in attribute-name position escapes nothing; a regex pass cannot see it.",
+      "command": [
+        "bundle",
+        "exec",
+        "herb",
+        "analyze",
+        "app/views"
+      ],
+      "applies_when": [
+        "app/views"
+      ],
+      "requires": [
+        "bundle"
+      ]
+    },
+    {
+      "id": "erb-lint",
+      "why": "raw() in a template bypasses escaping; analyze alone does not flag it. Runs the linter pinned to the locked herb gem, never npm's latest (#1285), over app/views AND app/components (#1296).",
+      "command": [
+        "python3",
+        "{plugin}/scripts/herb_lint.py"
+      ],
+      "applies_when": [
+        "app/views"
+      ],
+      "requires": [
+        "npx"
+      ]
+    },
+    {
+      "id": "ci-runs-tests",
+      "why": "bin/ci reporting green having run zero specs is a gate that passes by not looking, and it is quoted as confidence.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_ci_runs_tests.py"
+      ],
+      "applies_when": [
+        "config/ci.rb"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "spec-support-wired",
+      "why": "Rails ships the spec/support auto-loader COMMENTED; left as generated every support file is dead with no error, and a capybara nothing drives is protection that isn't.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_spec_support.py"
+      ],
+      "applies_when": [
+        "spec"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "coverage-ratchets",
+      "why": "A commented-out `minimum_coverage 90` never becomes realistic, so coverage goes unenforced for the life of the project; a DROP is a measured regression and can gate honestly.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_coverage_ratchet.py"
+      ],
+      "applies_when": [
+        "Gemfile"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "i18n-wired",
+      "why": "I18n.locale = in a controller leaks across requests on a threaded server, serving the previous visitor's language; and a declaration is what lets a situational rule be checked at all.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_i18n_setup.py"
+      ],
+      "applies_when": [
+        "config"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "tenancy-cop",
+      "why": "A multi-tenant app's cop against unscoped lookups (Document.find in a controller) is installed unmodified, loaded, not disabled, not silently auto-correcting, free of mistyped keys RuboCop would swallow, and lists every table that carries the tenant foreign key. Without the table check an empty model list is a cop that cannot fail. Declared by .rails-flow/tenancy.json; single-tenant is n/a.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_tenancy_cop.py"
+      ],
+      "applies_when": [
+        ".rails-flow/tenancy.json"
+      ],
+      "requires": [
+        "python3",
+        "ruby"
+      ]
+    },
+    {
+      "id": "simple-form-only",
+      "why": "simple_form is mandatory in this stack, and the only check was design-auditor's review-time grep for form_with/form_for over app/views. It missed form_tag, raw <form>/<input>/<select>, *_tag field helpers, tag.input, and raw field methods called on a simple_form builder (f.text_field, f.label), and it never read app/components (#1383). Not applicable without simple_form in Gemfile.lock. Exemptions are declared, with a reason, in .rails-flow/raw-form-exemptions.json.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_simple_form_only.py"
+      ],
+      "applies_when": [
+        "Gemfile.lock"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "unauthenticated-writes",
+      "why": "Every public write route (POST/PATCH/PUT/DELETE an unauthenticated visitor can reach) needs a rate_limit covering its action. The launch baseline required it and nothing ran it, so a one-time-code check and a magic-link sender took unlimited requests while every gate read clean (#1300). Exemptions are declared, with a reason, in .rails-flow/unauthenticated-endpoints.json.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_unauthenticated_writes.py"
+      ],
+      "applies_when": [
+        "app/controllers/concerns/authentication.rb"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "production-config",
+      "why": "Production configuration was validated by nothing: `config.hosts` is empty in production and does nothing, and a downstream app shipped with it commented out (Host-header and DNS-rebinding protection off, an emailed link built from the request host). Fails when config/environments/production.rb does not set `config.hosts` or `force_ssl`, sets `consider_all_requests_local = true`, carries a wildcard CORS origin, or mounts a dev-only route outside a development guard. Static and offline (#2120). Exemptions are declared, with a reason, in .rails-flow/production-config.json. Credential literals are #2121.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_production_config.py"
+      ],
+      "applies_when": [
+        "config/environments/production.rb"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "mcp-end-to-end",
+      "why": "An app with an MCP server (the `mcp` gem) names, in .rails-flow/mcp.json, the request-level spec that drives the server end to end: it reaches tools/list and tools/call over the real endpoint, literally or through a spec/support helper. A tool that loads in a unit spec can still fail at the transport, the auth or the JSON-RPC layer (#1930, gate 4 of #1885). No mcp gem is n/a; the gem with no declaration is a finding.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_mcp_end_to_end.py"
+      ],
+      "applies_when": [
+        "Gemfile"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "brakeman",
+      "why": "Brakeman is the upstream tool that already catches the Rails security claims this stack states as doctrine: cross-site scripting through unescaped output (CheckCrossSiteScripting, CheckSanitizeMethods, CheckStripTags), the CSRF setting (CheckForgerySetting) and SQL injection. A scaffolded project ran it in its own CI only when its config/ci.rb had that step and nothing in this toolchain asked, so a project that installed rails-stack had no Brakeman gate (#2223, verified against the Brakeman docs by doctrine-verifier on 2026-10-21). Warnings a project has reviewed and ignored (config/brakeman.ignore) are Brakeman's own mechanism and are not counted; a missing Brakeman is a failure, not a skip.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_brakeman.py"
+      ],
+      "applies_when": [
+        "config/application.rb"
+      ],
+      "requires": [
+        "python3"
+      ]
+    }
+  ]
+}

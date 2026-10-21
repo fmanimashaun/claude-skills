@@ -1,0 +1,481 @@
+[
+  {
+    "name": "Ruby =begin/=end blocks, <<~ heredocs (two on one line), /* */ spans and # comments are not code; the line opening a heredoc and a splat line are code",
+    "file": "app/models/c.rb",
+    "lines": [
+      "a",
+      "b",
+      "c",
+      "# note",
+      "",
+      "=begin",
+      "hidden",
+      "=end",
+      "last",
+      "x = <<~SQL",
+      "  select 1",
+      "SQL",
+      "/* block",
+      "middle no star",
+      "end */",
+      "tail",
+      "  *args,",
+      "y = [<<~X, <<~Y]",
+      "  one",
+      "X",
+      "  two",
+      "Y",
+      "done"
+    ],
+    "non_code": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      11,
+      12,
+      13,
+      14,
+      15,
+      19,
+      20,
+      21,
+      22
+    ]
+  },
+  {
+    "name": "a quoted heredoc terminator is recognised",
+    "file": "lib/tasks/t.rake",
+    "lines": [
+      "x = <<~'SQL'",
+      "  select 1",
+      "SQL",
+      "done"
+    ],
+    "non_code": [
+      2,
+      3
+    ]
+  },
+  {
+    "name": "ERB `<%# %>` and HTML `<!-- -->` comments are not code, on one line or several; the output tag between them is",
+    "file": "app/views/notes/show.html.erb",
+    "lines": [
+      "<%# secret %>",
+      "<%= raw @note.body %>",
+      "<!-- note",
+      "still a comment",
+      "-->",
+      "<%# a",
+      "b %>",
+      "<p>done</p>"
+    ],
+    "non_code": [
+      1,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "name": "an indented `=begin` is code: Ruby honours it only at column 0",
+    "file": "app/models/d.rb",
+    "lines": [
+      "def x",
+      "  =begin",
+      "  y = 1",
+      "end"
+    ],
+    "non_code": []
+  },
+  {
+    "name": "`=begin` in an ERB file is not a block comment there",
+    "file": "app/views/a.html.erb",
+    "lines": [
+      "=begin",
+      "<%= raw x %>",
+      "=end"
+    ],
+    "non_code": []
+  },
+  {
+    "name": "`__END__` at column 0 ends code for the rest of the file; indented it is code",
+    "file": "app/models/e.rb",
+    "lines": [
+      "def x",
+      "  __END__",
+      "end",
+      "__END__",
+      "data = 1",
+      "more"
+    ],
+    "non_code": [
+      4,
+      5,
+      6
+    ]
+  },
+  {
+    "name": "a lowercase and a backtick-quoted heredoc are heredocs; a bare one ends only at column 0",
+    "file": "app/models/f.rb",
+    "lines": [
+      "a = <<~eos",
+      "  body",
+      "  eos",
+      "b = <<`CMD`",
+      "ls",
+      "CMD",
+      "c = <<END",
+      "  END",
+      "END",
+      "done"
+    ],
+    "non_code": [
+      2,
+      3,
+      5,
+      6,
+      8,
+      9
+    ]
+  },
+  {
+    "name": "a mid-line or indented `=end` does not close `=begin`",
+    "file": "app/models/g.rb",
+    "lines": [
+      "=begin",
+      "x =end",
+      "  =end",
+      "hidden",
+      "=end",
+      "code"
+    ],
+    "non_code": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "name": "a second `<%#` after a closed one leaves a comment open",
+    "file": "app/views/h.html.erb",
+    "lines": [
+      "<p><%# a %> t <%# begin",
+      "hidden",
+      "%>",
+      "<%= raw x %>"
+    ],
+    "non_code": [
+      2,
+      3
+    ]
+  },
+  {
+    "name": "`<%-#` is an ERB comment, on one line or several",
+    "file": "app/views/i.html.erb",
+    "lines": [
+      "<%-# hidden -%>",
+      "<%= raw y %>",
+      "<%-# a",
+      "b -%>",
+      "<%= raw z %>"
+    ],
+    "non_code": [
+      1,
+      3,
+      4
+    ]
+  },
+  {
+    "name": "JS (#2260): a hashbang on line 1, `//` and `/* */` spans (one line and several) are not code; code after them, and a trailing `//`, are",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "#!/usr/bin/env node",
+      "import { Controller } from \"@hotwired/stimulus\"",
+      "// a line comment",
+      "/* one line */",
+      "/* a block",
+      "   TM-1: implemented here (a comment, not code)",
+      "*/",
+      "export default class extends Controller {",
+      "  connect() { this.element.textContent = \"hi\" } // trailing comment: the line is code"
+    ],
+    "non_code": [
+      1,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "name": "JS (#2260): `<!--` and `-->` at the start of a line are comments (never code in a Script or a Module); `i --> 0` and `a < !--b` are code",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "<!-- an html-like comment",
+      "while (i --> 0) { step() }",
+      "--> a close comment at the start of a line",
+      "const y = a < !--b"
+    ],
+    "non_code": [
+      1,
+      3
+    ]
+  },
+  {
+    "name": "JS (#2260): a regex with `//` inside a class or escaped, and `//` inside a string, are code (a line is a comment only when it STARTS with the marker)",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "const a = /[/]x/;",
+      "const b = /https?:\\/\\//;",
+      "const u = \"http://example.com\";",
+      "// the only comment"
+    ],
+    "non_code": [
+      4
+    ]
+  },
+  {
+    "name": "JS (#2260): a `/*` inside a string opens a span in this line reader, so the lines after it are not accepted: a false refusal, the safe direction (a quote-aware reader would need a tokenizer)",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "const u = \"a/*b\";",
+      "run();",
+      "*/",
+      "after();"
+    ],
+    "non_code": [
+      2,
+      3
+    ]
+  },
+  {
+    "name": "JS (#2260): a template literal that spans lines is REFUSED, the file as a whole: its body lines would read as code",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "const sql = `select 1",
+      "  where x = 1`;",
+      "run(sql);"
+    ],
+    "refused": true
+  },
+  {
+    "name": "JS (#2260): a template literal body that looks like a comment or code is REFUSED with the file, not read line by line",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "const html = `",
+      "// not a comment: template text",
+      "  TM-1 implemented",
+      "`;"
+    ],
+    "refused": true
+  },
+  {
+    "name": "JS (#2260): a single-line template literal is REFUSED too: any backtick refuses the file (an even count proves nothing, below)",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "const t = `a ${b} c`;",
+      "// note",
+      "const u = `x`;"
+    ],
+    "refused": true
+  },
+  {
+    "name": "JS (#2260): a JSX comment container `{/* */}` is REFUSED (the line reads as code, but holds only a comment)",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "render(() => {",
+      "  {/* TM-1 holds here */}",
+      "})"
+    ],
+    "refused": true
+  },
+  {
+    "name": "JS (#2260): `<!--` after other text is REFUSED: a comment in a Script and code in a Module, and this reader cannot tell which",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "x = 1 <!-- y",
+      "run();"
+    ],
+    "refused": true
+  },
+  {
+    "name": "JS (#2260): `#x = 1;` (a class private field) reads as a `#` comment: a false refusal of real code, the safe direction",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "class A {",
+      "  #x = 1;",
+      "}"
+    ],
+    "non_code": [
+      2
+    ]
+  },
+  {
+    "name": "JS (#2260): `.mjs` is read with the same row",
+    "file": "lib/a.mjs",
+    "lines": [
+      "// c",
+      "export const a = 1;"
+    ],
+    "non_code": [
+      1
+    ]
+  },
+  {
+    "name": "JS (#2260): `.cjs` is read with the same row",
+    "file": "lib/b.cjs",
+    "lines": [
+      "/* c */",
+      "module.exports = {};"
+    ],
+    "non_code": [
+      1
+    ]
+  },
+  {
+    "name": "declared (#2260): `.js` is a declared file type",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "declared": true
+  },
+  {
+    "name": "declared (#2260): `.ts` stays UNDECLARED: ECMA-262 does not define TypeScript, and no verified source says its comments match",
+    "file": "app/javascript/x.ts",
+    "declared": false
+  },
+  {
+    "name": "declared (#2260): `.jsx` stays UNDECLARED: JSX is outside ECMA-262 (the verifier found no mention)",
+    "file": "app/javascript/x.jsx",
+    "declared": false
+  },
+  {
+    "name": "declared (#2260): `.tsx` stays UNDECLARED",
+    "file": "app/javascript/x.tsx",
+    "declared": false
+  },
+  {
+    "name": "JS (#2260): the `<!--` line marker belongs to JavaScript files only: in a `.rb` file a line starting with it is read as code",
+    "file": "app/models/m.rb",
+    "lines": [
+      "<!-- not a ruby comment",
+      "# a ruby comment"
+    ],
+    "non_code": [
+      2
+    ]
+  },
+  {
+    "name": "JS (#2260): the backtick refusal belongs to JavaScript files only: a `.rb` file with a lone backtick on a line is read",
+    "file": "app/models/m.rb",
+    "lines": [
+      "name = `whoami`.strip",
+      "x = 'a`b'",
+      "# note"
+    ],
+    "non_code": [
+      3
+    ]
+  },
+  {
+    "name": "JS (#2260): a nested template literal keeps every line's backtick count even and is REFUSED (adversary): `const x = `a ${`b`} ${`c` ... `",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "const x = `a ${`b`} ${`c",
+      "secret_bypassed();",
+      "`}`;"
+    ],
+    "refused": true
+  },
+  {
+    "name": "JS (#2260): an escaped backtick keeps the count even and is REFUSED (adversary)",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "const x = `a \\`",
+      "secret_bypassed();",
+      "\\` `;"
+    ],
+    "refused": true
+  },
+  {
+    "name": "JS (#2260): a backtick inside a quoted string keeps the count even and is REFUSED (adversary)",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "const q = \"`\"; const x = `open",
+      "secret_bypassed();",
+      "`; const r = \"`\";"
+    ],
+    "refused": true
+  },
+  {
+    "name": "JS (#2260): a backtick inside a `${\"`\"}` substitution keeps the count even and is REFUSED (adversary)",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "const x = `a ${\"`\"} b",
+      "secret_bypassed();",
+      "` + \"`\";"
+    ],
+    "refused": true
+  },
+  {
+    "name": "JS (#2260): a backtick inside a /* */ comment keeps the count even and is REFUSED (adversary)",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "/* ` */ const x = `open",
+      "secret_bypassed();",
+      "` /* ` */;"
+    ],
+    "refused": true
+  },
+  {
+    "name": "JS (#2260): a quoted backtick alone refuses the file: a false refusal, the safe direction",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "const q = \"`\";",
+      "real();"
+    ],
+    "refused": true
+  },
+  {
+    "name": "JS (#2260): a byte-order mark before a `//` comment on line 1 does not make it code (adversary)",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "\ufeff// comment",
+      "const a = 1;"
+    ],
+    "non_code": [
+      1
+    ]
+  },
+  {
+    "name": "JS (#2260): a byte-order mark before a `/*` on line 1 still opens the block (adversary)",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "\ufeff/* open",
+      "hidden();",
+      "*/",
+      "code();"
+    ],
+    "non_code": [
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "name": "JS (#2260): a byte-order mark before `<!--` on line 1 still makes it a comment (adversary)",
+    "file": "app/javascript/controllers/hello_controller.js",
+    "lines": [
+      "\ufeff<!-- comment",
+      "const a = 1;"
+    ],
+    "non_code": [
+      1
+    ]
+  }
+]

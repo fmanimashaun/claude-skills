@@ -15,28 +15,14 @@
   ],
   "checks": [
     {
-      "id": "layer-structure",
-      "why": "rails-flow gates what is IN a file and said nothing about where a file should LIVE, so nothing drifted -- a flat app/controllers root is not a violation, it is an absence. The check PRINTS the per-layer flat/namespaced table; no counts are quoted here, because a copy of a number this script computes goes stale silently and this one already had (#1124). Read ACROSS the rows: layers that disagree with each other are the finding, so one flow's job, controller, views and models end up in unrelated places. The table is ADVISORY because projects legitimately differ; the one FAILURE is a controller whose directory contradicts the module its route declares -- via scope module:, namespace, or an explicit to: -- which is derivable with no configuration and is drift rather than taste.",
+      "id": "plan-advisory",
+      "why": "A plan that crosses a security boundary, changes structure, the data model or a dependency, or spans six or more components needs a recorded Fable `plan-advisor` pass with every finding disposed, for the plan as it is now (#2262, owner direction: everything must be enforced). The stop gate checks it at the end of a turn; this registration makes the sweep that `gh pr ready` requires check it too, so a PR cannot be marked ready past a skipped advisory. RETHINK blocks until a fresh pass says PROCEED or a named override is recorded. The branch decides the unit; a branch with no plan files owes nothing. applies_when is `docs`, not the two criteria homes: every listed path must exist, and the layout's `docs/product/acceptance` and the pre-layout `docs/acceptance` are alternatives (#2267 plan-advisor A-6).",
       "command": [
         "python3",
-        "{plugin}/scripts/check_layer_structure.py"
+        "{plugin}/scripts/advisory_scope.py"
       ],
       "applies_when": [
-        "app"
-      ],
-      "requires": [
-        "python3"
-      ]
-    },
-    {
-      "id": "structure-ratchet",
-      "why": "The companion to layer-structure, and the only STRUCTURE gate that fails. It counts files at the ROOT of each app/ layer and refuses a rise: a directory already this flat may not get flatter. It has no opinion about folder names, because the right grouping for one app is its domains and another's is different -- a gate that dictates names is wrong everywhere it was not written for, and the first team it is wrong for switches it off. Two arms: a RISE above the floor, and a floor left ABOVE the real count, which is STALE and means the ratchet has quietly stopped ratcheting. A layer with no floor recorded is reported, never failed -- growth is not regression. n/a until a project runs --set-floor and commits .rails-flow/structure-floors.json, so adoption is green on day one.",
-      "command": [
-        "python3",
-        "{plugin}/scripts/structure_ratchet.py"
-      ],
-      "applies_when": [
-        "app"
+        "docs"
       ],
       "requires": [
         "python3"
@@ -44,7 +30,7 @@
     },
     {
       "id": "toolchain-selftests",
-      "why": "A project gets the gates and, until now, no proof they work. Measured when this was added: 33 consumer gate entries, 20 of 20 shipped check scripts carrying a --selftest, and 0 of 33 entries running one. Upstream, mutation coverage is the only reason any of it is trusted, and it caught four gates written that same day being partly vacuous -- none of that machinery crosses into a project. This runs every shipped selftest HERE, which is the one question the toolchain's own CI is structurally unable to answer: our CI proves a check discriminates on our machine, never on yours. 29 selftests in under four seconds. A FAILING selftest means the GATE is broken in this project -- it may have rotted against a framework or Python version we do not have -- and is routed to the toolchain, never filed against your code.",
+      "why": "A project gets the gates and, until now, no proof they work. When this was added, every shipped check script carried a --selftest and no consumer gate entry ran one. Upstream, mutation coverage is the only reason any of it is trusted, and it caught four gates written that same day being partly vacuous -- none of that machinery crosses into a project. This runs every shipped selftest HERE, which is the one question the toolchain's own CI is structurally unable to answer: our CI proves a check discriminates on our machine, never on yours. A FAILING selftest means the GATE is broken in this project -- it may have rotted against a framework or Python version we do not have -- and is routed to the toolchain, never filed against your code.",
       "command": [
         "python3",
         "{plugin}/scripts/check_toolchain_selftests.py"
@@ -135,67 +121,6 @@
       ]
     },
     {
-      "id": "architecture-boundaries",
-      "why": "A forbidden dependency the doctrine states and nothing checks is a preference.",
-      "command": [
-        "bundle",
-        "exec",
-        "archspec",
-        "check"
-      ],
-      "applies_when": [
-        "Archspec.rb"
-      ],
-      "requires": [
-        "bundle"
-      ]
-    },
-    {
-      "id": "erb-parse-safety",
-      "why": "ERB in attribute-name position escapes nothing; a regex pass cannot see it.",
-      "command": [
-        "bundle",
-        "exec",
-        "herb",
-        "analyze",
-        "app/views"
-      ],
-      "applies_when": [
-        "app/views"
-      ],
-      "requires": [
-        "bundle"
-      ]
-    },
-    {
-      "id": "erb-lint",
-      "why": "raw() in a template bypasses escaping; analyze alone does not flag it. Runs the linter pinned to the locked herb gem, never npm's latest (#1285), over app/views AND app/components (#1296).",
-      "command": [
-        "python3",
-        "{plugin}/scripts/herb_lint.py"
-      ],
-      "applies_when": [
-        "app/views"
-      ],
-      "requires": [
-        "npx"
-      ]
-    },
-    {
-      "id": "ci-runs-tests",
-      "why": "bin/ci reporting green having run zero specs is a gate that passes by not looking, and it is quoted as confidence.",
-      "command": [
-        "python3",
-        "{plugin}/scripts/check_ci_runs_tests.py"
-      ],
-      "applies_when": [
-        "config/ci.rb"
-      ],
-      "requires": [
-        "python3"
-      ]
-    },
-    {
       "id": "memory-systems",
       "why": "Three memory systems can inject into every session and none knows about the others; a project that says nothing in its committed settings loads whatever each user enabled globally. This holds the loaded set to the one the project recorded, at no per-session cost.",
       "command": [
@@ -218,63 +143,6 @@
       ],
       "requires": [
         "python3"
-      ]
-    },
-    {
-      "id": "spec-support-wired",
-      "why": "Rails ships the spec/support auto-loader COMMENTED; left as generated every support file is dead with no error, and a capybara nothing drives is protection that isn't.",
-      "command": [
-        "python3",
-        "{plugin}/scripts/check_spec_support.py"
-      ],
-      "applies_when": [
-        "spec"
-      ],
-      "requires": [
-        "python3"
-      ]
-    },
-    {
-      "id": "coverage-ratchets",
-      "why": "A commented-out `minimum_coverage 90` never becomes realistic, so coverage goes unenforced for the life of the project; a DROP is a measured regression and can gate honestly.",
-      "command": [
-        "python3",
-        "{plugin}/scripts/check_coverage_ratchet.py"
-      ],
-      "applies_when": [
-        "Gemfile"
-      ],
-      "requires": [
-        "python3"
-      ]
-    },
-    {
-      "id": "i18n-wired",
-      "why": "I18n.locale = in a controller leaks across requests on a threaded server, serving the previous visitor's language; and a declaration is what lets a situational rule be checked at all.",
-      "command": [
-        "python3",
-        "{plugin}/scripts/check_i18n_setup.py"
-      ],
-      "applies_when": [
-        "config"
-      ],
-      "requires": [
-        "python3"
-      ]
-    },
-    {
-      "id": "tenancy-cop",
-      "why": "A multi-tenant app's cop against unscoped lookups (Document.find in a controller) is installed unmodified, loaded, not disabled, not silently auto-correcting, free of mistyped keys RuboCop would swallow, and lists every table that carries the tenant foreign key. Without the table check an empty model list is a cop that cannot fail. Declared by .rails-flow/tenancy.json; single-tenant is n/a.",
-      "command": [
-        "python3",
-        "{plugin}/scripts/check_tenancy_cop.py"
-      ],
-      "applies_when": [
-        ".rails-flow/tenancy.json"
-      ],
-      "requires": [
-        "python3",
-        "ruby"
       ]
     },
     {
@@ -352,62 +220,6 @@
       "requires": [
         "python3",
         "git"
-      ]
-    },
-    {
-      "id": "simple-form-only",
-      "why": "simple_form is mandatory in this stack, and the only check was design-auditor's review-time grep for form_with/form_for over app/views. It missed form_tag, raw <form>/<input>/<select>, *_tag field helpers, tag.input, and raw field methods called on a simple_form builder (f.text_field, f.label), and it never read app/components (#1383). Not applicable without simple_form in Gemfile.lock. Exemptions are declared, with a reason, in .rails-flow/raw-form-exemptions.json.",
-      "command": [
-        "python3",
-        "{plugin}/scripts/check_simple_form_only.py"
-      ],
-      "applies_when": [
-        "Gemfile.lock"
-      ],
-      "requires": [
-        "python3"
-      ]
-    },
-    {
-      "id": "unauthenticated-writes",
-      "why": "Every public write route (POST/PATCH/PUT/DELETE an unauthenticated visitor can reach) needs a rate_limit covering its action. The launch baseline required it and nothing ran it, so a one-time-code check and a magic-link sender took unlimited requests while every gate read clean (#1300). Exemptions are declared, with a reason, in .rails-flow/unauthenticated-endpoints.json.",
-      "command": [
-        "python3",
-        "{plugin}/scripts/check_unauthenticated_writes.py"
-      ],
-      "applies_when": [
-        "app/controllers/concerns/authentication.rb"
-      ],
-      "requires": [
-        "python3"
-      ]
-    },
-    {
-      "id": "production-config",
-      "why": "Production configuration was validated by nothing: `config.hosts` is empty in production and does nothing, and a downstream app shipped with it commented out (Host-header and DNS-rebinding protection off, an emailed link built from the request host). Fails when config/environments/production.rb does not set `config.hosts` or `force_ssl`, sets `consider_all_requests_local = true`, carries a wildcard CORS origin, or mounts a dev-only route outside a development guard. Static and offline (#2120). Exemptions are declared, with a reason, in .rails-flow/production-config.json. Credential literals are #2121.",
-      "command": [
-        "python3",
-        "{plugin}/scripts/check_production_config.py"
-      ],
-      "applies_when": [
-        "config/environments/production.rb"
-      ],
-      "requires": [
-        "python3"
-      ]
-    },
-    {
-      "id": "mcp-end-to-end",
-      "why": "An app with an MCP server (the `mcp` gem) names, in .rails-flow/mcp.json, the request-level spec that drives the server end to end: it reaches tools/list and tools/call over the real endpoint, literally or through a spec/support helper. A tool that loads in a unit spec can still fail at the transport, the auth or the JSON-RPC layer (#1930, gate 4 of #1885). No mcp gem is n/a; the gem with no declaration is a finding.",
-      "command": [
-        "python3",
-        "{plugin}/scripts/check_mcp_end_to_end.py"
-      ],
-      "applies_when": [
-        "Gemfile"
-      ],
-      "requires": [
-        "python3"
       ]
     },
     {
@@ -510,6 +322,21 @@
       ],
       "requires": [
         "python3"
+      ]
+    },
+    {
+      "id": "security-review",
+      "why": "A threat model (#2117) says what a unit must resist; a model nobody verified is a claim. When the change adds or edits docs/security/threat-models/<slug>.md, `security-auditor` must have answered every mitigate and accept row, citing an existing file:line for each implemented control, in a record tied to this HEAD (docs/evidence/reviews/prs/<slug>/security-audit.md). A missing or stale record, a mitigate row not implemented, or an accept row gone stale fails the sweep, and gh pr ready needs a green sweep (#2119).",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_security_review.py"
+      ],
+      "applies_when": [
+        "docs/security/threat-models"
+      ],
+      "requires": [
+        "python3",
+        "git"
       ]
     }
   ]

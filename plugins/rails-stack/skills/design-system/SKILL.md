@@ -1,16 +1,17 @@
 ---
 name: design-system
 description: >
-  The design system — how to build consistent, modern, responsive UI in Rails 8 +
-  Hotwire + Tailwind CSS v4, brand-parameterised via brand packs. Load this WHENEVER building or
-  reviewing UI: components (buttons, cards, forms, nav, modals, tables, badges, alerts),
-  page layouts, tokens/theming, dark mode, responsiveness, or brand/logo usage. It defines
-  the token architecture (brand primitives → semantic roles → fluid scale), the layout
+  The design system — how to architect and build consistent, modern, responsive interfaces,
+  brand-parameterised via brand packs. Load this WHENEVER designing, building or reviewing UI:
+  the interface architecture (application shell, navigation, page templates, regions, the state
+  contract, cross-cutting contracts), components (buttons, cards, forms, nav, modals, tables,
+  badges, alerts), page layouts, tokens/theming, dark mode, responsiveness, or brand/logo usage.
+  It defines the token architecture (brand primitives → semantic roles → fluid scale), the layout
   primitives you compose instead of ad-hoc flex/grid, the component catalog with
-  variant/size/state, the Stimulus interaction patterns, and the responsive doctrine.
-  Consistency is enforced here, not left to taste — and **art direction** is taught rather than
-  left undefined: visual hierarchy, per-surface aesthetic intent, and the difference between a
-  surface that is correct and one that is considered.
+  variant/size/state, and the responsive doctrine; the Rails 8 + Hotwire + Tailwind CSS v4
+  implementation is its Rails adapter. Consistency is enforced here, not left to taste — and
+  **art direction** is taught rather than left undefined: visual hierarchy, per-surface aesthetic
+  intent, and the difference between a surface that is correct and one that is considered.
 ---
 
 # Design System
@@ -55,6 +56,7 @@ context cost in the toolchain and bought nothing a routed read does not.)
 | [references/foundations-tokens.md](references/foundations-tokens.md) | **Any colour, type or spacing decision.** The one `@theme` block: brand primitives → semantic roles (`--primary`, `--background`, `--muted`, `--border`, `--ring`, … each with a `-foreground` pair) → fluid Utopia scale + measure, radius, shadow, motion. Dark mode = re-point roles under `.dark`. **Structure snaps to 8px, rhythm stays fluid** — the structural tokens and the split. |
 | [references/brand.md](references/brand.md) | **Brand packs** — what a pack may and may not change, pack anatomy (`brand.json`, `theme.css`), variants, the completeness lint, starting a pack from a client's colours or from none |
 | [references/layout-primitives.md](references/layout-primitives.md) | **Laying anything out.** Stack, Cluster, Center, Box, Grid, Sidebar, Switcher, Cover, Frame, Reel, Imposter, Icon, Container — intrinsic response (`flex-wrap`, `auto-fit/minmax`, `clamp()`); breakpoints only for true structural swaps |
+| [references/architecture.md](references/architecture.md) | **How the interface is architected, above the catalog.** The four structural layers (shell, navigation, page templates, regions), the two contracts applied at every level (the state contract, the cross-cutting contracts) and the index; the nine page templates; and the rules table in which **every rule names its basis** (a check that exists, a verified standard, or a recorded decision). Read first when starting a screen or an app. |
 | [references/page-anatomies.md](references/page-anatomies.md) | **A whole screen.** 3 shell archetypes (sidebar + mobile drawer, stacked, multi-column) × 3 anatomies (home/dashboard, detail, settings), each with mobile behaviour and scroll containment; the data table's toolbar order and **selection and bulk actions**; the primitive-instead-of-breakpoint substitution table. A screen is composed, not designed. |
 | [references/components.md](references/components.md) | **A specific component** — the catalog: each entry a composition of primitives + roles with a fixed variant × size × state vocabulary, a11y checklist and responsive behaviour — including the **permissions matrix**, the **period selector** and a **background operation** that outlives the request. Open the one entry you need; do not read the file through. |
 | [references/components-commerce.md](references/components-commerce.md) | **Selling something** — product card, filter panel, quick view, cart drawer, payment, promo code, plan comparison, seat selector, saved payment methods, subscription state. Open only for a commerce surface; the rest of the catalogue stays in `components.md`. |
@@ -77,8 +79,9 @@ context cost in the toolchain and bought nothing a routed read does not.)
 | [references/art-direction.md](references/art-direction.md) | **"Is this considered, or mechanically assembled?"** — one focal point per surface, a different aesthetic brief per surface class (marketing = emotion, dense app = clarity), the one sanctioned way to break the grid. Advisory: `design-auditor` is the gate, `design-critic` the lens. |
 | [references/marketing-copy.md](references/marketing-copy.md) | **Any marketing surface** — what each section *says*: per-section copy contract, length caps derived from the shipped measures, placeholder checks. Layout without copy doctrine is a well-composed page of lorem-grade words. |
 
-`references/component-shapes.json` is **machine-read** — the sidecar `design_prompt.py` draws
-components from, reconciled against the catalog by a gate. It is not doctrine; do not load it.
+The catalog's structured source, `component-shapes.json` (each component's variant and size names, and its drawable skeleton), is **machine-read** and
+lives in the design-flow plugin's `catalog/`, not in this skill (#2272: the catalog is stack-neutral design). The `Catalog axes` line under a component below is
+**generated** from it; edit the catalog, never that line. It is not doctrine; do not load it.
 
 ## Authoring mechanism (what to reach for)
 

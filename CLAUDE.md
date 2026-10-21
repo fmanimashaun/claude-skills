@@ -181,7 +181,7 @@ ladder of contexts; widening the ladder to silence a failure is how the tool sto
 there is no extractor, by design — of `guarantee` / `advice` / `gap` rows, using
 `docs/doctrine/harness-doctrine.md`'s test (*if a model ignores this, what happens?*). Validators refuse an
 anchor that vanished, an enforcement that no longer exists, an unenforced guarantee, an untracked gap,
-a resolved gap, an undeclared source. An `advice` row with nothing behind it is **correct**. The map is
+a resolved gap, an undeclared source. An `advice` row is correct only when it carries a verified source or a recorded maintainer decision (owner ruling, #2224); one with neither is refused, and the existing ones are a list that may only shrink. The map is
 a floor, not a ceiling.
 
 ## Verify our own claims, not just our shell
@@ -251,7 +251,7 @@ Tracked `.claude/settings.json` holds a narrow allowlist every worktree gets; fo
 ## Platform
 
 Hooks are **bash + `python3`**; the flow drives `gh`. Windows: WSL or Git Bash. **Hooks do not all fail
-open.** Of the twenty-two hook scripts, fifteen are advisory and fail open — an advisory that blocks work on a
+open.** Of the twenty-three hook scripts, sixteen are advisory and fail open — an advisory that blocks work on a
 missing dependency gets disabled. Seven **gates fail closed**, each scoped to what it guards:
 `plugins/rails-flow/hooks/scripts/guard-bash.sh` (a tripwire for the common spellings, not a boundary: the stated-limit guarantee is the `git` shim and the `pre-commit` hook, #1789/#1790, #1793; falls back to the raw payload;
 the literal `git add -A` is blocked either way.), `plugins/qa-flow/hooks/scripts/release-gate.sh` (only for commands targeting `main`),

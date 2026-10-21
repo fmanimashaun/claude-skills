@@ -102,7 +102,18 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _DF = os.path.normpath(os.path.join(_HERE, "..", "..", ".."))
 # design-flow -> plugins -> repo root
 _REPO = os.path.normpath(os.path.join(_DF, "..", ".."))
-DEFAULT_SETUP = os.path.join(_DF, "commands", "setup.md")
+
+def adapter_setup_path(script_path: str) -> str:
+    """The setup procedure of the adapter THIS script belongs to: `ui/<implementation>/setup.md`, beside `scripts/` (#2185).
+
+    The neutral `commands/setup.md` no longer carries the scaffold; each UI adapter owns its own (`/design-flow:setup` reads it after
+    `ui_adapter.py` resolves the adapter), so a cross-check shipped in an adapter reads that adapter's procedure and a future adapter
+    is checked against its own rather than against Rails'.
+    """
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(script_path))), "setup.md")
+
+
+DEFAULT_SETUP = adapter_setup_path(__file__)
 # RESOLVED, not counted. Four `..` hops reach the doctrine in a marketplace clone and land a
 # directory short from an install, where the cache interposes `<bundle>/<version>/` — #617. The
 # shared resolver knows both shapes; falling back to the clone path keeps the message honest when
@@ -370,6 +381,18 @@ def selftest() -> int:
             failed += 1
             print(f"  FAIL {name}: {fail_phrase}")
 
+    # #2185: the default is the ADAPTER's setup procedure, resolved from the script's own location, not the neutral command. The Rails
+    # adapter's holds the initializer step the doctrine's `Rails.configuration.x.brand` depends on; the neutral command holds none.
+    check("the default setup is the adapter's own setup.md, beside its scripts/",
+          adapter_setup_path("/a/ui/x/scripts/s.py") == os.path.join("/a/ui/x", "setup.md"), adapter_setup_path("/a/ui/x/scripts/s.py"))
+    try:
+        with open(DEFAULT_SETUP, encoding="utf-8") as fh:
+            shipped = fh.read()
+    except OSError:
+        shipped = ""
+    check("the shipped default exists and generates the brand initializer the doctrine reads",
+          "config/initializers/brand.rb" in shipped and "x.brand" in shipped, DEFAULT_SETUP)
+
     with tempfile.TemporaryDirectory() as tmp:
         # --- Fixture A: #104 instance 1 — key read, setup generates nothing → ERROR ---
         doc = os.path.join(tmp, "a-doctrine")
@@ -539,7 +562,7 @@ def main(argv: list[str]) -> int:
         description="Verify /design-flow:setup generates the config the doctrine reads.",
     )
     parser.add_argument("--setup", default=DEFAULT_SETUP,
-                        help="path to commands/setup.md")
+                        help="path to the adapter's setup.md (default: the one beside this script's scripts/ directory)")
     parser.add_argument("--doctrine", default=DEFAULT_DOCTRINE,
                         help="path to the design-system doctrine tree")
     parser.add_argument("--selftest", action="store_true",

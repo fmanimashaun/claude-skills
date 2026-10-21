@@ -46,10 +46,11 @@ WHAT IT CHECKS
                               pipeline) differ, or one is missing -- one fixture-git lock, three copies (#1588)
   findings-script-drift       the two shipped copies of scripts/findings.py (rails-flow, qa-flow) differ,
                               or one is missing -- qa-reporter runs its own copy (#1680)
-  vendored-copy-drift         a file rails-stack vendors from rails-flow (triage_failures.py, check_simple_form_only.py,
+  vendored-copy-drift         a file rails-stack vendors from rails-flow (triage_failures.py, dev_baseline.py,
                               agent-output-contract.md) differs from its canonical copy, or one is missing (#2173)
-  detect-stack-drift          the two shipped copies of scripts/detect_stack.py (rails-flow, pipeline) differ,
-                              or one is missing -- pipeline's deploy_target.py imports its own copy (#2179)
+  detect-stack-drift          the three shipped copies of scripts/detect_stack.py (rails-flow, pipeline, design-flow)
+                              differ, or one is missing -- pipeline's deploy_target.py and design-flow's ui_adapter.py
+                              import their own copy (#2179, #2185)
   cross-plugin-relative-path  shipped markdown that runs `../<other-plugin>/...`, which resolves in the
                               clone and not in an install's per-plugin cache directories (#1680)
   fixture-git-bypass          a git call with the fixture identity (`t@t`) outside fixture_git -- a fixture's git
@@ -91,9 +92,11 @@ from __future__ import annotations
 
 import argparse
 import ast
+import io
 import json
 import re
 import sys
+import tokenize
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -841,7 +844,7 @@ def check_findings_script_drift() -> tuple[list[Finding], int]:
     return findings, len(FINDINGS_COPIES)
 
 
-# Rule: vendored-copy-drift (#2173)
+# Rule: vendored-copy-drift (#2173, #2226)
 # The Rails agents moved from rails-flow to rails-stack, and three of them run rails-flow files through
 # ${CLAUDE_PLUGIN_ROOT}, which in rails-stack points at rails-stack: there is no cross-plugin root. So rails-stack
 # ships copies, kept byte-identical here (#906's pattern). EACH COPY IS TEMPORARY, and the third field says what removes it.
@@ -850,8 +853,8 @@ VENDORED_COPIES = (
      "rails-stack's test-runner runs it; it leaves when the flows' triage reads the descriptor and rails-stack owns the original"),
     ("plugins/rails-flow/scripts/dev_baseline.py", "plugins/rails-stack/scripts/dev_baseline.py",
      "the vendored triage_failures.py imports it; it leaves with that copy, when the flows' triage reads the descriptor (#2183)"),
-    ("plugins/rails-flow/scripts/check_simple_form_only.py", "plugins/rails-stack/scripts/check_simple_form_only.py",
-     "rails-stack's design-auditor runs it; step 4 (#2175) moves the original and its checks.json row and deletes this copy"),
+    ("plugins/rails-flow/scripts/mockup_records.py", "plugins/qa-flow/scripts/mockup_records.py",
+     "qa-flow's release_evidence.py refuses the certification stamp for a shipped design with no `Story:`; it reads the record lines with this file (#2226), and leaves when a shared core plugin owns it"),
     ("plugins/rails-flow/reference/agent-output-contract.md", "plugins/rails-stack/reference/agent-output-contract.md",
      "every moved agent cites it; a neutral reference whose single home is core-skills (#2186), which removes this copy"),
 )
@@ -879,8 +882,11 @@ def check_vendored_copy_drift() -> tuple[list[Finding], int]:
 # detector, which rails-flow owns. A plugin installs alone and cannot import another's code, so pipeline ships a copy and
 # `deploy_target.py` imports it (the sibling-plugin discovery is the detector's own, called once, not a third copy of it).
 # A fix to the detector that misses the copy would route a deploy by a stale reading of the descriptor.
+# design-flow's `ui_adapter.py` (#2185) reads the project's `descriptor.ui` through the same kind of copy: a stale one rejected the current
+# rails-stack manifest and made every project unresolvable, with nothing to say so.
 DETECT_STACK_COPIES = ("plugins/rails-flow/scripts/detect_stack.py",
-                       "plugins/pipeline/scripts/detect_stack.py")
+                       "plugins/pipeline/scripts/detect_stack.py",
+                       "plugins/design-flow/scripts/detect_stack.py")
 
 
 def check_detect_stack_drift() -> tuple[list[Finding], int]:
@@ -891,7 +897,7 @@ def check_detect_stack_drift() -> tuple[list[Finding], int]:
         p = ROOT / rel
         if not p.is_file():
             findings.append(Finding("detect-stack-drift", rel, 0,
-                                    "missing -- pipeline's deploy_target.py has no detector to import (#2179); "
+                                    "missing -- the plugin's own script that imports or runs it has no detector (#2179, #2185); "
                                     "copy it from plugins/rails-flow/scripts/detect_stack.py"))
             continue
         texts[rel] = p.read_bytes()
@@ -899,7 +905,7 @@ def check_detect_stack_drift() -> tuple[list[Finding], int]:
     for rel in DETECT_STACK_COPIES[1:]:
         if canonical is not None and texts.get(rel, canonical) != canonical:
             findings.append(Finding("detect-stack-drift", rel, 0,
-                                    f"differs from {DETECT_STACK_COPIES[0]} -- one stack detector, two copies: a deploy "
+                                    f"differs from {DETECT_STACK_COPIES[0]} -- one stack detector, several copies: a deploy "
                                     "would be routed by a different reading of the descriptors than every other flow's. "
                                     "Copy the canonical file over it (cp) and re-run"))
     return findings, len(DETECT_STACK_COPIES)
@@ -2540,6 +2546,10 @@ def _setup_sections() -> set[str]:
 _DECLARED_PLUGIN_ROOT = re.compile(r"`\$\{CLAUDE_PLUGIN_ROOT\}` below is \*\*([a-z][a-z0-9-]*)'s\*\* plugin root")
 _PLUGIN_ROOT_POINTER = re.compile(
     r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9._/-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+)")
+# A stack's setup section names the files its own plugin ships as `${STACK_ROOT}/...`: the section is run by rails-flow's setup-flow, where `${CLAUDE_PLUGIN_ROOT}` is
+# rails-flow's, so the stack's own scripts and scaffold need a variable of their own (#2175). It is the root of the plugin that HOLDS the section.
+_STACK_ROOT_POINTER = re.compile(
+    r"\$\{STACK_ROOT\}/([A-Za-z0-9._/-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+)")
 CLONE_SKILLS = "plugins/rails-stack/skills/"
 _SKILL_POINTER = re.compile(
     # The lookbehind rejects a path that is only a SUFFIX of a longer one -- `.claude/skills/…`
@@ -2632,6 +2642,17 @@ def check_doc_pointers() -> tuple[list[Finding], int]:
                     "broken-doc-pointer", rel(path), body[:match.start()].count("\n") + 1,
                     f"points at `{match.group(0)}`, which does not exist in "
                     f"{owning_plugin.name} -- an agent told to read it finds nothing",
+                ))
+        # `${STACK_ROOT}` in a stack's setup section is that stack plugin's own root, and the pointer is checked there (#2175).
+        if rel(path) in setup_sections and owning_plugin is not None:
+            stack_root = ROOT / parts[0] / parts[1]
+            for match in _STACK_ROOT_POINTER.finditer(body):
+                examined += 1
+                if (stack_root / match.group(1)).exists():
+                    continue
+                findings.append(Finding(
+                    "broken-doc-pointer", rel(path), body[:match.start()].count("\n") + 1,
+                    f"points at `{match.group(0)}`, which does not exist in {stack_root.name} -- an agent told to run or copy it finds nothing",
                 ))
         # SHIPPED TEXT (anything under plugins/) is read by agents in an INSTALL, where rails-stack's skills/
         # sits at its plugin root: there a `skills/<name>/…` pointer means rails-stack's, and the clone path
@@ -2928,6 +2949,65 @@ def emit_claude_md(setup_text: str, has_database: bool) -> str:
     the condition is wired to the block rather than merely described.
     """
     return _EMIT_IF.sub(lambda m: m.group(1) if has_database else "", setup_text)
+
+
+_PLANTED_HOOKS = re.compile(r"""["']\.git["']\s*\)?\s*/\s*["']hooks["']|["'][^"'\n]*\.git/hooks""")
+# REAL USE, NOT A MENTION (#2242 review): a comment naming hermetic_git is not git run through it. Each marker is a code shape, and
+# it is matched against the text with comments removed.
+_HOOK_DIR_RESOLVED = re.compile(r"""["']--git-path["']|["']GIT_CONFIG_NOSYSTEM["']\s*[\]:=,]|^\s*(?:import|from)\s+(?:fixture_git|hermetic_git)\b|"""
+                                r"""\b(?:fixture_git|hermetic_git)\.\w+\(|--git-path\b(?=[^\n]*\bhooks\b)|\bGIT_CONFIG_NOSYSTEM=1\b""", re.M)
+_HERMETIC_ENVS = ("plugins/rails-flow/scripts/fixture_git.py", "scripts/hermetic_git.py")
+
+
+def _code_only(text: str, shell: bool) -> str:
+    """`text` without comments: a mention in a comment is not git run through anything (#2242 review)."""
+    if shell:
+        return "\n".join("" if line.lstrip().startswith("#") else line for line in text.splitlines())
+    try:
+        tokens = [t for t in tokenize.generate_tokens(io.StringIO(text).readline) if t.type != tokenize.COMMENT]
+        return tokenize.untokenize(tokens)
+    except (tokenize.TokenError, SyntaxError, IndentationError):
+        return text
+
+
+def check_planted_hooks_hermetic() -> tuple[list[Finding], int]:
+    """A selftest that plants a hook in `.git/hooks` must run its git where that is where git looks (#2208).
+
+    A machine's system git config can set `core.hooksPath` (Homebrew's sets `.githooks`). Then git never runs a hook from
+    `.git/hooks`, and a selftest asserting "the hook did not run" passes whatever the code does: #2206's `wip_commit` mutant
+    survived exactly so. A Python file that builds a `.git/hooks` path must therefore resolve the directory (`rev-parse
+    --git-path hooks`), isolate the system config (`GIT_CONFIG_NOSYSTEM`), or run its git through `fixture_git`/`hermetic_git`,
+    which set it; and those two must keep setting it.
+
+    SCOPE: every `.py` and `.sh` under `scripts/` and `plugins/*/scripts/` (nested folders included), comments removed before
+    either pattern is read. `wip_commit.py` passes through `--git-path`, not the helpers: its own git scrubs every `GIT_*` by
+    design, so its selftest must resolve the hooks directory git uses rather than isolate it (#2207).
+    """
+    found: list[Finding] = []
+    examined = 0
+    for rel in _HERMETIC_ENVS:
+        path = ROOT / rel
+        if path.is_file() and '"GIT_CONFIG_NOSYSTEM"' not in read(path):
+            found.append(Finding("planted-hooks-not-hermetic", rel, 0,
+                                 "no longer sets GIT_CONFIG_NOSYSTEM, so every fixture that plants a hook in .git/hooks reads the machine's "
+                                 "core.hooksPath again (#2208)"))
+    paths = [p for pattern in ("scripts/**/*", "plugins/*/scripts/**/*") for p in ROOT.glob(pattern) if p.suffix in (".py", ".sh")]
+    for path in sorted(set(paths)):
+        rel = path.relative_to(ROOT).as_posix()
+        if "/mutations/" in rel or rel == "scripts/lint_self_consistency.py" or rel == "scripts/self_consistency_selftest.py":
+            continue
+        code = _code_only(read(path), shell=path.suffix == ".sh")
+        planted = _PLANTED_HOOKS.search(code) or (path.suffix == ".sh" and re.search(r"\.git/hooks", code))
+        if not planted:
+            continue
+        examined += 1
+        if not _HOOK_DIR_RESOLVED.search(code):
+            line = code[: planted.start()].count("\n") + 1
+            found.append(Finding("planted-hooks-not-hermetic", rel, line,
+                                 "builds a .git/hooks path but runs git with the machine's system config, where core.hooksPath can point "
+                                 "elsewhere (Homebrew: .githooks) and the hook never runs: resolve it with `git rev-parse --git-path hooks`, "
+                                 "set GIT_CONFIG_NOSYSTEM=1, or run git through fixture_git (#2208)"))
+    return found, examined
 
 
 def check_setup_flow_preflight() -> tuple[list[Finding], int]:
@@ -3527,9 +3607,9 @@ def check_ui_adapter_unresolved() -> tuple[list[Finding], int]:
                 continue
             try:
                 spec = json.loads(read(adapter))
-            except json.JSONDecodeError as exc:
+            except (OSError, json.JSONDecodeError) as exc:
                 findings.append(Finding("ui-adapter-unresolved", adapter.relative_to(ROOT).as_posix(), 1,
-                                        f"adapter.json is not valid JSON: {exc}"))
+                                        f"adapter.json cannot be read as JSON: {exc}"))
                 continue
             arel = adapter.relative_to(ROOT).as_posix()
             if spec.get("id") != impl:
@@ -3559,6 +3639,17 @@ def check_ui_adapter_unresolved() -> tuple[list[Finding], int]:
                     findings.append(Finding(
                         "ui-adapter-unresolved", arel, 1,
                         f"adapter check {check_id!r} is not an id in plugins/design-flow/checks.json."))
+    # A command that dispatches through `ui_adapter.py` reads `<adapter>/<command>.md` (#2185): an adapter without that file leaves the command
+    # telling an agent to read a file that is not there.
+    dispatching = sorted(c.stem for c in (ROOT / "plugins/design-flow/commands").glob("*.md") if "scripts/ui_adapter.py" in read(c)) \
+        if (ROOT / "plugins/design-flow/commands").is_dir() else []
+    for adapter in sorted((ROOT / "plugins/design-flow/ui").glob("*/adapter.json")):
+        examined += 1
+        for command in dispatching:
+            if not (adapter.parent / f"{command}.md").is_file():
+                findings.append(Finding(
+                    "ui-adapter-unresolved", adapter.relative_to(ROOT).as_posix(), 1,
+                    f"the command /design-flow:{command} dispatches through ui_adapter.py and reads {adapter.parent.name}/{command}.md, which does not exist."))
     return findings, examined
 
 
@@ -4518,6 +4609,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     cl_sections, cl_sections_examined = check_changelog_section_missing()
     hook_cnt, hook_cnt_examined = check_hook_script_count()
     setup_pre, setup_pre_examined = check_setup_flow_preflight()
+    planted, planted_examined = check_planted_hooks_hermetic()
     dangling, dangling_examined = check_dangling_conditional_floor()
     flat_role, flat_role_examined = check_flattened_conditional_role()
     unowned, unowned_examined = check_adopts_an_unowned_server()
@@ -4585,6 +4677,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "plugins_with_a_changelog_section": cl_sections_examined,
         "hook_scripts_counted": hook_cnt_examined,
         "setup_flow_templates_checked_for_the_preflight": setup_pre_examined,
+        "selftests_planting_git_hooks": planted_examined,
         "rails_flow_files_checked_for_docs_paths_outside_layout": docs_paths_examined,
         "conditional_floor_claims": dangling_examined,
         "plugin_paragraphs_naming_a_role": flat_role_examined,
@@ -4599,7 +4692,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     return (dead + unenforced + undocumented + undoc_cmds + docs_paths + growth + hook_lib + hook_start + gate_onfail + fixture_git + schema_drift + fixture_bypass + submod + bare + misdesc + unbounded + author_me + components + call_sites + invisible
             + markers + uncontained + nonhermetic + pointers + clone_paths + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
-            + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + dangling + flat_role
+            + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + planted + dangling + flat_role
             + agents_md + undoc_skill + ui_adapter + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
             + findings_copy + detect_copy + vendored_copy + rel_xplugin
             + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
@@ -4620,7 +4713,7 @@ def selftest() -> int:
     checks = 0
 
     def scenario(label: str, files: dict[str, str], *, rule: str, expect_finding: bool, only=None,
-                 line: int | None = None) -> None:
+                 line: int | None = None, says: str | None = None) -> None:
         # `only`: one rule's check, instead of every rule over the fixture tree. `run()` is ~0.2s a
         # scenario, and this module is its own mutation guard's selftest -- run once per mutation.
         nonlocal checks
@@ -4643,6 +4736,8 @@ def selftest() -> int:
             want = "a finding" if expect_finding else "silence"
             detail = "; ".join(str(f) for f in got) or "(none)"
             failures.append(f"{rule} / {label}: expected {want}, got {detail}")
+        elif says is not None and got and not any(says in str(f) for f in got):
+            failures.append(f"{rule} / {label}: expected a finding saying {says!r}, got " + "; ".join(str(f) for f in got))
 
     # -- clone-shaped-doctrine-path (#777) --------------------------------
     CSD = "clone-shaped-doctrine-path"
@@ -5074,7 +5169,7 @@ def selftest() -> int:
               "plugins/design-flow/agents/rails-ui-porter.md": "---\nname: rails-ui-porter\n---\n",
               "plugins/design-flow/checks.json": '{"checks":[{"id":"token-drift"}]}'}
     scenario("a descriptor whose ui.implementation has no adapter.json", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
-             files={"plugins/rails-stack/stacks.json": UAU_STACKS})
+             says="does not exist", files={"plugins/rails-stack/stacks.json": UAU_STACKS})
     scenario("...an adapter naming an agent that does not exist", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
              files={k: v for k, v in UAU_OK.items() if not k.endswith("rails-ui-porter.md")})
     scenario("...a descriptor porter that disagrees with the adapter", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
@@ -5085,6 +5180,11 @@ def selftest() -> int:
              files={**UAU_OK, "plugins/design-flow/checks.json": '{"checks":[]}'})
     scenario("...silent when the adapter, its agent and its checks all resolve", rule=UAU, expect_finding=False, only=check_ui_adapter_unresolved,
              files=UAU_OK)
+    UAU_CMD = {"plugins/design-flow/commands/port.md": "Run `python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/ui_adapter.py\"` and read <dir>/port.md.\n"}
+    scenario("a dispatching command whose adapter ships no procedure file for it", rule=UAU, expect_finding=True, only=check_ui_adapter_unresolved,
+             files={**UAU_OK, **UAU_CMD})
+    scenario("...silent once the adapter ships it", rule=UAU, expect_finding=False, only=check_ui_adapter_unresolved,
+             files={**UAU_OK, **UAU_CMD, "plugins/design-flow/ui/viewcomponent-erb/port.md": "# port\n"})
     scenario("...silent on a stack with no ui block", rule=UAU, expect_finding=False, only=check_ui_adapter_unresolved,
              files={"plugins/x-stack/stacks.json": '{"stacks":[{"id":"x","descriptor":{}}]}'})
 
@@ -5166,6 +5266,28 @@ def selftest() -> int:
              files=fourteen)
 
     # -- setup-flow-preflight ---------------------------------------------
+    # -- planted-hooks-not-hermetic (#2208) ---------------------------------
+    PH = "planted-hooks-not-hermetic"
+    _ENVS = {"plugins/rails-flow/scripts/fixture_git.py": 'out["GIT_CONFIG_NOSYSTEM"] = "1"\n', "scripts/hermetic_git.py": 'out["GIT_CONFIG_NOSYSTEM"] = "1"\n'}
+    php = lambda label, files, expect: scenario(label, rule=PH, expect_finding=expect, files={**_ENVS, **files}, only=check_planted_hooks_hermetic)
+    php("CONTROL: a selftest planting a hook through fixture_git is silent",
+        {"plugins/x/scripts/a_selftest.py": 'import fixture_git\nhooks = repo / ".git" / "hooks"\n'}, False)
+    php("CONTROL: a selftest resolving the hook directory is silent",
+        {"plugins/x/scripts/a_selftest.py": 'd = run("rev-parse", "--git-path", "hooks")\n(repo / ".git" / "hooks").mkdir()\n'}, False)
+    php("a selftest planting a hook in .git/hooks under the machine's config",
+        {"plugins/x/scripts/a_selftest.py": 'subprocess.run(["git", "commit"])\n(repo / ".git" / "hooks" / "pre-commit").write_text("x")\n'}, True)
+    php("a .git/hooks path written as one string is planted too",
+        {"scripts/b.py": 'open(f"{repo}/.git/hooks/pre-commit", "w")\n'}, True)
+    php("a marker only in a comment does not make a script hermetic",
+        {"plugins/x/scripts/a_selftest.py": '# we used to run git as hermetic_git.env(repo) with "--git-path" (#2208)\nsubprocess.run(["git", "commit"])\n(repo / ".git" / "hooks").mkdir()\n'}, True)
+    php("a nested selftest planting a hook is scanned too",
+        {"plugins/x/scripts/sub/b_selftest.py": 'subprocess.run(["git", "commit"])\n(repo / ".git" / "hooks").mkdir()\n'}, True)
+    php("a shell selftest planting a hook is scanned too",
+        {"plugins/x/scripts/c_selftest.sh": 'git init "$d"\nprintf x > "$d/.git/hooks/pre-commit"\n'}, True)
+    php("CONTROL: a shell selftest that isolates the system config is silent",
+        {"plugins/x/scripts/c_selftest.sh": 'export GIT_CONFIG_NOSYSTEM=1\nprintf x > "$d/.git/hooks/pre-commit"\n'}, False)
+    php("fixture_git that stopped isolating the system config",
+        {"plugins/rails-flow/scripts/fixture_git.py": "out = {}\n"}, True)
     SP = "setup-flow-preflight"
     _RAILS_SECTION = "# Rails\n## CLAUDE.md facts\n### Test-run preflight\n`pg_isready`; no held `bundler.lock`.\n## Next\n"
 
@@ -5808,8 +5930,10 @@ def selftest() -> int:
     scenario("identical detect_stack copies are silent", rule="detect-stack-drift", expect_finding=False,
              files={c: DS for c in DETECT_STACK_COPIES}, only=check_detect_stack_drift)
     scenario("a detect_stack copy that differs by one byte is a finding", rule="detect-stack-drift",
-             expect_finding=True, files={DETECT_STACK_COPIES[0]: DS, DETECT_STACK_COPIES[1]: DS + "\n"},
-             only=check_detect_stack_drift)
+             expect_finding=True, says="differs from",   # every copy present, so only the compare branch can fire (a missing one would also be a finding)
+             files={**{c: DS for c in DETECT_STACK_COPIES}, DETECT_STACK_COPIES[1]: DS + "\n"}, only=check_detect_stack_drift)
+    scenario("a stale design-flow detect_stack copy is a finding", rule="detect-stack-drift", expect_finding=True, says="differs from",
+             files={**{c: DS for c in DETECT_STACK_COPIES}, DETECT_STACK_COPIES[2]: DS + "\n"}, only=check_detect_stack_drift)
     scenario("a missing pipeline detect_stack is a finding", rule="detect-stack-drift", expect_finding=True,
              files={DETECT_STACK_COPIES[0]: DS}, only=check_detect_stack_drift)
     XP = "cross-plugin-relative-path"
@@ -6902,6 +7026,12 @@ def selftest() -> int:
              files={"CHANGELOG.md": "# C\n\n## rails-stack\n\n### 1.0.0 (release v1.0.0)\n\n- moved `skills/x/references/y.md`\n"})
     scenario("...but a broken path in an Unreleased block is a finding", rule=P, expect_finding=True,
              files={"CHANGELOG.md": "# C\n\n## rails-stack\n\n### Unreleased\n\n- see `skills/x/references/y.md`\n"})
+    scenario("a ${STACK_ROOT} pointer in a setup section resolves against the plugin that holds it", rule=P, expect_finding=False,
+             files={**STACKS, "plugins/rails-stack/setup/rails.md": DECL + "Run `${STACK_ROOT}/scripts/y.py`.\n",
+                    "plugins/rails-stack/scripts/y.py": "pass\n"})
+    scenario("...and a ${STACK_ROOT} pointer to a file that plugin does not ship is a finding", rule=P, expect_finding=True,
+             files={**STACKS, "plugins/rails-stack/setup/rails.md": DECL + "Run `${STACK_ROOT}/scripts/gone.py`.\n",
+                    "plugins/rails-flow/scripts/gone.py": "pass\n"})
     scenario("...and with no declaration it resolves against the file's own plugin", rule=P, expect_finding=True,
              files={"plugins/rails-stack/setup/rails.md": "Run `${CLAUDE_PLUGIN_ROOT}/scripts/x.py`.\n",
                     "plugins/rails-flow/scripts/x.py": "pass\n"})

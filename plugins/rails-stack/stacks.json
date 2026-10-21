@@ -11,9 +11,104 @@
       "descriptor": {
         "runner_prefix": ["bundle", "exec"],
         "setup_section": "setup/rails.md",
+        "ui_scope": {
+          "paths": [
+            "^app/views/",
+            "^app/components/",
+            "^app/javascript/",
+            "^app/assets/(stylesheets|tailwind|images)/",
+            "^app/helpers/",
+            "^config/locales/",
+            "^public/[^/]+\\.(html|png|svg|ico|webmanifest)$"
+          ],
+          "not_paths": ["\\.(json|xml)(\\.[a-z]+)?$"],
+          "seen_anyway": ["^app/views/pwa/"],
+          "cases": "ui-scope-cases.json"
+        },
         "security": {
             "checklist": "security/rails.md",
             "cases": "security/boundary-cases.json",
+            "syntax_cases": "security/syntax-cases.json",
+            "code_syntax": [
+                {
+                  "extensions": [
+                    ".rb",
+                    ".rake"
+                  ],
+                  "block_comments": [
+                    {
+                      "open": "=begin",
+                      "close": "=end",
+                      "column0": true
+                    }
+                  ],
+                  "heredoc": "<<[~-]?([\"'`]?)(?P<id>[A-Za-z_]\\w*)\\1"
+                },
+                {
+                  "extensions": [
+                    ".erb"
+                  ],
+                  "block_comments": [
+                    {
+                      "open": "<%#",
+                      "close": "%>",
+                      "column0": false
+                    },
+                    {
+                      "open": "<%-#",
+                      "close": "%>",
+                      "column0": false
+                    },
+                    {
+                      "open": "<!--",
+                      "close": "-->",
+                      "column0": false
+                    }
+                  ],
+                  "heredoc": "<<[~-]?([\"'`]?)(?P<id>[A-Za-z_]\\w*)\\1"
+                },
+                {
+                  "extensions": [
+                    ".js",
+                    ".mjs",
+                    ".cjs"
+                  ],
+                  "block_comments": [
+                    {
+                      "open": "/*",
+                      "close": "*/",
+                      "column0": false
+                    }
+                  ],
+                  "line_comments": [
+                    "<!--",
+                    "-->"
+                  ],
+                  "refuse_when": [
+                    {
+                      "pattern": "`",
+                      "why": "contains a backtick: a template literal's body lines cannot be told from code by a line reader, and an even backtick count proves nothing (a nested template, an escaped backtick, a backtick in a string, in a substitution or in a comment all keep it even); cite a file without one"
+                    },
+                    {
+                      "pattern": "\\S.*<!--",
+                      "why": "has `<!--` after other text: a comment in a Script and code in a Module, and this reader cannot tell which"
+                    },
+                    {
+                      "pattern": "\\{\\s*/\\*",
+                      "why": "opens a block comment right after `{` (a JSX comment container): not read"
+                    }
+                  ]
+                }
+              ],
+            "data_markers": [
+                {
+                  "extensions": [
+                    ".rb",
+                    ".rake"
+                  ],
+                  "marker": "__END__"
+                }
+              ],
             "scanners": [
               "brakeman",
               "bundler-audit",

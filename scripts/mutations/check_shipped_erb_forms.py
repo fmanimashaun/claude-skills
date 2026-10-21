@@ -8,7 +8,7 @@ GUARD = Guard(
     name="check_shipped_erb_forms",
     subject="scripts/check_shipped_erb_forms.py",
     selftest="scripts/check_shipped_erb_forms.py",
-    needs=("plugins/rails-flow/scripts/check_simple_form_only.py",),
+    needs=("plugins/rails-stack/scripts/check_simple_form_only.py",),
     mutations=(
         Mutation(
             "shipped blocks are never scanned",
