@@ -83,9 +83,6 @@ import tempfile
 import zlib
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import mockup_records  # noqa: E402  -- a byte-identical copy of rails-flow's reader, held by the vendored-copy-drift lint (#2226)
-
 EXIT_OK, EXIT_FINDINGS, EXIT_UNUSABLE = 0, 1, 2
 
 # The stamp schema a certify step that knows both layers writes (#1428). A stamp carrying it MUST
@@ -441,8 +438,19 @@ def already_published(base: Path, rev: str, published: str, record: str) -> str 
     return None
 
 
-# #2226: a design that shipped must name the screen that implements it. The issue lookup is replaced by the selftest.
-STORY_ISSUE_STATE = mockup_records.issue_state
+# #2226: a design that shipped must name the screen that implements it. The issue lookup is replaced by the selftest (None: the real one).
+STORY_ISSUE_STATE = None
+MOCKUP_DIR = "docs/product/mockups"        # the reader's RECORD_DIR, without the slash; the selftest asserts they agree
+
+
+def _mockup_records():
+    """The record reader, a byte-identical copy of rails-flow's (held by the vendored-copy-drift lint). Imported only when there are records to
+    read, so a project with none, and every fixture that stages this script alone, never needs it."""
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import mockup_records
+    return mockup_records
 
 
 def check_mockup_stories(base: Path, rev: str | None) -> list[str]:
@@ -454,7 +462,7 @@ def check_mockup_stories(base: Path, rev: str | None) -> list[str]:
     with tempfile.TemporaryDirectory() as td:
         root = base
         if rev:
-            listed = subprocess.run(["git", "-C", str(base), "ls-tree", "-r", "--name-only", rev, "--", mockup_records.RECORD_DIR.rstrip("/")],
+            listed = subprocess.run(["git", "-C", str(base), "ls-tree", "-r", "--name-only", rev, "--", MOCKUP_DIR],
                                     capture_output=True, text=True, timeout=30)
             if listed.returncode != 0:
                 return [f"mock-up stories: cannot list the mock-up records committed at {rev[:12]}"]
@@ -465,7 +473,10 @@ def check_mockup_stories(base: Path, rev: str | None) -> list[str]:
             if problems:
                 return [f"mock-up stories: {p}" for p in problems]
             root = Path(td)
-        failing, unjudged, _legacy, _judged = mockup_records.audit_results(root, STORY_ISSUE_STATE)
+        elif not (base / MOCKUP_DIR).is_dir():
+            return []
+        records = _mockup_records()
+        failing, unjudged, _legacy, _judged = records.audit_results(root, STORY_ISSUE_STATE or records.issue_state)
     return [f"mock-up stories: {line}" for line in failing + unjudged]
 
 
@@ -995,6 +1006,7 @@ def selftest() -> int:
             subprocess.run([*g, "commit", "-q", "--allow-empty", "-m", msg], check=True)
 
         issue_states = {"1": "CLOSED", "2": "OPEN", "3": None}
+        check("stamp #2226: this script's records folder is the reader's", MOCKUP_DIR + "/" == _mockup_records().RECORD_DIR)
         real_state = STORY_ISSUE_STATE
         globals()["STORY_ISSUE_STATE"] = lambda _root, ref: issue_states.get(ref.rsplit("/", 1)[-1])
         try:

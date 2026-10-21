@@ -320,8 +320,8 @@ GUARD = Guard(
         ),
         Mutation(
             'the records are read from the working tree even with --rev',
-            '            root = Path(td)\n        failing,',
-            '            pass\n        failing,',
+            '            root = Path(td)\n        elif not (base / MOCKUP_DIR).is_dir():',
+            '            pass\n        elif not (base / MOCKUP_DIR).is_dir():',
             'with --rev the record is read as COMMITTED',
         ),
     ),
