@@ -13,7 +13,7 @@ One file per mock-up, `docs/product/mockups/<slug>.md`, with one `Key: value` li
 | `Approved-by:` | who approved |
 | `Approval:` | the link to the comment where they said so (`…/issues/N#issuecomment-M`) |
 | `Widths:` | at least a phone width (480 or less) and a desktop width (1024 or more) |
-| `States:` | the screen's designed states: `empty-first-run`, `empty-filtered`, `loading`, `error`, `partial`, `permission-denied`, `success`, or `n/a: <why>`. Free text to the gate today; the QA case catalogue and the frontend architecture's state check read it |
+| `States:` | the screen's designed states. Free text to the gate today; the allowed values are defined by the frontend architecture framework (#2220), not here, so there is one list. The QA case catalogue and that framework's state check read it |
 | `Shell:` | `docs/product/mockups/shell.md`, always that path |
 
 ## The shell record
