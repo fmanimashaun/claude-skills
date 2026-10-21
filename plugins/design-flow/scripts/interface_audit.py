@@ -28,6 +28,7 @@ import sys
 from pathlib import Path
 
 SCHEMA = "design-flow/interface-snapshot/1"
+RULES = ("A1", "A2", "A4")  # the framework rules this judge measures
 
 
 class Unusable(Exception):
@@ -63,6 +64,7 @@ def judge(doc: object) -> dict:
     if not isinstance(doc, list) or not doc:
         raise Unusable("the snapshots file must be a non-empty list: a report over no pages says nothing")
     findings: list[dict] = []
+    unverified: list[str] = []
     judged = skipped = 0
     for i, snap in enumerate(doc, 1):
         if not isinstance(snap, dict) or snap.get("schema") != SCHEMA:
@@ -70,13 +72,15 @@ def judge(doc: object) -> dict:
         status = snap.get("status")
         if not isinstance(status, int) or not 200 <= status < 300:
             skipped += 1
+            unverified.append(str(snap.get("url", "(unknown)")))
             continue
         judged += 1
         findings += judge_page(snap)
     if not judged:
         raise Unusable(f"no snapshot had a 2xx status ({skipped} skipped): nothing was judged")
-    return {"audit": "interface audit: landmarks, skip link, current navigation", "screens_examined": judged,
-            "skipped_non_2xx": skipped, "findings": findings}
+    return {"audit": "interface audit: landmarks, skip link, current navigation",
+            "audited": {rule: judged for rule in RULES}, "unverified": unverified, "skipped_non_2xx": skipped,
+            "findings": findings}
 
 
 def selftest() -> int:
@@ -106,8 +110,12 @@ def selftest() -> int:
             {"text": "Home", "href": "/", "to_this_page": False, "current": False}]})) == []),
         ("a page with no nav has no A4 finding", rules(snap(primary_nav={"present": False, "links": []})) == []),
         ("a non-2xx page is skipped and counted, not judged",
-         judge([snap(), snap(status=404, mains={"visible": 3})])["skipped_non_2xx"] == 1
-         and judge([snap(), snap(status=404, mains={"visible": 3})])["findings"] == []),
+         judge([snap(), snap(url="/gone", status=404, mains={"visible": 3})])["skipped_non_2xx"] == 1
+         and judge([snap(), snap(url="/gone", status=404, mains={"visible": 3})])["findings"] == []),
+        ("a skipped page is carried as unverified, never clean",
+         judge([snap(), snap(url="/gone", status=404)])["unverified"] == ["/gone"]),
+        ("the judge says which rules it audited and over how many pages",
+         judge([snap(), snap(url="/b")])["audited"] == {"A1": 2, "A2": 2, "A4": 2}),
     ]
     for label, doc, why in (
         ("an empty list is unusable", [], "non-empty"),
@@ -151,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     text = json.dumps(result, indent=1)
     Path(a.out).write_text(text + "\n", encoding="utf-8") if a.out else print(text)
-    print(f"{result['screens_examined']} screen(s) judged, {result['skipped_non_2xx']} skipped, {len(result['findings'])} finding(s)", file=sys.stderr)
+    print(f"{result['audited']['A1']} screen(s) judged, {result['skipped_non_2xx']} skipped, {len(result['findings'])} finding(s)", file=sys.stderr)
     return 1 if result["findings"] else 0
 
 

@@ -1,8 +1,8 @@
 """Mutation guard: audit_findings. Declared here, run by scripts/mutation_check.py (#2221).
 
 The contract's whole value is that an audit cannot overclaim: authority comes from the rule's basis,
-not from whoever found the defect. Each mutation switches off one refusal that keeps that true, and
-names the fixture that must notice.
+not from whoever found the defect, and what was not measured is said. Each mutation switches off one
+refusal or one honesty line that keeps that true, and names the fixture that must notice.
 """
 from mutation_types import Guard, Mutation  # noqa: F401
 
@@ -14,58 +14,130 @@ GUARD = Guard(
     needs=("reference/architecture-rules.json",),
     mutations=(
         Mutation(
-            "a finding naming no real rule stops being refused",
-            "        if rule is None:",
-            "        if False:",
-            "an unknown rule is refused",
+            'a finding naming no real rule stops being refused',
+            '        if rule is None:',
+            '        if False:',
+            'an unknown rule is refused',
         ),
         Mutation(
-            "a finding may write its own authority",
-            "            if k in f:",
-            "            if False:",
-            "a written authority is refused",
+            'a finding may write its own authority',
+            '            if k in ("authority", "rank", "severity", "basis"):',
+            '            if False:',
+            'a written authority is refused',
         ),
         Mutation(
-            "a screenshot that does not exist counts as evidence",
-            '        elif ev["kind"] == "screenshot" and not (root / ev["ref"]).is_file():',
-            "        elif False:",
-            "a screenshot that is not a file is refused",
+            'a finding may carry any key, so free text hides in it',
+            '            elif k not in FINDING_KEYS:',
+            '            elif False:',
+            'an unknown key is refused',
         ),
         Mutation(
-            "a house rule may claim a standard",
-            '        if rule is not None and rule["authority"] == "house" and STANDARD_WORDS.search(text):',
-            "        if False:",
-            "a house rule that claims WCAG is refused",
+            'a screenshot path may point anywhere that is a file',
+            '            if ev["kind"] == "screenshot" and not _under(root, str(ev["ref"])):',
+            '            if ev["kind"] == "screenshot" and not (root / ev["ref"]).is_file():',
+            'an absolute screenshot path is refused',
         ),
         Mutation(
-            "a report over zero screens passes",
-            "    if not isinstance(examined, int) or isinstance(examined, bool) or examined < 1:",
-            "    if False:",
-            "zero screens examined is refused",
+            'a house rule may claim a standard',
+            '        if rule is not None and rule["authority"] == "house" and m:',
+            '        if False:',
+            'a house rule that claims WCAG in its message is refused',
         ),
         Mutation(
-            "a standard no longer outranks a house rule",
+            'only the message is scanned for standard-claiming words',
+            '    return " ".join(str(x) for x in (f.get("message", ""), f.get("proposal", ""), ev.get("ref", "")))',
+            '    return str(f.get("message", ""))',
+            'a house rule that claims a standard in its evidence is refused',
+        ),
+        Mutation(
+            'ADA drops out of the standard-claiming words',
+            '|ADA|EN\\s*301',
+            '|EN\\s*301',
+            "'ADA' in a house rule's text is refused",
+        ),
+        Mutation(
+            'a forged registry is accepted',
+            '        if r.get("authority") != want:',
+            '        if False:',
+            'a registry whose authority disagrees with its basis is refused',
+        ),
+        Mutation(
+            'the CLI accepts a registry path again',
+            '        p.add_argument("--root", default=".")',
+            '        p.add_argument("--root", default=".")\n        p.add_argument("--registry")',
+            'the CLI offers no --registry option',
+        ),
+        Mutation(
+            'a finding for a rule the document did not audit passes',
+            '        elif f["rule"] not in audited:',
+            '        elif False:',
+            'a rule the document did not say it audited is refused',
+        ),
+        Mutation(
+            'a document that audited no rule passes',
+            '    if not isinstance(audited, dict) or not audited:',
+            '    if False:',
+            'a document that audited no rule is refused',
+        ),
+        Mutation(
+            'the report drops its Not audited section',
+            '    lines += ["## Not audited", ""]',
+            '    lines += []',
+            'the report prints a Not audited section',
+        ),
+        Mutation(
+            'Not audited lists the rules the run did audit',
+            '        if rid in doc["audited"]:\n            continue',
+            '        if False:\n            continue',
+            'Not audited does not list a rule the run audited',
+        ),
+        Mutation(
+            'a standard no longer outranks a house rule',
             '    out.sort(key=lambda d: (d["authority"] != "standard", -d["reach"]',
             '    out.sort(key=lambda d: (False, -d["reach"]',
-            "a standard outranks a house rule whatever its reach and instance count",
+            'a standard outranks a house rule whatever its reach and instance count',
         ),
         Mutation(
-            "a judge's count is lost",
-            '"instances": max(int(it.get("count") or 1), 1)',
-            '"instances": 1',
-            "a judge's count becomes the instance count",
-        ),
-        Mutation(
-            "layout_fit findings are filed against the wrong rule",
+            'layout_fit findings are filed against the wrong rule',
             '"layout_fit": "A23"',
             '"layout_fit": "A24"',
             "a judge's finding maps to its framework rule",
         ),
         Mutation(
+            "a judge's unverified and redirected routes are dropped",
+            '        for k in ("unverified", "redirected"):',
+            '        for k in ():',
+            "a judge's unverified and redirected routes are carried, never clean",
+        ),
+        Mutation(
+            'only the first example route of a judge finding is kept',
+            '        for screen in examples:',
+            '        for screen in examples[:1]:',
+            'each example route becomes its own finding, so reach is the routes listed',
+        ),
+        Mutation(
+            'a judge finding that is not an object is not refused',
+            '        if not isinstance(it, dict):',
+            '        if False:',
+            'a judge finding that is not an object is unusable, not a crash',
+        ),
+        Mutation(
+            'a merge keeps only the last screen count for a rule',
+            '            audited[rid] = max(audited.get(rid, 0), n)',
+            '            audited[rid] = n',
+            "a merge keeps each rule's own screen count, not one overall number",
+        ),
+        Mutation(
             "a merge drops all but the first document's findings",
             '"findings": [f for d in docs for f in d.get("findings", [])]}',
             '"findings": list(docs[0].get("findings", []))}',
-            "a merge keeps every finding",
+            'a merge keeps every finding',
+        ),
+        Mutation(
+            'a merge drops the unverified screens',
+            '"unverified": sorted({u for d in docs for u in d.get("unverified", [])}),',
+            '"unverified": [],',
+            'a merge unions the unverified screens',
         ),
     ),
 )

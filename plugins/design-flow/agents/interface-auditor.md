@@ -70,8 +70,12 @@ The report lists, under **Not audited**, every rule you could not measure this r
 - rules whose check is not built (card in a card #2227, focus visible #2228, forced states #2229,
   Core Web Vitals #2230) and the mock-up record's `Template:`, `States:`, `Nav:` lines (#2226).
 
-A clean report means "no finding against the rules this audit measures", and says how many screens
-it examined. It never means "the interface is good".
+`audit_findings.py report` writes that section itself from the framework's rules table: every rule the
+document did not audit, grouped by what blocks it, plus the judgement rules. You do not write it and
+cannot drop it. A clean report names the rules it measured and the screens each covered; it never
+means "the interface is good". A route a judge could not verify is listed as **Unverified**, never
+as clean. The findings file must carry `audited` (each measured rule and its screen count) and may
+carry `unverified`; the judges and `from-judge` and `merge` set them.
 
 ## You never
 

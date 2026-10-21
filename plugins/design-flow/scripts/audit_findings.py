@@ -16,14 +16,20 @@ undo that, and an agent under time pressure does exactly that: it reaches for th
 word. So the contract refuses the freedom.
 
   * `rule` must be an id in the registry (`../reference/architecture-rules.json`, derived from the
-    page by `scripts/derive_architecture_rules.py`; a plugin reaches only its own files).
-  * The finding may NOT carry `authority`, `rank` or `severity`. Authority comes from the registry
-    (`claim` -> standard, anything else -> house rule); rank is computed here.
-  * `evidence` is a screenshot that exists under `--root`, or a measured value. A finding with no
-    evidence is an opinion.
-  * A house-rule finding's free text may not say it breaks a standard (WCAG, "violates", "standard").
-  * The document must say how many screens it examined, and the number must be above zero: a clean
-    report over nothing is not a clean report.
+    page by `scripts/derive_architecture_rules.py`). **The registry path is not an option**: a forged
+    registry could mark every rule a standard, so the CLI reads only the committed file, and
+    `load_registry` refuses an entry whose `authority` disagrees with its basis.
+  * A finding has exactly the keys `rule screen instances evidence message proposal`. It may NOT
+    carry `authority`, `rank` or `severity`: authority comes from the registry (`claim` -> standard,
+    anything else -> house rule) and rank is computed here.
+  * `evidence` is a screenshot that resolves to a file UNDER `--root`, or a measured value.
+  * Every free-text field (message, proposal, evidence.ref) of a house-rule finding is scanned for
+    words that claim a standard (WCAG, Success Criterion, Level A/AA/AAA, ADA, EN 301 549,
+    Section 508, ARIA spec, a11y requirement, "violates", "non-compliant", "standard").
+  * The document says which rules it audited and over how many screens each, and the report prints
+    every other rule under **Not audited**, with what blocks it. A clean report names the rules it
+    measured; it never says the interface is good.
+  * Routes a judge could not verify are carried as `unverified`, never counted as clean.
 
 WHAT IT DOES NOT PROVE: that the evidence shows the defect. It proves the finding is addressed to a
 real rule, is not overclaimed, and carries something a reader can open.
@@ -40,12 +46,32 @@ import tempfile
 from pathlib import Path
 
 REGISTRY = Path(__file__).resolve().parents[1] / "reference" / "architecture-rules.json"
-FORBIDDEN_KEYS = ("authority", "rank", "severity", "basis")
+FINDING_KEYS = ("rule", "screen", "instances", "evidence", "message", "proposal")
+EVIDENCE_KEYS = ("kind", "ref")
 EVIDENCE_KINDS = ("screenshot", "measured")
-# Words that claim a standard. A house-rule finding may not use them about itself.
-STANDARD_WORDS = re.compile(r"\b(WCAG|violat\w*|non-?complian\w*|standards?)\b", re.I)
+# Words that claim a standard. A house-rule finding may not use them about itself, anywhere.
+STANDARD_WORDS = re.compile(
+    r"\b(WCAG|WAI-ARIA|success\s+criteri(?:on|a)|level\s+AAA?|level\s+A|ADA|EN\s*301[\s.]?549|section\s+508|"
+    r"ARIA\s+spec\w*|a11y\s+requirement\w*|violat\w*|non-?complian\w*|standards?)\b", re.I)
 # A qa-flow judge's findings become findings against one framework rule each.
 JUDGE_RULES = {"layout_fit": "A23", "text_resize": "A24", "theme_parity": "A25", "link_audit": "A26"}
+# What blocks a rule from being audited today. A rule with no entry falls back on its basis.
+BLOCKED = {
+    "A3": "needs the mock-up record (#2211)",
+    "A5": "needs the mock-up record's `Nav:` line (#2226)",
+    "A8": "needs a way to drive a list's controls (#2229)",
+    "A9": "needs a client-routed stack's crawl (#2222)",
+    "A10": "needs the mock-up record's `Template:` line (#2226)",
+    "A19": "axe runs in the a11y-auditor agent; no judge with JSON output yet",
+    "A20": "axe runs in the a11y-auditor agent; no judge with JSON output yet",
+    "A21": "no focus check yet (#2228)",
+    "A22": "axe runs in the a11y-auditor agent; no judge with JSON output yet",
+    "A27": "no Core Web Vitals check yet (#2230)",
+    "A59": "no forced-state check yet (#2229)",
+    "A60": "no forced-state check yet (#2229)",
+}
+JUDGEMENT = ("density matches the surface, content hierarchy, interaction feedback, whether a screen is the right "
+             "template: no verdict channel yet (#2225)")
 
 
 class Unusable(Exception):
@@ -59,16 +85,44 @@ def load_registry(path: Path = REGISTRY) -> dict[str, dict]:
         raise Unusable(f"cannot read the rule registry {path}: {exc}") from exc
     if not rules:
         raise Unusable(f"the rule registry {path} holds no rules")
+    for r in rules:
+        want = "standard" if r.get("basis") == "claim" else "house"
+        if r.get("authority") != want:
+            raise Unusable(f"the rule registry {path}: {r.get('id')} says authority {r.get('authority')!r} but its "
+                           f"basis {r.get('basis')!r} derives {want!r}; the registry is forged or stale")
     return {r["id"]: r for r in rules}
+
+
+def free_text(f: dict) -> str:
+    ev = f.get("evidence") if isinstance(f.get("evidence"), dict) else {}
+    return " ".join(str(x) for x in (f.get("message", ""), f.get("proposal", ""), ev.get("ref", "")))
+
+
+def _under(root: Path, ref: str) -> bool:
+    try:
+        target = (root / ref).resolve()
+        return target.is_file() and target.is_relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
 
 
 def validate(doc: object, registry: dict[str, dict], root: Path) -> list[str]:
     if not isinstance(doc, dict) or not isinstance(doc.get("findings"), list):
         raise Unusable("the file is not an object with a `findings` list")
     problems: list[str] = []
-    examined = doc.get("screens_examined")
-    if not isinstance(examined, int) or isinstance(examined, bool) or examined < 1:
-        problems.append("`screens_examined` must be an integer above zero: a report over no screens says nothing")
+    audited = doc.get("audited")
+    if not isinstance(audited, dict) or not audited:
+        problems.append("`audited` must map each rule the audit measured to the screens it examined: a report that "
+                        "audited no rule says nothing")
+        audited = {}
+    for rid, n in audited.items():
+        if rid not in registry:
+            problems.append(f"audited rule {rid!r} is not in the framework's rules table")
+        if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+            problems.append(f"audited rule {rid!r}: the screen count must be an integer above zero")
+    unv = doc.get("unverified", [])
+    if not isinstance(unv, list) or not all(isinstance(u, str) for u in unv):
+        problems.append("`unverified` must be a list of screens")
     for n, f in enumerate(doc["findings"], 1):
         who = f"finding {n}"
         if not isinstance(f, dict):
@@ -77,9 +131,13 @@ def validate(doc: object, registry: dict[str, dict], root: Path) -> list[str]:
         rule = registry.get(f.get("rule"))
         if rule is None:
             problems.append(f"{who}: rule {f.get('rule')!r} is not in the framework's rules table")
-        for k in FORBIDDEN_KEYS:
-            if k in f:
+        elif f["rule"] not in audited:
+            problems.append(f"{who}: rule {f['rule']} is not among the rules this document says it audited")
+        for k in f:
+            if k in ("authority", "rank", "severity", "basis"):
                 problems.append(f"{who}: carries `{k}`, which is derived from the rule and may not be written")
+            elif k not in FINDING_KEYS:
+                problems.append(f"{who}: unknown key `{k}` (allowed: {', '.join(FINDING_KEYS)}); free text hides there")
         if not isinstance(f.get("screen"), str) or not f["screen"].strip():
             problems.append(f"{who}: no `screen`")
         inst = f.get("instances")
@@ -88,12 +146,16 @@ def validate(doc: object, registry: dict[str, dict], root: Path) -> list[str]:
         ev = f.get("evidence")
         if not isinstance(ev, dict) or ev.get("kind") not in EVIDENCE_KINDS or not str(ev.get("ref", "")).strip():
             problems.append(f"{who}: `evidence` must be {{kind: screenshot|measured, ref: ...}}")
-        elif ev["kind"] == "screenshot" and not (root / ev["ref"]).is_file():
-            problems.append(f"{who}: screenshot {ev['ref']!r} is not a file under {root}")
-        text = " ".join(str(f.get(k, "")) for k in ("message", "proposal"))
-        if rule is not None and rule["authority"] == "house" and STANDARD_WORDS.search(text):
-            problems.append(f"{who}: rule {rule['id']} is a house rule ({rule['basis']}: {rule['ref']}) but the text "
-                            f"claims a standard ({STANDARD_WORDS.search(text).group(0)!r})")
+        else:
+            for k in ev:
+                if k not in EVIDENCE_KEYS:
+                    problems.append(f"{who}: unknown evidence key `{k}`")
+            if ev["kind"] == "screenshot" and not _under(root, str(ev["ref"])):
+                problems.append(f"{who}: screenshot {ev['ref']!r} is not a file under {root}")
+        m = STANDARD_WORDS.search(free_text(f))
+        if rule is not None and rule["authority"] == "house" and m:
+            problems.append(f"{who}: rule {rule['id']} is a house rule ({rule['basis']}: {rule['ref']}) but its text "
+                            f"claims a standard ({m.group(0)!r})")
     return problems
 
 
@@ -116,49 +178,88 @@ def decorate(doc: dict, registry: dict[str, dict]) -> list[dict]:
     return out
 
 
+def not_audited(doc: dict, registry: dict[str, dict]) -> dict[str, list[str]]:
+    """Every rule this run did not measure, grouped by what blocks it."""
+    groups: dict[str, list[str]] = {}
+    for rid, r in sorted(registry.items(), key=lambda kv: int(kv[0][1:])):
+        if rid in doc["audited"]:
+            continue
+        why = BLOCKED.get(rid) or (f"enforced by `{r['ref']}`; run that check separately" if r["basis"] == "check"
+                                   else "no mechanical check in this audit yet (a later slice, #2251)")
+        groups.setdefault(why, []).append(rid)
+    return groups
+
+
 def report_md(doc: dict, registry: dict[str, dict]) -> str:
     rows = decorate(doc, registry)
+    audited = ", ".join(f"{rid} ({n} screen{'s' if n != 1 else ''})" for rid, n in sorted(doc["audited"].items(), key=lambda kv: int(kv[0][1:])))
     lines = [f"# {doc.get('audit', 'Interface audit')}", "",
-             f"Screens examined: {doc['screens_examined']}. Findings: {len(rows)}. "
+             f"Rules audited: {audited}. Findings: {len(rows)}. "
              "Authority is derived from the framework's rules table; a house rule is never a standards failure.", ""]
     if not rows:
-        lines.append("No findings against the rules this audit can measure.")
-        return "\n".join(lines) + "\n"
-    lines += ["| rank | rule | authority | screen | instances | evidence | what |", "|---|---|---|---|---|---|---|"]
-    for d in rows:
-        what = (d.get("message") or d["rule_text"]).replace("|", "\\|")
-        lines.append(f"| {d['rank']} | {d['rule']} | {d['authority_label']} | {d['screen']} | {d['instances']} "
-                     f"| {d['evidence']['kind']}: {d['evidence']['ref']} | {what} |")
-    props = [d for d in rows if d.get("proposal")]
-    if props:
-        lines += ["", "## Proposed improvements (as a mock-up first, never as code)", ""]
-        lines += [f"{d['rank']}. **{d['rule']}** on {d['screen']}: {d['proposal']}" for d in props]
+        lines += [f"No findings against the rules audited ({', '.join(sorted(doc['audited'], key=lambda r: int(r[1:])))}). "
+                  "That says nothing about the rules under Not audited.", ""]
+    else:
+        lines += ["| rank | rule | authority | screen | instances | evidence | what |", "|---|---|---|---|---|---|---|"]
+        for d in rows:
+            what = (d.get("message") or d["rule_text"]).replace("|", "\\|")
+            lines.append(f"| {d['rank']} | {d['rule']} | {d['authority_label']} | {d['screen']} | {d['instances']} "
+                         f"| {d['evidence']['kind']}: {d['evidence']['ref']} | {what} |")
+        props = [d for d in rows if d.get("proposal")]
+        if props:
+            lines += ["", "## Proposed improvements (as a mock-up first, never as code)", ""]
+            lines += [f"{d['rank']}. **{d['rule']}** on {d['screen']}: {d['proposal']}" for d in props]
+        lines.append("")
+    if doc.get("unverified"):
+        lines += ["## Unverified: not judged, and not a pass", ""] + [f"- {u}" for u in doc["unverified"]] + [""]
+    lines += ["## Not audited", ""]
+    lines += [f"- {', '.join(ids)}: {why}" for why, ids in not_audited(doc, registry).items()]
+    lines.append(f"- Judgement rules, not in the table above: {JUDGEMENT}")
     return "\n".join(lines) + "\n"
 
 
 def from_judge(name: str, data: object, screens: int) -> dict:
-    """A qa-flow judge's `--json` output as a findings document against one framework rule."""
+    """A qa-flow judge's `--json` output as a findings document against one framework rule.
+
+    One finding per example route (so reach counts the routes listed, a floor of the judge's own
+    count, which the message states); routes the judge could not verify or that redirected are
+    carried as `unverified`, never as clean."""
     rule = JUDGE_RULES.get(name)
     if rule is None:
         raise Unusable(f"unknown judge {name!r}; known: {', '.join(JUDGE_RULES)}")
     items = data.get("findings") if isinstance(data, dict) else data
     if not isinstance(items, list):
         raise Unusable(f"{name}: the output has no findings list")
-    findings = []
+    findings, unverified = [], []
+    if isinstance(data, dict):
+        for k in ("unverified", "redirected"):
+            extra = data.get(k) or []
+            if not isinstance(extra, list):
+                raise Unusable(f"{name}: `{k}` is not a list")
+            unverified += [str(x) for x in extra]
     for it in items:
-        screen = (it.get("examples") or [it.get("ref") or it.get("target") or ""])[0]
-        findings.append({"rule": rule, "screen": str(screen) or "(unknown)", "instances": max(int(it.get("count") or 1), 1),
-                         "evidence": {"kind": "measured", "ref": f"{name}: {it.get('rule', '')} {it.get('detail', '')}".strip()},
-                         "message": str(it.get("detail", ""))})
-    return {"audit": f"{name} findings against {rule}", "screens_examined": screens, "findings": findings}
+        if not isinstance(it, dict):
+            raise Unusable(f"{name}: a finding is not an object ({it!r})")
+        total = max(int(it.get("count") or 1), 1)
+        examples = [str(e) for e in (it.get("examples") or [it.get("ref") or it.get("target") or "(unknown)"])]
+        for screen in examples:
+            findings.append({"rule": rule, "screen": screen or "(unknown)", "instances": 1,
+                             "evidence": {"kind": "measured", "ref": f"{name}: {it.get('rule', '')} {it.get('detail', '')}".strip()},
+                             "message": f"{it.get('detail', '')} (the judge counts {total} route(s) affected; {len(examples)} listed)".strip()})
+    return {"audit": f"{name} findings against {rule}", "audited": {rule: screens}, "unverified": unverified,
+            "findings": findings}
 
 
 def merge(docs: list[dict]) -> dict:
-    """One findings document from several: every finding kept, the larger screen count."""
+    """One findings document from several: every finding kept; each rule keeps the screens it was audited over."""
     if not docs:
         raise Unusable("nothing to merge")
+    audited: dict[str, int] = {}
+    for d in docs:
+        for rid, n in (d.get("audited") or {}).items():
+            audited[rid] = max(audited.get(rid, 0), n)
     return {"audit": "; ".join(str(d.get("audit", "")) for d in docs if d.get("audit")) or "merged audit",
-            "screens_examined": max(int(d.get("screens_examined") or 0) for d in docs),
+            "audited": audited, "unverified": sorted({u for d in docs for u in d.get("unverified", [])}),
             "findings": [f for d in docs for f in d.get("findings", [])]}
 
 
@@ -167,70 +268,120 @@ def selftest() -> int:
         "A1": {"id": "A1", "authority": "standard", "basis": "claim", "ref": "C2", "source": "HTML spec", "rule": "one main"},
         "A2": {"id": "A2", "authority": "house", "basis": "decision", "ref": "D7", "source": "ours", "rule": "skip link"},
         "A9": {"id": "A9", "authority": "house", "basis": "decision", "ref": "D7", "source": "ours", "rule": "x"},
+        "A11": {"id": "A11", "authority": "house", "basis": "check", "ref": "scripts/t.py", "source": "ours", "rule": "tables"},
+        "A21": {"id": "A21", "authority": "standard", "basis": "claim", "ref": "C20", "source": "WCAG", "rule": "focus"},
     }
     with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
+        root = Path(td) / "run"
+        root.mkdir()
         (root / "shot.png").write_text("x")
+        (Path(td) / "outside.png").write_text("x")
 
         def doc(**over):
             f = {"rule": "A1", "screen": "/orders", "instances": 2, "evidence": {"kind": "measured", "ref": "main count 2"}}
             f.update(over)
-            return {"audit": "t", "screens_examined": 3, "findings": [f]}
+            return {"audit": "t", "audited": {"A1": 3, "A2": 3, "A9": 3}, "findings": [f]}
 
         def problems(d):
             return validate(d, registry, root)
 
         base = doc()
+        house = lambda **o: problems(doc(rule="A2", **o))
         cases = [
             ("a well-formed finding passes", problems(base) == []),
-            ("a screenshot that exists passes", problems(doc(evidence={"kind": "screenshot", "ref": "shot.png"})) == []),
+            ("a screenshot that exists under the root passes", problems(doc(evidence={"kind": "screenshot", "ref": "shot.png"})) == []),
             ("a screenshot that is not a file is refused", any("not a file" in p for p in problems(doc(evidence={"kind": "screenshot", "ref": "nope.png"})))),
+            ("an absolute screenshot path is refused", any("not a file" in p for p in problems(doc(evidence={"kind": "screenshot", "ref": "/etc/hosts"})))),
+            ("a screenshot that climbs out of the root is refused", any("not a file" in p for p in problems(doc(evidence={"kind": "screenshot", "ref": "../outside.png"})))),
             ("an unknown rule is refused", any("not in the framework" in p for p in problems(doc(rule="A99")))),
-            ("a written authority is refused", any("`authority`" in p for p in problems(doc(authority="standard")))),
-            ("a written rank is refused", any("`rank`" in p for p in problems(doc(rank=1)))),
+            ("a rule the document did not say it audited is refused", any("did not say" in p or "not among the rules" in p for p in problems(doc(rule="A11")))),
+            ("a written authority is refused", any("may not be written" in p for p in problems(doc(authority="standard")))),
+            ("a written rank is refused", any("may not be written" in p for p in problems(doc(rank=1)))),
+            ("an unknown key is refused", any("unknown key" in p for p in problems(doc(note="WCAG 2.4.1")))),
+            ("an unknown evidence key is refused", any("unknown evidence key" in p for p in problems(doc(evidence={"kind": "measured", "ref": "x", "why": "y"})))),
             ("a finding with no evidence is refused", any("evidence" in p for p in problems(doc(evidence={})))),
             ("an evidence kind that is neither is refused", any("evidence" in p for p in problems(doc(evidence={"kind": "opinion", "ref": "x"})))),
             ("a zero instance count is refused", any("instances" in p for p in problems(doc(instances=0)))),
             ("a missing screen is refused", any("`screen`" in p for p in problems(doc(screen="")))),
-            ("a house rule that claims WCAG is refused", any("claims a standard" in p for p in problems(doc(rule="A2", message="violates WCAG 2.4.1")))),
-            ("a house rule that says it breaks a standard is refused", any("claims a standard" in p for p in problems(doc(rule="A9", proposal="this is non-compliant")))),
+            ("a house rule that claims WCAG in its message is refused", any("claims a standard" in p for p in house(message="violates WCAG 2.4.1"))),
+            ("a house rule that claims a standard in its proposal is refused", any("claims a standard" in p for p in house(proposal="this is non-compliant"))),
+            ("a house rule that claims a standard in its evidence is refused", any("claims a standard" in p for p in house(evidence={"kind": "measured", "ref": "WCAG 2.4.1 failure, Level A"}))),
+            ("'Success Criterion' in a house rule's text is refused", any("claims a standard" in p for p in house(message="fails Success Criterion 2.4.1"))),
+            ("'EN 301 549' in a house rule's text is refused", any("claims a standard" in p for p in house(message="breaks EN 301 549"))),
+            ("'ADA' in a house rule's text is refused", any("claims a standard" in p for p in house(message="an ADA problem"))),
+            ("'Section 508' in a house rule's text is refused", any("claims a standard" in p for p in house(message="Section 508 requires it"))),
+            ("'ARIA spec' in a house rule's text is refused", any("claims a standard" in p for p in house(message="the ARIA spec says so"))),
+            ("'a11y requirement' in a house rule's text is refused", any("claims a standard" in p for p in house(message="an a11y requirement"))),
+            ("'Level AA' in a house rule's text is refused", any("claims a standard" in p for p in house(message="Level AA"))),
+            ("plain prose about a house rule passes", house(message="the first focusable element is not a skip link") == []),
             ("a standard rule may say WCAG", problems(doc(rule="A1", message="WCAG says one main")) == []),
-            ("zero screens examined is refused", any("screens_examined" in p for p in problems({**base, "screens_examined": 0}))),
-            ("a boolean is not a screen count", any("screens_examined" in p for p in problems({**base, "screens_examined": True}))),
+            ("a document that audited no rule is refused", any("audited no rule" in p for p in problems({**base, "audited": {}}))),
+            ("an audited screen count of zero is refused", any("above zero" in p for p in problems({**base, "audited": {"A1": 0}}))),
+            ("a boolean is not a screen count", any("above zero" in p for p in problems({**base, "audited": {"A1": True}}))),
+            ("an audited rule that is not in the table is refused", any("not in the framework" in p for p in problems({**base, "audited": {"A1": 1, "A77": 1}}))),
             ("a document that is not a findings list is unusable", _raises(lambda: validate({"findings": 3}, registry, root))),
         ]
-        d1 = {"audit": "t", "screens_examined": 3, "findings": [
+        d1 = {"audit": "t", "audited": {"A1": 3, "A2": 3}, "findings": [
             {"rule": "A2", "screen": "/a", "instances": 9, "evidence": {"kind": "measured", "ref": "m"}},
             {"rule": "A2", "screen": "/b", "instances": 9, "evidence": {"kind": "measured", "ref": "m"}},
             {"rule": "A2", "screen": "/c", "instances": 9, "evidence": {"kind": "measured", "ref": "m"}},
             {"rule": "A1", "screen": "/a", "instances": 1, "evidence": {"kind": "measured", "ref": "m"}},
             {"rule": "A1", "screen": "/b", "instances": 1, "evidence": {"kind": "measured", "ref": "m"}}]}
         ranked = decorate(d1, registry)
+        rep = report_md(d1, registry)
+        clean = report_md({"audit": "t", "audited": {"A1": 3}, "findings": []}, registry)
         cases += [
             ("a standard outranks a house rule whatever its reach and instance count", ranked[0]["rule"] == "A1" and ranked[-1]["rule"] == "A2"),
             ("authority is derived from the registry", ranked[0]["authority"] == "standard" and ranked[-1]["authority"] == "house"),
             ("reach counts distinct screens", ranked[0]["reach"] == 2 and ranked[-1]["reach"] == 3),
             ("ranks are 1..n", [d["rank"] for d in ranked] == [1, 2, 3, 4, 5]),
-            ("the report labels a house rule as one", "house rule (decision: D7)" in report_md(d1, registry)),
-            ("the report labels a standard with its source", "standard: HTML spec" in report_md(d1, registry)),
-            ("a clean report still says how many screens it examined", "Screens examined: 3" in report_md({"audit": "t", "screens_examined": 3, "findings": []}, registry)),
+            ("the report labels a house rule as one", "house rule (decision: D7)" in rep),
+            ("the report labels a standard with its source", "standard: HTML spec" in rep),
+            ("the report prints a Not audited section", "## Not audited" in rep),
+            ("Not audited names a rule this run did not cover, with its blocker", "A21" in rep and "#2228" in rep),
+            ("Not audited does not list a rule the run audited", not {"A1", "A2"} & {r for ln in rep.partition("## Not audited")[2].splitlines()
+                                                                                  if ln.startswith("- A") for r in ln[2:].split(":")[0].split(", ")}),
+            ("Not audited names the judgement rules and #2225", "#2225" in rep),
+            ("a rule enforced by a script says to run it separately", "scripts/t.py" in rep),
+            ("a clean report names the rules it measured", "No findings against the rules audited (A1)" in clean),
+            ("a clean report still prints Not audited", "## Not audited" in clean),
+            ("the report says how many screens each rule covered", "A1 (3 screens)" in rep),
+            ("unverified screens are printed and not counted clean", "Unverified" in report_md({**d1, "unverified": ["/x"]}, registry)),
         ]
-        m = merge([{"audit": "a", "screens_examined": 2, "findings": [1, 2]}, {"audit": "b", "screens_examined": 5, "findings": [3]}])
+        m = merge([{"audit": "a", "audited": {"A23": 2}, "unverified": ["/u"], "findings": [1, 2]},
+                   {"audit": "b", "audited": {"A24": 5, "A23": 1}, "unverified": ["/u", "/v"], "findings": [3]}])
         cases += [
             ("a merge keeps every finding", m["findings"] == [1, 2, 3]),
-            ("a merge takes the larger screen count", m["screens_examined"] == 5),
+            ("a merge keeps each rule's own screen count, not one overall number", m["audited"] == {"A23": 2, "A24": 5}),
+            ("a merge unions the unverified screens", m["unverified"] == ["/u", "/v"]),
             ("a merge of nothing is unusable", _raises(lambda: merge([]))),
         ]
-        fj = from_judge("layout_fit", {"findings": [{"rule": "clipped", "ref": "x", "detail": "hidden", "count": 4, "examples": ["/p"]}]}, 5)
+        fj = from_judge("layout_fit", {"findings": [{"rule": "clipped", "ref": "x", "detail": "hidden", "count": 4, "examples": ["/p", "/q"]}],
+                                       "unverified": ["/u"], "redirected": ["/r"]}, 5)
         cases += [
-            ("a judge's finding maps to its framework rule", fj["findings"][0]["rule"] == "A23" and fj["findings"][0]["screen"] == "/p"),
-            ("a judge's count becomes the instance count", fj["findings"][0]["instances"] == 4),
+            ("a judge's finding maps to its framework rule", fj["findings"][0]["rule"] == "A23" and fj["audited"] == {"A23": 5}),
+            ("each example route becomes its own finding, so reach is the routes listed", [f["screen"] for f in fj["findings"]] == ["/p", "/q"]),
+            ("the judge's own count is kept in the message", "counts 4 route(s)" in fj["findings"][0]["message"]),
+            ("a judge's unverified and redirected routes are carried, never clean", fj["unverified"] == ["/u", "/r"]),
             ("an unknown judge is unusable", _raises(lambda: from_judge("nope", [], 1))),
+            ("a judge finding that is not an object is unusable, not a crash", _raises(lambda: from_judge("layout_fit", {"findings": ["x"]}, 1))),
             ("a theme_parity list maps to A25", from_judge("theme_parity", [{"ref": "/r", "rule": "r", "detail": "d"}], 2)["findings"][0]["rule"] == "A25"),
         ]
+        # A forged registry is refused whole, and the CLI has no way to point at one.
+        forged = Path(td) / "forged.json"
+        forged.write_text(json.dumps({"rules": [{"id": "A2", "authority": "standard", "basis": "decision", "ref": "D7",
+                                                 "source": "WCAG 2.4.1", "rule": "skip link"}]}))
+        cases.append(("a registry whose authority disagrees with its basis is refused", _raises(lambda: load_registry(forged))))
+        try:
+            main(["check", str(forged), "--registry", str(forged)])
+            cli_has_registry_option = True
+        except SystemExit:
+            cli_has_registry_option = False
+        cases.append(("the CLI offers no --registry option", not cli_has_registry_option))
     real = load_registry()
-    cases.append(("the real registry loads and holds rules", len(real) > 0 and all(r["authority"] in ("standard", "house") for r in real.values())))
+    cases.append(("the real registry loads and holds rules", len(real) > 0))
     cases.append(("every judge maps to a rule that exists", all(r in real for r in JUDGE_RULES.values())))
+    cases.append(("every blocker names a rule that exists", all(r in real for r in BLOCKED)))
     bad = 0
     for label, ok in cases:
         bad += not ok
@@ -255,7 +406,6 @@ def main(argv: list[str] | None = None) -> int:
         p = sub.add_parser(name)
         p.add_argument("findings")
         p.add_argument("--root", default=".")
-        p.add_argument("--registry", default=str(REGISTRY))
         if name == "report":
             p.add_argument("--out")
     p = sub.add_parser("merge")
@@ -275,7 +425,7 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(from_judge(a.name, json.loads(Path(a.judge_json).read_text()), a.screens), indent=1))
             return 0
         if a.cmd in ("check", "report"):
-            registry = load_registry(Path(a.registry))
+            registry = load_registry()
             doc = json.loads(Path(a.findings).read_text(encoding="utf-8"))
             problems = validate(doc, registry, Path(a.root))
             for p in problems:
@@ -286,7 +436,7 @@ def main(argv: list[str] | None = None) -> int:
                 text = report_md(doc, registry)
                 Path(a.out).write_text(text, encoding="utf-8") if a.out else print(text, end="")
             else:
-                print(f"{len(doc['findings'])} finding(s) over {doc['screens_examined']} screen(s): all well-formed")
+                print(f"{len(doc['findings'])} finding(s) over {len(doc['audited'])} audited rule(s): all well-formed")
             return 0
         ap.print_help()
         return 2
