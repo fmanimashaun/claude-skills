@@ -36,7 +36,8 @@ CASES: list[tuple[str, object]] = []
 STUB = """#!/bin/sh
 # the real gh, as far as the shim is concerned: records its argv, and answers `alias list`
 if [ "$1" = alias ] && [ "$2" = list ]; then printf '%s\\n' "${STUB_ALIASES:-}"; exit 0; fi
-printf '%s\\n' "$*" >> "$STUB_LOG"
+line="$*"; nl='
+'; printf '%s\\n' "${line%%"$nl"*}" >> "$STUB_LOG"   # one line per run (the first line of a multi-line inline body), with no external command
 echo "stub gh ran"
 exit 0
 """
@@ -110,6 +111,60 @@ def allowed(fx: Fixture, command: str, env: dict[str, str] | None = None, cwd: P
     fx.reset()
     r = fx.sh(command, env, cwd)
     return (r.returncode == 0 and len(fx.ran()) == 1), f"rc {r.returncode}, stub ran {fx.ran()}, {(r.stdout + r.stderr).strip()[-200:]!r}"
+
+
+@case("claim bodies")
+def _claim_bodies(base: Path) -> None:
+    # #2258: the body of `gh pr create` / `pr edit` / `issue comment` is judged here, with the argv the shell expanded and in the real directory, by guard-claims.sh. The hook alone
+    # could not tell the directory for a heredoc, a VAR or a `cd` chain (88% of 3,211 real calls), and read nothing of an inline --body or a `--body-file "$F"`. Each shape is run
+    # with a body the repository's PR template refuses AND with one it accepts, so a shim that refuses every body fails here too.
+    fx = Fixture(base, in_force=False)
+    (fx.repo / ".github").mkdir(exist_ok=True)
+    (fx.repo / ".github" / "pull_request_template.md").write_text("## Summary\n\n## Notes\n")
+    bad, good = base / "bad.md", base / "good.md"
+    bad.write_text("A free-form body with no template sections.\n")
+    good.write_text("## Summary\n\nA fix.\n\n## Notes\n\nSee the log.\n")
+    for which, body, judge in (("refused", bad, refused), ("allowed", good, allowed)):
+        text = body.read_text()
+        shapes = {
+            "a plain --body-file": f"gh pr create --title t --body-file {body}",
+            "a heredoc before gh": f"cat > {body}.h <<'E'\n{text}E\ngh pr create --title t --body-file {body}.h",
+            "a cd and a heredoc (pr edit)": f"cd {fx.repo} && cat > {body}.h <<'E'\n{text}E\ngh pr edit 1 --body-file {body}.h",
+            "a VAR named as \"$F\"": f'F={body}; gh pr create --title t --body-file "$F"',
+            "an inline --body": f'gh pr create --title t --body "$(cat {body})"',
+            "an inline --body= (issue comment, no template)": f'gh issue comment 5 --body="$(cat {body})"',
+            "a relative --body-file": f"gh pr create --title t --body-file ../{body.name}",
+            "a short flag joined to its value (-FPATH)": f"gh pr create --title t -F{body}",
+            "a short inline flag (-b=TEXT)": f'gh pr create --title t "-b=$(cat {body})"',
+            "a body path with a space and a semicolon": f"cp {body} '{base}/a b;c.md' && gh pr create --title t --body-file '{base}/a b;c.md'",
+        }
+        for shape, command in shapes.items():
+            if which == "refused" and "issue comment" in shape:
+                continue      # a comment has no template; its claims are judged below
+            ok, why = judge(fx, command)
+            check(f"{shape}: a body the template {which.replace('ed', 's')} is {which}", ok, why)
+    claim = base / "claim.md"
+    claim.write_text("## Summary\n\nIt passed 12 checks.\n\n## Notes\n\nnone\n")
+    ok, why = refused(fx, f'gh issue comment 5 --body "$(cat {claim})"')
+    check("an inline issue comment making an unchecked number claim is refused", ok, why)
+    fx.reset()
+    r = fx.sh(f"gh pr create -R someone/else --title t --body-file {bad}")
+    check("-R: another repository's template is NOT checked, said on stderr, and the command runs",
+          r.returncode == 0 and len(fx.ran()) == 1 and "NOT checked" in r.stderr, f"rc {r.returncode}, {r.stderr.strip()[-160:]!r}")
+    ok, why = refused(fx, f"gh pr create -R someone/else --title t --body-file {claim}")
+    check("-R: the claims in the body are still judged", ok, why)
+    fx.reset()
+    r = fx.sh(f"cat {bad} | gh pr create --title t -F -")
+    check("a body on stdin is NOT checked, said on stderr, and the command runs",
+          r.returncode == 0 and len(fx.ran()) == 1 and "stdin" in r.stderr and "NOT checked" in r.stderr, f"rc {r.returncode}, {r.stderr.strip()[-160:]!r}")
+    ok, why = allowed(fx, "gh pr list")
+    check("a gh command that carries no body is untouched", ok, why)
+    ok, why = refused(fx, f"gh pc --title t --body-file {bad}", env={"STUB_ALIASES": "pc: pr create"})
+    check("an alias that expands to pr create has its body judged", ok, why)
+    ok, why = allowed(fx, f"gh pc --title t --body-file {good}", env={"STUB_ALIASES": "pc: pr create"})
+    check("an alias that expands to pr create with a good body runs", ok, why)
+    ok, why = refused(fx, "gh pr create --title t --body-file /nonexistent/body.md")
+    check("a --body-file that cannot be read is refused, not passed unchecked", ok, why)
 
 
 @case("no record")

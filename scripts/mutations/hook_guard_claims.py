@@ -207,5 +207,18 @@ GUARD = Guard(
             '',
             'an unlocatable relative body still says NOT checked, and why',
         ),
+        Mutation(
+            # #2258: strict mode, which the gh shim sets, turns "could not read" into a refusal.
+            "strict mode is ignored, so the gh shim's unreadable body passes unchecked",
+            '  if [ "${RAILS_FLOW_CLAIMS_STRICT:-0}" = 1 ]; then\n',
+            "  if false; then\n",
+            "strict (the gh shim): a body that cannot be read is BLOCKED",
+        ),
+        Mutation(
+            "strict mode is always on, so the tripwire blocks every body it cannot read",
+            '  if [ "${RAILS_FLOW_CLAIMS_STRICT:-0}" = 1 ]; then\n',
+            "  if true; then\n",
+            "without strict the tripwire still allows it",
+        ),
     ),
 )
