@@ -44,5 +44,6 @@ GUARD = Guard(
         Mutation('a --body-file that cannot be read passes', '    cat -- "$file" > "$JUDGED_TMP" 2>/dev/null || { echo', '    cat -- "$file" > "$JUDGED_TMP" 2>/dev/null || { return 0; echo', 'claim bodies'),
         Mutation('a stdin body is refused instead of passed through loudly', '    echo "gh-shim (rails-flow): the body of \\`gh $verb\\` comes from stdin or a stream', '    return 1\n    echo "gh-shim (rails-flow): the body of \\`gh $verb\\` comes from stdin or a stream', 'claim bodies'),
         Mutation('an alias that expands to pr create skips the body check', '  if verb="$(claims_verb "${argv[@]}")"; then judge_body "$verb" "${argv[@]}" || exit 1; [ -n "$JUDGED_TMP" ] && run_judged "${argv[@]}"; fi', '  :', 'claim bodies'),
+        Mutation('a signal removes the copy but the shim carries on, so gh gets a missing --body-file', "trap 'rf_body_cleanup; exit 143' TERM", "trap 'rf_body_cleanup' TERM", 'claim bodies'),
     ),
 )

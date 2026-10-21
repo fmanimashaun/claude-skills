@@ -158,7 +158,12 @@ claims_verb() {
 # body (`-f body=`), and a body gh composes itself (--fill, --fill-first, --fill-verbose, --template, --editor, --web, or none given, so gh asks); each of those that this file sees
 # is passed through with a NOT checked line on stderr.
 JUDGED_TMP=""
-trap '[ -n "$JUDGED_TMP" ] && rm -f "$JUDGED_TMP"' EXIT INT TERM HUP
+# A signal removes the copy AND ends the shim (#2268 review): carrying on after it would hand gh a --body-file that no longer exists. 128 + the signal's number, as a shell does.
+rf_body_cleanup() { [ -n "$JUDGED_TMP" ] && rm -f "$JUDGED_TMP"; JUDGED_TMP=""; }
+trap rf_body_cleanup EXIT
+trap 'rf_body_cleanup; exit 130' INT
+trap 'rf_body_cleanup; exit 143' TERM
+trap 'rf_body_cleanup; exit 129' HUP
 
 judge_body() {
   local verb="$1"; shift

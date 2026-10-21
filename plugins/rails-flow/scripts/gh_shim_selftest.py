@@ -200,6 +200,38 @@ def _claim_bodies(base: Path) -> None:
           f"ran {fx.ran()}")
     leftovers = sorted(own_tmp.glob("rf-gh-body.*"))
     check("the judged copy is removed after gh runs", leftovers == [], f"{leftovers[-3:]}")
+    # --web opens gh's browser form: a body given beside it is still judged, and gh gets the judged copy (#2268 review: pin it).
+    ok, why = refused(fx, f"gh pr create --title t --body-file {bad} --web")
+    check("`--body X --web`: the body is judged (a template miss is refused)", ok, why)
+    fx.reset()
+    r = fx.sh(f'gh pr create --title t --body "$(cat {good})" --web')
+    posted = fx.ran()[0] if fx.ran() else ""
+    check("`--body X --web`: a good body runs, with --web kept and the judged copy as --body-file",
+          r.returncode == 0 and "--web" in posted and "--body-file" in posted, f"ran {fx.ran()}")
+    # A SIGNAL MID-JUDGE ENDS THE SHIM (#2268 review): the trap removed the copy, so carrying on would run gh with a missing --body-file. Timing is not
+    # deterministic, so short delays are tried until one lands while the judge runs (the shim exits 143); in that run gh must not have run and no copy may be left.
+    landed = None
+    for delay in (0.15, 0.3, 0.05, 0.5, 0.1, 0.7, 0.02, 1.0):
+        fx.reset()
+        for leftover in own_tmp.glob("rf-gh-body.*"):
+            leftover.unlink()
+        proc = subprocess.Popen(["bash", "-c", f'exec gh pr create --title t --body "$(cat {good})"'], cwd=fx.repo, env=fx.env,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+        time.sleep(delay)
+        try:
+            os.kill(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            proc.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.communicate()
+        if proc.returncode == 143:
+            landed = (delay, fx.ran(), sorted(own_tmp.glob("rf-gh-body.*")))
+            break
+    check("a SIGTERM while the body is judged ends the shim (143): gh never runs and the copy is removed",
+          landed is not None and landed[1] == [] and landed[2] == [], f"landed {landed}")
     ok, why = refused(fx, f"gh pc --title t --body-file {bad}", env={"STUB_ALIASES": "pc: pr create"})
     check("an alias that expands to pr create has its body judged", ok, why)
     ok, why = allowed(fx, f"gh pc --title t --body-file {good}", env={"STUB_ALIASES": "pc: pr create"})
