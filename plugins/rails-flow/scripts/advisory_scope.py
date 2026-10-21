@@ -18,7 +18,9 @@ THE PLAN is the unit's plan files that exist, in this order: its acceptance crit
 or slice plan (`PLAN_FILES`). Their PLANNED PATHS are every backticked path in them (a token with a `/`), and a backticked root file name (a stack's manifest or a lockfile).
 
 REQUIRED when any category fires (each is the whole definition of its category):
-  * security    `security_scope.py` names a boundary in the plan text or the planned paths (reused, never copied)
+  * security    the unit's threat model exists and has threat rows: `/rails-flow:secure-design` writes one only when
+                `security_scope.py` finds a boundary, so the model is the confirmation (plan-advisor A-2 on #2267: the word scan alone
+                fired on 27 of Retask's 53 plans)
   * structure   the plan adds, moves or removes a plugin, agent, command, skill, hook, gate or descriptor/schema key
   * data-model  a planned path under the detected stack's `layout.migrations`, or its `layout.schema`
   * dependency  a planned dependency manifest or lockfile, or the plan says it adds a gem, package or dependency
@@ -127,16 +129,15 @@ def _layout(root: Path) -> tuple[str, str]:
 def categories(root: Path, text: str, paths: list[str], layout: tuple[str, str] | None = None,
                markers: set[str] | None = None) -> dict[str, str]:
     """{category: what named it}; empty when the advisory is optional."""
-    import security_scope  # noqa: E402
+    from check_threat_model import threat_rows  # noqa: E402
 
     found: dict[str, str] = {}
-    try:
-        rows, _ = security_scope.stack_rows(root)
-    except Exception:  # noqa: BLE001 -- the neutral signals still run
-        rows = []
-    sec = security_scope.classify(text, paths, rows)
-    if sec:
-        found["security"] = sec[0]
+    # SECURITY ONLY WHEN A THREAT MODEL CONFIRMS A BOUNDARY (#2267 plan-advisor A-2). A plan's nouns ("phone number", "CSV") fired the
+    # word scan on 27 of Retask's 53 plans: noise that teaches skipping. `/rails-flow:secure-design` writes the model only when
+    # `security_scope.py` finds a boundary, so a model with threat rows is the confirmed one; the word scan stays that step's trigger.
+    for section in re.split(r"(?m)^== ", text):
+        if section.startswith("docs/security/threat-models/") and (rows := threat_rows(section.split("\n", 1)[-1])):
+            found["security"] = f"the threat model names {len(rows)} threat row(s)"
     for p in paths:
         if STRUCTURE_PATHS.search(p):
             found.setdefault("structure", f"planned path `{p}`")
@@ -263,6 +264,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--root", default=".", type=Path)
     ap.add_argument("--begin", action="store_true")
     ap.add_argument("--stamp", action="store_true")
+    ap.add_argument("--again", action="store_true", help="with --begin: keep the existing record (and its snapshot) numbered, start a new one")
     a = ap.parse_args(argv)
     root = a.root.resolve()
     slug = a.slug or slug_of(root)
@@ -278,6 +280,17 @@ def main(argv: list[str]) -> int:
     cats = categories(root, text, planned_paths(text))
     record = root / RECORD.format(slug=slug)
     if a.begin:
+        # Never overwrite a record (#2267 plan-advisor A-5): a RETHINK would vanish. `--again` keeps it as plan-advisor.<n>.md.
+        if record.exists() and not a.again:
+            print(f"{record} exists: a new pass keeps the old one, so run `--begin --again`", file=sys.stderr)
+            return 1
+        if record.exists():
+            n = 1
+            while (record.parent / f"plan-advisor.{n}.md").exists():
+                n += 1
+            record.rename(record.parent / f"plan-advisor.{n}.md")
+            if (record.parent / SNAPSHOT).exists():
+                (record.parent / SNAPSHOT).rename(record.parent / f"reviewed-plan.{n}.txt")
         record.parent.mkdir(parents=True, exist_ok=True)
         (record.parent / SNAPSHOT).write_text(text, encoding="utf-8")
         record.write_text("".join(f"Plan: {f}\n" for f in files) + f"Plan-SHA256: {plan_hash(text)}\n"
@@ -341,7 +354,12 @@ def selftest() -> int:  # noqa: C901 -- one fixture table, read top to bottom
     empty = Path(tempfile.mkdtemp(prefix="advisory-empty-"))
     for label, text, want in (
             ("a plain plan triggers nothing", "Add a notes field to `src/views/notes.tpl`.", set()),
-            ("a webhook is security", "Receive the partner webhook at `src/hooks/partner.py`.", {"security"}),
+            ("a webhook named in a plan, with no threat model, is not security", "Receive the partner webhook at `src/hooks/partner.py`.", set()),
+            ("a threat model with a threat row is security",
+             "== docs/security/threat-models/u.md\n## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n"
+             "| TM-1 | Forged | S | hook | mitigate | sig checked |\n", {"security"}),
+            ("a threat model with no rows is not security",
+             "== docs/security/threat-models/u.md\n## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n", set()),
             ("a new agent path is structure", "Write `plugins/x/agents/plan-advisor.md`.", {"structure"}),
             ("plan text adding a hook is structure", "Add a hook that refuses the push.", {"structure"}),
             ("an app's ordinary check is not structure", "Add a check that the email is present.", set()),
@@ -422,6 +440,10 @@ def selftest() -> int:  # noqa: C901 -- one fixture table, read top to bottom
         acc.parent.mkdir(parents=True)
         lines = [f"- **AC-{i}** Given a user, when they post to the partner webhook, then it answers {i}" for i in range(1, 11)]
         acc.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        tm = root / "docs/security/threat-models/u.md"
+        tm.parent.mkdir(parents=True)
+        tm.write_text("## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n"
+                      "| TM-1 | Forged callback | S | webhook | mitigate | signature checked |\n", encoding="utf-8")
 
         def run(*args: str) -> tuple[int, str]:
             out, err = io.StringIO(), io.StringIO()
@@ -433,6 +455,8 @@ def selftest() -> int:  # noqa: C901 -- one fixture table, read top to bottom
         check(code == 1 and "REQUIRED" in out, f"a required advisory with no record is exit 1: {code} {out[:120]}")
         check(run("--slug", "nope")[0] == 2, "a slug with no plan files is exit 2")
         check(run("--begin")[0] == 0, "--begin writes the header")
+        code, out = run("--begin")
+        check(code == 1 and "--again" in out, f"a second --begin refuses to overwrite the record: {code} {out[:120]}")
         rec = root / RECORD.format(slug="u")
         rec.write_text(rec.read_text() + "- A-1 the webhook trusts the body\nVERDICT: PROCEED\n"
                        "Disposition A-1: accepted | the plan now verifies the signature first\n", encoding="utf-8")
@@ -447,6 +471,11 @@ def selftest() -> int:  # noqa: C901 -- one fixture table, read top to bottom
         acc.write_text("\n".join(lines[:5] + [ln + " differently" for ln in lines[5:]]) + "\n", encoding="utf-8")
         code, out = run("--stamp")
         check(code == 1 and "over 30%" in out, f"a rewrite over 30% cannot be stamped: {code} {out[:160]}")
+        rec_before = rec.read_text()
+        code, out = run("--begin", "--again")
+        kept = rec.parent / "plan-advisor.1.md"
+        check(code == 0 and kept.is_file() and kept.read_text() == rec_before and (rec.parent / "reviewed-plan.1.txt").is_file(),
+              f"--begin --again keeps the old record and snapshot numbered: {code} {out[:120]}")
     with tempfile.TemporaryDirectory() as td2:
         fixture_git.init(td2, "-b", "plain")
         check(slug_of(Path(td2)) == "plain", f"a branch with no prefix is its own slug: got {slug_of(Path(td2))!r}")

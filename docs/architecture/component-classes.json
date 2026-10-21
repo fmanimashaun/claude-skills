@@ -4612,6 +4612,21 @@
    "class": "neutral",
    "issue": null,
    "nextjs_lines": 0,
+   "path": "plugins/rails-flow/hooks/scripts/guard-plan.sh",
+   "plugin": "rails-flow",
+   "proven": false,
+   "rails_lines": 0,
+   "registered": [
+    "PreToolUse Edit|Write|MultiEdit"
+   ],
+   "seam": "",
+   "type": "hook",
+   "via": "declared"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
    "path": "plugins/rails-flow/hooks/scripts/guard-pr-ready.sh",
    "plugin": "rails-flow",
    "proven": true,
@@ -5062,7 +5077,7 @@
    "path": "plugins/rails-flow/scripts/check_hook_gates.py",
    "plugin": "rails-flow",
    "proven": false,
-   "rails_lines": 207,
+   "rails_lines": 210,
    "registered": [],
    "seam": "discovers the hooks of every installed stack plugin instead of a fixed Rails list",
    "type": "script",

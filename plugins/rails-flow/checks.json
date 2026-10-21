@@ -16,13 +16,13 @@
   "checks": [
     {
       "id": "plan-advisory",
-      "why": "A plan that crosses a security boundary, changes structure, the data model or a dependency, or spans six or more components needs a recorded Fable `plan-advisor` pass with every finding disposed, for the plan as it is now (#2262, owner direction: everything must be enforced). The stop gate checks it at the end of a turn; this registration makes the sweep that `gh pr ready` requires check it too, so a PR cannot be marked ready past a skipped advisory. RETHINK blocks until a fresh pass says PROCEED or a named override is recorded. The branch decides the unit; a branch with no plan files owes nothing.",
+      "why": "A plan that crosses a security boundary, changes structure, the data model or a dependency, or spans six or more components needs a recorded Fable `plan-advisor` pass with every finding disposed, for the plan as it is now (#2262, owner direction: everything must be enforced). The stop gate checks it at the end of a turn; this registration makes the sweep that `gh pr ready` requires check it too, so a PR cannot be marked ready past a skipped advisory. RETHINK blocks until a fresh pass says PROCEED or a named override is recorded. The branch decides the unit; a branch with no plan files owes nothing. applies_when is `docs`, not the two criteria homes: every listed path must exist, and the layout's `docs/product/acceptance` and the pre-layout `docs/acceptance` are alternatives (#2267 plan-advisor A-6).",
       "command": [
         "python3",
         "{plugin}/scripts/advisory_scope.py"
       ],
       "applies_when": [
-        "docs/product/acceptance"
+        "docs"
       ],
       "requires": [
         "python3"

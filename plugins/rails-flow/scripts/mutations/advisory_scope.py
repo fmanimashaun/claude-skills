@@ -8,13 +8,13 @@ GUARD = Guard(
     selftest_args=("--selftest",),
     # It reuses security_scope (the security category), check_threat_model (the filler test) and detect_stack; the selftest
     # builds a scratch repo through fixture_git.
-    needs=("scripts/security_scope.py", "scripts/check_threat_model.py", "scripts/detect_stack.py", "scripts/fixture_git.py"),
+    needs=("scripts/check_threat_model.py", "scripts/detect_stack.py", "scripts/fixture_git.py"),
     mutations=(
         Mutation(
             "the security category stops firing",
-            "    if sec:\n        found[\"security\"] = sec[0]",
-            "    if False:\n        found[\"security\"] = sec[0]",
-            "a webhook is security",
+            "        if section.startswith(\"docs/security/threat-models/\") and (rows := threat_rows(section.split(\"\\n\", 1)[-1])):",
+            "        if False and (rows := threat_rows(section.split(\"\\n\", 1)[-1])):",
+            "a threat model with a threat row is security",
         ),
         Mutation(
             "a structure path stops firing",
@@ -148,6 +148,26 @@ GUARD = Guard(
             '    return out.split("/", 1)[1].replace("/", "-") if "/" in out else out',
             '    return out.split("/", 1)[1].replace("/", "-") if "/" in out else ""',
             "a branch with no prefix is its own slug",
+        ),
+        Mutation(
+            # plan-advisor A-2: the word scan alone fired on 27 of 53 real plans.
+            "a plan's nouns fire security again without a threat model",
+            "        if section.startswith(\"docs/security/threat-models/\") and (rows := threat_rows(section.split(\"\\n\", 1)[-1])):",
+            "        if (rows := [1]) and \"webhook\" in section:",
+            "a webhook named in a plan, with no threat model, is not security",
+        ),
+        Mutation(
+            # plan-advisor A-5: --begin overwrote the record, so a RETHINK could be erased.
+            "--begin overwrites an existing record again",
+            "        if record.exists() and not a.again:",
+            "        if False:",
+            "a second --begin refuses to overwrite the record",
+        ),
+        Mutation(
+            "--again drops the old record instead of keeping it numbered",
+            '            record.rename(record.parent / f"plan-advisor.{n}.md")',
+            "            record.unlink()",
+            "--begin --again keeps the old record and snapshot numbered",
         ),
     ),
 )
