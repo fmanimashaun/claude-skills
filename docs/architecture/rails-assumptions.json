@@ -2970,21 +2970,25 @@
   "plugins/rails-flow/checks.json": {
    "assumes": "registers the Rails gates and names Rails paths in applies_when",
    "categories": {
-    "concept": 1,
-    "path": 2
+    "concept": 5,
+    "path": 5
    },
    "decision": "detector",
    "how": "the Rails rows leave with their gates (rails-gates, rails-mandated-gems); what remains is stack-neutral",
    "ids": {
-    "db": 1,
+    "db": 4,
     "gemfile": 1,
-    "ruby-file": 1
+    "ruby-file": 5
    },
    "invokes": [],
    "kind": "data",
    "lines": [
     128,
-    182
+    182,
+    213,
+    219,
+    255,
+    261
    ],
    "move": ""
   },
@@ -4804,6 +4808,203 @@
    ],
    "move": "rails-mandated-gems"
   },
+  "plugins/rails-flow/scripts/check_mcp_annotations.py": {
+   "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
+   "categories": {
+    "concept": 86,
+    "path": 6,
+    "tool": 23
+   },
+   "decision": "rails-stack",
+   "how": "held in rails-flow until build_project_wiki.py moves to rails-stack (#2177); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin",
+   "ids": {
+    "app-layers": 1,
+    "binstub": 1,
+    "gemfile": 1,
+    "rails-config": 2,
+    "rake": 7,
+    "ruby": 15,
+    "ruby-file": 86,
+    "spec-dir": 2
+   },
+   "invokes": [
+    549
+   ],
+   "kind": "script",
+   "lines": [
+    10,
+    11,
+    13,
+    16,
+    17,
+    18,
+    21,
+    42,
+    45,
+    46,
+    47,
+    48,
+    176,
+    177,
+    296,
+    374,
+    375,
+    380,
+    386,
+    387,
+    395,
+    403,
+    408,
+    452,
+    483,
+    485,
+    486,
+    487,
+    489,
+    491,
+    493,
+    495,
+    497,
+    499,
+    501,
+    503,
+    504,
+    506,
+    508,
+    510,
+    511,
+    513,
+    514,
+    515,
+    517,
+    519,
+    521,
+    523,
+    524,
+    525,
+    527,
+    529,
+    530,
+    531,
+    532,
+    533,
+    534,
+    535,
+    536,
+    537,
+    538,
+    539,
+    540,
+    542,
+    543,
+    544,
+    545,
+    546,
+    547,
+    548,
+    549,
+    550,
+    551,
+    552,
+    554,
+    556,
+    558,
+    559,
+    560,
+    562,
+    564,
+    566,
+    568,
+    570,
+    571,
+    573,
+    575,
+    577,
+    579,
+    581,
+    584,
+    587,
+    588,
+    589,
+    590,
+    611,
+    619,
+    628
+   ],
+   "move": "rails-gates-wiki"
+  },
+  "plugins/rails-flow/scripts/check_mcp_personal_fields.py": {
+   "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
+   "categories": {
+    "concept": 10,
+    "path": 15,
+    "tool": 1
+   },
+   "decision": "rails-stack",
+   "how": "held in rails-flow until build_project_wiki.py moves to rails-stack (#2177); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin",
+   "ids": {
+    "app-layers": 9,
+    "gemfile": 6,
+    "ruby": 1,
+    "ruby-file": 10
+   },
+   "invokes": [],
+   "kind": "script",
+   "lines": [
+    10,
+    29,
+    59,
+    145,
+    148,
+    222,
+    223,
+    224,
+    226,
+    265,
+    267,
+    269,
+    275,
+    277,
+    279,
+    285
+   ],
+   "move": "rails-gates-wiki"
+  },
+  "plugins/rails-flow/scripts/check_migration_order.py": {
+   "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
+   "categories": {
+    "concept": 14,
+    "path": 8
+   },
+   "decision": "rails-stack",
+   "how": "held in rails-flow until the coordinator reads the migration rule from the descriptor (#2183); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin",
+   "ids": {
+    "active-framework": 1,
+    "db": 8,
+    "rails-word": 1,
+    "ruby-file": 12
+   },
+   "invokes": [],
+   "kind": "script",
+   "lines": [
+    4,
+    8,
+    12,
+    18,
+    31,
+    32,
+    33,
+    36,
+    57,
+    65,
+    71,
+    79,
+    80,
+    87,
+    92
+   ],
+   "move": "rails-gates-coordinator"
+  },
   "plugins/rails-flow/scripts/check_mockup_gate.py": {
    "assumes": "hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test",
    "categories": {
@@ -4853,6 +5054,66 @@
     696
    ],
    "move": ""
+  },
+  "plugins/rails-flow/scripts/check_privacy_inventory.py": {
+   "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
+   "categories": {
+    "concept": 41,
+    "path": 15
+   },
+   "decision": "rails-stack",
+   "how": "held in rails-flow until build_project_wiki.py moves to rails-stack (#2177); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin",
+   "ids": {
+    "active-framework": 3,
+    "db": 15,
+    "rails-word": 3,
+    "ruby-file": 35
+   },
+   "invokes": [],
+   "kind": "script",
+   "lines": [
+    2,
+    18,
+    19,
+    21,
+    36,
+    134,
+    139,
+    199,
+    222,
+    260,
+    299,
+    300,
+    309,
+    314,
+    317,
+    321,
+    325,
+    334,
+    337,
+    338,
+    340,
+    342,
+    343,
+    347,
+    348,
+    349,
+    351,
+    353,
+    355,
+    356,
+    357,
+    359,
+    363,
+    382,
+    384,
+    389,
+    393,
+    396,
+    398,
+    403
+   ],
+   "move": "rails-gates-wiki"
   },
   "plugins/rails-flow/scripts/check_spec.py": {
    "assumes": "hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test",
@@ -5466,6 +5727,63 @@
    ],
    "move": "rails-mandated-gems"
   },
+  "plugins/rails-flow/scripts/mutations/check_mcp_annotations.py": {
+   "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
+   "categories": {
+    "concept": 1,
+    "path": 2,
+    "tool": 10
+   },
+   "decision": "rails-stack",
+   "followed": "plugins/rails-flow/scripts/check_mcp_annotations.py",
+   "how": "held in rails-flow until build_project_wiki.py moves to rails-stack (#2177); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin",
+   "ids": {
+    "rake": 5,
+    "ruby": 5,
+    "ruby-file": 1,
+    "spec-dir": 2
+   },
+   "invokes": [],
+   "kind": "mutation",
+   "lines": [
+    248,
+    249,
+    251,
+    255,
+    256,
+    260,
+    261,
+    266,
+    267,
+    269,
+    272,
+    284,
+    287
+   ],
+   "move": "rails-gates-wiki"
+  },
+  "plugins/rails-flow/scripts/mutations/check_migration_order.py": {
+   "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
+   "categories": {
+    "concept": 3,
+    "path": 3
+   },
+   "decision": "rails-stack",
+   "followed": "plugins/rails-flow/scripts/check_migration_order.py",
+   "how": "held in rails-flow until the coordinator reads the migration rule from the descriptor (#2183); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin",
+   "ids": {
+    "db": 3,
+    "ruby-file": 3
+   },
+   "invokes": [],
+   "kind": "mutation",
+   "lines": [
+    19,
+    20,
+    27
+   ],
+   "move": "rails-gates-coordinator"
+  },
   "plugins/rails-flow/scripts/mutations/check_mockup_gate.py": {
    "assumes": "hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test",
    "categories": {
@@ -5483,6 +5801,29 @@
     22
    ],
    "move": ""
+  },
+  "plugins/rails-flow/scripts/mutations/check_privacy_inventory.py": {
+   "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
+   "categories": {
+    "concept": 4,
+    "path": 2
+   },
+   "decision": "rails-stack",
+   "followed": "plugins/rails-flow/scripts/check_privacy_inventory.py",
+   "how": "held in rails-flow until build_project_wiki.py moves to rails-stack (#2177); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin",
+   "ids": {
+    "db": 2,
+    "ruby-file": 4
+   },
+   "invokes": [],
+   "kind": "mutation",
+   "lines": [
+    12,
+    54,
+    63,
+    78
+   ],
+   "move": "rails-gates-wiki"
   },
   "plugins/rails-flow/scripts/mutations/ci_verdict_hint.py": {
    "assumes": "hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command",
@@ -6463,6 +6804,16 @@
    "summary": "architecture_graph.py (routes/app/db graph, /rails-flow:graph) and build_project_wiki.py read Rails sources to draw the architecture and the wiki.",
    "title": "The Rails documentation generators"
   },
+  "rails-gates-coordinator": {
+   "issue": 2183,
+   "summary": "check_migration_order is a thin CLI over session_coordinator.migration_findings, which the neutral coordinator also runs. It stays in rails-flow after #2175 and moves with its checks.json row when the coordinator reads the stack's migration rule from the descriptor (#2183).",
+   "title": "The Rails gate that reads the coordinator's migration rule"
+  },
+  "rails-gates-wiki": {
+   "issue": 2177,
+   "summary": "Three project gates still in rails-flow after #2175 moved the other twelve: check_privacy_inventory imports its schema reader from build_project_wiki.py, and check_mcp_personal_fields and check_mcp_annotations read it through that gate (the first imports the second). A plugin cannot reach a sibling, so they move WITH build_project_wiki.py when the Rails documentation generators move (#2177), each with its checks.json row.",
+   "title": "The Rails gates that read the schema reader"
+  },
   "rails-hooks": {
    "issue": 2174,
    "summary": "Hooks that fire on a Rails artifact: guard-migrate.sh on a new db/migrate file, lint-ruby.sh on a .rb edit. They register through the plugin's hooks.json, so the stack plugin must register them instead.",
@@ -6477,24 +6828,24 @@
  "policy": "docs/architecture/rails-assumptions.policy.json",
  "summary": {
   "by_category": {
-   "concept": 1455,
+   "concept": 1618,
    "gem": 69,
    "hotwire": 87,
-   "path": 922,
-   "tool": 617
+   "path": 976,
+   "tool": 651
   },
   "by_decision": {
    "detector": {
     "files": 90,
-    "lines": 1204
+    "lines": 1208
    },
    "neutral": {
     "files": 7,
     "lines": 24
    },
    "rails-stack": {
-    "files": 38,
-    "lines": 760
+    "files": 45,
+    "lines": 949
    },
    "reword": {
     "files": 65,
@@ -6528,10 +6879,10 @@
    },
    "rails-flow": {
     "detector": 50,
-    "files": 107,
-    "lines": 1359,
+    "files": 114,
+    "lines": 1552,
     "neutral": 3,
-    "rails-stack": 17,
+    "rails-stack": 24,
     "reword": 37
    }
   },
@@ -6546,7 +6897,7 @@
    },
    "data": {
     "files": 3,
-    "lines": 19
+    "lines": 23
    },
    "doc": {
     "files": 1,
@@ -6561,8 +6912,8 @@
     "lines": 2
    },
    "mutation": {
-    "files": 31,
-    "lines": 141
+    "files": 34,
+    "lines": 161
    },
    "reference": {
     "files": 9,
@@ -6573,8 +6924,8 @@
     "lines": 1
    },
    "script": {
-    "files": 72,
-    "lines": 1514
+    "files": 76,
+    "lines": 1683
    },
    "selftest": {
     "files": 16,
@@ -6586,32 +6937,32 @@
    }
   },
   "by_pattern": {
-   "active-framework": 11,
-   "app-layers": 468,
+   "active-framework": 15,
+   "app-layers": 478,
    "bin-rails": 110,
-   "binstub": 39,
+   "binstub": 40,
    "brakeman": 4,
    "bundler": 72,
    "bundler-audit": 3,
-   "db": 100,
+   "db": 131,
    "erb": 305,
    "erb-lint": 11,
    "gem": 69,
-   "gemfile": 106,
+   "gemfile": 113,
    "hotwire": 87,
-   "rails-config": 87,
+   "rails-config": 89,
    "rails-idiom": 22,
-   "rails-word": 236,
-   "rake": 42,
+   "rails-word": 240,
+   "rake": 54,
    "routes": 29,
    "rspec": 151,
    "rubocop": 15,
    "rubocop-yml": 0,
-   "ruby": 170,
-   "ruby-file": 881,
-   "spec-dir": 132
+   "ruby": 191,
+   "ruby-file": 1036,
+   "spec-dir": 136
   },
-  "files": 200,
-  "lines": 2273
+  "files": 207,
+  "lines": 2466
  }
 }

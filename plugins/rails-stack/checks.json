@@ -216,63 +216,6 @@
       "requires": [
         "python3"
       ]
-    },
-    {
-      "id": "privacy-inventory",
-      "why": "Every column in db/schema.rb, and in every other db/*_schema.rb a second database dumps (not the Solid trio, except that a Solid table the inventory NAMES is read and its listed entries judged, its unlisted columns exempt, #1732), is classified in config/privacy_inventory.yml (table -> column -> {category, basis, retention}; `category: none` for not personal). The privacy policy is drafted from this file, so an unclassified personal column is one the policy silently omits (#1310).",
-      "command": [
-        "python3",
-        "{plugin}/scripts/check_privacy_inventory.py"
-      ],
-      "applies_when": [
-        "db/schema.rb"
-      ],
-      "requires": [
-        "python3"
-      ]
-    },
-    {
-      "id": "mcp-personal-fields",
-      "why": "No MCP tool result carries a personal category it was not allowed. Each class-form tool declares what its result is built from (`sources: %w[table.column ...]`); every column, and every sum/avg/min/max of one, is held to config/privacy_inventory.yml, and a category other than `none` needs an allow-list entry for that tool in .rails-flow/mcp.json. An undeclared tool can return anything, so it is a finding (#1931, gate 3 of #1885). Read from declarations, so it runs in CI with no app booted.",
-      "command": [
-        "python3",
-        "{plugin}/scripts/check_mcp_personal_fields.py"
-      ],
-      "applies_when": [
-        "config/privacy_inventory.yml"
-      ],
-      "requires": [
-        "python3"
-      ]
-    },
-    {
-      "id": "mcp-annotations",
-      "why": "Every MCP tool sets read_only_hint and open_world_hint explicitly. Unset, the 2026-07-28 schema's defaults describe a destructive, open-world tool, and the mcp gem fills every other hint with those defaults the moment any one is declared, so only the source can tell stated from defaulted (#1882, umbrella #1306). Annotations are not inherited by a subclass, so each concrete tool states its own.",
-      "command": [
-        "python3",
-        "{plugin}/scripts/check_mcp_annotations.py"
-      ],
-      "applies_when": [
-        "app"
-      ],
-      "requires": [
-        "python3"
-      ]
-    },
-    {
-      "id": "migration-order",
-      "why": "A migration numbered at or below the base branch's schema version is recorded as applied and never runs, so its columns never arrive and the suite fails somewhere unrelated. The rule lived only in /rails-flow:coordinate, so nothing ordinary checked it; downstream a branch merged dev, db:schema:load stamped schema.rb past its migration, and the column silently vanished (#1248).",
-      "command": [
-        "python3",
-        "{plugin}/scripts/check_migration_order.py"
-      ],
-      "applies_when": [
-        "db/schema.rb"
-      ],
-      "requires": [
-        "python3",
-        "git"
-      ]
     }
   ]
 }

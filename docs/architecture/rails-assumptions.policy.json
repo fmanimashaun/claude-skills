@@ -30,6 +30,16 @@
    "title": "The Kamal-on-Rails deploy path",
    "summary": "kamal-configurator and kamal_destination.py route values into Rails credentials and deploy.yml; Vercel deploy (#2167) is its own path.",
    "issue": 2179
+  },
+  "rails-gates-wiki": {
+   "title": "The Rails gates that read the schema reader",
+   "summary": "Three project gates still in rails-flow after #2175 moved the other twelve: check_privacy_inventory imports its schema reader from build_project_wiki.py, and check_mcp_personal_fields and check_mcp_annotations read it through that gate (the first imports the second). A plugin cannot reach a sibling, so they move WITH build_project_wiki.py when the Rails documentation generators move (#2177), each with its checks.json row.",
+   "issue": 2177
+  },
+  "rails-gates-coordinator": {
+   "title": "The Rails gate that reads the coordinator's migration rule",
+   "summary": "check_migration_order is a thin CLI over session_coordinator.migration_findings, which the neutral coordinator also runs. It stays in rails-flow after #2175 and moves with its checks.json row when the coordinator reads the stack's migration rule from the descriptor (#2183).",
+   "issue": 2183
   }
  },
  "rules": [
@@ -67,6 +77,26 @@
    "assumes": "a list of Ruby gems and the Gemfile reader for it",
    "how": "moves with its checks.json row",
    "move": "rails-mandated-gems"
+  },
+  {
+   "match": [
+    "plugins/rails-flow/scripts/check_privacy_inventory.py",
+    "plugins/rails-flow/scripts/check_mcp_personal_fields.py",
+    "plugins/rails-flow/scripts/check_mcp_annotations.py"
+   ],
+   "decision": "rails-stack",
+   "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
+   "how": "held in rails-flow until build_project_wiki.py moves to rails-stack (#2177); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin",
+   "move": "rails-gates-wiki"
+  },
+  {
+   "match": [
+    "plugins/rails-flow/scripts/check_migration_order.py"
+   ],
+   "decision": "rails-stack",
+   "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
+   "how": "held in rails-flow until the coordinator reads the migration rule from the descriptor (#2183); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin",
+   "move": "rails-gates-coordinator"
   },
   {
    "match": [
@@ -802,32 +832,6 @@
     "class": "rails",
     "issue": 2175,
     "why": "the Rails project gates' registrations: the plugin that holds the gates declares them (#2175); project_gates.py discovers this file from the sibling plugin"
-   },
-   {
-    "match": [
-     "plugins/rails-stack/scripts/build_project_wiki.py"
-    ],
-    "class": "rails",
-    "issue": 2177,
-    "why": "a byte-identical vendored copy of rails-flow's build_project_wiki.py for check_privacy_inventory's schema reader (VENDORED.md); #2177 moves the original here and deletes the copy"
-   },
-   {
-    "match": [
-     "plugins/rails-stack/scripts/session_coordinator.py"
-    ],
-    "class": "mixed",
-    "seam": "asks the stack detector (#2163) for the stack's migration rule",
-    "issue": 2183,
-    "why": "a byte-identical vendored copy of rails-flow's session_coordinator.py for check_migration_order (VENDORED.md); removed when the coordinator reads the rule from the descriptor"
-   },
-   {
-    "match": [
-     "plugins/rails-stack/scripts/fixture_git.py"
-    ],
-    "class": "mixed",
-    "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
-    "issue": 2183,
-    "why": "a byte-identical copy of the shared fixture-git lock (fixture-git-drift keeps four copies equal), used by check_migration_order's selftest"
    },
    {
     "match": [

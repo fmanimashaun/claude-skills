@@ -40,8 +40,8 @@ WHAT IT CHECKS
                               start, crashes or times out is then a non-blocking error and the action goes through (#1939)
   hook-lib-drift              the two shipped copies of hooks/scripts/lib/normalize_cmd.sh, or of lib/deadline.sh,
                               differ, or one is missing -- one normaliser is a claim only while they are identical
-  fixture-git-drift           the four shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
-                              pipeline, rails-stack) differ, or one is missing -- one fixture-git lock, four copies (#1588)
+  fixture-git-drift           the three shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
+                              pipeline) differ, or one is missing -- one fixture-git lock, three copies (#1588)
   findings-script-drift       the two shipped copies of scripts/findings.py (rails-flow, qa-flow) differ,
                               or one is missing -- qa-reporter runs its own copy (#1680)
   vendored-copy-drift         a file rails-stack vendors from rails-flow (triage_failures.py, check_simple_form_only.py,
@@ -623,8 +623,7 @@ def check_hook_lib_drift() -> tuple[list[Finding], int]:
 # rails-flow copy. A fix to one copy that misses another reopens #1588 in that plugin.
 FIXTURE_GIT_COPIES = ("plugins/rails-flow/scripts/fixture_git.py",
                       "plugins/qa-flow/scripts/fixture_git.py",
-                      "plugins/pipeline/scripts/fixture_git.py",
-                      "plugins/rails-stack/scripts/fixture_git.py")   # rails-stack's check_migration_order selftest (#2175)
+                      "plugins/pipeline/scripts/fixture_git.py")
 
 
 def check_fixture_git_drift() -> tuple[list[Finding], int]:
@@ -643,7 +642,7 @@ def check_fixture_git_drift() -> tuple[list[Finding], int]:
     for rel in FIXTURE_GIT_COPIES[1:]:
         if canonical is not None and rel in texts and texts[rel] != canonical:
             findings.append(Finding("fixture-git-drift", rel, 0,
-                                    f"differs from {FIXTURE_GIT_COPIES[0]} -- one fixture-git lock, four copies: a fix "
+                                    f"differs from {FIXTURE_GIT_COPIES[0]} -- one fixture-git lock, three copies: a fix "
                                     "landed in one and not the others. Copy the canonical file over it (cp) and re-run"))
     return findings, len(FIXTURE_GIT_COPIES)
 
@@ -842,10 +841,6 @@ def check_findings_script_drift() -> tuple[list[Finding], int]:
 VENDORED_COPIES = (
     ("plugins/rails-flow/scripts/triage_failures.py", "plugins/rails-stack/scripts/triage_failures.py",
      "rails-stack's test-runner runs it; it leaves when the flows' triage reads the descriptor and rails-stack owns the original"),
-    ("plugins/rails-flow/scripts/build_project_wiki.py", "plugins/rails-stack/scripts/build_project_wiki.py",
-     "rails-stack's check_privacy_inventory imports its schema reader; the Rails documentation generators move to rails-stack (#2177), which makes this the original and deletes the copy"),
-    ("plugins/rails-flow/scripts/session_coordinator.py", "plugins/rails-stack/scripts/session_coordinator.py",
-     "rails-stack's check_migration_order imports migration_findings from it; the coordinator reads the stack's migration rule from the descriptor (#2183), which removes this copy"),
     ("plugins/rails-flow/reference/agent-output-contract.md", "plugins/rails-stack/reference/agent-output-contract.md",
      "every moved agent cites it; a neutral reference whose single home is core-skills (#2186), which removes this copy"),
 )
@@ -2405,7 +2400,7 @@ def check_non_hermetic_fixture_git() -> tuple[list[Finding], int]:
 
     A `git commit` in a fixture repo starts `git maintenance run --auto --quiet --detach` (`GIT_TRACE` shows it), a
     background process that can still be writing when the selftest removes the temp directory, so cleanup fails with
-    "Directory not empty" (#1493, #1510). `scripts/hermetic_git.py` sets both keys, and the four `fixture_git.py` copies
+    "Directory not empty" (#1493, #1510). `scripts/hermetic_git.py` sets both keys, and the three `fixture_git.py` copies
     use it; nothing checked that a NEW fixture does. Scope: a Python file under `scripts/` or `plugins/*/scripts/` (not
     `mutations/`) that creates temp directories AND calls git with a literal `"commit"`; the requirement is a reference
     to `hermetic_git`, `fixture_git`, `maintenance.auto` or `GIT_CONFIG_COUNT` anywhere in the file. A script that commits
@@ -2530,7 +2525,6 @@ CLONE_PATH_ALLOWED = {
     "plugins/rails-flow/scripts/check_hook_gates.py": "fixtures for guard-claims, which reads clone paths",
     "plugins/rails-flow/scripts/worktree_teardown.py": "checks this repo's own skill docs in a clone for the teardown step",
     "plugins/rails-flow/scripts/session_coordinator.py": "maps this repo's generated files to their builders",
-    "plugins/rails-stack/scripts/session_coordinator.py": "the byte-identical vendored copy of the rails-flow coordinator (VENDORED.md), so it carries the same map",
 }
 
 

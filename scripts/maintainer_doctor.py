@@ -358,8 +358,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "plugins/rails-stack/scripts/check_tenancy_cop.py", "--selftest")),
     ("rails-stack mcp end to end",                                                    # #1930
      ("python3", "plugins/rails-stack/scripts/check_mcp_end_to_end.py", "--selftest")),
-    ("rails-stack mcp personal fields",                                               # #1931
-     ("python3", "plugins/rails-stack/scripts/check_mcp_personal_fields.py", "--selftest")),
+    ("rails-flow mcp personal fields",                                               # #1931
+     ("python3", "plugins/rails-flow/scripts/check_mcp_personal_fields.py", "--selftest")),
     # #762's neighbour. The curated-doc drift signal is ADVISORY -- it blocks nothing -- and that is
     # exactly why its silent-false-clean survived: nothing ran it. The selftest drives the real hook
     # under a working, absent, broken and shasum-only hasher.

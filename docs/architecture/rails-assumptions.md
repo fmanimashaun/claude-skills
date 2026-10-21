@@ -8,17 +8,17 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 
 | decision | what it means | files | lines |
 |---|---|---:|---:|
-| `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 38 | 760 |
-| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 90 | 1204 |
+| `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 45 | 949 |
+| `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 90 | 1208 |
 | `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 65 | 285 |
 | `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change | 7 | 24 |
-| **all** | | **200** | **2273** |
+| **all** | | **207** | **2466** |
 
 ## By flow
 
 | flow | files | lines | `rails-stack` | `detector` | `reword` | `neutral` |
 |---|---:|---:|---:|---:|---:|---:|
-| `rails-flow` | 107 | 1359 | 17 | 50 | 37 | 3 |
+| `rails-flow` | 114 | 1552 | 24 | 50 | 37 | 3 |
 | `qa-flow` | 36 | 275 | 0 | 29 | 6 | 1 |
 | `pipeline` | 19 | 89 | 3 | 9 | 4 | 3 |
 | `design-flow` | 38 | 550 | 18 | 2 | 18 | 0 |
@@ -27,10 +27,10 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 
 | category | lines naming it |
 |---|---:|
-| tool | 617 |
+| tool | 651 |
 | gem | 69 |
-| path | 922 |
-| concept | 1455 |
+| path | 976 |
+| concept | 1618 |
 | hotwire | 87 |
 
 A line that names two things counts once per category it names in this table and once overall in the totals above.
@@ -73,6 +73,18 @@ kamal-configurator and kamal_destination.py route values into Rails credentials 
 
 Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py` (pipeline), `scripts/mutations/kamal_destination.py` (pipeline)
 
+### rails-gates-wiki: The Rails gates that read the schema reader (#2177)
+
+Three project gates still in rails-flow after #2175 moved the other twelve: check_privacy_inventory imports its schema reader from build_project_wiki.py, and check_mcp_personal_fields and check_mcp_annotations read it through that gate (the first imports the second). A plugin cannot reach a sibling, so they move WITH build_project_wiki.py when the Rails documentation generators move (#2177), each with its checks.json row.
+
+Files: `scripts/check_mcp_annotations.py` (rails-flow), `scripts/check_mcp_personal_fields.py` (rails-flow), `scripts/check_privacy_inventory.py` (rails-flow), `scripts/mutations/check_mcp_annotations.py` (rails-flow), `scripts/mutations/check_privacy_inventory.py` (rails-flow)
+
+### rails-gates-coordinator: The Rails gate that reads the coordinator's migration rule (#2183)
+
+check_migration_order is a thin CLI over session_coordinator.migration_findings, which the neutral coordinator also runs. It stays in rails-flow after #2175 and moves with its checks.json row when the coordinator reads the stack's migration rule from the descriptor (#2183).
+
+Files: `scripts/check_migration_order.py` (rails-flow), `scripts/mutations/check_migration_order.py` (rails-flow)
+
 ## setup-flow, section by section (issue #2180)
 
 /rails-flow:setup-flow is the shipped home of a project's working rules (git flow, guardrails, parallel sessions, labels, who merges). Today it reads the Gemfile, the Rails version and the rails-8 skill to fill them, and the second half of the file is a list of Rails-only repairs. The rule scaffold itself names no stack; the stack facts and the Rails repairs are what assume Rails.
@@ -109,7 +121,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `agents/security-auditor.md:8`<br>L8 | agent | 1 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
 | `agents/spec-reviewer.md:99`<br>L99, 100 | agent | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `agents/test-runner.md:10`<br>L10 | agent | 1 | an agent whose task is Rails-specific (Rails 8 code, migrations, RSpec, Brakeman, Rails review, simple_form audit) | `rails-stack` (rails-agents) | moves with its plugin.json agents entry; the neutral reviewers (pr-reviewer, spec-reviewer, adversary) stay |
-| `checks.json:128`<br>L128, 182 | data | 2 | registers the Rails gates and names Rails paths in applies_when | `detector` | the Rails rows leave with their gates (rails-gates, rails-mandated-gems); what remains is stack-neutral |
+| `checks.json:128`<br>L128, 182, 213, 219, 255 +1 more | data | 6 | registers the Rails gates and names Rails paths in applies_when | `detector` | the Rails rows leave with their gates (rails-gates, rails-mandated-gems); what remains is stack-neutral |
 | `commands/brief.md:62`<br>L62, 151 | command | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `commands/coordinate.md:51`<br>L51 | command | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `commands/explain.md:34`<br>L34, 71, 148 | command | 3 | instructions an agent acts on name Rails commands: bundle exec mutant, bin/dev, bin/rails runner and routes, bundle exec rspec, the Rails default boot command | `detector` | the command text says to run the stack's own command, read from the detector's descriptor (test, dev server, runner, routes extraction) |
@@ -157,7 +169,11 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `scripts/check_issue_mockup.py:47`<br>L47, 51, 206 | script | 3 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/check_issue_ready.py:27`<br>L27, 297, 298 | script | 3 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/check_mandated_gems.py:2`<br>L2, 4, 6, 9, 15 +44 more | script | 49 | a list of Ruby gems and the Gemfile reader for it | `rails-stack` (rails-mandated-gems) | moves with its checks.json row |
+| `scripts/check_mcp_annotations.py:10`<br>L10, 11, 13, 16, 17 +93 more | script | 98 | parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project | `rails-stack` (rails-gates-wiki) | held in rails-flow until build_project_wiki.py moves to rails-stack (#2177); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin |
+| `scripts/check_mcp_personal_fields.py:10`<br>L10, 29, 59, 145, 148 +11 more | script | 16 | parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project | `rails-stack` (rails-gates-wiki) | held in rails-flow until build_project_wiki.py moves to rails-stack (#2177); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin |
+| `scripts/check_migration_order.py:4`<br>L4, 8, 12, 18, 31 +10 more | script | 15 | parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project | `rails-stack` (rails-gates-coordinator) | held in rails-flow until the coordinator reads the migration rule from the descriptor (#2183); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin |
 | `scripts/check_mockup_gate.py:5`<br>L5, 50, 51, 53, 59 +17 more | script | 22 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
+| `scripts/check_privacy_inventory.py:2`<br>L2, 18, 19, 21, 36 +35 more | script | 40 | parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project | `rails-stack` (rails-gates-wiki) | held in rails-flow until build_project_wiki.py moves to rails-stack (#2177); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin |
 | `scripts/check_spec.py:126`<br>L126, 137, 139, 140, 169 +6 more | script | 11 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/check_spec_review.py:134`<br>L134, 155, 156, 157, 160 +7 more | script | 12 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/check_toolchain_selftests.py:14`<br>L14 | script | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
@@ -179,7 +195,10 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `scripts/mutations/check_issue_mockup.py:61`<br>L61, 68, 69, 122, 123 +1 more ↳ | mutation | 6 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/mutations/check_issue_ready.py:75`<br>L75 ↳ | mutation | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/mutations/check_mandated_gems.py:5`<br>L5, 18, 19, 24, 28 +10 more ↳ | mutation | 15 | a list of Ruby gems and the Gemfile reader for it | `rails-stack` (rails-mandated-gems) | moves with its checks.json row |
+| `scripts/mutations/check_mcp_annotations.py:248`<br>L248, 249, 251, 255, 256 +8 more ↳ | mutation | 13 | parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project | `rails-stack` (rails-gates-wiki) | held in rails-flow until build_project_wiki.py moves to rails-stack (#2177); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin |
+| `scripts/mutations/check_migration_order.py:19`<br>L19, 20, 27 ↳ | mutation | 3 | parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project | `rails-stack` (rails-gates-coordinator) | held in rails-flow until the coordinator reads the migration rule from the descriptor (#2183); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin |
 | `scripts/mutations/check_mockup_gate.py:22`<br>L22 ↳ | mutation | 1 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
+| `scripts/mutations/check_privacy_inventory.py:12`<br>L12, 54, 63, 78 ↳ | mutation | 4 | parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project | `rails-stack` (rails-gates-wiki) | held in rails-flow until build_project_wiki.py moves to rails-stack (#2177); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin |
 | `scripts/mutations/ci_verdict_hint.py:28`<br>L28 ↳ | mutation | 1 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
 | `scripts/mutations/classify_door.py:27`<br>L27, 45, 46, 62, 65 ↳ | mutation | 5 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/mutations/claude_md_structure.py:50`<br>L50 ↳ | mutation | 1 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
