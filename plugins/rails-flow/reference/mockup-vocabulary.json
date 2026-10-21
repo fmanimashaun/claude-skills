@@ -1,0 +1,7 @@
+{
+ "comment": "The one list of allowed values for a mock-up record's design lines (#2226). check_mockup_gate.py reads it; the frontend architecture framework (#2220) cites this path. It lives in rails-flow because the gate is stack-neutral core and a plugin reaches only its own files.",
+ "templates": ["list", "detail", "create-edit", "multi-step", "dashboard", "settings", "search-results", "sign-in", "system"],
+ "system_subkinds": ["not-found", "no-permission", "error", "maintenance"],
+ "states": ["loaded", "empty-filtered", "loading", "error", "partial", "permission-denied", "success", "first-run"],
+ "nav_max_level": 3
+}

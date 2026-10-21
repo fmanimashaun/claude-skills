@@ -18,6 +18,8 @@ GUARD = Guard(
         # every mutation read as caught: INERT, found only by the full local run at 49ea846.
         "scripts/check_mockup_gate.py",
         "scripts/classify_door.py",
+        # check_mockup_gate imports the record reader (#2226): unstaged, the mutant dies on ModuleNotFoundError.
+        "scripts/mockup_records.py",
     ),
     mutations=(
         # #1461: fences come from check_issue_ready.fence_lines, the one reader.
