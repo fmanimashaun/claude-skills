@@ -28,7 +28,7 @@ the command ends there: tell the engineer what to declare (the schema is in `/qa
 stop. A plan that cannot be produced is not a plan to improvise.
 
 The rubric is the design doctrine as well as the project's spec, and that doctrine ships in another
-plugin: `plugins/rails-stack/skills/design-system/references/` (page anatomies, responsive bands, components, forms)
+plugin: rails-stack's `skills/design-system/references/` (page anatomies, responsive bands, components, forms)
 must be readable — it arrives with `rails-stack`. If it is absent, say which plugin is missing
 **and stop**; a walk judged against no doctrine files taste as findings.
 

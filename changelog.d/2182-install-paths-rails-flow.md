@@ -1,0 +1,2 @@
+section: rails-flow
+- **Shipped rails-flow text names install-relative skill paths again — `plugins/rails-flow/reference/agent-instruction-conventions.md`, `plugins/rails-flow/commands/coordinate.md`** (#2182). Three files had been rewritten to the clone-only `plugins/rails-stack/skills/…`; they name rails-stack's `skills/…` (the coordinate example and the reporter's 1.63.0 example keep the bare `skills/…` they always meant).

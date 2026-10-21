@@ -32,7 +32,7 @@ tokens and components that no gate will recognise (#513).
 
 ## 1. Read the rubric
 
-`plugins/rails-stack/skills/design-system/references/art-direction.md` (in rails-stack) is the doctrine —
+rails-stack's `skills/design-system/references/art-direction.md` (in rails-stack) is the doctrine —
 one focal point per surface, a different brief per surface class, and one bounded escape from the
 grid. The critic applies it; it does not invent rules beside it.
 

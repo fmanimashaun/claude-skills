@@ -2464,6 +2464,7 @@ def _setup_sections() -> set[str]:
 _DECLARED_PLUGIN_ROOT = re.compile(r"`\$\{CLAUDE_PLUGIN_ROOT\}` below is \*\*([a-z][a-z0-9-]*)'s\*\* plugin root")
 _PLUGIN_ROOT_POINTER = re.compile(
     r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9._/-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+)")
+CLONE_SKILLS = "plugins/rails-stack/skills/"
 _SKILL_POINTER = re.compile(
     # The lookbehind rejects a path that is only a SUFFIX of a longer one -- `.claude/skills/…`
     # is the user's project directory, not ours, and `/` before `skills` is what tells them apart.
@@ -2519,14 +2520,30 @@ def check_doc_pointers() -> tuple[list[Finding], int]:
                     f"points at `{match.group(0)}`, which does not exist in "
                     f"{owning_plugin.name} -- an agent told to read it finds nothing",
                 ))
+        # SHIPPED TEXT (anything under plugins/) is read by agents in an INSTALL, where rails-stack's skills/
+        # sits at its plugin root: there a `skills/<name>/…` pointer means rails-stack's, and the clone path
+        # `plugins/rails-stack/skills/…` names nothing (#2182 release blocker). Repo docs keep the clone path.
+        shipped = parts[0] == "plugins"
         for match in _SKILL_POINTER.finditer(body):
             examined += 1
-            if (ROOT / match.group(1)).exists():
+            target = match.group(1)
+            line = body[:match.start()].count("\n") + 1
+            if shipped and target.startswith(CLONE_SKILLS):
+                findings.append(Finding(
+                    "broken-doc-pointer", rel(path), line,
+                    f"points at `{target}`, a clone-only path in shipped text -- an installed rails-stack has "
+                    f"`{target[len(CLONE_SKILLS) - len('skills/'):]}` at its plugin root; write rails-stack's "
+                    "`skills/…`",
+                ))
+                continue
+            base = ROOT / "plugins" / "rails-stack" if shipped else ROOT
+            if (base / target).exists():
                 continue
             findings.append(Finding(
-                "broken-doc-pointer", rel(path), body[:match.start()].count("\n") + 1,
-                f"points at `{match.group(1)}`, which does not exist -- a pointer to doctrine "
-                "that cannot be opened reads as authoritative while resolving to nothing",
+                "broken-doc-pointer", rel(path), line,
+                f"points at `{target}`, which does not exist"
+                + (" in rails-stack" if shipped else "")
+                + " -- a pointer to doctrine that cannot be opened reads as authoritative while resolving to nothing",
             ))
     return findings, examined
 
@@ -6653,12 +6670,28 @@ def selftest() -> int:
     scenario("...and with no declaration it resolves against the file's own plugin", rule=P, expect_finding=True,
              files={"plugins/rails-stack/setup/rails.md": "Run `${CLAUDE_PLUGIN_ROOT}/scripts/x.py`.\n",
                     "plugins/rails-flow/scripts/x.py": "pass\n"})
+    # Shipped text names rails-stack's install-relative path (#2182 release blocker): skills/ sits at an
+    # installed rails-stack's root, so the pointer resolves against plugins/rails-stack/.
     scenario("command points at a skill doc that was renamed away", rule=P, expect_finding=True,
              files={"plugins/rails-flow/commands/setup-flow.md":
-                    "Before writing Ruby read `plugins/rails-stack/skills/rails-8/references/style.md`.\n"})
+                    "Before writing Ruby read rails-stack's `skills/rails-8/references/style.md`.\n"})
     scenario("...and is silent when the skill doc is there", rule=P, expect_finding=False,
              files={"plugins/rails-flow/commands/setup-flow.md":
-                    "Before writing Ruby read `plugins/rails-stack/skills/rails-8/references/style.md`.\n",
+                    "Before writing Ruby read rails-stack's `skills/rails-8/references/style.md`.\n",
+                    "plugins/rails-stack/skills/rails-8/references/style.md": "# Style\n"})
+    scenario("...and a misspelt install-relative pointer is a finding", rule=P, expect_finding=True,
+             files={"plugins/rails-flow/commands/setup-flow.md":
+                    "Before writing Ruby read rails-stack's `skills/rails-8/references/stlye.md`.\n",
+                    "plugins/rails-stack/skills/rails-8/references/style.md": "# Style\n"})
+    # The file also exists where the install-relative fallback would look (rails-stack/ + the clone path), so
+    # ONLY the clone-only rule can produce this finding: the case cannot pass on the generic "does not exist".
+    scenario("a clone-only path in shipped text is a finding even when the file exists", rule=P, expect_finding=True,
+             files={"plugins/design-flow/agents/a.md":
+                    "Read `plugins/rails-stack/skills/rails-8/references/style.md`.\n",
+                    "plugins/rails-stack/skills/rails-8/references/style.md": "# Style\n",
+                    "plugins/rails-stack/plugins/rails-stack/skills/rails-8/references/style.md": "# Style\n"})
+    scenario("a repo doc keeps the clone path, resolved from the repo root", rule=P, expect_finding=False,
+             files={"docs/notes.md": "See `plugins/rails-stack/skills/rails-8/references/style.md`.\n",
                     "plugins/rails-stack/skills/rails-8/references/style.md": "# Style\n"})
     # A line anchor is how CLAUDE.md cites doctrine (`jobs-and-realtime.md:28`); the pointer is
     # still the file, so the anchor must not defeat resolution.

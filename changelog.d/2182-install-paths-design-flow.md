@@ -1,0 +1,2 @@
+section: design-flow
+- **Agents and commands name rails-stack's `skills/design-system/…` path, which exists in an install — `plugins/design-flow/agents/design-auditor.md`, `plugins/design-flow/commands/component.md`** (#2182). #2182 had rewritten these pointers to the marketplace clone's `plugins/rails-stack/skills/…`, which an installed rails-stack does not have (its `skills/` is at the plugin root), so an installed agent was told to read files that are not there. Twelve design-flow agent and command files now say rails-stack's `skills/design-system/references/…`.

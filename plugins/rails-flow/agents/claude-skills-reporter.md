@@ -75,7 +75,7 @@ mis-filing. Never put a downstream project's private code, data, or secrets into
   If the first command exits 2, this project has no resolvable rails-stack install: say so, and
   do not call it a lapse. If `grep` reports no such file or directory, the skill name is wrong:
   fix it before reading "no hit" as a gap. Put the verdict and the search in the report BODY either way ("searched rails-stack
-  1.63.0 `plugins/rails-stack/skills/rails-8/` for X: no hit"). A label set by someone without push access may be
+  1.63.0 `skills/rails-8/` for X: no hit"). A label set by someone without push access may be
   dropped, so the body is what the triager reads.
 - Classify and pre-label: `type:bug` / `type:feature` / `type:incorrect-doctrine` /
   `type:skill-gap` and the `comp:*` component. (These match the upstream taxonomy.)

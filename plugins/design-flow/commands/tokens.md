@@ -7,7 +7,7 @@ disable-model-invocation: true
 # /design-flow:tokens — $ARGUMENTS
 
 Generate native token files from the `@theme` single source of truth, so fully-native
-Android/iOS screens match the web. Follow `plugins/rails-stack/skills/design-system/references/native-tokens.md`.
+Android/iOS screens match the web. Follow rails-stack's `skills/design-system/references/native-tokens.md`.
 This runs in the **Rails app** (which owns the `@theme`); it writes outputs to `tmp/` for the
 maintainer to carry into the native repos — it **never** writes into a native app repo.
 

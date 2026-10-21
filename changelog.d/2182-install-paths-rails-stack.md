@@ -1,0 +1,2 @@
+section: rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+- **rails-stack's own setup section and skills name their install-relative `skills/…` paths — `plugins/rails-stack/setup/rails.md`, `plugins/rails-stack/skills/hotwire/references/production.md`** (#2182). The Rails setup section (four pointers), a hotwire reference and a design-system example had been rewritten to the clone-only `plugins/rails-stack/skills/…`; in an install `skills/` is at rails-stack's root, so they name rails-stack's `skills/…` again.
