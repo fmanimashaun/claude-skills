@@ -34,7 +34,10 @@ format above plus `Kind: shell`, `Shell-sources:` (two or more approved HTML moc
 `Shell-signature:`. The signature is DERIVED, never typed: the landmark elements (header, nav, main, footer, aside)
 and every element id that all the sources share, so what two screens have in common is the shell and what differs
 is content. `--adopt-shell` derives and writes it (`--keep` may narrow it to some of what the sources share, to drop an id two
-screens have in common by chance; it cannot add one); the gate recomputes what the sources share and fails on a token they no longer share.
+screens have in common by chance; it cannot add one, and the choice is recorded as `Shell-keep:`); the gate RECOMPUTES the signature from the
+sources and `Shell-keep:` on every run, so a token deleted or added by hand fails alike. Elements that are never drawn (`<noscript>`, `hidden`,
+`aria-hidden="true"`, an inline `display:none`) and everything inside them are not the shell. Once the shell exists on the base, a change that
+touches only the shell record covers none of its user-visible files: each screen needs its own record.
 Every other record carries `Shell: docs/product/mockups/shell.md`. When its mock-up is a repo HTML file it must hold
 every signature token as an ELEMENT (a word in text, a comment or a script is not one); an image, PDF or link can
 only be checked for the reference and the output says so. A project with no recorded shell is held on its first
@@ -79,7 +82,7 @@ RECORD_DIR = "docs/product/mockups/"
 RECORD_KEYS = ("Mock-up", "Issue", "Approved-by", "Approval", "Widths", "States")
 # The shell (#2211): one record every other record points at.
 SHELL_RECORD = RECORD_DIR + "shell.md"
-SHELL_KEYS = ("Kind", "Shell", "Shell-sources", "Shell-signature")
+SHELL_KEYS = ("Kind", "Shell", "Shell-sources", "Shell-keep", "Shell-signature")
 LANDMARKS = frozenset(("header", "nav", "main", "footer", "aside"))
 SHELL_MIN_TOKENS = 3
 HTML_MOCK = re.compile(r"\.html?$", re.I)
@@ -383,29 +386,62 @@ def _starts_block(s, pos):
 
 # --------------------------------------------------------------------------- the shell (#2211)
 
+VOID_TAGS = frozenset(("area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"))
+DISPLAY_NONE = re.compile(r"(?:^|;)\s*display\s*:\s*none\b", re.I)
+
+
+def _hidden(tag: str, attrs: list) -> bool:
+    """An element that is never drawn: <noscript>, `hidden`, aria-hidden="true", or an inline display:none."""
+    if tag == "noscript":
+        return True
+    for key, value in attrs:
+        if key == "hidden":
+            return True
+        if key == "aria-hidden" and (value or "").strip().lower() == "true":
+            return True
+        if key == "style" and DISPLAY_NONE.search(value or ""):
+            return True
+    return False
+
+
 class _Tokens(HTMLParser):
     """The landmark elements and the element ids of a mock-up, as a set of tokens.
 
     Only START TAGS count, so a word in text, an id inside a comment, or a tag inside a script string is not a token: HTMLParser reads
     script and style bodies as data and comments as comments. The contents of a <template> are real elements (a mock-up board keeps its
-    screens there)."""
+    screens there). An element that is never drawn, and everything inside it, is not the shell: <noscript>, `hidden`,
+    aria-hidden="true", an inline display:none (#2211 review). An end tag closes the nearest open element of its name, so an optional
+    end tag left out (<p>, <li>) cannot leave a hidden ancestor open for the rest of the page."""
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.tokens: set[str] = set()
+        self._open: list[tuple[str, bool]] = []
 
-    def _see(self, tag: str, attrs: list) -> None:
-        if tag in LANDMARKS:
-            self.tokens.add(tag)
-        for key, value in attrs:
-            if key == "id" and value and value.strip():
-                self.tokens.add("#" + value.strip())
+    def _see(self, tag: str, attrs: list) -> bool:
+        """Count the tag unless it or an ancestor is hidden; returns whether it is hidden itself."""
+        hidden = _hidden(tag, attrs)
+        if not hidden and not any(h for _, h in self._open):
+            if tag in LANDMARKS:
+                self.tokens.add(tag)
+            for key, value in attrs:
+                if key == "id" and value and value.strip():
+                    self.tokens.add("#" + value.strip())
+        return hidden
 
     def handle_starttag(self, tag, attrs):
-        self._see(tag, attrs)
+        hidden = self._see(tag, attrs)
+        if tag not in VOID_TAGS:
+            self._open.append((tag, hidden))
 
     def handle_startendtag(self, tag, attrs):
         self._see(tag, attrs)
+
+    def handle_endtag(self, tag):
+        for i in range(len(self._open) - 1, -1, -1):
+            if self._open[i][0] == tag:
+                del self._open[i:]
+                return
 
 
 def shell_tokens(text: str) -> set[str]:
@@ -470,14 +506,20 @@ def shell_record_problems(root: Path, rel: str, fields: dict[str, str]) -> list[
     if out:
         return out
     derived = derive_signature(texts)
+    kept = [t.strip() for t in fields.get("Shell-keep", "").split(",") if t.strip()]
     typed = [t.strip() for t in fields.get("Shell-signature", "").split(",") if t.strip()]
     if not typed:
         return [f"{rel}: no `Shell-signature:` line (`--adopt-shell` derives it)"]
-    invented = [t for t in typed if t not in derived]
-    if invented:
-        return [f"{rel}: Shell-signature names {', '.join(invented)}, which the sources no longer share (a source changed, or the line was typed "
-                f"by hand): they share `{signature_line(derived)}`; re-run --adopt-shell"]
-    weak = signature_weak(typed)
+    # The signature is RECOMPUTED, never read back: what the sources share, narrowed to the recorded `Shell-keep:` when there is one. A token
+    # deleted from or added to the line by hand then fails the same way (#2211 review).
+    gone = [t for t in kept if t not in derived]
+    if gone:
+        return [f"{rel}: Shell-keep names {', '.join(gone)}, which the sources no longer share: they share `{signature_line(derived)}`; re-run --adopt-shell"]
+    expected = sorted(set(kept)) if kept else derived
+    if typed != expected:
+        return [f"{rel}: Shell-signature `{signature_line(typed)}` is not what the sources "
+                f"{'and Shell-keep give' if kept else 'share'} now (`{signature_line(expected)}`): a source changed or the line was edited by hand; re-run --adopt-shell"]
+    weak = signature_weak(expected)
     if weak:
         out.append(f"{rel}: the signature has {weak}: it cannot tell a shell from any page")
     return out
@@ -509,13 +551,19 @@ def shell_reference_problems(root: Path, rel: str, fields: dict[str, str]) -> li
     return []
 
 
-def reference_only(root: Path, rel: str) -> bool:
-    """A non-shell record whose mock-up is not a repo HTML file: only its `Shell:` reference was checked."""
+def reference_note(root: Path, rel: str) -> str | None:
+    """For a non-shell record whose mock-up is not a repo HTML file, what the gate could NOT check, or None when it read the mock-up."""
     f = root / rel
     if not f.is_file():
-        return False
+        return None
     fields = read_fields(f)
-    return fields.get("Kind", "").lower() != "shell" and _html_text(root, fields.get("Mock-up", "")) is None
+    if fields.get("Kind", "").lower() == "shell":
+        return None
+    mock = fields.get("Mock-up", "")
+    if _html_text(root, mock) is not None:
+        return None
+    what = "a link, not a repo file" if mock.startswith("https://") else "not an HTML file"
+    return f"{rel}: the mock-up is {what}, so only its `Shell:` reference was checked; the reviewer confirms the layout"
 
 
 def adopt_shell(root: Path, sources: list[str], approval: str, approved_by: str, issue: str, widths: str, states: str,
@@ -543,6 +591,8 @@ def adopt_shell(root: Path, sources: list[str], approval: str, approved_by: str,
     if weak:
         return 1, [f"refused: the signature has {weak}. An empty or tiny signature passes every page; mock up the layout and navigation "
                    f"on each screen, or name screens of the same shell. The mock-ups share: {signature_line(derived) or 'nothing'}"]
+    if keep:
+        lines.append(f"Shell-keep: {signature_line(chosen)}")
     lines.append(f"Shell-signature: {signature_line(chosen)}")
     before = rec.read_text(encoding="utf-8") if rec.is_file() else None
     rec.parent.mkdir(parents=True, exist_ok=True)
@@ -603,8 +653,17 @@ def record_problems(root: Path, rel: str) -> list[str]:
     return out
 
 
-def run(root: Path, changed: list[str], record: str | None) -> tuple[int, list[str]]:
-    """The whole decision. main() and the selftest both come through here."""
+def shell_on_base(root: Path, base: str) -> bool:
+    """Whether the shell record is committed at `base`. Unknown (no git, no such ref) reads as no: the first change may be the shell itself."""
+    r = subprocess.run(["git", "-C", str(root), "cat-file", "-e", f"{base}:{SHELL_RECORD}"], capture_output=True)
+    return r.returncode == 0
+
+
+def run(root: Path, changed: list[str], record: str | None, base_has_shell: bool = False) -> tuple[int, list[str]]:
+    """The whole decision. main() and the selftest both come through here.
+
+    `base_has_shell`: the shell record already exists on the base. Then a change that touches only the shell record covers none of its
+    user-visible files: each screen needs a record of its own (#2211 review). Without a shell on the base, the shell record IS the change."""
     ui = ui_paths(changed)
     if not ui and SHELL_RECORD not in changed:
         return 0, ["no user-visible change: no mock-up needed"]
@@ -619,9 +678,11 @@ def run(root: Path, changed: list[str], record: str | None) -> tuple[int, list[s
     problems = [p for r in records for p in record_problems(root, r)]
     if problems:
         return 1, problems
+    if ui and base_has_shell and all(r == SHELL_RECORD for r in records):
+        return 1, [f"{len(ui)} user-visible file(s) and the only record is the shell ({SHELL_RECORD}), which already exists on the base: "
+                   f"add the record of the screen being built, with `Shell: {SHELL_RECORD}`"]
     what = f"{len(ui)} user-visible file(s); approved mock-up recorded in" if ui else "the recorded shell is valid:"
-    notes = [f"{r}: the mock-up is not an HTML file, so only its `Shell:` reference was checked; the reviewer confirms the layout"
-             for r in records if reference_only(root, r)]
+    notes = [n for n in (reference_note(root, r) for r in records) if n]
     return 0, [f"{what} {', '.join(records)}"] + notes
 
 
@@ -954,7 +1015,16 @@ def selftest() -> int:
         # --keep narrows to some of what the sources share, and cannot add.
         full_record = (root / SHELL).read_text()
         code, msg = adopt_shell(root, [A, B], APPROVAL, "@owner", "#1", "1280, 390", "default", keep=["header", "main", "nav"])
-        check_that("#2211: --keep records only the tokens kept", code == 0 and "Shell-signature: header, main, nav" in (root / SHELL).read_text(), msg)
+        check_that("#2211: --keep records only the tokens kept, and the keep list itself",
+                   code == 0 and "Shell-signature: header, main, nav" in (root / SHELL).read_text() and "Shell-keep: header, main, nav" in (root / SHELL).read_text(), msg)
+        kept_record = (root / SHELL).read_text()
+        (root / SHELL).write_text(kept_record.replace("Shell-signature: header, main, nav", "Shell-signature: header, main"))
+        code, msg = feature("docs/product/mockups/on-shell.html")
+        check_that("#2211: a token deleted by hand from a kept signature is held", code == 1 and any("is not what the sources" in m for m in msg), msg)
+        (root / SHELL).write_text(kept_record.replace("Shell-keep: header, main, nav", "Shell-keep: header, main, nav, #sidebar"))
+        code, msg = feature("docs/product/mockups/on-shell.html")
+        check_that("#2211: a Shell-keep naming a token the sources do not share is held", code == 1 and any("Shell-keep names #sidebar" in m for m in msg), msg)
+        (root / SHELL).write_text(kept_record)
         put("no-toasts.html", SHELL_A.replace('<div id="toasts"></div>', ""))
         code, msg = feature("docs/product/mockups/no-toasts.html")
         check_that("#2211: a token dropped by --keep is no longer required", code == 0, msg)
@@ -985,11 +1055,42 @@ def selftest() -> int:
         put("boarded.html", "<html><body><main id=\"main\"><template id=\"t\"><header></header><nav></nav><div id=\"toasts\"></div></template></main></body></html>")
         code, msg = feature("docs/product/mockups/boarded.html")
         check_that("#2211 CONTROL: a mock-up board keeps its screens in <template>, and those elements count", code == 0, msg)
+        # A shell that is never drawn is not the shell: each way to hide it, with its near-miss control.
+        FULL = '<header></header><nav></nav><main id="main"><div id="toasts"></div></main>'
+        for label, body, counts in (
+                ("<noscript>", f"<noscript>{FULL}</noscript><main id=\"main\"></main>", False),
+                ("a `hidden` attribute on an ancestor", f"<div hidden>{FULL}</div><main id=\"main\"></main>", False),
+                ("aria-hidden=\"true\"", f"<div aria-hidden=\"true\">{FULL}</div><main id=\"main\"></main>", False),
+                ("an inline display:none", f"<div style=\"color:red; display: none\">{FULL}</div><main id=\"main\"></main>", False),
+                ("CONTROL: aria-hidden=\"false\" is drawn", f"<div aria-hidden=\"false\">{FULL}</div>", True),
+                ("CONTROL: display:block is drawn", f"<div style=\"display:block\">{FULL}</div>", True),
+                ("CONTROL: the word `hidden` in a class is not the attribute", f"<div class=\"hidden\">{FULL}</div>", True),
+                ("CONTROL: a hidden sibling does not hide the shell beside it", f"<div hidden></div>{FULL}", True),
+                ("CONTROL: an unclosed <p> inside a hidden block does not hide what follows",
+                 f"<div hidden><p>x</div>{FULL}", True),
+                ("CONTROL: a hidden void element (<img hidden>) does not hide what follows", f"<img hidden>{FULL}", True),
+                ("CONTROL: the shell inside a <template> is drawn by the board", f"<template>{FULL}</template>", True)):
+            put("hid.html", f"<html><body>{body}</body></html>")
+            code, msg = feature("docs/product/mockups/hid.html")
+            check_that(f"#2211: {label}: the shell {'counts' if counts else 'does not count'}", (code == 0) == counts, msg)
+        # A record whose sources share almost nothing, written by hand with the matching signature: weak on its own, not a drift.
+        put("thin-a.html", "<html><body><main>a</main></body></html>")
+        put("thin-b.html", "<html><body><main>b</main></body></html>")
+        shell_text = (root / SHELL).read_text()
+        (root / SHELL).write_text(shell_text.replace("Shell-sources: " + A + ", " + B, "Shell-sources: docs/product/mockups/thin-a.html, docs/product/mockups/thin-b.html")
+                                  .replace("Shell-signature: #main, #toasts, header, main, nav", "Shell-signature: main"))
+        code, msg = feature("docs/product/mockups/on-shell.html")
+        check_that("#2211: a record whose sources share only `main` is too weak to be a shell, whatever it says",
+                   code == 1 and any("cannot tell a shell" in m for m in msg), msg)
+        (root / SHELL).write_text(shell_text)
         # A mock-up that is not HTML: the reference is all that can be checked, and the output says so.
         (rec / "card.png").write_bytes(b"\x89PNG")
         code, msg = feature("docs/product/mockups/card.png")
-        check_that("#2211: an image mock-up passes on the reference alone, and says it was not checked",
-                   code == 0 and any("only its `Shell:` reference" in m for m in msg), msg)
+        check_that("#2211: an image mock-up passes on the reference alone, and says it is not an HTML file",
+                   code == 0 and any("not an HTML file" in m and "only its `Shell:` reference" in m for m in msg), msg)
+        code, msg = feature("x", GOOD)
+        check_that("#2211: a link mock-up passes on the reference alone, and says it is not a repo file",
+                   code == 0 and any("a link, not a repo file" in m for m in msg), msg)
         code, msg = feature("x", GOOD.replace("Shell: docs/product/mockups/shell.md\n", "").replace("https://example.com/mockups/bell", "docs/product/mockups/card.png"))
         check_that("#2211: a record with no Shell line is held, whatever its mock-up", code == 1 and any("no `Shell:" in m for m in msg), msg)
         code, msg = feature("x", GOOD.replace("Shell: docs/product/mockups/shell.md", "Shell: docs/product/mockups/other.md").replace("https://example.com/mockups/bell", "docs/product/mockups/card.png"))
@@ -997,15 +1098,18 @@ def selftest() -> int:
         # Drift: a source changed after adoption, and a hand-typed signature.
         put("shell-b.html", SHELL_B.replace("<nav></nav>", ""))
         code, msg = feature("docs/product/mockups/on-shell.html")
-        check_that("#2211: a source edited after adoption is a drift, held", code == 1 and any("no longer share" in m for m in msg), msg)
+        check_that("#2211: a source edited after adoption is a drift, held", code == 1 and any("is not what the sources" in m for m in msg), msg)
         put("shell-b.html", SHELL_B)
         text = (root / SHELL).read_text()
         (root / SHELL).write_text(text.replace("Shell-signature: #main, #toasts, header, main, nav", "Shell-signature: main"))
         code, msg = feature("docs/product/mockups/on-shell.html")
-        check_that("#2211: a hand-typed signature too small to be a shell is held", code == 1 and any("cannot tell" in m for m in msg), msg)
+        check_that("#2211: a hand-edited signature too small to be a shell is held", code == 1 and any("is not what the sources" in m for m in msg), msg)
+        (root / SHELL).write_text(text.replace("Shell-signature: #main, #toasts, header, main, nav", "Shell-signature: #main, #toasts, header, main"))
+        code, msg = feature("docs/product/mockups/on-shell.html")
+        check_that("#2211: deleting a token from the signature by hand is held, as adding one is", code == 1 and any("is not what the sources" in m for m in msg), msg)
         (root / SHELL).write_text(text.replace("Shell-signature: #main, #toasts, header, main, nav", "Shell-signature: #main, #sidebar, #toasts, header, main, nav"))
         code, msg = feature("docs/product/mockups/on-shell.html")
-        check_that("#2211: a hand-typed token the sources do not share is held", code == 1 and any("no longer share" in m and "#sidebar" in m for m in msg), msg)
+        check_that("#2211: a hand-typed token the sources do not share is held", code == 1 and any("is not what the sources" in m and "#sidebar" in m for m in msg), msg)
         (root / SHELL).write_text(text.replace("Shell-sources: " + A + ", " + B, "Shell-sources: " + A))
         code, msg = feature("docs/product/mockups/on-shell.html")
         check_that("#2211: a shell record that lists one source is held", code == 1 and any("two or more" in m for m in msg), msg)
@@ -1020,6 +1124,14 @@ def selftest() -> int:
         code, msg = run(root, [SHELL], None)
         check_that("#2211: a change that only touches a broken shell record is held, with no UI file in it", code == 1, msg)
         (root / SHELL).write_text(text)
+        # A branch that changes only the shell record covers none of its UI files once the shell is on the base.
+        code, msg = run(root, view + [SHELL], None, base_has_shell=True)
+        check_that("#2211: with the shell on the base, a change that touches only the shell record covers no UI file",
+                   code == 1 and any("only record is the shell" in m for m in msg), msg)
+        code, msg = run(root, view + [SHELL], None, base_has_shell=False)
+        check_that("#2211 CONTROL: with no shell on the base, the shell record is the whole change", code == 0, msg)
+        code, msg = run(root, view + [SHELL, "docs/product/mockups/f.md"], None, base_has_shell=True)
+        check_that("#2211 CONTROL: with the shell on the base, the screen's own record beside it passes", code == 0, msg)
         # Kind: shell anywhere else would be a second shell.
         code, msg = feature("x", text.replace("Mock-up: docs/product/mockups/shell-a.html", "Mock-up: docs/product/mockups/on-shell.html"))
         check_that("#2211: `Kind: shell` in another record is held", code == 1 and any("belongs only" in m for m in msg), msg)
@@ -1055,6 +1167,41 @@ def selftest() -> int:
             check_that("an unresolvable base is unusable", False)
         except Unusable:
             pass
+
+    # #2211 review, through the git path main() takes: the shell on the base decides whether a shell-only record covers a view.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import fixture_git as _fg
+        def git(*a: str) -> None:
+            _fg.init(root, *a[2:]) if a[:2] == ("init", "-q") else _fg.run(root, *a)
+        git("init", "-q", "-b", "dev")
+        recdir = root / "docs/product/mockups"
+        recdir.mkdir(parents=True)
+        (recdir / "shell-a.html").write_text(SHELL_A)
+        (recdir / "shell-b.html").write_text(SHELL_B)
+        (root / "README.md").write_text("x\n")
+        git("add", "README.md", "docs/product/mockups/shell-a.html", "docs/product/mockups/shell-b.html")
+        git("commit", "-qm", "base: two screens, no shell yet")
+        check_that("#2211: before any shell is committed, the base has none", shell_on_base(root, "dev") is False)
+        git("checkout", "-q", "-b", "first-shell")
+        code, msg = adopt_shell(root, ["docs/product/mockups/shell-a.html", "docs/product/mockups/shell-b.html"],
+                                APPROVAL, "@owner", "#1", "1280, 390", "default")
+        check_that("#2211 CONTROL: the shell is adopted on a branch", code == 0, msg)
+        (root / "app/views/layouts").mkdir(parents=True)
+        (root / "app/views/layouts/application.html.erb").write_text("<main></main>\n")
+        code, msg = run(root, list(diff(root, "dev")), None, shell_on_base(root, "dev"))
+        check_that("#2211 CONTROL: the first change IS the shell: its layout needs no other record", code == 0, msg)
+        git("add", "docs/product/mockups/shell.md", "app/views/layouts/application.html.erb")
+        git("commit", "-qm", "the shell")
+        git("checkout", "-q", "dev")
+        git("merge", "-q", "--no-ff", "-m", "merge the shell", "first-shell")
+        check_that("#2211: once merged, the base has the shell", shell_on_base(root, "dev") is True)
+        git("checkout", "-q", "-b", "later")
+        (recdir / "shell.md").write_text((recdir / "shell.md").read_text().replace("States: default", "States: default, collapsed"))
+        (root / "app/views/invoices").mkdir(parents=True)
+        (root / "app/views/invoices/index.html.erb").write_text("<table></table>\n")
+        code, msg = run(root, list(diff(root, "dev")), None, shell_on_base(root, "dev"))
+        check_that("#2211: a branch that edits only the shell record does not cover a new view", code == 1 and any("only record is the shell" in m for m in msg), msg)
 
     for f in failures:
         print(f"selftest FAIL: {f}")
@@ -1101,7 +1248,7 @@ def main(argv: list[str]) -> int:
     except Unusable as exc:
         print(f"UNUSABLE: {exc} -- an unclassified change is not exempt; ask the owner", file=sys.stderr)
         return 2
-    code, lines = run(a.root, changed, a.record)
+    code, lines = run(a.root, changed, a.record, shell_on_base(a.root, a.base))
     print(("MOCK-UP GATE: HOLD -- " if code else "MOCK-UP GATE: ok -- ") + lines[0])
     for line in lines[1:]:
         print(f"  {line}")
