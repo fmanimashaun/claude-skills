@@ -40,8 +40,8 @@ WHAT IT CHECKS
                               start, crashes or times out is then a non-blocking error and the action goes through (#1939)
   hook-lib-drift              the two shipped copies of hooks/scripts/lib/normalize_cmd.sh, or of lib/deadline.sh,
                               differ, or one is missing -- one normaliser is a claim only while they are identical
-  fixture-git-drift           the three shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
-                              pipeline) differ, or one is missing -- one fixture-git lock, three copies (#1588)
+  fixture-git-drift           the four shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
+                              pipeline, rails-stack) differ, or one is missing -- one fixture-git lock, four copies (#1588)
   findings-script-drift       the two shipped copies of scripts/findings.py (rails-flow, qa-flow) differ,
                               or one is missing -- qa-reporter runs its own copy (#1680)
   vendored-copy-drift         a file rails-stack vendors from rails-flow (triage_failures.py, check_simple_form_only.py,
@@ -623,7 +623,8 @@ def check_hook_lib_drift() -> tuple[list[Finding], int]:
 # rails-flow copy. A fix to one copy that misses another reopens #1588 in that plugin.
 FIXTURE_GIT_COPIES = ("plugins/rails-flow/scripts/fixture_git.py",
                       "plugins/qa-flow/scripts/fixture_git.py",
-                      "plugins/pipeline/scripts/fixture_git.py")
+                      "plugins/pipeline/scripts/fixture_git.py",
+                      "plugins/rails-stack/scripts/fixture_git.py")   # rails-stack's check_migration_order selftest (#2175)
 
 
 def check_fixture_git_drift() -> tuple[list[Finding], int]:
@@ -642,7 +643,7 @@ def check_fixture_git_drift() -> tuple[list[Finding], int]:
     for rel in FIXTURE_GIT_COPIES[1:]:
         if canonical is not None and rel in texts and texts[rel] != canonical:
             findings.append(Finding("fixture-git-drift", rel, 0,
-                                    f"differs from {FIXTURE_GIT_COPIES[0]} -- one fixture-git lock, three copies: a fix "
+                                    f"differs from {FIXTURE_GIT_COPIES[0]} -- one fixture-git lock, four copies: a fix "
                                     "landed in one and not the others. Copy the canonical file over it (cp) and re-run"))
     return findings, len(FIXTURE_GIT_COPIES)
 
@@ -841,8 +842,10 @@ def check_findings_script_drift() -> tuple[list[Finding], int]:
 VENDORED_COPIES = (
     ("plugins/rails-flow/scripts/triage_failures.py", "plugins/rails-stack/scripts/triage_failures.py",
      "rails-stack's test-runner runs it; it leaves when the flows' triage reads the descriptor and rails-stack owns the original"),
-    ("plugins/rails-flow/scripts/check_simple_form_only.py", "plugins/rails-stack/scripts/check_simple_form_only.py",
-     "rails-stack's design-auditor runs it; step 4 (#2175) moves the original and its checks.json row and deletes this copy"),
+    ("plugins/rails-flow/scripts/build_project_wiki.py", "plugins/rails-stack/scripts/build_project_wiki.py",
+     "rails-stack's check_privacy_inventory imports its schema reader; the Rails documentation generators move to rails-stack (#2177), which makes this the original and deletes the copy"),
+    ("plugins/rails-flow/scripts/session_coordinator.py", "plugins/rails-stack/scripts/session_coordinator.py",
+     "rails-stack's check_migration_order imports migration_findings from it; the coordinator reads the stack's migration rule from the descriptor (#2183), which removes this copy"),
     ("plugins/rails-flow/reference/agent-output-contract.md", "plugins/rails-stack/reference/agent-output-contract.md",
      "every moved agent cites it; a neutral reference whose single home is core-skills (#2186), which removes this copy"),
 )
@@ -2402,7 +2405,7 @@ def check_non_hermetic_fixture_git() -> tuple[list[Finding], int]:
 
     A `git commit` in a fixture repo starts `git maintenance run --auto --quiet --detach` (`GIT_TRACE` shows it), a
     background process that can still be writing when the selftest removes the temp directory, so cleanup fails with
-    "Directory not empty" (#1493, #1510). `scripts/hermetic_git.py` sets both keys, and the three `fixture_git.py` copies
+    "Directory not empty" (#1493, #1510). `scripts/hermetic_git.py` sets both keys, and the four `fixture_git.py` copies
     use it; nothing checked that a NEW fixture does. Scope: a Python file under `scripts/` or `plugins/*/scripts/` (not
     `mutations/`) that creates temp directories AND calls git with a literal `"commit"`; the requirement is a reference
     to `hermetic_git`, `fixture_git`, `maintenance.auto` or `GIT_CONFIG_COUNT` anywhere in the file. A script that commits
@@ -2500,6 +2503,10 @@ def _setup_sections() -> set[str]:
 _DECLARED_PLUGIN_ROOT = re.compile(r"`\$\{CLAUDE_PLUGIN_ROOT\}` below is \*\*([a-z][a-z0-9-]*)'s\*\* plugin root")
 _PLUGIN_ROOT_POINTER = re.compile(
     r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9._/-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+)")
+# A stack's setup section names the files its own plugin ships as `${STACK_ROOT}/...`: the section is run by rails-flow's setup-flow, where `${CLAUDE_PLUGIN_ROOT}` is
+# rails-flow's, so the stack's own scripts and scaffold need a variable of their own (#2175). It is the root of the plugin that HOLDS the section.
+_STACK_ROOT_POINTER = re.compile(
+    r"\$\{STACK_ROOT\}/([A-Za-z0-9._/-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+)")
 CLONE_SKILLS = "plugins/rails-stack/skills/"
 _SKILL_POINTER = re.compile(
     # The lookbehind rejects a path that is only a SUFFIX of a longer one -- `.claude/skills/…`
@@ -2523,6 +2530,7 @@ CLONE_PATH_ALLOWED = {
     "plugins/rails-flow/scripts/check_hook_gates.py": "fixtures for guard-claims, which reads clone paths",
     "plugins/rails-flow/scripts/worktree_teardown.py": "checks this repo's own skill docs in a clone for the teardown step",
     "plugins/rails-flow/scripts/session_coordinator.py": "maps this repo's generated files to their builders",
+    "plugins/rails-stack/scripts/session_coordinator.py": "the byte-identical vendored copy of the rails-flow coordinator (VENDORED.md), so it carries the same map",
 }
 
 
@@ -2592,6 +2600,17 @@ def check_doc_pointers() -> tuple[list[Finding], int]:
                     "broken-doc-pointer", rel(path), body[:match.start()].count("\n") + 1,
                     f"points at `{match.group(0)}`, which does not exist in "
                     f"{owning_plugin.name} -- an agent told to read it finds nothing",
+                ))
+        # `${STACK_ROOT}` in a stack's setup section is that stack plugin's own root, and the pointer is checked there (#2175).
+        if rel(path) in setup_sections and owning_plugin is not None:
+            stack_root = ROOT / parts[0] / parts[1]
+            for match in _STACK_ROOT_POINTER.finditer(body):
+                examined += 1
+                if (stack_root / match.group(1)).exists():
+                    continue
+                findings.append(Finding(
+                    "broken-doc-pointer", rel(path), body[:match.start()].count("\n") + 1,
+                    f"points at `{match.group(0)}`, which does not exist in {stack_root.name} -- an agent told to run or copy it finds nothing",
                 ))
         # SHIPPED TEXT (anything under plugins/) is read by agents in an INSTALL, where rails-stack's skills/
         # sits at its plugin root: there a `skills/<name>/…` pointer means rails-stack's, and the clone path
@@ -6756,6 +6775,12 @@ def selftest() -> int:
              files={"CHANGELOG.md": "# C\n\n## rails-stack\n\n### 1.0.0 (release v1.0.0)\n\n- moved `skills/x/references/y.md`\n"})
     scenario("...but a broken path in an Unreleased block is a finding", rule=P, expect_finding=True,
              files={"CHANGELOG.md": "# C\n\n## rails-stack\n\n### Unreleased\n\n- see `skills/x/references/y.md`\n"})
+    scenario("a ${STACK_ROOT} pointer in a setup section resolves against the plugin that holds it", rule=P, expect_finding=False,
+             files={**STACKS, "plugins/rails-stack/setup/rails.md": DECL + "Run `${STACK_ROOT}/scripts/y.py`.\n",
+                    "plugins/rails-stack/scripts/y.py": "pass\n"})
+    scenario("...and a ${STACK_ROOT} pointer to a file that plugin does not ship is a finding", rule=P, expect_finding=True,
+             files={**STACKS, "plugins/rails-stack/setup/rails.md": DECL + "Run `${STACK_ROOT}/scripts/gone.py`.\n",
+                    "plugins/rails-flow/scripts/gone.py": "pass\n"})
     scenario("...and with no declaration it resolves against the file's own plugin", rule=P, expect_finding=True,
              files={"plugins/rails-stack/setup/rails.md": "Run `${CLAUDE_PLUGIN_ROOT}/scripts/x.py`.\n",
                     "plugins/rails-flow/scripts/x.py": "pass\n"})

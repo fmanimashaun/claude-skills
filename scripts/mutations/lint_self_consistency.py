@@ -52,6 +52,13 @@ GUARD = Guard(
             "broken-doc-pointer / a declared root resolves the pointer against that plugin",
         ),
         Mutation(
+            # #2175: a stack's setup section names its own plugin's files as ${STACK_ROOT}/...
+            "a ${STACK_ROOT} pointer is never checked, so a setup section can name a gate its plugin does not ship",
+            "            for match in _STACK_ROOT_POINTER.finditer(body):\n",
+            "            for match in ():\n",
+            "broken-doc-pointer / ...and a ${STACK_ROOT} pointer to a file that plugin does not ship is a finding",
+        ),
+        Mutation(
             # #2182 review: released CHANGELOG blocks are history, as shipped.
             "released CHANGELOG blocks are checked as live pointers again",
             "            body = _unreleased_only(body)\n",
