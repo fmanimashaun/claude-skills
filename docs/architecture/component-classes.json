@@ -1721,7 +1721,7 @@
   {
    "class": "nextjs",
    "issue": 2165,
-   "nextjs_lines": 14,
+   "nextjs_lines": 10,
    "path": "plugins/nextjs-stack/skills/nextjs-supabase-vercel/SKILL.md",
    "plugin": "nextjs-stack",
    "proven": false,
