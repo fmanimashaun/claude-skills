@@ -2966,7 +2966,7 @@
    "invokes": [],
    "kind": "agent",
    "lines": [
-    152
+    156
    ],
    "move": ""
   },
@@ -3146,13 +3146,13 @@
     "rails-word": 1
    },
    "invokes": [
-    240
+    247
    ],
    "kind": "command",
    "lines": [
     12,
-    228,
-    240
+    235,
+    247
    ],
    "move": ""
   },
@@ -4983,50 +4983,56 @@
   "plugins/rails-flow/scripts/check_mockup_gate.py": {
    "assumes": "hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test",
    "categories": {
-    "concept": 15,
+    "concept": 19,
     "hotwire": 1,
-    "path": 20,
+    "path": 26,
     "tool": 1
    },
    "decision": "detector",
    "how": "reads source globs, risky paths and commands from the detector's stack descriptor",
    "ids": {
-    "app-layers": 18,
+    "app-layers": 24,
     "binstub": 1,
     "db": 1,
-    "erb": 8,
+    "erb": 12,
     "hotwire": 1,
     "rails-word": 2,
     "ruby-file": 5,
     "spec-dir": 1
    },
    "invokes": [
-    622
+    903
    ],
    "kind": "script",
    "lines": [
     5,
-    50,
-    51,
-    53,
-    59,
-    382,
-    438,
-    439,
-    440,
-    443,
-    444,
-    446,
-    447,
-    450,
-    452,
-    456,
-    462,
-    464,
-    622,
-    664,
-    695,
-    696
+    71,
+    72,
+    74,
+    80,
+    629,
+    714,
+    715,
+    716,
+    719,
+    720,
+    722,
+    723,
+    726,
+    728,
+    732,
+    738,
+    745,
+    903,
+    945,
+    971,
+    1161,
+    1162,
+    1190,
+    1191,
+    1194,
+    1201,
+    1202
    ],
    "move": ""
   },
