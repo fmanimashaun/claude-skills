@@ -127,7 +127,7 @@ plugin, since escaping, content-security policy and action authorization are sta
 | A29 | template | A multi-step flow asks one question per page. | claim: C34 | GOV.UK *Question pages* |
 | A30 | template | A page that asks several related things has a statement as its heading. | claim: C35 | GOV.UK *Question pages* |
 | A31 | template | Every question page has a back link at the top. | claim: C36 | GOV.UK *Question pages* |
-| A32 | template | The back link goes to the previous page the user was on. | claim: C37 | GOV.UK *Question pages* |
+| A32 | template | The back link goes to the previous page the user was on, in the state they last saw it, except after an action that should happen only once (such as a payment). | claim: C37 | GOV.UK *Question pages* |
 | A33 | template | No two pages in a flow share a heading. | claim: C38 | GOV.UK *Question pages* |
 | A34 | template | The forward button on a question page is labelled "Continue", not "Next". | claim: C39 | GOV.UK *Question pages* |
 | A35 | template | The check-answers page offers a Change link beside each section. | claim: C41 | GOV.UK *Check answers* |
@@ -140,7 +140,7 @@ plugin, since escaping, content-security policy and action authorization are sta
 | A42 | template | The confirmation says what happens next and when. | claim: C50 | GOV.UK *Confirmation pages* |
 | A43 | template | A task list is used only for a longer transaction of several tasks. | claim: C52 | GOV.UK *Complete multiple tasks* |
 | A44 | template | A task page has one task list per group of tasks. | claim: C53 | GOV.UK *Complete multiple tasks* |
-| A45 | template | Task names start with a verb. | claim: C54 | GOV.UK *Complete multiple tasks* |
+| A45 | template | Where possible, task names start with a verb. | claim: C54 | GOV.UK *Complete multiple tasks* |
 | A46 | template | Every task shows its status. | claim: C55 | GOV.UK *Complete multiple tasks* |
 | A47 | template | A task that cannot be started yet is not a link. | claim: C56 | GOV.UK *Complete multiple tasks* |
 | A48 | template | Tasks can be completed in any order where possible. | claim: C57 | GOV.UK *Complete multiple tasks* |

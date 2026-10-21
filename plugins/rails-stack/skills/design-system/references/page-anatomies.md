@@ -558,7 +558,7 @@ pages, listed with its id in `architecture.md` (rules A29–A52). This section s
 primitives and catalog compose it. **Stacked shell** (no rail: a flow has nowhere else to go), one
 `Stack` of regions, `Description list` for answers, `Button` for the forward action.
 
-- **Question page** — a back link at the top that returns to the previous page; one `h1` that is the
+- **Question page** — a back link at the top that returns to the previous page in the state they last saw it; one `h1` that is the
   question (a statement when several related things are asked); the fields; one `Button` labelled
   **Continue**. One question per page; no two pages share a heading. The first region is the back
   link, not breadcrumbs: a flow is not a place in a hierarchy.

@@ -140,7 +140,7 @@ The coordinator asked that multi-step, confirmation and search-results patterns 
 | C34 | C | design-system.service.gov.uk/patterns/question-pages | Ask one question per page. |
 | C35 | C | design-system.service.gov.uk/patterns/question-pages | If several related things must be asked on one page, the heading is a statement, not a question. |
 | C36 | C | design-system.service.gov.uk/patterns/question-pages | Always include a back link at the top of a question page. |
-| C37 | C | design-system.service.gov.uk/patterns/question-pages | The back link takes the user to the previous page they were on. |
+| C37 | C | design-system.service.gov.uk/patterns/question-pages | "Make sure it takes users to the previous page they were on, in the state they last saw it." The page's exception: after an action users should only do once (such as a payment), the browser back button still works but shows a sensible message rather than letting the action be repeated. |
 | C38 | C | design-system.service.gov.uk/patterns/question-pages | Do not use the same page heading across pages; each heading is specific to its question. |
 | C39 | C | design-system.service.gov.uk/patterns/question-pages | The button is labelled "Continue", not "Next". |
 | C41 | C | design-system.service.gov.uk/patterns/check-answers | Provide a "Change" link next to each section of the answers. |
@@ -153,7 +153,7 @@ The coordinator asked that multi-step, confirmation and search-results patterns 
 | C50 | C | design-system.service.gov.uk/patterns/confirmation-pages | Say what happens next and when. |
 | C52 | C | design-system.service.gov.uk/patterns/complete-multiple-tasks | Use a complete-multiple-tasks page only for longer transactions involving multiple tasks. |
 | C53 | C | design-system.service.gov.uk/patterns/complete-multiple-tasks | Use one task list per group of tasks on the page. |
-| C54 | C | design-system.service.gov.uk/patterns/complete-multiple-tasks | Task names start with a verb. |
+| C54 | C | design-system.service.gov.uk/patterns/complete-multiple-tasks | "Where possible, task names should: ... start with verbs, for example, 'check', 'declare', 'report'." The qualifier "where possible" is part of the claim. |
 | C55 | C | design-system.service.gov.uk/patterns/complete-multiple-tasks | Make it clear which tasks are completed and which still need attention. |
 | C56 | C | design-system.service.gov.uk/patterns/complete-multiple-tasks | A task that cannot be started yet is not linked. |
 | C57 | C | design-system.service.gov.uk/patterns/complete-multiple-tasks | Where possible, allow users to complete tasks in any order. |
