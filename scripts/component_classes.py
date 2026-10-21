@@ -342,6 +342,7 @@ def build_html(comps: list[dict]) -> str:
     w("<p>Every hook, command, agent, skill, script and gate we ship is listed once, under the plugin it ships in, with one class:</p><ul>")
     w(f'<li>{_tag("neutral")} works the same on any stack. A scan of its text finds no Rails or Next.js reference. '
       f'{_tag("neutral", True)} means more: the component was also <b>run</b> on a Next.js project and on an empty one, with Rails tools replaced by traps, and called none of them and did not crash. '
+      "<b>Limits:</b> the run does not trace file reads, and a Rails tool called by absolute path (for example <code>/usr/bin/ruby</code>) bypasses the traps, so proven means &ldquo;no trapped call and no crash&rdquo;, not &ldquo;cannot touch Rails&rdquo;. "
       "Commands and agents are instructions, not code, so they can only be &ldquo;nothing found&rdquo; until a real downstream run covers them.</li>")
     w(f'<li>{_tag("rails")} exists only for Rails projects. It will move into the <code>rails-stack</code> plugin; the issue that moves it is named.</li>')
     w(f'<li>{_tag("nextjs")} exists only for Next.js projects.</li>')

@@ -6,8 +6,32 @@ GUARD = Guard(
     name="prove_neutral",
     subject="scripts/prove_neutral.py",
     selftest="scripts/prove_neutral.py",   # --selftest lives in the module itself
-    needs=("scripts/component_classes.py", "scripts/rails_assumptions.py", "scripts/hermetic_git.py", "plugins/rails-flow/scripts/fixture_git.py"),
+    needs=("scripts/component_classes.py", "scripts/rails_assumptions.py", "scripts/hermetic_git.py", "plugins/rails-flow/scripts/fixture_git.py", "plugins/rails-flow/scripts/project_gates.py", "plugins/rails-flow/checks.json"),
     mutations=(
+        Mutation(
+            "exit 1 reads as clean again",
+            "    if rc == 0:\n        return \"clean\", \"\"",
+            "    if rc in (0, 1):\n        return \"clean\", \"\"",
+            "a script that refuses the project with exit 1 is not proven",
+        ),
+        Mutation(
+            "a gate that is not applicable counts as proven",
+            "    if result.status == pg.NA:\n        return \"notproven\"",
+            "    if result.status == pg.NA:\n        return \"clean\"",
+            "a gate that is not applicable on the project proves nothing",
+        ),
+        Mutation(
+            "a timed-out recorded component counts against the floor",
+            "    if proven + unverified < proof.get(\"floor\", 0):",
+            "    if proven < proof.get(\"floor\", 0):",
+            "a recorded component that still times out is not a finding and counts for the floor",
+        ),
+        Mutation(
+            "a timed-out component is not retried",
+            "    slow = [c for c in todo if results[c[\"path\"]][\"state\"] == \"timeout\"]",
+            "    slow = []",
+            "a timed-out component is retried once, alone, with a longer timeout",
+        ),
         Mutation(
             "a call to a Rails stub is no longer a finding",
             '    if calls:\n        return "finding", f"called a Rails tool: {calls[0][:80]}"\n    if "Traceback',
@@ -40,7 +64,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the proven count may fall below the floor",
-            '    if proven < proof.get("floor", 0):',
+            '    if proven + unverified < proof.get("floor", 0):',
             "    if False:",
             "a proven count below the floor is a finding",
         ),

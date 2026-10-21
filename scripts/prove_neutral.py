@@ -21,16 +21,22 @@ WHAT RUNS HOW.
     pass and not-applicable are clean, anything else is a finding;
   * a hook (a script registered in `hooks.json`): `/bin/bash -p <script>` with a benign payload for its event on stdin, from the project directory;
     exit 0 is clean;
-  * a script (under `scripts/`): run bare from the project directory. Exit 0 or 1 with no traceback is clean; a usage exit (it needs arguments) is
-    NOT PROVEN, not a finding, so it stays "nothing found".
+  * a script (under `scripts/`): run bare from the project directory. Only exit 0 with no traceback and no stub call is clean. Exit 1 is NOT clean (a script
+    that refuses a project that is not Rails exits 1 too); a usage exit (it needs arguments) is NOT PROVEN, not a finding, so it stays "nothing found";
+  * a gate that is NOT APPLICABLE on the project ran nothing, so it proves nothing and is not proven.
+A component that exceeds the timeout is `timeout`: neither proven nor a finding (unless it called a stub first). `--check` retries it once, alone, with three times
+the time; if it still times out it does not count against the floor, so a loaded machine cannot turn the ratchet red.
 A component is `proven` only when it ran clean on BOTH projects. Commands and agents are instructions, not code, so they are never proven here.
 
 WHAT IT IS HONESTLY NOT. It proves "no Rails tool was called and nothing crashed on a project with no Rails". A component that reads `config/routes.rb`, finds
-nothing and exits 0 still reads as proven; that is a limit of running without tracing file reads, and the page says so. A component that exits non-zero
-on a Next.js project for a legitimate reason (a gate that found something) is reported as a finding to look at, not as a proof.
+nothing and exits 0 still reads as proven; that is a limit of running without tracing file reads, and the page says so. A second limit: the tripwires are found
+through PATH, so a component that calls a Rails tool by ABSOLUTE path (`/usr/bin/ruby`, `/usr/bin/bundle`) bypasses them and still reads as proven. Neither limit is
+closed by this harness; both are stated next to the proven count on the page. A component that exits non-zero on a Next.js project for a legitimate reason (a gate
+that found something) is reported as a finding to look at, not as a proof.
 
 THE RATCHET. `docs/architecture/neutral-proof.json` records the proven components and a `floor`. `--check` re-runs the recorded ones: a recorded component
-that no longer runs clean, or a count below the floor, fails. `--record` only raises the floor, never lowers it.
+that no longer runs clean, or a count below the floor, fails. `--record` only raises the floor; `--record --reset-floor` sets it to the run's count, and is for the
+one case where the proof criteria themselves were tightened (state it in the PR).
 
 Stdlib only. Exit codes: 0 clean · 1 findings · 2 not this repo.
 """
@@ -127,8 +133,9 @@ def verdict(rc: int, out: str, log: Path, *, usage_ok: bool = False) -> tuple[st
         return "finding", f"called a Rails tool: {calls[0][:80]}"
     if "Traceback (most recent call last)" in out:
         return "finding", "crashed with a traceback"
-    if rc in (0,) or (rc == 1 and usage_ok):
+    if rc == 0:
         return "clean", ""
+    # Exit 1 is NOT clean: `echo "no Gemfile"; exit 1` is a script refusing a project that is not Rails. Without a fixture that proves the clean path, only exit 0 proves.
     return ("finding" if not usage_ok else "notproven"), f"exit {rc}: {out.strip().splitlines()[-1][:80] if out.strip() else 'no output'}"
 
 
@@ -154,7 +161,7 @@ def timed_out(log: Path) -> tuple[str, str]:
     calls = log.read_text(encoding="utf-8").strip().splitlines() if log.is_file() else []
     if calls:
         return "finding", f"called a Rails tool before timing out: {calls[0][:80]}"
-    return "notproven", f"timed out after {TIMEOUT}s (a slow or loaded machine proves nothing either way)"
+    return "timeout", f"timed out after {TIMEOUT}s (a slow or loaded machine proves nothing either way)"
 
 
 def run_hook(path: Path, event: str, project: Path, base: Path) -> tuple[str, str]:
@@ -194,14 +201,29 @@ def run_gate(check, project: Path, base: Path) -> tuple[str, str]:
     calls = log.read_text(encoding="utf-8").strip().splitlines() if log.is_file() else []
     if calls:
         return "finding", f"called a Rails tool: {calls[0][:80]}"
-    if result.status in (pg.PASS, pg.NA):
+    if result.status == pg.PASS:
         return "clean", ""
+    if result.status == pg.NA:
+        return "notproven", f"not applicable on this project, so nothing ran: {result.detail[:60]}"
     if "is not on PATH" in result.detail:
         return "notproven", f"needs a tool this harness does not provide: {result.detail[:80]}"
     return "finding", f"{result.status}: {result.detail[:80]}"
 
 
-def prove_all(root: Path, components: list[dict], only: set[str] | None = None) -> dict[str, dict]:
+def retry_slow(todo: list[dict], results: dict[str, dict], one) -> None:
+    """A loaded machine must not turn the ratchet red: retry each timed-out component once, alone, with three times the time."""
+    global TIMEOUT
+    slow = [c for c in todo if results[c["path"]]["state"] == "timeout"]
+    saved, TIMEOUT = TIMEOUT, TIMEOUT * 3
+    try:
+        for comp in slow:
+            path, row = one(comp)
+            results[path] = row
+    finally:
+        TIMEOUT = saved
+
+
+def prove_all(root: Path, components: list[dict], only: set[str] | None = None, retry: bool = False) -> dict[str, dict]:
     """`{path: {"state": proven|finding|notproven, "why": str}}` for every neutral executable component (or just `only`)."""
     import project_gates as pg
     checks = {}
@@ -235,12 +257,17 @@ def prove_all(root: Path, components: list[dict], only: set[str] | None = None) 
             bad = next(((s, w) for s, w in outcomes if s == "finding"), None)
             if bad:
                 return path, {"state": "finding", "why": bad[1]}
+            slow = next(((s, w) for s, w in outcomes if s == "timeout"), None)
+            if slow:
+                return path, {"state": "timeout", "why": slow[1]}
             skipped = next(((s, w) for s, w in outcomes if s == "notproven"), None)
             return path, {"state": "notproven", "why": skipped[1]} if skipped else {"state": "proven", "why": ""}
 
         with ThreadPoolExecutor(max_workers=6) as pool:
             for path, row in pool.map(one, todo):
                 results[path] = row
+        if retry:
+            retry_slow(todo, results, one)
     return dict(sorted(results.items()))
 
 
@@ -252,15 +279,19 @@ def load_proof(root: Path) -> dict:
 def judge(results: dict[str, dict], proof: dict) -> list[str]:
     """Findings against a re-run: a recorded-proven component that no longer runs clean, and a proven count below the floor."""
     out = []
+    unverified = 0
     for path in proof.get("proven", []):
         row = results.get(path)
+        if row is not None and row["state"] == "timeout":
+            unverified += 1  # still timed out after the retry: neither a pass nor a failure, and it does not count against the floor
+            continue
         if row is None:
             out.append(f"{path}: recorded as proven but is no longer a neutral executable component (reclassified, moved or removed): update {PROOF}")
         elif row["state"] != "proven":
             out.append(f"{path}: recorded as proven, now {row['state']}: {row['why']}")
     proven = sum(1 for r in results.values() if r["state"] == "proven")
-    if proven < proof.get("floor", 0):
-        out.append(f"{proven} component(s) proven, below the recorded floor of {proof['floor']}: the proven count may not fall")
+    if proven + unverified < proof.get("floor", 0):
+        out.append(f"{proven} component(s) proven ({unverified} timed out and are not counted against the floor), below the recorded floor of {proof['floor']}: the proven count may not fall")
     return out
 
 
@@ -300,7 +331,7 @@ def _selftest() -> int:
         try:
             state, why = run_hook(plug / "hang.sh", "Stop", nj, base)
             check("a hook that calls a stub and then hangs past the timeout is a finding", state == "finding" and "before timing out" in why)
-            check("a hook that only hangs is not proven, not a finding", run_hook(plug / "idle.sh", "Stop", nj, base)[0] == "notproven")
+            check("a hook that only hangs is a timeout, not proven and not a finding", run_hook(plug / "idle.sh", "Stop", nj, base)[0] == "timeout")
             check("a script that calls a stub and then hangs is a finding", run_script(plug / "hang.sh", nj, base)[0] == "finding")
         finally:
             TIMEOUT = saved
@@ -314,6 +345,31 @@ def _selftest() -> int:
     proof = {"floor": 2, "proven": ["a", "b"]}
     check("a recorded component that still proves is clean", judge({"a": {"state": "proven", "why": ""}, "b": {"state": "proven", "why": ""}}, proof) == [])
     check("a recorded component that now fails is a finding", any("now finding" in f for f in judge({"a": {"state": "proven", "why": ""}, "b": {"state": "finding", "why": "x"}}, proof)))
+    # exit 1 is not clean; a timeout is neither pass nor failure; the retry gives a slow component a second, longer chance
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        tripwire(base / "tripwire")
+        nj = fixtures(base)["nextjs"]
+        (base / "nogem.sh").write_text("#!/bin/bash\necho 'no Gemfile'\nexit 1\n", encoding="utf-8")
+        (base / "ok.sh").write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+        check("a script that refuses the project with exit 1 is not proven", run_script(base / "nogem.sh", nj, base)[0] == "notproven")
+        check("a script that exits 0 is proven clean", run_script(base / "ok.sh", nj, base)[0] == "clean")
+        import project_gates as pg
+        (base / "gate.py").write_text("print('ran')\n", encoding="utf-8")
+        na = pg.Check(plugin="p", id="x", why="", command=["python3", "{plugin}/gate.py"], applies_when=["no/such/dir"], requires=[], root=base)
+        check("a gate that is not applicable on the project proves nothing", run_gate(na, nj, base)[0] == "notproven")
+    timeout_proof = {"floor": 2, "proven": ["a", "b"]}
+    slow_rows = {"a": {"state": "proven", "why": ""}, "b": {"state": "timeout", "why": "t"}}
+    check("a recorded component that still times out is not a finding and counts for the floor", judge(slow_rows, timeout_proof) == [])
+    check("timeouts do not hide a real fall below the floor", any("below the recorded floor" in f for f in judge(slow_rows, {"floor": 3, "proven": ["a", "b"]})))
+    calls = []
+
+    def fake_one(comp):
+        calls.append((comp["path"], TIMEOUT))
+        return comp["path"], {"state": "proven", "why": ""}
+    rows = {"a": {"state": "timeout", "why": "t"}, "b": {"state": "proven", "why": ""}}
+    retry_slow([{"path": "a"}, {"path": "b"}], rows, fake_one)
+    check("a timed-out component is retried once, alone, with a longer timeout", calls == [("a", TIMEOUT * 3)] and rows["a"]["state"] == "proven" and TIMEOUT == 25)
     check("a recorded component that vanished is a finding", any("no longer a neutral" in f for f in judge({"a": {"state": "proven", "why": ""}}, proof)))
     check("a proven count below the floor is a finding", any("below the recorded floor" in f for f in judge({"a": {"state": "proven", "why": ""}}, {"floor": 5, "proven": []})))
     print(f"prove_neutral selftest: {ok} checks passed, {len(bad)} failed")
@@ -326,6 +382,7 @@ def main(argv: list[str] | None = None, root: Path = REPO) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--record", action="store_true", help="run everything and write the proof file (raises the floor, never lowers it)")
     ap.add_argument("--check", action="store_true", help="re-run the recorded components: none may fail, the count may not fall")
+    ap.add_argument("--reset-floor", action="store_true", help="with --record: set the floor to this run's proven count even if lower (only after the proof criteria were tightened; say so in the PR)")
     ap.add_argument("--status", action="store_true", help="run everything and print the result")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
@@ -336,10 +393,10 @@ def main(argv: list[str] | None = None, root: Path = REPO) -> int:
         return 2
     comps, classify_findings = cc.classify(root, ra.load_policy(root))
     proof = load_proof(root)
-    results = prove_all(root, comps, set(proof.get("proven", [])) if a.check else None)
-    counts = {s: sum(1 for r in results.values() if r["state"] == s) for s in ("proven", "notproven", "finding")}
+    results = prove_all(root, comps, set(proof.get("proven", [])) if a.check else None, retry=a.check)
+    counts = {s: sum(1 for r in results.values() if r["state"] == s) for s in ("proven", "notproven", "timeout", "finding")}
     if a.status or a.record:
-        print(f"{len(results)} neutral executable component(s): {counts['proven']} proven, {counts['notproven']} not proven, {counts['finding']} finding(s)")
+        print(f"{len(results)} neutral executable component(s): {counts['proven']} proven, {counts['notproven']} not proven, {counts['timeout']} timed out, {counts['finding']} finding(s)")
         for path, row in results.items():
             if row["state"] == "finding":
                 print(f"  FINDING {path}: {row['why']}")
@@ -350,7 +407,7 @@ def main(argv: list[str] | None = None, root: Path = REPO) -> int:
         findings += [f"{p}: {r['why']}" for p, r in results.items() if r["state"] == "finding"]
         if not findings:
             proven = sorted(p for p, r in results.items() if r["state"] == "proven")
-            data = {"floor": max(proof.get("floor", 0), len(proven)), "proven": proven}
+            data = {"floor": len(proven) if a.reset_floor else max(proof.get("floor", 0), len(proven)), "proven": proven}
             (root / PROOF).write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
             print(f"wrote {PROOF}: {len(proven)} proven, floor {data['floor']}. `git add docs/` AND COMMIT.")
     if findings:
@@ -359,7 +416,7 @@ def main(argv: list[str] | None = None, root: Path = REPO) -> int:
             print(f"  {f}", file=sys.stderr)
         return 1
     if a.check:
-        print(f"clean: {counts['proven']} recorded component(s) still prove neutral, floor {proof.get('floor', 0)}")
+        print(f"clean: {counts['proven']} recorded component(s) still prove neutral ({counts['timeout']} timed out after a retry, not counted against the floor), floor {proof.get('floor', 0)}")
     return 0
 
 
