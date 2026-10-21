@@ -2,16 +2,16 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**37 shipped agents · 55 shipped commands · 5 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
+**39 shipped agents · 56 shipped commands · 5 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
-| `design-flow` | 1.46.3 | 5 | 12 | 5 |
+| `design-flow` | 1.46.3 | 6 | 13 | 6 |
 | `flow-suite` | 1.0.0 | — | — | — |
 | `nextjs-stack` | 0.1.0 | — | — | — |
 | `pipeline` | 1.5.2 | 1 | 9 | 1 |
 | `qa-flow` | 1.39.0 | 11 | 8 | 11 |
-| `rails-flow` | 1.65.0 | 13 | 26 | 13 |
+| `rails-flow` | 1.65.0 | 14 | 26 | 14 |
 | `rails-stack` | 1.76.1 | 7 | — | 7 |
 
 ## Agents
@@ -25,6 +25,7 @@
 | `brand-guardian` | judgement · inherit | Read, Grep, Glob, Edit, Bash, Skill | `/design-flow:variants` | — |
 | `design-auditor` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/design-flow:audit`, `/design-flow:variants` | — |
 | `design-critic` | judgement · inherit | Read, Grep, Glob, Skill | `/design-flow:critique` | — |
+| `interface-auditor` | judgement · inherit | Read, Grep, Glob, Write, Bash, Skill | `/design-flow:interface-audit` | `audit_findings.py check` refuses a finding with no real rule, no evidence, a written authority, or a house rule claiming a standard |
 | `rails-ui-composer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | — | — |
 | `rails-ui-porter` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:canvas` | — |
 
@@ -61,6 +62,7 @@
 | `design-auditor` | mechanical · haiku | Read | — | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical · haiku | Read, Grep, Glob, Edit, Write, Bash | `/rails-flow:explain`, `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:setup-flow` | `architecture_graph.py` regenerates and its digest guard fails on drift |
 | `migration-writer` | judgement · inherit | Read | — | — |
+| `plan-advisor` | adversarial · fable | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:secure-design`, `/rails-flow:slice` | — |
 | `pr-reviewer` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:pr-comments`, `/rails-flow:retro` | — |
 | `rails-developer` | judgement · inherit | Read | — | — |
 | `security-auditor` | judgement · inherit | Read | `/rails-flow:feature`, `/rails-flow:secure-design` | — |
@@ -100,12 +102,14 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 |---|---|---|---|
 | design-flow LLM-tell detector | `design-flow` | `python3 plugins/design-flow/scripts/llm_tell_detector.py --selftest` | selftest |
 | design-flow asset home selftest | `design-flow` | `python3 plugins/design-flow/scripts/asset_home.py --selftest` | selftest |
+| design-flow audit findings selftest | `design-flow` | `python3 plugins/design-flow/scripts/audit_findings.py --selftest` | selftest |
 | design-flow brand pack lint | `design-flow` | `python3 plugins/design-flow/scripts/brand_pack_lint.py --selftest` | selftest |
 | design-flow brand packs conform | `design-flow` | `python3 plugins/design-flow/scripts/brand_pack_lint.py plugins/design-flow/brands/fidara plugins/design-flow/brands/reliance` | live check |
 | design-flow composition brief selftest | `design-flow` | `python3 plugins/design-flow/scripts/compose_brief.py --selftest` | selftest |
 | design-flow conformance collector | `design-flow` | `python3 plugins/design-flow/scripts/rendered_conformance.py --check-collector` | live check |
 | design-flow design prompt selftest | `design-flow` | `python3 plugins/design-flow/scripts/design_prompt.py --selftest` | selftest |
 | design-flow doctrine path selftest | `design-flow` | `python3 plugins/design-flow/scripts/doctrine_path.py --selftest` | selftest |
+| design-flow interface audit selftest | `design-flow` | `python3 plugins/design-flow/scripts/interface_audit.py --selftest` | selftest |
 | design-flow modal fit | `design-flow` | `python3 plugins/design-flow/ui/viewcomponent-erb/scripts/check_modal_fit.py --selftest` | selftest |
 | design-flow palette candidates | `design-flow` | `python3 plugins/design-flow/scripts/palette_candidates.py --check` | live check |
 | design-flow palette candidates selftest | `design-flow` | `python3 plugins/design-flow/scripts/palette_candidates.py --selftest` | selftest |
@@ -213,6 +217,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | always-on cost | `repo` | `python3 scripts/check_always_on_cost.py` | live check |
 | always-on cost selftest | `repo` | `python3 scripts/check_always_on_cost.py --selftest` | selftest |
 | architecture rules | `repo` | `python3 scripts/check_architecture_rules.py` | live check |
+| architecture rules derived | `repo` | `python3 scripts/derive_architecture_rules.py --check` | live check |
+| architecture rules derived selftest | `repo` | `python3 scripts/derive_architecture_rules.py --selftest` | selftest |
 | architecture rules selftest | `repo` | `python3 scripts/check_architecture_rules.py --selftest` | selftest |
 | arm window | `repo` | `python3 scripts/check_arm_window.py` | live check |
 | arm window selftest | `repo` | `python3 scripts/check_arm_window.py --selftest` | selftest |
@@ -227,6 +233,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | checks.json paths selftest | `repo` | `python3 scripts/check_manifest_paths.py --selftest` | selftest |
 | claude plugin validate --strict | `repo` | `python3 scripts/check_plugin_validate.py` | live check |
 | close-on-dev-merge selftest | `repo` | `python3 scripts/close_on_dev_merge.py --selftest` | selftest |
+| component axes drift | `repo` | `python3 scripts/build_component_axes.py --check` | live check |
+| component axes selftest | `repo` | `python3 scripts/build_component_axes.py --selftest` | selftest |
 | component classes drift | `repo` | `python3 scripts/component_classes.py --check` | live check |
 | component classes selftest | `repo` | `python3 scripts/component_classes.py --selftest` | selftest |
 | component passthrough | `repo` | `python3 scripts/check_component_passthrough.py` | live check |
@@ -342,6 +350,7 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `brand-guardian` | judgement | — |
 | `design-critic` | judgement | — |
 | `rails-ui-porter` | judgement | — |
+| `interface-auditor` | judgement | `audit_findings.py check` refuses a finding with no real rule, no evidence, a written authority, or a house rule claiming a standard |
 
 ### `pipeline`
 
@@ -382,6 +391,7 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `design-auditor` | mechanical | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical | `architecture_graph.py` regenerates and its digest guard fails on drift |
 | `adversary` | adversarial | — |
+| `plan-advisor` | adversarial | — |
 
 ### `rails-stack`
 

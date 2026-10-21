@@ -1,0 +1,2 @@
+section: rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+- **rails-stack declares which paths a person sees — `plugins/rails-stack/stacks.json`, `plugins/rails-stack/ui-scope-cases.json`** (#2219). Its `ui_scope` is the list the mock-up gate used to hardwire (views, components, JavaScript, assets, helpers, locales, public error pages and icons; JSON and XML templates are not seen, except the PWA manifest), and 23 cases (hits and near misses) prove it.

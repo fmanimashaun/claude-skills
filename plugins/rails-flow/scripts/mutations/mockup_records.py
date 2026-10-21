@@ -10,7 +10,7 @@ GUARD = Guard(
     subject="scripts/mockup_records.py",
     selftest="scripts/check_mockup_gate.py",
     selftest_args=("--selftest",),     # the selftest is a different script from the subject
-    needs=("scripts/fixture_git.py", "scripts/classify_door.py", "commands/setup-flow.md", "reference/mockup-vocabulary.json"),
+    needs=("scripts/fixture_git.py", "scripts/classify_door.py", "commands/setup-flow.md", "reference/mockup-vocabulary.json", "scripts/detect_stack.py"),
     mutations=(
         Mutation(
             'a record with a Story is audited as unlinked',

@@ -240,6 +240,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1779. The library moved to docs/design/assets/, and a project that still has docs/assets/ must be stopped, not read as empty.
     ("design-flow asset home selftest",
      ("python3", "plugins/design-flow/scripts/asset_home.py", "--selftest")),
+    # #2221. The interface audit's findings contract (a finding's authority is derived from its
+    # rule, never written) and the judge that turns collector snapshots into findings.
+    ("design-flow audit findings selftest",
+     ("python3", "plugins/design-flow/scripts/audit_findings.py", "--selftest")),
+    ("design-flow interface audit selftest",
+     ("python3", "plugins/design-flow/scripts/interface_audit.py", "--selftest")),
     # #625/#628/#629. Three modules encode one layout decision and `asset_plan.py` holds its half as
     # literals (it is deliberately standalone). Move one and not the others and `--scaffold` creates
     # a folder nothing writes to while `--run` writes into one the scaffold never made — both halves
@@ -262,6 +268,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/check_component_shapes.py")),
     ("component shapes selftest",
      ("python3", "scripts/check_component_shapes.py", "--selftest")),
+    # #2272. Each component's `Catalog axes` line in components.md is DERIVED from the catalog's variants and sizes; the generator's selftest, and the committed
+    # files against a clean build (the blob at HEAD).
+    ("component axes selftest",
+     ("python3", "scripts/build_component_axes.py", "--selftest")),
+    ("component axes drift",
+     ("python3", "scripts/build_component_axes.py", "--check")),
     # #360, and the same argument one skill along: the quality-pass worked example states how many
     # files carry each duplicated shape, and an extraction decision rests on those numbers. NOT a
     # duplication gate — nothing here refuses a copy. It refuses a number in shipped doctrine
@@ -354,6 +366,13 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/derive_mandated_gems.py", "--check")),
     ("mandated gems derived selftest",
      ("python3", "scripts/derive_mandated_gems.py", "--selftest")),
+    # #2221. The rule registry the interface audit cites is DERIVED from the framework page that
+    # declares it and committed in design-flow -- a plugin reaches only its own files. This proves
+    # the artifact still matches its source, and that an audit's authority comes from the table.
+    ("architecture rules derived",
+     ("python3", "scripts/derive_architecture_rules.py", "--check")),
+    ("architecture rules derived selftest",
+     ("python3", "scripts/derive_architecture_rules.py", "--selftest")),
     # #1361. The tenancy cop rails-flow installs is DERIVED from rails-8's multi-tenancy.md §7 and
     # committed beside its checker -- the same cross-plugin reason as the mandated gems above.
     ("tenancy cop derived",
