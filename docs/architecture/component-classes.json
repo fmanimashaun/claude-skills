@@ -1254,6 +1254,18 @@
    "class": "rails",
    "issue": 2178,
    "nextjs_lines": 0,
+   "path": "plugins/design-flow/ui/viewcomponent-erb/setup.md",
+   "plugin": "design-flow",
+   "rails_lines": 20,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "decision"
+  },
+  {
+   "class": "rails",
+   "issue": 2178,
+   "nextjs_lines": 0,
    "path": "plugins/design-flow/ui/viewcomponent-erb/tokens.md",
    "plugin": "design-flow",
    "rails_lines": 3,
@@ -7140,15 +7152,15 @@
    "mixed": 178,
    "neutral": 285,
    "nextjs": 3,
-   "rails": 125
+   "rails": 126
   },
   "by_plugin": {
    "design-flow": {
     "mixed": 2,
     "neutral": 60,
     "nextjs": 0,
-    "rails": 44,
-    "total": 106
+    "rails": 45,
+    "total": 107
    },
    "flow-suite": {
     "mixed": 0,
@@ -7240,8 +7252,8 @@
     "mixed": 12,
     "neutral": 36,
     "nextjs": 3,
-    "rails": 27,
-    "total": 78
+    "rails": 28,
+    "total": 79
    },
    "test": {
     "mixed": 56,
@@ -7251,6 +7263,6 @@
     "total": 186
    }
   },
-  "components": 591
+  "components": 592
  }
 }

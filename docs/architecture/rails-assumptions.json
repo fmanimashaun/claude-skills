@@ -1268,6 +1268,53 @@
    ],
    "move": "design-flow-erb"
   },
+  "plugins/design-flow/ui/viewcomponent-erb/setup.md": {
+   "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
+   "categories": {
+    "concept": 12,
+    "gem": 1,
+    "hotwire": 7,
+    "path": 5,
+    "tool": 1
+   },
+   "decision": "rails-stack",
+   "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
+   "ids": {
+    "app-layers": 2,
+    "erb": 4,
+    "gem": 1,
+    "hotwire": 7,
+    "rails-config": 3,
+    "rails-word": 5,
+    "ruby": 1,
+    "ruby-file": 3
+   },
+   "invokes": [],
+   "kind": "doc",
+   "lines": [
+    1,
+    4,
+    8,
+    9,
+    12,
+    48,
+    52,
+    62,
+    72,
+    73,
+    79,
+    83,
+    99,
+    100,
+    101,
+    106,
+    107,
+    117,
+    118,
+    119
+   ],
+   "move": "design-flow-erb"
+  },
   "plugins/design-flow/ui/viewcomponent-erb/tokens.md": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
@@ -8173,11 +8220,11 @@
  "policy": "docs/architecture/rails-assumptions.policy.json",
  "summary": {
   "by_category": {
-   "concept": 2016,
-   "gem": 137,
-   "hotwire": 89,
-   "path": 1247,
-   "tool": 895
+   "concept": 2028,
+   "gem": 138,
+   "hotwire": 96,
+   "path": 1252,
+   "tool": 896
   },
   "by_decision": {
    "detector": {
@@ -8189,8 +8236,8 @@
     "lines": 34
    },
    "rails-stack": {
-    "files": 83,
-    "lines": 1794
+    "files": 84,
+    "lines": 1814
    },
    "reword": {
     "files": 45,
@@ -8200,10 +8247,10 @@
   "by_flow": {
    "design-flow": {
     "detector": 2,
-    "files": 38,
-    "lines": 584,
+    "files": 39,
+    "lines": 604,
     "neutral": 3,
-    "rails-stack": 33,
+    "rails-stack": 34,
     "reword": 0
    },
    "pipeline": {
@@ -8245,8 +8292,8 @@
     "lines": 56
    },
    "doc": {
-    "files": 18,
-    "lines": 445
+    "files": 19,
+    "lines": 465
    },
    "hook": {
     "files": 15,
@@ -8283,31 +8330,31 @@
   },
   "by_pattern": {
    "active-framework": 20,
-   "app-layers": 594,
+   "app-layers": 596,
    "bin-rails": 125,
    "binstub": 53,
    "brakeman": 8,
    "bundler": 85,
    "bundler-audit": 5,
    "db": 137,
-   "erb": 405,
+   "erb": 409,
    "erb-lint": 73,
-   "gem": 137,
+   "gem": 138,
    "gemfile": 186,
-   "hotwire": 89,
-   "rails-config": 109,
+   "hotwire": 96,
+   "rails-config": 112,
    "rails-idiom": 52,
-   "rails-word": 320,
+   "rails-word": 325,
    "rake": 56,
    "routes": 37,
    "rspec": 186,
    "rubocop": 84,
    "rubocop-yml": 2,
-   "ruby": 220,
-   "ruby-file": 1219,
+   "ruby": 221,
+   "ruby-file": 1222,
    "spec-dir": 182
   },
-  "files": 228,
-  "lines": 3237
+  "files": 229,
+  "lines": 3257
  }
 }

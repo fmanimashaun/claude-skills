@@ -57,7 +57,7 @@ The cross-check above audits the *toolchain*. This one audits **what was generat
 project** — the static half of the conformance question, needing no browser and no booted app:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/llm_tell_detector.py" <the source directories <dir>/audit.md names>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/llm_tell_detector.py" <source-dir> [<source-dir> ...]   # the directories <dir>/audit.md names
 ```
 
 Seven rules, each citing the doctrine line it enforces (`--list-rules` prints them). **Two of them

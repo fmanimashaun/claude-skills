@@ -179,7 +179,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/prompt_library.py" \
   --record-surface marketing-hero \
   --rationale "screenshot-led hero, claim demoted to a lede" \
   --axis "focal point" --verdict accept --why "the product carries it" \
-  --built <the winner's path>
+  --built <winner-path>
 ```
 
 **Record the losers too.** A library of keepers cannot answer *"did we already try this and reject

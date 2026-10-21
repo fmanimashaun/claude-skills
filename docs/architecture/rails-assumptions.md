@@ -8,11 +8,11 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 
 | decision | what it means | files | lines |
 |---|---|---:|---:|
-| `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 83 | 1794 |
+| `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 84 | 1814 |
 | `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 90 | 1243 |
 | `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 45 | 166 |
 | `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change | 10 | 34 |
-| **all** | | **228** | **3237** |
+| **all** | | **229** | **3257** |
 
 ## By flow
 
@@ -21,17 +21,17 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 | `rails-flow` | 135 | 2289 | 47 | 50 | 35 | 3 |
 | `qa-flow` | 36 | 275 | 0 | 29 | 6 | 1 |
 | `pipeline` | 19 | 89 | 3 | 9 | 4 | 3 |
-| `design-flow` | 38 | 584 | 33 | 2 | 0 | 3 |
+| `design-flow` | 39 | 604 | 34 | 2 | 0 | 3 |
 
 ## By what is named
 
 | category | lines naming it |
 |---|---:|
-| tool | 895 |
-| gem | 137 |
-| path | 1247 |
-| concept | 2016 |
-| hotwire | 89 |
+| tool | 896 |
+| gem | 138 |
+| path | 1252 |
+| concept | 2028 |
+| hotwire | 96 |
 
 A line that names two things counts once per category it names in this table and once overall in the totals above.
 
@@ -71,7 +71,7 @@ Files: `commands/graph.md` (rails-flow), `scripts/architecture_graph.py` (rails-
 
 The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (rails-ui-porter, rails-ui-composer). They do NOT move to rails-stack: they live in design-flow's own Rails UI adapter, plugins/design-flow/ui/viewcomponent-erb/, which a stack descriptor selects with ui.implementation, so design stays neutral (owner, via the coordinator, 2026-10-21). Next.js gets its own adapter under #2171.
 
-Files: `agents/rails-ui-composer.md` (design-flow), `agents/rails-ui-porter.md` (design-flow), `checks.json` (design-flow), `ui/viewcomponent-erb/README.md` (design-flow), `ui/viewcomponent-erb/adapter.json` (design-flow), `ui/viewcomponent-erb/audit.md` (design-flow), `ui/viewcomponent-erb/component.md` (design-flow), `ui/viewcomponent-erb/mobile.md` (design-flow), `ui/viewcomponent-erb/port.md` (design-flow), `ui/viewcomponent-erb/scripts/canvas_manifest.py` (design-flow), `ui/viewcomponent-erb/scripts/check_component_contract.py` (design-flow), `ui/viewcomponent-erb/scripts/check_layout_composition.py` (design-flow), `ui/viewcomponent-erb/scripts/check_modal_fit.py` (design-flow), `ui/viewcomponent-erb/scripts/check_surface_layout.py` (design-flow), `ui/viewcomponent-erb/scripts/check_table_layout.py` (design-flow), `ui/viewcomponent-erb/scripts/check_token_drift.py` (design-flow), `ui/viewcomponent-erb/scripts/content_floors.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/canvas_manifest.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_component_contract.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_layout_composition.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_modal_fit.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_surface_layout.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_table_layout.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/content_floors.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/port_fidelity_gate.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/setup_doctrine_crosscheck.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/source_text.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/variant_conformance.py` (design-flow), `ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py` (design-flow), `ui/viewcomponent-erb/scripts/source_text.py` (design-flow), `ui/viewcomponent-erb/scripts/variant_conformance.py` (design-flow), `ui/viewcomponent-erb/tokens.md` (design-flow), `ui/viewcomponent-erb/variants.md` (design-flow)
+Files: `agents/rails-ui-composer.md` (design-flow), `agents/rails-ui-porter.md` (design-flow), `checks.json` (design-flow), `ui/viewcomponent-erb/README.md` (design-flow), `ui/viewcomponent-erb/adapter.json` (design-flow), `ui/viewcomponent-erb/audit.md` (design-flow), `ui/viewcomponent-erb/component.md` (design-flow), `ui/viewcomponent-erb/mobile.md` (design-flow), `ui/viewcomponent-erb/port.md` (design-flow), `ui/viewcomponent-erb/scripts/canvas_manifest.py` (design-flow), `ui/viewcomponent-erb/scripts/check_component_contract.py` (design-flow), `ui/viewcomponent-erb/scripts/check_layout_composition.py` (design-flow), `ui/viewcomponent-erb/scripts/check_modal_fit.py` (design-flow), `ui/viewcomponent-erb/scripts/check_surface_layout.py` (design-flow), `ui/viewcomponent-erb/scripts/check_table_layout.py` (design-flow), `ui/viewcomponent-erb/scripts/check_token_drift.py` (design-flow), `ui/viewcomponent-erb/scripts/content_floors.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/canvas_manifest.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_component_contract.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_layout_composition.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_modal_fit.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_surface_layout.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/check_table_layout.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/content_floors.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/port_fidelity_gate.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/setup_doctrine_crosscheck.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/source_text.py` (design-flow), `ui/viewcomponent-erb/scripts/mutations/variant_conformance.py` (design-flow), `ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py` (design-flow), `ui/viewcomponent-erb/scripts/source_text.py` (design-flow), `ui/viewcomponent-erb/scripts/variant_conformance.py` (design-flow), `ui/viewcomponent-erb/setup.md` (design-flow), `ui/viewcomponent-erb/tokens.md` (design-flow), `ui/viewcomponent-erb/variants.md` (design-flow)
 
 ### rails-deploy: The Kamal-on-Rails deploy path (#2179)
 
@@ -345,6 +345,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py:8`<br>L8, 11, 12, 19, 25 +48 more | doc | 53 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
 | `ui/viewcomponent-erb/scripts/source_text.py:22`<br>L22, 24, 26, 68, 74 +22 more | doc | 27 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
 | `ui/viewcomponent-erb/scripts/variant_conformance.py:23`<br>L23, 124, 125, 243, 329 +48 more | doc | 53 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
+| `ui/viewcomponent-erb/setup.md:1`<br>L1, 4, 8, 9, 12 +15 more | doc | 20 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
 | `ui/viewcomponent-erb/tokens.md:1`<br>L1, 4, 8 | doc | 3 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
 | `ui/viewcomponent-erb/variants.md:1`<br>L1, 4, 6, 11, 13 +24 more | doc | 29 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
 
