@@ -15,9 +15,21 @@ HOW. It finds Brakeman the way the project runs it, in this order: the project's
 is a finding, printed as `file:line (check) message`. Warnings the project has reviewed and ignored (`config/brakeman.ignore`, the `ignored_warnings` list)
 are Brakeman's own mechanism and are not counted.
 
+REVIEWED AND IGNORED WARNINGS ARE COUNTED, NOT HIDDEN. Every run prints `N ignored (config/brakeman.ignore)`. **A report in which every warning is ignored
+passes** (0 findings, exit 0): ignoring is the project's own, reviewable decision, and this gate does not second-guess it, but the count is on every line of
+output so a file that suppresses everything cannot do it silently.
+
+CONFIDENCE. `--confidence` is not passed, so Brakeman's own default and the project's `config/brakeman.yml` apply; a project that wants only high-confidence
+warnings sets that there, not here.
+
+`bin/brakeman` AND `--ensure-latest`. The Rails 8 generated `bin/brakeman` does `ARGV.unshift("--ensure-latest")` (checked in rails v8.0.2
+`railties/.../templates/bin/brakeman.tt`), and Brakeman then refuses to run when a newer release exists or when it cannot reach rubygems. That is a failure to
+run here (exit 2, with Brakeman's own message), so an offline run or one behind the latest release fails closed. A project that wants to pin a version uses
+`bundle exec brakeman` (drop its `bin/brakeman` stub) or edits the stub.
+
 A MISSING TOOL IS A FAILURE, NOT A SKIP, and so is output it cannot read. In CI a skip is indistinguishable from a pass, and "Brakeman said nothing" is
 not "Brakeman found nothing". Exit codes follow the consumer-gate contract: 0 clean, 1 one or more findings, 2 the check could not run (no Brakeman, a
-crash, JSON that does not parse).
+crash, JSON that does not parse), 3 not applicable (no `config/application.rb`: not a Rails project).
 
 Stdlib only.
 """
@@ -26,6 +38,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -41,14 +54,16 @@ def find_brakeman(project: Path) -> list[str] | None:
     if binstub.is_file() and os.access(binstub, os.X_OK):
         return [str(binstub)]
     gemfile = project / "Gemfile"
-    if gemfile.is_file() and "brakeman" in gemfile.read_text(encoding="utf-8", errors="replace") and shutil.which("bundle"):
+    # a `gem "brakeman"` line, not the word in a comment or a longer gem name (`brakeman-extras`, `# no brakeman here`)
+    names_it = gemfile.is_file() and re.search(r"""^\s*gem\s+["']brakeman["']""", gemfile.read_text(encoding="utf-8", errors="replace"), re.M)
+    if names_it and shutil.which("bundle"):
         return ["bundle", "exec", "brakeman"]
     found = shutil.which("brakeman")
     return [found] if found else None
 
 
 def findings_of(report: dict) -> list[str]:
-    """Every warning and every error in a Brakeman JSON report as one line each. Ignored warnings are not in `warnings`."""
+    """Every warning and every error in a Brakeman JSON report as one line each. Ignored warnings are not in `warnings` (they are counted by `run`)."""
     out = []
     for w in report.get("warnings", []):
         out.append(f"{w.get('file', '?')}:{w.get('line', '?')} ({w.get('check_name', w.get('warning_type', '?'))}) {w.get('message', '')}".strip())
@@ -58,8 +73,10 @@ def findings_of(report: dict) -> list[str]:
 
 
 def run(project: Path) -> tuple[int, list[str]]:
-    """`(exit code, lines to print)`: 0 clean, 1 findings, 2 could not run."""
-    # The one place the project is judged to have a Rails app: `config/application.rb` is also this check's `applies_when`.
+    """`(exit code, lines to print)`: 0 clean, 1 findings, 2 could not run, 3 not applicable."""
+    # A project with no `config/application.rb` is not a Rails app: not applicable (3), the same file this check's `applies_when` names.
+    if not (project / "config" / "application.rb").is_file():
+        return 3, ["not a Rails project (no config/application.rb): this check does not apply"]
     cmd = find_brakeman(project)
     if cmd is None:
         return 2, ["brakeman is not installed for this project (no bin/brakeman, no brakeman in the Gemfile, none on PATH): add `gem \"brakeman\"` to the "
@@ -76,9 +93,11 @@ def run(project: Path) -> tuple[int, list[str]]:
     if not isinstance(report, dict):
         return 2, ["brakeman's JSON report is not an object"]
     found = findings_of(report)
+    ignored = report.get("ignored_warnings", [])
+    ignored_line = f"{len(ignored) if isinstance(ignored, list) else 0} ignored (config/brakeman.ignore)"
     if found:
-        return 1, [*found, f"{len(found)} finding(s)"]
-    return 0, ["brakeman: 0 warnings, 0 errors"]
+        return 1, [*found, ignored_line, f"{len(found)} finding(s)"]
+    return 0, [f"brakeman: 0 warnings, 0 errors, {ignored_line}"]
 
 
 def _stub(directory: Path, name: str, body: str) -> Path:
@@ -134,6 +153,14 @@ def _selftest() -> int:
             check("a clean report is clean, and an ignored warning is not counted", code == 0)
             code, lines = run(project("errs", binstub=emit({"warnings": [], "errors": [{"error": "parse failure in app/models/x.rb"}]})))
             check("a Brakeman error is a finding too", code == 1 and any("parse failure" in ln for ln in lines))
+            code, lines = run(project("allignored", binstub=emit({"warnings": [], "errors": [], "ignored_warnings": [{"check_name": "CrossSiteScripting"}, {"check_name": "SQL"}]})))
+            check("a report in which every warning is ignored passes, and says how many were ignored", code == 0 and "2 ignored (config/brakeman.ignore)" in lines[-1])
+            code, lines = run(project("somefound", binstub=emit({**xss, "ignored_warnings": [{"check_name": "SQL"}]})))
+            check("a run with findings prints the ignored count too", code == 1 and "1 ignored (config/brakeman.ignore)" in lines)
+            norails = base / "norails"
+            norails.mkdir()
+            code, lines = run(norails)
+            check("a project with no config/application.rb is not applicable (exit 3), not a failure", code == 3 and any("not a Rails project" in ln for ln in lines))
             code, lines = run(project("none"))
             check("no Brakeman anywhere is a failure to run, never a skip", code == 2 and any("not installed" in ln for ln in lines))
             code, lines = run(project("garbage", binstub="echo 'Brakeman is thinking about it'\n"))
@@ -161,6 +188,10 @@ def _selftest() -> int:
             os.environ["PATH"] = str(base / "bin-bundle") + os.pathsep + os.environ["PATH"]
             code, lines = run(project("gem", gemfile='gem "rails"\ngem "brakeman", group: :development\n'))
             check("a Gemfile that names brakeman runs `bundle exec brakeman`", code == 1 and record.is_file() and record.read_text(encoding="utf-8").startswith("exec brakeman -q --no-pager -f json"))
+            code, lines = run(project("commented", gemfile='gem "rails"\n# gem "brakeman"\ngem "brakeman-extras"\n'))
+            check("brakeman in a comment or in a longer gem name does not count as naming it", code == 2)
+            code, lines = run(project("single", gemfile="gem 'brakeman', require: false\n"))
+            check("a single-quoted gem line names brakeman", code == 1)
             code, lines = run(project("nogem", gemfile='gem "rails"\n'))
             check("a Gemfile that does not name brakeman does not run bundle", code == 2)
             code, lines = run(project("pref", binstub=emit(clean), gemfile='gem "brakeman"\n'))

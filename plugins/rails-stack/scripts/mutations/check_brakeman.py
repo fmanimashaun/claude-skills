@@ -10,6 +10,24 @@ GUARD = Guard(
     selftest="scripts/check_brakeman.py",
     mutations=(
         Mutation(
+            "the ignored count is not printed, so a file that suppresses everything is silent",
+            '    ignored_line = f"{len(ignored) if isinstance(ignored, list) else 0} ignored (config/brakeman.ignore)"',
+            '    ignored_line = ""',
+            "a report in which every warning is ignored passes, and says how many were ignored",
+        ),
+        Mutation(
+            "a non-Rails project is a failure instead of not applicable",
+            '        return 3, ["not a Rails project',
+            '        return 2, ["not a Rails project',
+            "a project with no config/application.rb is not applicable (exit 3), not a failure",
+        ),
+        Mutation(
+            "brakeman in a comment counts as naming it",
+            """    names_it = gemfile.is_file() and re.search(r\"\"\"^\\s*gem\\s+["']brakeman["']\"\"\", gemfile.read_text(encoding="utf-8", errors="replace"), re.M)""",
+            '    names_it = gemfile.is_file() and "brakeman" in gemfile.read_text(encoding="utf-8", errors="replace")',
+            "brakeman in a comment or in a longer gem name does not count as naming it",
+        ),
+        Mutation(
             "a warning in the report is not counted, so cross-site scripting reads as clean",
             '    for w in report.get("warnings", []):',
             "    for w in []:",
