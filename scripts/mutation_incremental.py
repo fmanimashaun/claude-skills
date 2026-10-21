@@ -52,7 +52,7 @@ PROOF_CONTEXT = "mutation-proof"
 # alone is writable by any same-repo pull request whose edited workflow holds `statuses: write`, and posts as github-actions[bot] like a real one).
 TRUSTED_RUN_WORKFLOWS = (".github/workflows/release.yml", ".github/workflows/mutation-weekly.yml")
 TRUSTED_RUN_EVENTS = ("push", "schedule", "workflow_dispatch")
-EXPECTED_SHARDS = 4                      # the matrix in gates.yml and mutation-weekly.yml, and `--expect-shards` in both (a selftest reads the files)
+EXPECTED_SHARDS = 6                      # the matrix in gates.yml and mutation-weekly.yml, and `--expect-shards` in both (a selftest reads the files)
 RUNNER_OF = {"linux": "ubuntu-latest", "darwin": "macos-latest"}
 LOOKBACK = 40            # main first-parent commits searched for a proof status
 CI_HOST_PREFIX = "github-actions/"
