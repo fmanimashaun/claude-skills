@@ -265,6 +265,12 @@ DESCRIPTOR_SCHEMA: dict = {
                  "boundary_paths": [{"boundary": STR, "pattern": STR}],
                  # data_markers (#2214): a line that is exactly the marker (an end-of-code line such as `__END__`) ends code for the rest of the file.
                  "data_markers": [{"extensions": STRS, "marker": STR}]},
+    # THE STACK'S TOOLCHAIN (#2168): what a project of this stack needs installed for the flows to work, so the toolchain audit
+    # names each missing piece with the steps to fix it (advisory). `plugins`: a Claude Code plugin id (`name@marketplace`) and
+    # the line that installs it. `clis`: a binary on PATH, the line that installs it, and optionally `ready`, a command that exits
+    # 0 only when the tool is usable (logged in, its daemon running), with `ready_hint` saying how to get there.
+    "toolchain": {"plugins": [{"id": STR, "install": STR}],
+                  "clis": [{"bin": STR, "install": STR, "ready?": STRS, "ready_hint?": STR}]},
     "scripts": {"*": STR},
     "review_checklist": STRS,
 }
@@ -313,7 +319,7 @@ def shape_problems(value: object, shape: object, where: str) -> list[str]:
 
 # KEYS THAT BELONG TO ONE STACK, NOT TO THE PROJECT (#2180). A Rails app with a Next.js front end runs BOTH stacks' setup
 # sections, so a setup section is never merged (two plugins declaring it is no conflict); each detected stack's is listed.
-PER_STACK_KEYS = ("setup_section", "security")  # security: #2117, each stack reports its own surface
+PER_STACK_KEYS = ("setup_section", "security", "toolchain")  # security: #2117, toolchain: #2168, each stack reports its own
 
 
 def plugin_root(manifest: dict) -> Path:
@@ -471,6 +477,49 @@ def security_problems(manifest: dict, stack: dict, where: str) -> list[str]:
     return found
 
 
+PLUGIN_ID = re.compile(r"[a-z0-9][a-z0-9._-]*@[a-z0-9][a-z0-9._-]*")
+
+
+def toolchain_problems(stack: dict, where: str) -> list[str]:
+    """A toolchain block names each plugin as `name@marketplace`, and every install line, binary and ready command is non-empty
+    (#2168): a blank one would print an empty fix, and an id without its marketplace cannot be looked up in installed_plugins.json."""
+    value = (stack.get("descriptor") or {}).get("toolchain") if isinstance(stack.get("descriptor"), dict) else None
+    if not isinstance(value, dict):
+        return []
+    found = []
+    for i, row in enumerate(value.get("plugins") or []):
+        if isinstance(row, dict):
+            if isinstance(row.get("id"), str) and not PLUGIN_ID.fullmatch(row["id"]):
+                found.append(f"{where}.toolchain.plugins[{i}].id {row['id']!r} must be `name@marketplace`")
+            if isinstance(row.get("install"), str) and not row["install"].strip():
+                found.append(f"{where}.toolchain.plugins[{i}].install is empty")
+    for i, row in enumerate(value.get("clis") or []):
+        if isinstance(row, dict):
+            for key in ("bin", "install"):
+                if isinstance(row.get(key), str) and not row[key].strip():
+                    found.append(f"{where}.toolchain.clis[{i}].{key} is empty")
+            if isinstance(row.get("bin"), str) and ("/" in row["bin"] or " " in row["bin"].strip()):
+                found.append(f"{where}.toolchain.clis[{i}].bin {row['bin']!r} must be a bare command name, looked up on PATH")
+            ready = row.get("ready")
+            if isinstance(ready, list) and (not ready or not all(isinstance(a, str) and a.strip() for a in ready)):
+                found.append(f"{where}.toolchain.clis[{i}].ready must be a non-empty command (a list of arguments)")
+            if "ready" in row and not row.get("ready_hint"):
+                found.append(f"{where}.toolchain.clis[{i}] has a `ready` check but no `ready_hint` saying how to pass it")
+    return found
+
+
+def toolchains(manifests: list[dict], matched: list[dict]) -> list[dict]:
+    """Each matched stack's toolchain block, in detection order (#2168): the plugins and CLIs a project of that stack needs."""
+    by_plugin = {m["plugin"]: m for m in manifests}
+    out = []
+    for found in matched:
+        stack = next(s for s in by_plugin[found["plugin"]]["stacks"] if isinstance(s, dict) and s.get("id") == found["id"])
+        value = (stack.get("descriptor") or {}).get("toolchain")
+        if isinstance(value, dict):
+            out.append({"stack": found["id"], "plugin": found["plugin"], **json.loads(json.dumps(value))})
+    return out
+
+
 def security_surfaces(manifests: list[dict], matched: list[dict]) -> list[dict]:
     """Each matched stack's security block, its checklist as a readable path, in detection order (#2117)."""
     by_plugin = {m["plugin"]: m for m in manifests}
@@ -533,6 +582,7 @@ def descriptor_problems(manifest: dict, roots: list[Path] | None = None) -> list
             found.extend(shape_problems(stack["descriptor"], DESCRIPTOR_SCHEMA, where))
             found.extend(setup_section_problems(manifest, stack, where))
             found.extend(security_problems(manifest, stack, where))
+            found.extend(toolchain_problems(stack, where))
             values = leaves(stack["descriptor"]) if isinstance(stack["descriptor"], dict) else {}
             found.extend(agent_problems(values, where, roots))
             # a setup section or a security block alone is no flow-facing descriptor; leaves are dotted (`security.checklist`)
@@ -648,7 +698,7 @@ def run(project: Path, dirs: list[Path], stacks: list[str] | None = None, roots:
     problems += conflicts
     report = {"project": str(project), "stacks": matched, "manifests": [m["_path"] for m in manifests], "problems": problems,
               "descriptor": descriptor, "descriptor_sources": sources, "setup_sections": setup_sections(manifests, matched),
-              "security": security_surfaces(manifests, matched),
+              "security": security_surfaces(manifests, matched), "toolchain": toolchains(manifests, matched),
               "available": available(manifests), "fresh": fresh(project)}
     if problems:
         return 2, report
@@ -1017,6 +1067,29 @@ def selftest() -> int:
             with contextlib.redirect_stdout(out):
                 rc = main(["--check"], dirs=plugs, roots=[agents_root])
             case(rc == want_rc and want_text in out.getvalue(), f"{label}: rc={rc} {out.getvalue()[:160]!r}")
+        tc_ok = {"plugins": [{"id": "x-stack@m", "install": "/plugin install x-stack@m"}],
+                 "clis": [{"bin": "xcli", "install": "npm i -g xcli", "ready": ["xcli", "whoami"], "ready_hint": "xcli login"}]}
+        for label, tc, want in (
+                ("a toolchain-only descriptor owes no REQUIRED keys", tc_ok, ""),
+                ("a plugin id without its marketplace is a problem", {"plugins": [{"id": "x-stack", "install": "i"}]}, "must be `name@marketplace`"),
+                ("an empty plugin install line is a problem", {"plugins": [{"id": "x@m", "install": " "}]}, "plugins[0].install is empty"),
+                ("an empty CLI install line is a problem", {"clis": [{"bin": "x", "install": ""}]}, "clis[0].install is empty"),
+                ("a CLI given as a path is a problem", {"clis": [{"bin": "/usr/bin/x", "install": "i"}]}, "must be a bare command name"),
+                ("an empty ready command is a problem", {"clis": [{"bin": "x", "install": "i", "ready": [], "ready_hint": "h"}]}, "ready must be a non-empty command"),
+                ("a ready check with no hint is a problem", {"clis": [{"bin": "x", "install": "i", "ready": ["x", "ok"]}]}, "no `ready_hint`"),
+                ("an unknown toolchain key is a problem", {"clis": [{"bin": "x", "install": "i", "login": ["x"]}]}, "login is not a declared descriptor key")):
+            tdir = plug(f"tc-{abs(hash(label)) % 10**8}", [{"id": "tc", "all": [{"file": "tc.txt"}], "descriptor": {"toolchain": tc}}])
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = main(["--check"], dirs=[tdir], roots=[agents_root])
+            case((rc == 0) if not want else (rc == 2 and want in out.getvalue()), f"{label}: rc={rc} {out.getvalue()[:240]!r}")
+        tc_proj = root / "tc-proj"
+        tc_proj.mkdir()
+        (tc_proj / "tc.txt").write_text("x", encoding="utf-8")
+        tc_dir = plug("tc-report", [{"id": "tc", "all": [{"file": "tc.txt"}], "descriptor": {"toolchain": tc_ok}}])
+        _, tc_report = run(tc_proj, [tc_dir])
+        case(tc_report.get("toolchain") == [{"stack": "tc", "plugin": "tc-report", **tc_ok}],
+             f"the report lists each matched stack's toolchain: {tc_report.get('toolchain')}")
         # A checklist in its strict shape (#2210): checked through security_problems, so a stack's real file is what is judged.
         sec_dir = plug("sec-stack", [{"id": "sx", "all": [{"file": "sx.txt"}],
                                       "descriptor": {"security": {"checklist": "sec.md", "scanners": ["x"]}}}])
