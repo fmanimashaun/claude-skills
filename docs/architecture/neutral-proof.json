@@ -1,0 +1,30 @@
+{
+ "floor": 20,
+ "proven": [
+  "plugins/design-flow/scripts/asset_home.py",
+  "plugins/design-flow/scripts/check_scale_contiguity.py",
+  "plugins/design-flow/scripts/doctrine_path.py",
+  "plugins/pipeline/hooks/scripts/board-refresh.sh",
+  "plugins/pipeline/hooks/scripts/pipeline-status.sh",
+  "plugins/pipeline/scripts/install-git-guards.sh",
+  "plugins/qa-flow/hooks/scripts/qa-status.sh",
+  "plugins/qa-flow/hooks/scripts/release-gate.sh",
+  "plugins/rails-flow/hooks/scripts/ci-verdict-hint.sh",
+  "plugins/rails-flow/hooks/scripts/guard-claims.sh",
+  "plugins/rails-flow/hooks/scripts/guard-pr-ready.sh",
+  "plugins/rails-flow/hooks/scripts/guard-worktree.sh",
+  "plugins/rails-flow/hooks/scripts/session-end.sh",
+  "plugins/rails-flow/hooks/scripts/session-start.sh",
+  "plugins/rails-flow/hooks/scripts/stop-where.sh",
+  "plugins/rails-flow/hooks/scripts/wip-commit.sh",
+  "plugins/rails-flow/scripts/check_memory_index.py",
+  "plugins/rails-flow/scripts/check_project_settings.py",
+  "plugins/rails-flow/scripts/resume_lanes.py",
+  "plugins/rails-flow/scripts/statusline.py"
+ ],
+ "floor_reset": {
+  "from": 34,
+  "reason": "the proof criteria were tightened in review of #2237: only exit 0 proves (exit 1 and a not-applicable gate no longer count as clean), so the first recording of 34 fell to 20",
+  "to": 20
+ }
+}
