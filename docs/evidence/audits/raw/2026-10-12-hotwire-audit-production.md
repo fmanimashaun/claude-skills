@@ -1,4 +1,4 @@
-# Audit: skills/hotwire/references/production.md (2026-10-12, doctrine-verifier, read-only)
+# Audit: plugins/rails-stack/skills/hotwire/references/production.md (2026-10-12, doctrine-verifier, read-only)
 
 Versions verified: turbo-rails v2.0.23 tag, @hotwired/turbo v8.0.23 tag (v7.3.0 for absence checks, v7.2.0 release notes), Stimulus v3.2.2 + release notes, rails/rails 8-0-stable (actionview, actioncable), rails/solid_queue README (main), hotwired/turbo-site streams.md. Fetched via `gh api repos/.../contents/<path>?ref=<tag>`.
 

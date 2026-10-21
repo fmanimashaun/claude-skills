@@ -17,7 +17,7 @@ GUARD = Guard(
     # needs is everything its subject reads, and that changed when the baseline did.
     # `brand_pack_lint` joins `needs` with #814: the comparison is theme-aware now and uses
     # that module's parser. Fifth time this week a guard's needs fell behind its subject.
-    needs=("skills", "plugins/design-flow/scripts/doctrine_path.py",
+    needs=("plugins/rails-stack/skills", "plugins/design-flow/scripts/doctrine_path.py",
            "plugins/design-flow/scripts/brand_pack_lint.py",
            "plugins/design-flow/brands"),
     mutations=(

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The maintainer sessions need the doctrine they collide over.
 
-`skills/parallel-session-lane` is SHIPPED: it reaches downstream projects inside `rails-stack`, and
+`plugins/rails-stack/skills/parallel-session-lane` is SHIPPED: it reaches downstream projects inside `rails-stack`, and
 a consuming repo loads it because that repo enables the plugin. This repository does not. Measured
 on 17 Sep 2026, `.claude/settings.json` here enables exactly one plugin — `remember` — so a session
 maintaining this marketplace never loads the parallel-session skill at all.
@@ -12,7 +12,7 @@ claimed by three branches at once, and a ledger four numbers stale.
 
 WHY A GENERATED COPY AND NOT A SECOND FILE. `plugin-boundaries` allows exactly one home per concern,
 and this repo's own review doctrine treats two copies of one rule as a defect waiting to happen —
-the copy that drifts is always the one nobody is reading. So `skills/**` stays the single source and
+the copy that drifts is always the one nobody is reading. So `plugins/rails-stack/skills/**` stays the single source and
 `.claude/skills/**` is DERIVED from it, committed, and drift-gated, the same shape as
 `docs/evidence/coverage.html` and the wiki pages.
 
@@ -33,21 +33,22 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+SHIPPED = ROOT / "plugins" / "rails-stack" / "skills"  # #2182: rails-stack is its own plugin dir
 
 # source -> derived. One entry today; the list is the mechanism, not the special case.
 MIRRORED = {
-    Path("skills/parallel-session-lane/SKILL.md"): Path(".claude/skills/parallel-session-lane/SKILL.md"),
+    Path("plugins/rails-stack/skills/parallel-session-lane/SKILL.md"): Path(".claude/skills/parallel-session-lane/SKILL.md"),
     # #1481: the mirrored SKILL.md links these, so a mirror without them links to nothing.
-    Path("skills/parallel-session-lane/references/reading-a-list.md"):
+    Path("plugins/rails-stack/skills/parallel-session-lane/references/reading-a-list.md"):
         Path(".claude/skills/parallel-session-lane/references/reading-a-list.md"),
-    Path("skills/parallel-session-lane/references/session-identity.md"):
+    Path("plugins/rails-stack/skills/parallel-session-lane/references/session-identity.md"):
         Path(".claude/skills/parallel-session-lane/references/session-identity.md"),
-    Path("skills/parallel-session-lane/references/process-hygiene.md"):
+    Path("plugins/rails-stack/skills/parallel-session-lane/references/process-hygiene.md"):
         Path(".claude/skills/parallel-session-lane/references/process-hygiene.md"),
     # #1581: SKILL.md §1 and §1a link these.
-    Path("skills/parallel-session-lane/references/isolated-resources.md"):
+    Path("plugins/rails-stack/skills/parallel-session-lane/references/isolated-resources.md"):
         Path(".claude/skills/parallel-session-lane/references/isolated-resources.md"),
-    Path("skills/parallel-session-lane/references/one-issue-at-a-time.md"):
+    Path("plugins/rails-stack/skills/parallel-session-lane/references/one-issue-at-a-time.md"):
         Path(".claude/skills/parallel-session-lane/references/one-issue-at-a-time.md"),
 }
 
@@ -107,7 +108,7 @@ def committed_blob(relative: str, cwd: Path = ROOT) -> str | None:
 
     Two near-identical six-line functions and one of a different shape. A shared module keeps one
     copy and adds an import to each of three files, so the net removal is about **three lines** —
-    against `skills/quality-pass/references/worked-example.md`, where 345 duplicated lines reduced
+    against `plugins/rails-stack/skills/quality-pass/references/worked-example.md`, where 345 duplicated lines reduced
     to 72 net and were still judged not worth extracting. The helper would also have to live under
     `scripts/`, which is maintainer-only, so shipped plugin code could never import it and the
     split would be per-audience rather than per-concern.
@@ -128,7 +129,7 @@ def unregistered_mirrors() -> list[str]:
     """Copies of a SHIPPED skill sitting in `.claude/skills/` that no registry entry governs.
 
     `--check` proves every mirror it KNOWS ABOUT is a clean build. It cannot prove there are no
-    other copies, and `cp skills/code-review/SKILL.md .claude/skills/code-review/` — the likeliest
+    other copies, and `cp plugins/rails-stack/skills/code-review/SKILL.md .claude/skills/code-review/` — the likeliest
     route by far, because it needs nobody to read this file — passed a full green sweep. That is
     exactly the two-homes defect the module docstring says this design prevents.
 
@@ -142,7 +143,7 @@ def unregistered_mirrors() -> list[str]:
     registered = {derived.as_posix() for derived in MIRRORED.values()}
     strays = []
     for skill_dir in sorted(p for p in (ROOT / ".claude" / "skills").glob("*") if p.is_dir()):
-        if not (ROOT / "skills" / skill_dir.name / "SKILL.md").exists():
+        if not (SHIPPED / skill_dir.name / "SKILL.md").exists():
             continue
         for derived in sorted(f for f in skill_dir.rglob("*") if f.is_file()):
             relative = derived.relative_to(ROOT).as_posix()
@@ -327,7 +328,7 @@ def selftest() -> int:
     # The stray arm: a copy of a shipped skill that no MIRRORED entry governs, HEAD clean.
     shipped = sorted(
         s.parent.name
-        for s in (ROOT / "skills").glob("*/SKILL.md")
+        for s in (SHIPPED).glob("*/SKILL.md")
         if not (ROOT / ".claude" / "skills" / s.parent.name).exists()
     )
     if shipped:
@@ -335,11 +336,11 @@ def selftest() -> int:
         try:
             stray.parent.mkdir(parents=True)
             stray.write_text(
-                (ROOT / "skills" / shipped[0] / "SKILL.md").read_text(encoding="utf-8"),
+                (SHIPPED / shipped[0] / "SKILL.md").read_text(encoding="utf-8"),
                 encoding="utf-8",
             )
             if check_against(rendered) == 0:
-                failures.append(f"--check passed against an unregistered copy of skills/{shipped[0]}")
+                failures.append(f"--check passed against an unregistered copy of plugins/rails-stack/skills/{shipped[0]}")
         finally:
             stray.unlink(missing_ok=True)
             stray.parent.rmdir()

@@ -2,7 +2,7 @@
 """Derive rails-flow's shipped tenancy cop from the rails-8 doctrine that declares it (#1361).
 
 WHY THIS IS AN ARTIFACT AND NOT A RUNTIME READ. The cop's source of truth is the fenced block in
-`skills/rails-8/references/multi-tenancy.md` §7, which ships in the **rails-stack** plugin; the
+`plugins/rails-stack/skills/rails-8/references/multi-tenancy.md` §7, which ships in the **rails-stack** plugin; the
 checker that compares a project's installed copy against it ships in **rails-flow**. A runtime read
 across that boundary is #617's class (a clone and an install differ in depth), so the cop is
 COMMITTED beside the checker and this script fails on any disagreement. Same shape, and same reasons,
@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCTRINE = ROOT / "skills" / "rails-8" / "references" / "multi-tenancy.md"
+DOCTRINE = ROOT / "plugins" / "rails-stack" / "skills" / "rails-8" / "references" / "multi-tenancy.md"
 ARTIFACT = ROOT / "plugins" / "rails-flow" / "scaffold" / "tenancy" / "scoped_lookup.rb"
 
 FENCE_ANCHOR = "class ScopedLookup < Base"

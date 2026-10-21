@@ -39,10 +39,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 # Two files, one catalogue (#871): the commerce entries moved to components-commerce.md, and a shape
 # check reading only components.md would report every commerce shape as "not a components.md row".
-CATALOGUE_FILES = tuple(ROOT / "skills" / "design-system" / "references" / n
+CATALOGUE_FILES = tuple(ROOT / "plugins" / "rails-stack" / "skills" / "design-system" / "references" / n
                         for n in ("components.md", "components-commerce.md"))
 CATALOGUE = CATALOGUE_FILES[0]  # kept for messages that name the primary file
-SHAPES = ROOT / "skills" / "design-system" / "references" / "component-shapes.json"
+SHAPES = ROOT / "plugins" / "rails-stack" / "skills" / "design-system" / "references" / "component-shapes.json"
 THEME = ROOT / "plugins" / "design-flow" / "brands" / "fidara" / "theme.css"
 
 # The declared vocabulary for a shape entry. These began as the kinds `pen_library.part_node` could

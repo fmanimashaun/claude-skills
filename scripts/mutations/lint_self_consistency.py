@@ -6,6 +6,58 @@ GUARD = Guard(
     subject="scripts/lint_self_consistency.py",
     selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
     mutations=(
+        Mutation(
+            # #2182 release blocker: every shipped file type is scanned for the clone-only skills path.
+            "the clone-only skills path in a shipped script, json or README is no longer reported",
+            "            if CLONE_SKILLS in line:\n",
+            "            if False:\n",
+            "clone-path-in-shipped-file / a shipped script printing the clone-only skills path is a finding",
+        ),
+        Mutation(
+            "the clone-aware allow-list is ignored, so doctrine_path.py's own clone half is reported",
+            '        if "/mutations/" in "/" + rel(path) + "/" or rel(path) in CLONE_PATH_ALLOWED:\n',
+            '        if "/mutations/" in "/" + rel(path) + "/":\n',
+            "clone-path-in-shipped-file / ...but an allow-listed clone-aware file is silent",
+        ),
+        Mutation(
+            # #2182 release blocker: shipped text must name rails-stack's install-relative skills/ path.
+            "a clone-only plugins/rails-stack/skills/ path in shipped text is accepted again",
+            "            if shipped and target.startswith(CLONE_SKILLS):\n",
+            "            if False:\n",
+            "broken-doc-pointer / a clone-only path in shipped text is a finding even when the file exists",
+        ),
+        Mutation(
+            "shipped skills/ pointers resolve from the repo root again, so the install-relative path reads as broken",
+            '            base = ROOT / "plugins" / "rails-stack" if shipped else ROOT\n',
+            "            base = ROOT\n",
+            "broken-doc-pointer / ...and is silent when the skill doc is there",
+        ),
+        Mutation(
+            # #2182: only a stack's setup_section may declare whose ${CLAUDE_PLUGIN_ROOT} it means.
+            "a declaration is honoured in any file, so any command can silence a wrong-plugin pointer",
+            "_without_fences(body)) if rel(path) in setup_sections else None\n",
+            "_without_fences(body))\n",
+            "broken-doc-pointer / ...but a declaration in a file no setup_section names is ignored",
+        ),
+        Mutation(
+            "a declaration inside a fenced example is honoured",
+            "declared = _DECLARED_PLUGIN_ROOT.search(_without_fences(body))",
+            "declared = _DECLARED_PLUGIN_ROOT.search((body))",
+            "broken-doc-pointer / ...and a declaration only inside a fence is ignored",
+        ),
+        Mutation(
+            "the declaration is never honoured, so a setup section is checked against its own plugin",
+            "        if owning_plugin is not None and declared and (ROOT / \"plugins\" / declared.group(1)).is_dir():\n",
+            "        if False:\n",
+            "broken-doc-pointer / a declared root resolves the pointer against that plugin",
+        ),
+        Mutation(
+            # #2182 review: released CHANGELOG blocks are history, as shipped.
+            "released CHANGELOG blocks are checked as live pointers again",
+            "            body = _unreleased_only(body)\n",
+            "            pass\n",
+            "broken-doc-pointer / a released CHANGELOG block's old path is history, not a pointer",
+        ),
         # #1109. Six hook_* guards went INERT at once because a driven hook gained a script
         # dependency nothing declared -- the unmutated selftest already failed in the staged
         # tempdir, so every mutation read as caught, and dev's full sweep was red for an hour.
@@ -282,7 +334,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the rule matches nothing, so every clone-shaped path passes",
-            '            if node.value != "design-system" and "skills/design-system" not in node.value:',
+            '            if node.value != "design-system" and "plugins/rails-stack/skills/design-system" not in node.value:',
             '            if id(node) in docstrings or "zzz-never" not in node.value:',
             "__file__.parents reaching a sibling plugin's doctrine",
         ),
@@ -1057,7 +1109,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the skill-pointer half stops being reported (#100)",
-            "            if (ROOT / match.group(1)).exists():\n                continue",
+            "            if (base / target).exists():\n                continue",
             "            if True:\n                continue",
             "command points at a skill doc that was renamed away",
         ),
@@ -1357,13 +1409,6 @@ GUARD = Guard(
         ),
         Mutation(
             # #1680
-            "cross-plugin-relative-path skips rails-stack's skills/, which the marketplace ships",
-            '    docs += [(p, "rails-stack") for p in sorted((ROOT / "skills").glob("**/*.md"))]\n',
-            '',
-            'cross-plugin-relative-path / a rails-stack skill reaching ../rails-flow/ is a finding',
-        ),
-        Mutation(
-            # #1680
             'cross-plugin-relative-path scans tests/ fixtures, which never ship',
             '        if "/tests/" in rel:\n            continue\n        examined += 1\n        text = path.read_text(encoding="utf-8", errors="replace")',
             '        examined += 1\n        text = path.read_text(encoding="utf-8", errors="replace")',
@@ -1486,7 +1531,26 @@ GUARD = Guard(
             "the preflight block losing one of its rules stops being a finding",
             '        for needle, what in _PREFLIGHT_NEEDLES:\n',
             "        for needle, what in ():\n",
-            "a preflight block that lost the held-lock check",
+            "a preflight block that lost the load check",
+        ),
+        Mutation(
+            # #2196: the stack's half of the preflight lives in its setup section; losing a check there is the same defect.
+            "a stack section's preflight losing a check stops being a finding",
+            "        for needle, what in _STACK_PREFLIGHT_NEEDLES.get(stack, ()):\n",
+            "        for needle, what in ():\n",
+            "the Rails section's preflight lost the held-lock check",
+        ),
+        Mutation(
+            "a stack section with no CLAUDE.md facts preflight stops being a finding",
+            '        if "## CLAUDE.md facts" not in body or part is None:\n',
+            "        if False:\n",
+            "a stack with no needle list still needs a CLAUDE.md facts preflight",
+        ),
+        Mutation(
+            "the held-lock check counts anywhere in the section, not only in its preflight part",
+            '        part = re.search(r"### Test-run preflight\\n(.*?)(?:\\n#{2,3} |\\Z)", body, re.S)\n',
+            '        part = re.search(r"### Test-run preflight\\n(.*)", body, re.S)\n',
+            "the held-lock check outside the preflight part does not count",
         ),
         Mutation(
             "a second conditional block stops being a finding",

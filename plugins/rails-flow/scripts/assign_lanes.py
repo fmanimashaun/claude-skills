@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Assign non-overlapping worktree lanes so several agent sessions can share one repository. #661
 
-WHAT THIS IS. `skills/parallel-session-lane` has always described the protocol for being one of N
+WHAT THIS IS. rails-stack's `skills/parallel-session-lane` has always described the protocol for being one of N
 sessions -- confirm your worktree, take one coherent slice, stay in your subtree. Nothing in this
 marketplace ever put a session INTO that mode: a human opened N terminals and assigned lanes by
 hand. We wrote the coordination rules and skipped the assignment.

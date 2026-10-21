@@ -15,7 +15,7 @@ source *into* it, and that step is where all of it entered.
 
 ## Preconditions
 
-**`skills/design-system/references/design-handoff.md` is the mapping and it is the law.** It ships in
+**rails-stack's `skills/design-system/references/design-handoff.md` is the mapping and it is the law.** It ships in
 **`rails-stack`**, not this plugin, and no `plugin.json` can declare that — there is no `requires`
 field. **If you cannot read it, name what is
 missing (`/plugin install rails-stack@claude-skills`) and stop.** Porting from memory of the mapping is precisely what the 20 divergences were.

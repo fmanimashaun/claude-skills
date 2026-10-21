@@ -1,4 +1,4 @@
-# Hotwire Turbo audit — skills/hotwire/references/turbo.md + SKILL.md (2026-10-12, doctrine-verifier)
+# Hotwire Turbo audit — plugins/rails-stack/skills/hotwire/references/turbo.md + SKILL.md (2026-10-12, doctrine-verifier)
 
 Versions verified: @hotwired/turbo 8.0.23 (npm latest, published 2026-01-29; dist/turbo.es2017-esm.js, "T:" = line in that file),
 plus 8.0.0 / 8.0.13 / 8.0.14 tarballs for boundaries; turbo-rails 2.0.23 gem source ("R:"); GitHub release notes hotwired/turbo.

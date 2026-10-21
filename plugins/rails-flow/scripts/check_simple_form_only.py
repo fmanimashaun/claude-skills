@@ -7,7 +7,7 @@ Run:  check_simple_form_only.py [--root DIR]
 Exit: 0 clean · 1 findings · 2 unreadable exemption file · 3 not applicable (no simple_form in
 Gemfile.lock; reported as n/a by project_gates.py, never as a pass).
 
-WHY. `skills/rails-8/references/ecosystem-gems.md` says "simple_form is mandatory in this stack --
+WHY. rails-stack's `skills/rails-8/references/ecosystem-gems.md` says "simple_form is mandatory in this stack --
 no form, and no form element, is built any other way", and the doctrine map listed that as a
 GUARANTEE enforced by `check_mandated_gems.py`. That script proves the gem is INSTALLED, not that
 anything USES it, so a project with the gem and every form hand-built read green. The only other

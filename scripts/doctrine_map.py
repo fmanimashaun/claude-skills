@@ -126,7 +126,7 @@ class Claim:
 SHIPPED_SOURCES: tuple[str, ...] = tuple(sorted(
     p.as_posix()
     for skill in ("rails-8", "hotwire", "design-system")
-    for p in (REPO / "skills" / skill).glob("**/*.md")
+    for p in (REPO / "plugins" / "rails-stack" / "skills" / skill).glob("**/*.md")
     if p.is_file()
     for p in [p.relative_to(REPO)]
 ))
@@ -141,10 +141,10 @@ DOCTRINE_SOURCES = (
     "CLAUDE.md",
     "AGENTS.md",
     "docs/doctrine/harness-doctrine.md",
-    "skills/code-review/SKILL.md",
-    "skills/quality-pass/SKILL.md",
-    "skills/derived-artifacts/SKILL.md",
-    "skills/parallel-session-lane/SKILL.md",
+    "plugins/rails-stack/skills/code-review/SKILL.md",
+    "plugins/rails-stack/skills/quality-pass/SKILL.md",
+    "plugins/rails-stack/skills/derived-artifacts/SKILL.md",
+    "plugins/rails-stack/skills/parallel-session-lane/SKILL.md",
     "plugins/rails-flow/commands/feature.md",
     "plugins/rails-flow/commands/handoff.md",
     "plugins/rails-flow/commands/secure-design.md",
@@ -212,7 +212,7 @@ CLAIMS: tuple[Claim, ...] = (
     # than pretending they are covered.
     Claim(
         claim="Prefer expanded conditionals over guard clauses when writing new code (style.md §1).",
-        stated_in="skills/rails-8/references/style.md",
+        stated_in="plugins/rails-stack/skills/rails-8/references/style.md",
         anchor="No cop can enforce it the other way round, either.",
         kind=ADVICE,
         note="#1363, verified on rubocop 1.91.0: no stock cop prefers expanded conditionals, and "
@@ -224,7 +224,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="Indent under visibility modifiers, with no blank line after them; a private-only "
               "module is the exception (style.md §5).",
-        stated_in="skills/rails-8/references/style.md",
+        stated_in="plugins/rails-stack/skills/rails-8/references/style.md",
         anchor="It cannot simply be switched on",
         kind=ADVICE,
         note="#1363, verified on rubocop 1.91.0 / rubocop-rails-omakase 1.1.0: IndentationWidth + "
@@ -237,7 +237,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="The prescribed testing stack is not a menu — a project missing simplecov, webmock "
               "or vcr is incomplete, not merely different.",
-        stated_in="skills/rails-8/references/testing.md",
+        stated_in="plugins/rails-stack/skills/rails-8/references/testing.md",
         anchor="group :development, :test do",
         kind=GUARANTEE,
         enforced_by=("script:plugins/rails-flow/scripts/check_mandated_gems.py",
@@ -251,7 +251,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="`--skip-test` leaves `config/ci.rb` with no test step, so `bin/ci` reports green "
               "having run zero specs unless the step is added back.",
-        stated_in="skills/rails-8/references/testing.md",
+        stated_in="plugins/rails-stack/skills/rails-8/references/testing.md",
         anchor="There is nothing to",
         kind=GUARANTEE,
         enforced_by=("script:plugins/rails-flow/scripts/check_ci_runs_tests.py",
@@ -264,7 +264,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="`spec/support/**` is dead until the auto-loader Rails generates COMMENTED is "
               "uncommented — every support file, with no error and no output.",
-        stated_in="skills/rails-8/references/testing.md",
+        stated_in="plugins/rails-stack/skills/rails-8/references/testing.md",
         anchor="Auto-load spec/support/**",
         kind=GUARANTEE,
         enforced_by=("script:plugins/rails-flow/scripts/check_spec_support.py",
@@ -277,7 +277,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="Coverage gates on the DROP, never an absolute number — a fixed `minimum_coverage` "
               "is inert below the repo and red above it.",
-        stated_in="skills/rails-8/references/testing.md",
+        stated_in="plugins/rails-stack/skills/rails-8/references/testing.md",
         anchor="refuse_coverage_drop",
         kind=GUARANTEE,
         enforced_by=("script:plugins/rails-flow/scripts/check_coverage_ratchet.py",
@@ -290,7 +290,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="simple_form is mandatory in this stack — no form, and no form element, is built any "
               "other way.",
-        stated_in="skills/rails-8/references/ecosystem-gems.md",
+        stated_in="plugins/rails-stack/skills/rails-8/references/ecosystem-gems.md",
         anchor="simple_form is mandatory in this stack",
         kind=GUARANTEE,
         enforced_by=("script:plugins/rails-flow/scripts/check_mandated_gems.py",
@@ -308,7 +308,7 @@ CLAIMS: tuple[Claim, ...] = (
         claim="Structure snaps to the 8px grid: every token in the structural block of the tokens "
               "file is a whole multiple of 8px, and every structural token a reference names is "
               "declared there.",
-        stated_in="skills/design-system/references/foundations-tokens.md",
+        stated_in="plugins/rails-stack/skills/design-system/references/foundations-tokens.md",
         anchor="Structure snaps to the 8px grid; rhythm stays fluid",
         kind=GUARANTEE,
         enforced_by=("script:scripts/check_structural_grid.py", "mutation:check_structural_grid"),
@@ -362,7 +362,7 @@ CLAIMS: tuple[Claim, ...] = (
              "the half that was missing while four releases dropped a component's notes.",
     ),
     Claim(
-        claim="`dist/` must be a clean build of `skills/**` before a release publishes.",
+        claim="`dist/` must be a clean build of `plugins/rails-stack/skills/**` before a release publishes.",
         stated_in="CLAUDE.md",
         anchor="The CI drift guard fails",
         kind=GUARANTEE,
@@ -375,7 +375,7 @@ CLAIMS: tuple[Claim, ...] = (
     # ---- claims-vs-enforcement, the class this map is about ---------------------------------
     Claim(
         claim="A guarantee stated in prose that nothing makes true is a defect, not a style issue.",
-        stated_in="skills/code-review/SKILL.md",
+        stated_in="plugins/rails-stack/skills/code-review/SKILL.md",
         anchor="gate-that-cannot-fail",
         kind=GUARANTEE,
         enforced_by=("script:scripts/lint_self_consistency.py", "gate:self-consistency",
@@ -385,7 +385,7 @@ CLAIMS: tuple[Claim, ...] = (
         claim="A Stimulus keyboard filter is not a type check: the filter is consulted only inside "
               "`event instanceof KeyboardEvent`, so a bare `Event(\"keydown\")` skips it and runs "
               "the handler. No shipped descriptor may guard a state-destroying handler with one.",
-        stated_in="skills/hotwire/references/stimulus.md",
+        stated_in="plugins/rails-stack/skills/hotwire/references/stimulus.md",
         anchor="A key filter is not a type check",
         kind=GUARANTEE,
         enforced_by=("rule:unguarded-key-filter", "script:scripts/lint_self_consistency.py",
@@ -469,7 +469,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="A carve-out that silences a check needs a negative test proving the check still fires "
               "outside it.",
-        stated_in="skills/code-review/SKILL.md",
+        stated_in="plugins/rails-stack/skills/code-review/SKILL.md",
         anchor="carve-out-without-negative-test",
         kind=GUARANTEE,
         enforced_by=("script:scripts/maintainer_doctor_selftest.py", "mutation:maintainer_doctor"),
@@ -504,7 +504,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="Derived numbers are read from the generator's structured source, never regex-parsed "
               "out of its generated prose, and are asserted against the source's declared totals.",
-        stated_in="skills/derived-artifacts/SKILL.md",
+        stated_in="plugins/rails-stack/skills/derived-artifacts/SKILL.md",
         anchor="Go to the structured source, not the generated prose",
         kind=GUARANTEE,
         enforced_by=("script:scripts/build_coverage_artifact.py", "gate:coverage artifact selftest"),
@@ -567,12 +567,12 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         claim="The maintainer copy of a shipped skill cannot drift from the skill it is derived from.",
-        stated_in="skills/parallel-session-lane/SKILL.md",
+        stated_in="plugins/rails-stack/skills/parallel-session-lane/SKILL.md",
         anchor="## 1. One worktree per unit of work — before lanes, and without asking anyone",
         kind=GUARANTEE,
         enforced_by=("gate:maintainer skill drift",),
         refs=(1004,),
-        note="`.claude/skills/**` is generated from `skills/**` because this repo's own sessions load "
+        note="`.claude/skills/**` is generated from `plugins/rails-stack/skills/**` because this repo's own sessions load "
              "`remember` and nothing else, so the parallel-session doctrine reached every consumer "
              "except its maintainers. A mirror without a drift check is two homes for one rule, which "
              "is what `plugin-boundaries` refuses; the gate is what makes it one.",
@@ -580,7 +580,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="Working in the wrong worktree during a parallel session is refused, not merely advised "
               "against.",
-        stated_in="skills/parallel-session-lane/SKILL.md",
+        stated_in="plugins/rails-stack/skills/parallel-session-lane/SKILL.md",
         anchor="## 4. Confirm your worktree before any edit",
         kind=GUARANTEE,
         enforced_by=("hook:plugins/rails-flow/hooks/scripts/guard-lane.sh",),
@@ -590,7 +590,7 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         claim="Two concurrent sessions are never assigned overlapping lanes.",
-        stated_in="skills/parallel-session-lane/SKILL.md",
+        stated_in="plugins/rails-stack/skills/parallel-session-lane/SKILL.md",
         anchor="refuses** overlapping lanes",
         kind=GUARANTEE,
         enforced_by=("script:plugins/rails-flow/scripts/assign_lanes.py", "mutation:assign_lanes",
@@ -604,7 +604,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="A session that holds an unmerged recorded lane, or that adds a worktree for a branch or "
               "issue which already has an unmerged one, is refused `git worktree add`.",
-        stated_in="skills/parallel-session-lane/SKILL.md",
+        stated_in="plugins/rails-stack/skills/parallel-session-lane/SKILL.md",
         anchor="**What makes it true: the rails-flow `guard-worktree` hook.**",
         kind=GUARANTEE,
         enforced_by=("hook:plugins/rails-flow/hooks/scripts/guard-worktree.sh", "gate:hook gates", "gate:hook gates (release)", "gate:hook gates (worktree)",
@@ -619,7 +619,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="The worktree guard protects against accident, not impersonation: a session's identity is "
               "the session id it sends.",
-        stated_in="skills/parallel-session-lane/SKILL.md",
+        stated_in="plugins/rails-stack/skills/parallel-session-lane/SKILL.md",
         anchor="**Its limit, stated: it protects against accident, not impersonation.**",
         kind=ADVICE,
         refs=(1581,),
@@ -631,7 +631,7 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         claim="A session ends its worktree with the teardown when its PR merges or its review finishes.",
-        stated_in="skills/parallel-session-lane/SKILL.md",
+        stated_in="plugins/rails-stack/skills/parallel-session-lane/SKILL.md",
         anchor="3. **Clean up when done, with the teardown.**",
         kind=ADVICE,
         refs=(1581, 2058),
@@ -705,11 +705,11 @@ CLAIMS: tuple[Claim, ...] = (
                      "script:plugins/rails-flow/scripts/check_hook_gates.py"),
         refs=(655, 1106),
         note="Carried as a GAP for a long time, and the recorded reason was exact: 'mechanisable in "
-             "principle -- a PR touching `skills/**` whose body names neither type -- but it would "
+             "principle -- a PR touching `plugins/rails-stack/skills/**` whose body names neither type -- but it would "
              "live in CI against the PR body, WHICH NO GATE IN THIS REPO READS.' #1106 built a "
              "PreToolUse hook that reads the PR body, for an unrelated reason (two wrong numbers "
              "reached merged bodies in one day), and the blocker simply stopped being true. The "
-             "hook now refuses `gh pr create` on a PR touching `skills/**` whose body names "
+             "hook now refuses `gh pr create` on a PR touching `plugins/rails-stack/skills/**` whose body names "
              "neither change type. The gap row is what made the connection findable.",
     ),
 
@@ -785,7 +785,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="The quality pass never blocks a merge -- a gate on taste gets switched off, and then "
               "nothing checks quality at all.",
-        stated_in="skills/quality-pass/SKILL.md",
+        stated_in="plugins/rails-stack/skills/quality-pass/SKILL.md",
         anchor="It is ADVISORY and never a merge",
         kind=ADVICE,
         enforced_by=("gate:shared shapes", "script:scripts/check_shared_shapes.py"),
@@ -795,7 +795,7 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         claim="A gate that needs a carve-out on its first real input is taste wearing a count.",
-        stated_in="skills/quality-pass/SKILL.md",
+        stated_in="plugins/rails-stack/skills/quality-pass/SKILL.md",
         anchor="**Advisory. Always.**",
         kind=ADVICE,
         refs=(476,),
@@ -807,7 +807,7 @@ CLAIMS: tuple[Claim, ...] = (
         claim="Before a project ships an MCP write tool it answers, in its own CLAUDE.md, five decisions: who may "
               "write, how a change is confirmed, what stops a retried call writing twice, how the audit tells agent "
               "writes from human ones, and how a wrong write is undone (mcp-server.md §6).",
-        stated_in="skills/rails-8/references/mcp-server.md",
+        stated_in="plugins/rails-stack/skills/rails-8/references/mcp-server.md",
         anchor="**If you cannot answer these, do not ship a write tool.**",
         kind=ADVICE,
         note="Owner ruling on #2056 (option 2: a checklist, not rules). Each spec-cited mechanism is doctrine-verifier "

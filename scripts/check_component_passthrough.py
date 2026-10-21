@@ -53,8 +53,8 @@ REPO = Path(__file__).resolve().parents[1]
 # The shipped reference implementations. Both are consumed as copy-me-verbatim code by
 # `ui-composer` and `design-porter`, so a fixed keyword list here becomes one in a user's app.
 SOURCES = (
-    "skills/design-system/references/component-implementations.md",
-    "skills/design-system/references/reference-implementation.md",
+    "plugins/rails-stack/skills/design-system/references/component-implementations.md",
+    "plugins/rails-stack/skills/design-system/references/reference-implementation.md",
 )
 
 CLASS = re.compile(r"^(?P<indent>[ \t]*)class (?P<name>\w+) < ViewComponent::Base[ \t]*$", re.M)

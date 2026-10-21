@@ -3,7 +3,7 @@
 One read-only `doctrine-verifier` run against the **PostgreSQL 16** docs (the repo baseline; `/docs/current` resolves to 18
 and was not used). Sibling of `2026-10-11-observability-otel-1694.md`, which verified the existing pg_stat_statements bullets.
 Items 7-8 of the issue (index health, bloat) were split to #2045: they need a recorded run on a real database. Edits in
-`skills/rails-8/references/observability.md` follow CONFIRMED rows only. PSS = https://www.postgresql.org/docs/16/pgstatstatements.html
+`plugins/rails-stack/skills/rails-8/references/observability.md` follow CONFIRMED rows only. PSS = https://www.postgresql.org/docs/16/pgstatstatements.html
 
 | id | claim | verdict | authority (PG16) | what the doctrine does |
 |---|---|---|---|---|

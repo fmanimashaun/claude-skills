@@ -7,7 +7,7 @@ type: feedback
 In one day I hit five grep/regex failures — a repo-wide rename missed by a per-file grep, a probe
 regex that matched nothing and was read as "no rows exist", an unquoted zsh glob, a rule's own
 pattern too narrow, fixtures that never reached the code they guarded. **The prose rule for exactly
-this already existed and I wrote it**: `unverified-negative` in `skills/code-review/SKILL.md`, whose
+this already existed and I wrote it**: `unverified-negative` in `plugins/rails-stack/skills/code-review/SKILL.md`, whose
 text says *"the same applies to 'no matches' — confirm the search actually ran over the intended
 input."* It stopped none of them.
 

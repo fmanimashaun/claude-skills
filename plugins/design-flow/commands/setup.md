@@ -6,7 +6,7 @@ argument-hint: "[brand pack: <pack> or <pack>:<variant>, e.g. fidara:fmworkflows
 # /design-flow:setup — $ARGUMENTS
 
 Install the **design-system** system into this project. Follow the skill doctrine
-(`skills/design-system/SKILL.md` + references) exactly — this command applies it.
+(rails-stack's `skills/design-system/SKILL.md` + references) exactly — this command applies it.
 
 ## Preconditions
 
@@ -62,7 +62,7 @@ python3 "$CANDIDATES" --snap "#RRGGBB" --out brands/<pack> # client HAS a brand 
 ```
 
 - **No usable palette** — walk the decision path in
-  `skills/design-system/references/brand.md`, section *Starting a pack when the
+  rails-stack's `skills/design-system/references/brand.md`, section *Starting a pack when the
   client has no palette*, in rails-stack. It is an ordered path: logo colour → does the product recede → hue
   family → formality. Ask for the client's sector and their logo colour; do not paste the whole
   catalogue and ask them to browse. Every candidate is already measured against WCAG 1.4.3 in
@@ -175,7 +175,7 @@ authored; `git status` after.
    surfaces, and the inline one is permanent — which is how a project ends up with all-permanent
    notices and no auto-dismiss anywhere.
 
-Use **`skills/design-system/references/reference-implementation.md`** (in rails-stack)
+Use **rails-stack's `skills/design-system/references/reference-implementation.md`** (in rails-stack)
 as the canonical source for steps 3–4: copy the ViewComponent pattern (Button/Card shown) and
 the four Stimulus mixins verbatim, then extend the catalog by mirroring those exact shapes.
 Mobile (Hotwire Native parity) is Phase 2 — see references/mobile.md; this command targets web.

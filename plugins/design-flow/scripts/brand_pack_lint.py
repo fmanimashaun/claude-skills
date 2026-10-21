@@ -17,7 +17,7 @@ What it verifies:
   6.              — no component-level CSS leaked into the pack
 
 Two subtleties this encodes, both easy to get wrong by hand (and both measured from
-skills/design-system/references/foundations-tokens.md rather than assumed):
+rails-stack's skills/design-system/references/foundations-tokens.md rather than assumed):
 
   * `--background`'s companion is `--foreground`, NOT `--background-foreground`.
   * The feedback roles and `--ring` are deliberately NOT re-pointed on dark. Requiring a
@@ -49,7 +49,7 @@ import sys
 # --------------------------------------------------------------------------
 # The role contract.
 #
-# Source of truth is skills/design-system/references/foundations-tokens.md (the `:root`
+# Source of truth is rails-stack's skills/design-system/references/foundations-tokens.md (the `:root`
 # and `.dark` blocks). It is duplicated here so the lint runs with no skill installed —
 # and because two copies drift, `--roles-from` re-derives it from that file and reports
 # any disagreement. Same discipline as the release-workflow/local-script mirror: if you

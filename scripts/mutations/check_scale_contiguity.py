@@ -11,7 +11,7 @@ GUARD = Guard(
     # shared resolver, so without it the staged tempdir fails at IMPORT and the harness
     # reports the guard INERT -- every mutation "caught" whether or not it breaks anything.
     # A guard's needs is everything its subject imports, and that changed when the subject did.
-    needs=("skills", "plugins/design-flow/scripts/doctrine_path.py"),
+    needs=("plugins/rails-stack/skills", "plugins/design-flow/scripts/doctrine_path.py"),
     mutations=(
         Mutation(
             "a hole in the space run stops being reported",

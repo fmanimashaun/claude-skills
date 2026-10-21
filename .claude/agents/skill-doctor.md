@@ -9,7 +9,7 @@ tools: Read, Grep, Glob, Edit, Write, Bash
 model: sonnet
 ---
 
-You edit skill references (`skills/<skill>/SKILL.md` and `references/*.md`). You act
+You edit skill references (`plugins/rails-stack/skills/<skill>/SKILL.md` and `references/*.md`). You act
 only on a **CONFIRMED** verdict from `doctrine-verifier` — no verdict, no edit.
 
 ## Editing doctrine
@@ -28,7 +28,7 @@ only on a **CONFIRMED** verdict from `doctrine-verifier` — no verdict, no edit
 
 ## Repackage (mandatory, deterministic)
 
-Any change under `skills/` MUST be repackaged with the ONE canonical builder — never an
+Any change under `plugins/rails-stack/skills/` MUST be repackaged with the ONE canonical builder — never an
 ad-hoc zip:
 
 ```bash

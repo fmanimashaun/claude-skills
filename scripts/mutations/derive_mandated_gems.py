@@ -8,7 +8,7 @@ GUARD = Guard(
     name="derive_mandated_gems",
     subject="scripts/derive_mandated_gems.py",
     selftest="scripts/derive_mandated_gems.py",
-    needs=("skills/rails-8/references/testing.md",),
+    needs=("plugins/rails-stack/skills/rails-8/references/testing.md",),
     mutations=(
         Mutation(
             # `re.match` anchors at position 0, which is what excludes `# gem "x"`. An explicit

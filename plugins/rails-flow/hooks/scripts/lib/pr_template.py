@@ -95,7 +95,7 @@ def selftest() -> int:
 
     tpl = ("<!--\n## Not a heading, it is in a comment\n-->\n"
            "## What changed, and why\n\n## How to test\n\n## Change type — required, before the first edit\n\n"
-           "## Rules enforced in code (spec §9)\n\n## If this touches `skills/**`\n\n"
+           "## Rules enforced in code (spec §9)\n\n## If this touches `plugins/rails-stack/skills/**`\n\n"
            "```\n## not a heading, it is in a fence\n```\n")
     full = ("## What changed, and why\nx\n## How to test\nN/A — copy only\n"
             "## Change type\nour design\n## Rules enforced in code\nnone\n")

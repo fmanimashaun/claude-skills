@@ -321,8 +321,8 @@ def teardown(path: str, dry_run=False, assume_merged=False, pg_bin: str | None =
 # Where an agent is told how to end a worktree: (path from the repository root, the line that opens the instruction, how many lines it spans, the text
 # that names this script there: the hook builds its path from the constant `{TEARDOWN}`). Each must name this script. `git worktree remove` alone leaves the databases behind, so a place that says only that is the defect (#2058).
 WORDING_SITES = (
-    ("skills/parallel-session-lane/SKILL.md", "3. **Clean up when done", 4, "worktree_teardown.py"),
-    ("skills/parallel-session-lane/references/one-issue-at-a-time.md", "3. **Clean up when done", 3, "worktree_teardown.py"),
+    ("plugins/rails-stack/skills/parallel-session-lane/SKILL.md", "3. **Clean up when done", 4, "worktree_teardown.py"),
+    ("plugins/rails-stack/skills/parallel-session-lane/references/one-issue-at-a-time.md", "3. **Clean up when done", 3, "worktree_teardown.py"),
     ("plugins/rails-flow/hooks/scripts/lib/worktree_guard.py", "End each with", 2, "{TEARDOWN}"),
     ("plugins/rails-flow/scripts/wrap_round.py", "3. end each FINISHED worktree", 2, "worktree_teardown.py"),
 )

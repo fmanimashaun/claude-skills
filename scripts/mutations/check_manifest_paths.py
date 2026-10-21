@@ -49,5 +49,23 @@ GUARD = Guard(
             "    if False:",
             "a plugin whose surfaces name no paths is reported",
         ),
+        Mutation(
+            "stack setup sections are never read, so a path only rails-stack's setup/rails.md writes reads as a phantom",
+            "    for path in setup_sections(plugin):",
+            "    for path in []:",
+            "counts for the plugin that runs the sections",
+        ),
+        Mutation(
+            "every plugin reads the stack setup sections, so one that never runs them is vouched for by them",
+            '    if not (plugin / "scripts" / "detect_stack.py").is_file():\n        return []',
+            '    if False:\n        return []',
+            "is no surface of the plugin",
+        ),
+        Mutation(
+            "a setup section escaping its plugin is read, so a file outside vouches for a phantom path",
+            "            if path is None or not path.resolve().is_relative_to(manifest.parent.resolve()):",
+            "            if path is None:",
+            "a setup section that escapes its plugin vouches for nothing",
+        ),
     ),
 )
