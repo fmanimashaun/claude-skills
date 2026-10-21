@@ -30,5 +30,11 @@ GUARD = Guard(
             '        print(f"check_react_lint: not applicable -- {exc}")\n        return 0',
             "must exit 3, not applicable",
         ),
+        Mutation(
+            "a missing eslint binary escapes as a traceback",
+            "        except FileNotFoundError as exc:   # #2243 review",
+            "        except ZeroDivisionError as exc:   # #2243 review",
+            "a missing eslint binary must be unjudgeable",
+        ),
     ),
 )

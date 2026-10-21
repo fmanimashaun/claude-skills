@@ -14,9 +14,21 @@ GUARD = Guard(
         ),
         Mutation(
             "a declaration with no reason passes",
-            r'CLIENT_ROUTE_DECLARED = re.compile(r"react-architecture:[ \t]*client-route[ \t]*(?:--|—|:)[ \t]*\S")',
-            r'CLIENT_ROUTE_DECLARED = re.compile(r"react-architecture:[ \t]*client-route")',
+            'CLIENT_ROUTE_DECLARED = re.compile(r"(?://|/\\*)[^\\n]*?react-architecture:[ \\t]*client-route[ \\t]*(?:--|—|:)[ \\t]*\\w")',
+            'CLIENT_ROUTE_DECLARED = re.compile(r"(?://|/\\*)[^\\n]*?react-architecture:[ \\t]*client-route[ \\t]*(?:--|—|:)")',
             "a declaration with no reason does not pass",
+        ),
+        Mutation(
+            "a dash alone counts as a reason",
+            'CLIENT_ROUTE_DECLARED = re.compile(r"(?://|/\\*)[^\\n]*?react-architecture:[ \\t]*client-route[ \\t]*(?:--|—|:)[ \\t]*\\w")',
+            'CLIENT_ROUTE_DECLARED = re.compile(r"(?://|/\\*)[^\\n]*?react-architecture:[ \\t]*client-route[ \\t]*(?:--|—|:)[ \\t]*\\S")',
+            "a declaration whose reason is only a dash does not pass",
+        ),
+        Mutation(
+            "the declaration counts outside a comment",
+            'CLIENT_ROUTE_DECLARED = re.compile(r"(?://|/\\*)[^\\n]*?react-architecture:[ \\t]*client-route[ \\t]*(?:--|—|:)[ \\t]*\\w")',
+            'CLIENT_ROUTE_DECLARED = re.compile(r"react-architecture:[ \\t]*client-route[ \\t]*(?:--|—|:)[ \\t]*\\w")',
+            "the declaration inside a string, not a comment, does not pass",
         ),
         Mutation(
             "route files are judged anywhere, not only under app/",
@@ -53,6 +65,18 @@ GUARD = Guard(
             '        print(f"check_react_patterns: not applicable -- {exc}")\n        return 3',
             '        print(f"check_react_patterns: not applicable -- {exc}")\n        return 0',
             "must exit 3, not applicable",
+        ),
+        Mutation(
+            "any return anywhere in the Effect counts as cleanup",
+            "                no_cleanup = not returns_at_top(body)",
+            '                no_cleanup = not re.search(r"\\breturn\\b", body)',
+            "a nested return in .then() still reads as no cleanup",
+        ),
+        Mutation(
+            "a ' or \" string runs past the end of its line",
+            '            if ch == quote or (ch == "\\n" and quote != "`"):\n                quote = None   # a',
+            '            if ch == quote:\n                quote = None   # a',
+            "an apostrophe in JSX text does not turn a later comment into code",
         ),
     ),
 )

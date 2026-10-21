@@ -73,8 +73,13 @@ def run(project: Path) -> list[dict]:
     with tempfile.TemporaryDirectory() as tmp:
         cfg = Path(tmp) / "eslint.react-architecture.config.mjs"
         cfg.write_text(flat_config(project))
-        done = subprocess.run([str(eslint), "--config", str(cfg), "--format", "json", "--no-warn-ignored", "."],
-                              cwd=project, capture_output=True, text=True, timeout=600)
+        try:
+            done = subprocess.run([str(eslint), "--config", str(cfg), "--format", "json", "--no-warn-ignored", "."],
+                                  cwd=project, capture_output=True, text=True, timeout=600)
+        except FileNotFoundError as exc:   # #2243 review: these raised a traceback with exit 1, which read as findings
+            raise Unjudgeable(f"no eslint binary at {eslint} ({exc})") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise Unjudgeable(f"eslint did not finish in {exc.timeout}s") from exc
     if done.returncode not in (0, 1):
         raise Unjudgeable(f"eslint exited {done.returncode}: {(done.stderr or done.stdout).strip()[:400]}")
     try:
@@ -117,9 +122,20 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory() as tmp:   # the exit-3 site in main(): an empty folder is not applicable (#1873)
         if main([tmp]) != 3:
             failures.append("a project with no package.json must exit 3, not applicable")
+    with tempfile.TemporaryDirectory() as tmp:   # every package installed but no eslint binary: cannot judge, never a traceback
+        for pkg in REQUIRED:
+            (Path(tmp) / "node_modules" / pkg).mkdir(parents=True)
+        (Path(tmp) / "package.json").write_text("{}")
+        try:
+            run(Path(tmp))
+            failures.append("a missing eslint binary must be unjudgeable (exit 2), not clean")
+        except Unjudgeable:
+            pass
+        except Exception as exc:   # noqa: BLE001 -- the defect this case exists for
+            failures.append(f"a missing eslint binary must be unjudgeable (exit 2), not {type(exc).__name__}")
     for failure in failures:
         print(f"FAIL  {failure}")
-    total = 3 + len(RULES) + 1 + 1
+    total = 3 + len(RULES) + 1 + 1 + 1
     print(f"check_react_lint selftest: {total - len(failures)} of {total} passed")
     return 1 if failures else 0
 
