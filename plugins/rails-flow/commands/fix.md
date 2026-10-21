@@ -129,6 +129,9 @@ hypothesis that turned out to be the cause, so the next reader learns it.
 
 ```
 1. BRANCH:    git checkout <base> && git pull && git checkout -b fix/<phase-or-slug>
+1a. ADVISORY: advisory_scope.py --slug <slug> once the phase's acceptance file exists (#2262); exit 1 → the
+              plan advisory in /rails-flow:feature Phase 1 (--begin, the `plan-advisor` agent, a disposition per finding,
+              --stamp). The Stop gate and the sweep refuse a fix branch that skipped a required one
 1b. MOCK-UP:  a fix that changes what a user sees waits for an approved mock-up (#1376):
               check_mockup_gate.py --paths <files the fix will touch>; exit 1 → the mock-up
               gate in /rails-flow:feature Phase 1 (build it inside the app's shell, publish, STOP for

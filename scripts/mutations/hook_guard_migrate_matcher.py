@@ -14,7 +14,8 @@ GUARD = Guard(
     # Only the fixture groups that drive this subject (#1497): the whole harness per
     # mutant was ~70% of the mutation-coverage budget.
     selftest_args=("--only", "guard_migrate"),
-    needs=("plugins/rails-flow/scripts/fixture_git.py", 
+    needs=("plugins/rails-flow/scripts/advisory_scope.py", "plugins/rails-flow/scripts/security_scope.py", "plugins/rails-flow/scripts/check_threat_model.py", "plugins/rails-flow/scripts/detect_stack.py",  # stop-gate.sh runs advisory_scope.py (#2262)
+           "plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # session-start.sh runs all three (#1581, #1828: the harness drives it)
            'plugins/rails-stack/hooks/scripts',  # the hook script the fixtures drive (#2174)
            'plugins/rails-flow/hooks/scripts',

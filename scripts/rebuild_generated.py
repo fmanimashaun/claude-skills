@@ -48,6 +48,7 @@ BUILDERS = (
     ("mandated gems", "derive_mandated_gems.py", ("plugins/rails-flow/mandated_gems.json",)),
     ("architecture rules", "derive_architecture_rules.py", ("plugins/design-flow/reference/architecture-rules.json",)),
     ("tenancy cop", "derive_tenancy_cop.py", ("plugins/rails-stack/scaffold/",)),
+    ("component axes", "build_component_axes.py", ("plugins/rails-stack/skills/design-system/references/components.md", "plugins/rails-stack/skills/design-system/references/components-commerce.md")),
 )
 
 # A `scripts/*.py --check` gate that this script deliberately does NOT run, and why. Every entry is

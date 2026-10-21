@@ -148,6 +148,33 @@ unblock this one, editing outside the declared scope, disabling a guardrail or h
 below, and an executor cannot honour a bound nobody wrote down. See `/rails-flow:handoff` for the
 defaults and the reasoning.
 
+### The plan advisory — before Phase 2 (#2262)
+
+Once the criteria (and the work order, spec or threat model, when they exist) are written, ask whether the plan owes a Fable
+design review before anything is built:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/advisory_scope.py" --slug <slug>
+```
+
+Exit `0`: optional, or already recorded. Exit `1`: REQUIRED. The plan crosses a security boundary, changes structure (a
+plugin, agent, command, skill, hook, gate or descriptor key), the data model or a dependency, or spans six or more components.
+Then:
+
+1. `advisory_scope.py --begin --slug <slug>` writes the record header and a snapshot of the plan as reviewed.
+2. Run the `plan-advisor` agent (model `fable`) on the plan files; append its answer **verbatim** to
+   `docs/evidence/reviews/plans/<slug>/plan-advisor.md`.
+3. Answer every finding on its own line: `Disposition A-n: accepted | <what changed in the plan>`, `rejected | <why>`, or
+   `deferred | #<issue>`. Never drop one.
+4. Revise the plan for what you accepted, then `advisory_scope.py --stamp --slug <slug>`. It refuses when a finding is
+   undisposed, the revised plan triggers a category the review did not see, or more than 30% of it changed: run a new pass.
+5. `VERDICT: RETHINK` blocks until a fresh pass on the revised plan says PROCEED, or an
+   `Override: <who> | <reason, 20+ characters> | #<issue>` line records who decided.
+
+The Stop gate runs this check once criteria exist, and `project_gates.py` runs it in the sweep `gh pr ready` requires, so a
+required advisory cannot be skipped. Exit `2` means no plan files for the slug: write the criteria first.
+
+
 Post the plan **and the criteria** to the user, then proceed — the gates below are the control
 points, not a plan-approval pause. **The one exception is a change a user can see**; see the mock-up
 gate below. If the plan reveals genuine ambiguity about intent, ask first: criteria are the place

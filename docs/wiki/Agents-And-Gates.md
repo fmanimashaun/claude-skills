@@ -2,7 +2,7 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**38 shipped agents · 56 shipped commands · 5 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
+**39 shipped agents · 56 shipped commands · 5 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
@@ -11,7 +11,7 @@
 | `nextjs-stack` | 0.1.0 | — | — | — |
 | `pipeline` | 1.5.2 | 1 | 9 | 1 |
 | `qa-flow` | 1.39.0 | 11 | 8 | 11 |
-| `rails-flow` | 1.65.0 | 13 | 26 | 13 |
+| `rails-flow` | 1.65.0 | 14 | 26 | 14 |
 | `rails-stack` | 1.76.1 | 7 | — | 7 |
 
 ## Agents
@@ -62,6 +62,7 @@
 | `design-auditor` | mechanical · haiku | Read | — | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical · haiku | Read, Grep, Glob, Edit, Write, Bash | `/rails-flow:explain`, `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:setup-flow` | `architecture_graph.py` regenerates and its digest guard fails on drift |
 | `migration-writer` | judgement · inherit | Read | — | — |
+| `plan-advisor` | adversarial · fable | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:secure-design`, `/rails-flow:slice` | — |
 | `pr-reviewer` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:pr-comments`, `/rails-flow:retro` | — |
 | `rails-developer` | judgement · inherit | Read | — | — |
 | `security-auditor` | judgement · inherit | Read | `/rails-flow:feature`, `/rails-flow:secure-design` | — |
@@ -232,6 +233,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | checks.json paths selftest | `repo` | `python3 scripts/check_manifest_paths.py --selftest` | selftest |
 | claude plugin validate --strict | `repo` | `python3 scripts/check_plugin_validate.py` | live check |
 | close-on-dev-merge selftest | `repo` | `python3 scripts/close_on_dev_merge.py --selftest` | selftest |
+| component axes drift | `repo` | `python3 scripts/build_component_axes.py --check` | live check |
+| component axes selftest | `repo` | `python3 scripts/build_component_axes.py --selftest` | selftest |
 | component classes drift | `repo` | `python3 scripts/component_classes.py --check` | live check |
 | component classes selftest | `repo` | `python3 scripts/component_classes.py --selftest` | selftest |
 | component passthrough | `repo` | `python3 scripts/check_component_passthrough.py` | live check |
@@ -388,6 +391,7 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `design-auditor` | mechanical | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical | `architecture_graph.py` regenerates and its digest guard fails on drift |
 | `adversary` | adversarial | — |
+| `plan-advisor` | adversarial | — |
 
 ### `rails-stack`
 
