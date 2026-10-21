@@ -45,5 +45,12 @@ GUARD = Guard(
             '      *)',
             'called an environment problem, not a red suite',
         ),
+        Mutation(
+            # #2213 review: a skipped security check was printed only when the criteria failed.
+            "a passing gate stops saying the security check was skipped",
+            '          *"security check skipped"*)',
+            '          *"security check skipped NEVER"*)',
+            "criteria that pass with no threat model still say the security check was skipped",
+        ),
     ),
 )

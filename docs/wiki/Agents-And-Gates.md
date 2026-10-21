@@ -64,7 +64,7 @@
 | `migration-writer` | judgement · inherit | Read | — | — |
 | `pr-reviewer` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:pr-comments`, `/rails-flow:retro` | — |
 | `rails-developer` | judgement · inherit | Read | — | — |
-| `security-auditor` | judgement · inherit | Read | `/rails-flow:secure-design` | — |
+| `security-auditor` | judgement · inherit | Read | `/rails-flow:feature`, `/rails-flow:secure-design` | — |
 | `skill-curator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/rails-flow:curate` | — |
 | `spec-reviewer` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:retro`, `/rails-flow:spec` | — |
 | `test-runner` | mechanical · haiku | Read | — | `bundle exec rspec` exit status — 0 failures or the gate blocks |

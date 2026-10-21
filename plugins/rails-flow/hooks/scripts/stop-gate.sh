@@ -106,6 +106,12 @@ case "$branch" in
           } >&2
           exit 2
         fi
+        # A skipped security check is said even when the criteria pass (#2213 review): silence would read as "nothing owed".
+        case "$cout" in
+          *"security check skipped"*)
+            printf '%s\n' "$cout" | grep -F "security check skipped" >&2 || :
+            ;;
+        esac
       fi
     fi
     # ---------------------------------------------------------------------------------
