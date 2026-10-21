@@ -80,5 +80,47 @@ GUARD = Guard(
             "def walk_parts(parts: list) -> list[dict]:\n    return [p for p in parts if isinstance(p, dict)]",
             "a nested part is checked",
         ),
+        Mutation(
+            '#2272: an entry that declares no `variants` goes unreported',
+            '        if axis not in entry:',
+            '        if False:',
+            'an entry with no `variants` is reported',
+        ),
+        Mutation(
+            '#2272: an empty or duplicated list is accepted',
+            '            if not value or not all(isinstance(n, str) and n.strip() for n in value) or len(set(value)) != len(value):',
+            '            if False:',
+            'an empty list is reported',
+        ),
+        Mutation(
+            '#2272: the old `"enum"` placeholder, or any non-list non-none value, is accepted',
+            '        elif not (isinstance(value, dict) and set(value) == {"none"} and isinstance(value["none"], str) and value["none"].strip()):',
+            '        elif False:',
+            'the old `"enum"` placeholder is reported',
+        ),
+        Mutation(
+            '#2272: a section with no generated line, or a hand-edited one, goes unreported',
+            '    elif want is not None and marked != [want]:',
+            '    elif False:',
+            'a missing generated line is reported',
+        ),
+        Mutation(
+            '#2272: a stale generated line, for an entry that states no list, goes unreported',
+            '    if want is None and marked:',
+            '    if False:',
+            'a generated line for an entry that states no list is reported',
+        ),
+        Mutation(
+            '#2272: a declared name the prose never mentions goes unreported',
+            '            if not re.search(rf"(?<![\\w-]){re.escape(word)}(?![\\w-])", prose, re.I):',
+            '            if False:',
+            'a name the prose never mentions is reported',
+        ),
+        Mutation(
+            '#2272: the generated line counts as prose, so it vouches for its own names',
+            '    prose = "\\n".join(line for line in section.split("\\n") if not line.rstrip().endswith(AXES_MARK))',
+            '    prose = section',
+            'a name the prose never mentions is reported (the generated line does not count)',
+        ),
     ),
 )

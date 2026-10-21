@@ -214,8 +214,9 @@ def selftest() -> int:
 
     ROLES = {"--primary", "--foreground", "--card", "--border"}
     MD = "## Button\n- stuff\n\n## Card\n- stuff\n\n## The focus ring\n- doctrine\n"
-    OK = {"Button": {"shape": "control", "parts": [{"kind": "text", "color": "foreground"}]},
-          "Card": {"shape": "surface", "parts": [{"kind": "box", "fill": "card"}]}}
+    NONE = {"none": "a slot layout, not a variant enum"}
+    OK = {"Button": {"variants": NONE, "sizes": NONE, "shape": "control", "parts": [{"kind": "text", "color": "foreground"}]},
+          "Card": {"variants": NONE, "sizes": NONE, "shape": "surface", "parts": [{"kind": "box", "fill": "card"}]}}
     expect("a reconciled pair has no findings", check(MD, OK, ROLES) == [])
     expect("...and doctrine sections are not treated as components",
            "The focus ring" not in str(check(MD, OK, ROLES)))
@@ -249,24 +250,24 @@ def selftest() -> int:
            check(MD, {**OK, "Card": {"drawable": False, "why": "a chapter"}}, ROLES) == [])
     expect("an unknown shape kind is reported",
            any("not one of" in p
-               for p in check(MD, {**OK, "Card": {"shape": "blob", "parts": [{"kind": "box"}]}},
+               for p in check(MD, {**OK, "Card": {"variants": NONE, "sizes": NONE, "shape": "blob", "parts": [{"kind": "box"}]}},
                               ROLES)))
     expect("an unknown part kind is reported",
            any("does not draw" in p
-               for p in check(MD, {**OK, "Card": {"shape": "surface",
+               for p in check(MD, {**OK, "Card": {"variants": NONE, "sizes": NONE, "shape": "surface",
                                                   "parts": [{"kind": "hologram"}]}}, ROLES)))
     # A role the pack does not declare would be silently dropped at generation time.
     expect("an undeclared role is reported",
            any("does not declare" in p
-               for p in check(MD, {**OK, "Card": {"shape": "surface",
+               for p in check(MD, {**OK, "Card": {"variants": NONE, "sizes": NONE, "shape": "surface",
                                                   "parts": [{"kind": "box", "fill": "nope"}]}},
                               ROLES)))
     expect("a drawable entry with no parts is reported",
-           any("no parts" in p for p in check(MD, {**OK, "Card": {"shape": "surface"}}, ROLES)))
+           any("no parts" in p for p in check(MD, {**OK, "Card": {"variants": NONE, "sizes": NONE, "shape": "surface"}}, ROLES)))
     # Nested parts are checked too — a column's children are as capable of naming a bad role.
     expect("a nested part is checked",
            any("does not declare" in p
-               for p in check(MD, {**OK, "Card": {"shape": "surface", "parts": [
+               for p in check(MD, {**OK, "Card": {"variants": NONE, "sizes": NONE, "shape": "surface", "parts": [
                    {"kind": "column", "of": [{"kind": "box", "fill": "nope"}]}]}}, ROLES)))
 
     # THE DUPLICATED KIND LISTS used to be reconciled against `pen_library.py`, the generator that
@@ -274,6 +275,29 @@ def selftest() -> int:
     # this file -- so there is nothing left to disagree with. Deleted rather than pointed at a new
     # file: a reconciliation with one side is not a check, and leaving it would be a gate that
     # cannot fail. The kinds are still enforced against the sidecar itself, above.
+
+    # VARIANTS AND SIZES (#2272): one structured source, declared for every drawable entry, and the prose line derived from it.
+    BTN = {**OK["Button"], "variants": ["primary", "ghost"], "sizes": ["sm", "md"]}
+    LINE = axes_line(BTN)
+    AMD = "## Button\n" + LINE + "\n- Variants are `primary` and `ghost`; sizes sm and md.\n\n## Card\n- stuff\n"
+    expect("a list-bearing entry with its generated line and its names in the prose is clean", check(AMD, {"Button": BTN, "Card": OK["Card"]}, ROLES) == [])
+    def axes_findings(entry, md=AMD):
+        return " ".join(check(md, {"Button": entry, "Card": OK["Card"]}, ROLES))
+    expect("an entry with no `variants` is reported", "declares no `variants`" in axes_findings({k: v for k, v in BTN.items() if k != "variants"}))
+    expect("an entry with no `sizes` is reported", "declares no `sizes`" in axes_findings({k: v for k, v in BTN.items() if k != "sizes"}))
+    expect("the old `\"enum\"` placeholder is reported", "must be a list of names or" in axes_findings({**BTN, "variants": "enum"}))
+    expect("an empty list is reported", "non-empty list" in axes_findings({**BTN, "variants": []}))
+    expect("a duplicated name is reported", "distinct" in axes_findings({**BTN, "sizes": ["sm", "sm"]}))
+    expect("a `none` with no reason is reported", "must be a list of names or" in axes_findings({**BTN, "sizes": {"none": " "}}))
+    expect("a `none` with another key is reported", "must be a list of names or" in axes_findings({**BTN, "sizes": {"none": "r", "extra": 1}}))
+    expect("a non-drawable entry needs no variants or sizes", check(MD, {**OK, "Card": {"drawable": False, "why": "a rule"}}, ROLES) == [])
+    expect("a missing generated line is reported", "missing, duplicated or differs" in axes_findings(BTN, AMD.replace(LINE + "\n", "")))
+    expect("a hand-edited generated line is reported", "missing, duplicated or differs" in axes_findings(BTN, AMD.replace("`ghost`", "`GHOST`")))
+    expect("a duplicated generated line is reported", "missing, duplicated or differs" in axes_findings(BTN, AMD.replace(LINE + "\n", LINE + "\n" + LINE + "\n")))
+    expect("a generated line for an entry that states no list is reported", "carries a generated" in axes_findings(OK["Button"]))
+    expect("a name the prose never mentions is reported (the generated line does not count)", "never mentions" in axes_findings({**BTN, "variants": ["primary", "ghost", "outline"], "sizes": ["sm", "md"]},
+                                                                                                                              AMD.replace(LINE, axes_line({**BTN, "variants": ["primary", "ghost", "outline"]}))))
+    expect("`axes_line` states lists only", axes_line(OK["Button"]) is None and "sizes `sm` · `md`" in LINE)
 
     for f in failures:
         print(f"FAIL {f}")

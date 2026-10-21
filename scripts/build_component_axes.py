@@ -111,7 +111,7 @@ def selftest() -> int:
     expect("an entry that no longer states a list loses its line", ccs.AXES_MARK not in build(twice, shapes))
     hand = once.replace(line, line.replace("primary", "PRIMARY"))
     expect("a hand-edited line is overwritten by a rebuild", build(hand, {"Button": {"variants": ["primary", "ghost"], "sizes": {"none": "x"}}}) == once)
-    expect("a non-drawable entry is left alone", build(md, {"Button": {"drawable": False, "why": "w"}}) == md)
+    expect("a non-drawable entry is left alone, even one that carries a list", build(md, {"Button": {"drawable": False, "why": "w", "variants": ["a"], "sizes": {"none": "x"}}}) == md)
     expect("an empty catalogue builds the file unchanged", build(md, {}) == md)
     for f in failures:
         print(f"FAIL {f}")

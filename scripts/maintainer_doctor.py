@@ -262,6 +262,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/check_component_shapes.py")),
     ("component shapes selftest",
      ("python3", "scripts/check_component_shapes.py", "--selftest")),
+    # #2272. Each component's `Catalog axes` line in components.md is DERIVED from the catalog's variants and sizes; the generator's selftest, and the committed
+    # files against a clean build (the blob at HEAD).
+    ("component axes selftest",
+     ("python3", "scripts/build_component_axes.py", "--selftest")),
+    ("component axes drift",
+     ("python3", "scripts/build_component_axes.py", "--check")),
     # #360, and the same argument one skill along: the quality-pass worked example states how many
     # files carry each duplicated shape, and an extraction decision rests on those numbers. NOT a
     # duplication gate — nothing here refuses a copy. It refuses a number in shipped doctrine

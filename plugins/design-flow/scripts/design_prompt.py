@@ -30,8 +30,9 @@ THREE SOURCES, ALL REUSED RATHER THAN RE-PARSED:
   * the project's `@theme` block, via `palette_candidates` -- which already carries the
     `(?!\\s+inline)` carve-out that stops Tailwind's `--color-*` alias re-export shadowing the role it
     aliases. A second parser here would drift from that.
-  * `component-shapes.json` -- the catalog, 52 entries. Derived so that adding a component changes the
-    prompt with no edit; a hand-written list is stale the day one lands.
+  * `component-shapes.json` -- the catalog, 65 entries, read from THIS plugin's `catalog/` (#2272: the catalog is
+    stack-neutral design, so it lives with design-flow, not in a stack's skill). Derived so that adding a component
+    changes the prompt with no edit; a hand-written list is stale the day one lands.
   * the marked band block in `page-anatomies.md`, via `compose_brief.read_bands`, for the same reason
     `check_page_pacing` imports it rather than keeping its own.
 
@@ -86,9 +87,9 @@ def project_roles(theme_css: Path) -> tuple[dict[str, str], str | None]:
     return kept, None
 
 
-def catalog(refs: Path) -> tuple[list[str], str | None]:
-    """The component names a canvas may compose from. Derived from the shapes file."""
-    doc = refs / CATALOG
+def catalog(catalog_dir: Path) -> tuple[list[str], str | None]:
+    """The component names a canvas may compose from. Derived from the shapes file in `catalog_dir` (this plugin's `catalog/`)."""
+    doc = catalog_dir / CATALOG
     if not doc.is_file():
         return [], f"no {doc} — without the catalog the canvas will invent components"
     try:
@@ -226,7 +227,7 @@ def _selftest() -> int:
         check("a theme with only primitives is reported",
               problem is not None and "no role tokens" in problem)
 
-        refs = root / "references"; refs.mkdir()
+        refs = root / "catalog"; refs.mkdir()
         (refs / CATALOG).write_text(json.dumps({"_comment": "x", "Button": {}, "Card": {}}),
                                     encoding="utf-8")
         names, problem = catalog(refs)
@@ -315,10 +316,13 @@ def _selftest() -> int:
         _found = doctrine_path.find(Path(__file__).resolve())
         real_refs = (_found / "references") if _found else Path("/nonexistent")
         if (scripts / "design_prompt.py").is_file() and real_refs.is_dir():
-            for f in (CATALOG, ANATOMY):
+            for f in (ANATOMY,):
                 if (real_refs / f).is_file():
                     (refs_installed / f).write_text((real_refs / f).read_text(encoding="utf-8"),
                                                     encoding="utf-8")
+            # The catalog is design-flow's own (#2272): it sits beside the installed scripts, not in the stack's references.
+            (scripts.parent / "catalog").mkdir()
+            (scripts.parent / "catalog" / CATALOG).write_text((HERE.parent / "catalog" / CATALOG).read_text(encoding="utf-8"), encoding="utf-8")
             proc = subprocess.run([sys.executable, str(scripts / "design_prompt.py"),
                                    "--surface", "pricing"],
                                   capture_output=True, text=True, timeout=90, cwd=td)
@@ -344,7 +348,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--theme", type=Path, default=None,
                     help="the project's token file (default: the UI adapter's `tokens_file`, from the stack descriptor)")
     ap.add_argument("--refs", type=Path,
-                    help="design-system references dir (default: resolve from the plugin root)")
+                    help="design-system references dir, for the band sequence (default: resolve from the plugin root)")
+    ap.add_argument("--catalog-dir", type=Path, default=HERE.parent / "catalog",
+                    help="the directory holding component-shapes.json (default: this plugin's own catalog/)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
     if a.selftest:
@@ -387,7 +393,7 @@ def main(argv: list[str] | None = None) -> int:
         roles, p = project_roles(theme)
     if p:
         problems.append(p)
-    components, p = catalog(refs)
+    components, p = catalog(a.catalog_dir)
     if p:
         problems.append(p)
     bands, band_section, p = bands_for(refs, a.surface)

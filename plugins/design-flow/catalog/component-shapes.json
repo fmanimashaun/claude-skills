@@ -3,7 +3,7 @@
     "STRUCTURED SKELETONS for every row in components.md — the structured half of that file (#609).",
     "",
     "WHY A SIDECAR AND NOT PROSE. `components.md` describes anatomy, keyboard contract, ARIA and",
-    "Turbo behaviour, because that is what BUILDING a component requires. A recipe is in there too",
+    "interaction behaviour, because that is what BUILDING a component requires. A recipe is in there too",
     "(`bg-muted`, `text-step--1`), but embedded in sentences — and regex-parsing generated prose is",
     "the failure `derived-artifacts` exists to prevent. So the drawable skeleton lives here, in a",
     "form a generator can read without guessing, and the prose stays the thing a builder reads.",
