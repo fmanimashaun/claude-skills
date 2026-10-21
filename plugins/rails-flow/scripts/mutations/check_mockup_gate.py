@@ -9,7 +9,7 @@ GUARD = Guard(
     subject="scripts/check_mockup_gate.py",
     selftest="scripts/check_mockup_gate.py",   # --selftest lives in the module itself
     # The selftest also reads the scaffolded opt-out from setup-flow.md (#1496 review R8).
-    needs=("scripts/fixture_git.py", "scripts/classify_door.py", "commands/setup-flow.md"),
+    needs=("scripts/fixture_git.py", "scripts/classify_door.py", "commands/setup-flow.md", "reference/mockup-vocabulary.json"),
     mutations=(
         Mutation(
             "a UI change with no record passes",
@@ -557,6 +557,42 @@ GUARD = Guard(
             '    if _html_text(root, mock) is not None:\n        return None\n    what =',
             '    return None\n    what =',
             'an image mock-up passes on the reference alone, and says it is not an HTML file',
+        ),
+        Mutation(
+            'a record may have no Template line',
+            '    if not value:\n        return [f"{rel}: no `Template:` line',
+            '    if False:\n        return [f"{rel}: no `Template:` line',
+            'a record with no Template line is held',
+        ),
+        Mutation(
+            'an unknown template is accepted',
+            '    if name not in vocab["templates"]:',
+            '    if False:',
+            'an unknown template is held',
+        ),
+        Mutation(
+            'a template is matched case-insensitively',
+            '    if name not in vocab["templates"]:',
+            '    if name.lower() not in vocab["templates"]:',
+            "a template's case matters",
+        ),
+        Mutation(
+            '`system` needs no sub-kind',
+            '        if sub not in vocab["system_subkinds"]:',
+            '        if False:',
+            '`system` with no sub-kind is held',
+        ),
+        Mutation(
+            'any template may carry a sub-kind',
+            '    elif sub:\n        return [f"{rel}: only `system`',
+            '    elif False:\n        return [f"{rel}: only `system`',
+            'a sub-kind on a template that takes none is held',
+        ),
+        Mutation(
+            'an empty vocabulary list is accepted',
+            '    return data if ok else None',
+            '    return data',
+            'a no templates vocabulary refuses every record',
         ),
     ),
 )

@@ -57,6 +57,7 @@ Stdlib only; git is read like classify_door.py reads it, through the same helper
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 from html.parser import HTMLParser
@@ -83,6 +84,9 @@ RECORD_KEYS = ("Mock-up", "Issue", "Approved-by", "Approval", "Widths", "States"
 # The shell (#2211): one record every other record points at.
 SHELL_RECORD = RECORD_DIR + "shell.md"
 SHELL_KEYS = ("Kind", "Shell", "Shell-sources", "Shell-keep", "Shell-signature")
+# The design lines of a screen record (#2226); their allowed values are in reference/mockup-vocabulary.json, the one list.
+DESIGN_KEYS = ("Template",)
+VOCABULARY = Path(__file__).resolve().parents[1] / "reference" / "mockup-vocabulary.json"
 LANDMARKS = frozenset(("header", "nav", "main", "footer", "aside"))
 SHELL_MIN_TOKENS = 3
 HTML_MOCK = re.compile(r"\.html?$", re.I)
@@ -474,7 +478,7 @@ def read_fields(path: Path) -> dict[str, str]:
     fields: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         m = re.match(r"^\s*(?:[-*]\s*)?\**([A-Za-z-]+)\**:\s*(.*?)\s*$", line)
-        if m and m.group(1) in RECORD_KEYS + SHELL_KEYS:
+        if m and m.group(1) in RECORD_KEYS + SHELL_KEYS + DESIGN_KEYS:
             fields[m.group(1)] = m.group(2)
     return fields
 
@@ -608,6 +612,34 @@ def adopt_shell(root: Path, sources: list[str], approval: str, approved_by: str,
         [f"the mock-ups also share {signature_line([t for t in derived if t not in chosen])}: dropped by --keep"] if chosen != derived else [])
 
 
+def load_vocabulary() -> dict | None:
+    """The allowed values (reference/mockup-vocabulary.json), or None when the file is missing or unreadable: the gate then refuses, it never guesses."""
+    try:
+        data = json.loads(VOCABULARY.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    ok = (isinstance(data, dict) and all(isinstance(data.get(k), list) and data[k] and all(isinstance(x, str) and x for x in data[k])
+                                         for k in ("templates", "system_subkinds", "states"))
+          and isinstance(data.get("nav_max_level"), int) and data["nav_max_level"] >= 1)
+    return data if ok else None
+
+
+def template_problems(rel: str, fields: dict[str, str], vocab: dict) -> list[str]:
+    """`Template: <name>`, or `Template: system: <sub-kind>`, from the vocabulary."""
+    value = fields.get("Template", "")
+    if not value:
+        return [f"{rel}: no `Template:` line: name the page template this screen is ({', '.join(vocab['templates'])})"]
+    name, _, sub = (part.strip() for part in value.partition(":"))
+    if name not in vocab["templates"]:
+        return [f"{rel}: Template {value!r} is not one of {', '.join(vocab['templates'])}"]
+    if name == "system":
+        if sub not in vocab["system_subkinds"]:
+            return [f"{rel}: Template `system` takes a sub-kind, `system: <{'|'.join(vocab['system_subkinds'])}>`, got {value!r}"]
+    elif sub:
+        return [f"{rel}: only `system` takes a sub-kind; got {value!r}"]
+    return []
+
+
 def record_problems(root: Path, rel: str) -> list[str]:
     path = root / rel
     if not path.is_file():
@@ -649,6 +681,11 @@ def record_problems(root: Path, rel: str) -> list[str]:
     elif is_shell:
         out += shell_record_problems(root, rel, fields)
     else:
+        vocab = load_vocabulary()
+        if vocab is None:
+            out.append(f"{rel}: {VOCABULARY.name} is missing or unreadable, so the design lines cannot be checked (the gate refuses rather than guess)")
+        else:
+            out += template_problems(rel, fields, vocab)
         out += shell_reference_problems(root, rel, fields)
     return out
 
@@ -696,6 +733,7 @@ Approval: https://github.com/acme/app/issues/12#issuecomment-99
 Widths: 1280, 390
 States: default, empty, error
 Shell: docs/product/mockups/shell.md
+Template: list
 """
 
 # Two screens of one shell: they share header, nav, main#main and #toasts; #screen-a and #screen-b are content (#2211).
@@ -783,6 +821,39 @@ def selftest() -> int:
         (root / "GUARDRAILS.md").unlink()
         code, msg = with_record(GOOD.replace("Issue: #12", "Issue: the bell one"))
         check_that("a record that names no issue is held", code == 1 and any("Issue" in m for m in msg), msg)
+        # #2226: the page template, from the one vocabulary.
+        code, msg = with_record(GOOD.replace("Template: list\n", ""))
+        check_that("#2226: a record with no Template line is held", code == 1 and any("no `Template:` line" in m for m in msg), msg)
+        code, msg = with_record(GOOD.replace("Template: list", "Template: carousel"))
+        check_that("#2226: an unknown template is held, and the message lists the allowed ones",
+                   code == 1 and any("carousel" in m and "create-edit" in m for m in msg), msg)
+        code, msg = with_record(GOOD.replace("Template: list", "Template: List"))
+        check_that("#2226: a template's case matters (the vocabulary is exact)", code == 1, msg)
+        for tmpl in ("list", "detail", "create-edit", "multi-step", "dashboard", "settings", "search-results", "sign-in",
+                     "system: not-found", "system: no-permission", "system: error", "system: maintenance"):
+            code, msg = with_record(GOOD.replace("Template: list", f"Template: {tmpl}"))
+            check_that(f"#2226 CONTROL: Template `{tmpl}` is accepted", code == 0, msg)
+        code, msg = with_record(GOOD.replace("Template: list", "Template: system"))
+        check_that("#2226: `system` with no sub-kind is held", code == 1 and any("sub-kind" in m for m in msg), msg)
+        code, msg = with_record(GOOD.replace("Template: list", "Template: system: gone"))
+        check_that("#2226: `system` with an unknown sub-kind is held", code == 1 and any("sub-kind" in m for m in msg), msg)
+        code, msg = with_record(GOOD.replace("Template: list", "Template: list: compact"))
+        check_that("#2226: a sub-kind on a template that takes none is held", code == 1 and any("only `system`" in m for m in msg), msg)
+        # A missing or corrupt vocabulary refuses; it never lets a record through unchecked.
+        real = globals()["VOCABULARY"]
+        try:
+            for label, text in (("missing", None), ("not JSON", "{"), ("no templates", '{"templates": [], "system_subkinds": ["x"], "states": ["y"], "nav_max_level": 3}')):
+                bad = root / "vocab.json"
+                bad.unlink(missing_ok=True)
+                if text is not None:
+                    bad.write_text(text)
+                globals()["VOCABULARY"] = bad
+                code, msg = with_record(GOOD)
+                check_that(f"#2226: a {label} vocabulary refuses every record", code == 1 and any("missing or unreadable" in m for m in msg), msg)
+        finally:
+            globals()["VOCABULARY"] = real
+        code, msg = with_record(GOOD)
+        check_that("#2226 CONTROL: the real vocabulary is back and the record passes", code == 0, msg)
         (rec / "README.md").write_text("# How mock-up records work\n")
         code, msg = run(root, view + ["docs/product/mockups/README.md", "docs/product/mockups/bell.md"], None)
         check_that("CONTROL: a README in the records folder is not a record", code == 0, msg)
