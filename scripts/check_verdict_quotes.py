@@ -42,6 +42,8 @@ describes: the verifier still states both. A shell is recognised by how little t
 reads as INCONCLUSIVE: that errs toward refusing. An inline tag is removed without a space, so two words a page joins only by markup (`foo<b>bar</b>`)
 read as one word, where a reader may see two; and text a stylesheet hides (a class, not an inline style) is counted as visible. Both err toward
 accepting a phrase the reader could not read, so a phrase that matters should be checked on the page by eye as well.
+A verdict written as a CODE (`C`, `C*`, `OK`, a tick) is OUTSIDE this check: it sees only `Verdict: CONFIRMED` and a table cell that is exactly CONFIRMED.
+A claims file must use that marker for the verdict, or nothing in it is read.
 
 Stdlib only. Fetching needs a network, so this is a verifier's tool and the maintainer's, not a gate that runs in CI; the gate is `--format-check`
 and `--selftest`, which are offline.
