@@ -1173,6 +1173,19 @@
    "via": "declared"
   },
   {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/design-flow/catalog/component-shapes.json",
+   "plugin": "design-flow",
+   "proven": false,
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
    "class": "rails",
    "issue": 2178,
    "nextjs_lines": 0,
@@ -7824,7 +7837,7 @@
    "path": "plugins/rails-stack/skills/design-system",
    "plugin": "rails-stack",
    "proven": false,
-   "rails_lines": 489,
+   "rails_lines": 488,
    "registered": [],
    "seam": "neutral catalog plus Rails implementation references; the Rails half moves to a rails-stack skill",
    "type": "skill",

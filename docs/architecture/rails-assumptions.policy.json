@@ -535,6 +535,13 @@
    },
    {
     "match": [
+     "plugins/design-flow/catalog/*"
+    ],
+    "class": "neutral",
+    "why": "the scan finds no Rails or Next.js reference in it; a hit is a finding"
+   },
+   {
+    "match": [
      "plugins/design-flow/commands/*"
     ],
     "class": "neutral",
