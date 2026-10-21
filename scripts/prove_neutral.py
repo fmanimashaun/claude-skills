@@ -100,8 +100,17 @@ def fixtures(base: Path) -> dict[str, Path]:
     return made
 
 
+def real_git() -> str | None:
+    """The `git` on PATH that is not a guard shim (`.../git-shim/git`): a component run under the harness must not depend on the invoking session's shim."""
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = Path(entry) / "git"
+        if entry and "git-shim" not in entry and candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return "/usr/bin/git" if Path("/usr/bin/git").is_file() else None
+
+
 def environment(base: Path, log: Path, project: Path, plugin_root: Path | None = None) -> dict[str, str]:
-    tools = [str(Path(sys.executable).parent), *(str(Path(p).parent) for p in (shutil.which("git"),) if p), "/usr/bin", "/bin"]
+    tools = [str(Path(sys.executable).parent), *(str(Path(p).parent) for p in (real_git(),) if p), "/usr/bin", "/bin"]
     env = {"PATH": os.pathsep.join([str(base / "tripwire"), *dict.fromkeys(tools)]), "HOME": str(base / "home"), "TMPDIR": str(base / "tmp"),
            "LANG": "C.UTF-8", "PROVE_TRIPWIRE_LOG": str(log), "CLAUDE_PROJECT_DIR": str(project), "GIT_CONFIG_GLOBAL": os.devnull}
     if plugin_root is not None:
@@ -299,6 +308,7 @@ def _selftest() -> int:
         check("a script that needs arguments is not proven, not a finding", run_script(plug / "usage.py", nj, base)[0] == "notproven")
         (plug / "fine.py").write_text("print('ok')\n", encoding="utf-8")
         check("a script that runs clean is proven clean", run_script(plug / "fine.py", nj, base)[0] == "clean")
+        check("the harness's git is never a guard shim", "git-shim" not in (real_git() or ""))
         check("the Next.js fixture has no Gemfile and a next dependency", not (nj / "Gemfile").exists() and "next" in (nj / "package.json").read_text(encoding="utf-8"))
         check("the empty fixture holds no app code", not (projects["empty"] / "app").exists())
     proof = {"floor": 2, "proven": ["a", "b"]}

@@ -268,7 +268,7 @@
    "nextjs_lines": 0,
    "path": "plugins/design-flow/scripts/asset_home.py",
    "plugin": "design-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -359,7 +359,7 @@
    "nextjs_lines": 0,
    "path": "plugins/design-flow/scripts/check_scale_contiguity.py",
    "plugin": "design-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -463,7 +463,7 @@
    "nextjs_lines": 0,
    "path": "plugins/design-flow/scripts/doctrine_path.py",
    "plugin": "design-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -671,7 +671,7 @@
    "nextjs_lines": 0,
    "path": "plugins/design-flow/checks.json#port-fidelity",
    "plugin": "design-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -1464,7 +1464,7 @@
    "nextjs_lines": 0,
    "path": "plugins/pipeline/hooks/scripts/board-refresh.sh",
    "plugin": "pipeline",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [
     "Stop"
@@ -1505,7 +1505,7 @@
    "nextjs_lines": 0,
    "path": "plugins/pipeline/hooks/scripts/pipeline-status.sh",
    "plugin": "pipeline",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [
     "SessionStart"
@@ -1559,7 +1559,7 @@
    "nextjs_lines": 0,
    "path": "plugins/pipeline/scripts/install-git-guards.sh",
    "plugin": "pipeline",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -2248,7 +2248,7 @@
    "nextjs_lines": 0,
    "path": "plugins/qa-flow/hooks/scripts/qa-status.sh",
    "plugin": "qa-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [
     "SessionStart"
@@ -2263,7 +2263,7 @@
    "nextjs_lines": 0,
    "path": "plugins/qa-flow/hooks/scripts/release-gate.sh",
    "plugin": "qa-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [
     "PreToolUse Bash"
@@ -2512,7 +2512,7 @@
    "nextjs_lines": 0,
    "path": "plugins/qa-flow/scripts/read_certification.py",
    "plugin": "qa-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -2668,7 +2668,7 @@
    "nextjs_lines": 0,
    "path": "plugins/qa-flow/checks.json#layout-fit",
    "plugin": "qa-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -2681,7 +2681,7 @@
    "nextjs_lines": 0,
    "path": "plugins/qa-flow/checks.json#link-audit",
    "plugin": "qa-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -2694,7 +2694,7 @@
    "nextjs_lines": 0,
    "path": "plugins/qa-flow/checks.json#qa-e2e-paths",
    "plugin": "qa-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -2720,7 +2720,7 @@
    "nextjs_lines": 0,
    "path": "plugins/qa-flow/checks.json#qa-evidence-manifest",
    "plugin": "qa-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -2785,7 +2785,7 @@
    "nextjs_lines": 0,
    "path": "plugins/qa-flow/checks.json#text-resize",
    "plugin": "qa-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -2811,7 +2811,7 @@
    "nextjs_lines": 0,
    "path": "plugins/qa-flow/checks.json#visual-regression",
    "plugin": "qa-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -4215,7 +4215,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/hooks/scripts/ci-verdict-hint.sh",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [
     "PostToolUse Bash",
@@ -4246,7 +4246,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/hooks/scripts/guard-claims.sh",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [
     "PreToolUse Bash"
@@ -4291,7 +4291,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/hooks/scripts/guard-pr-ready.sh",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [
     "PreToolUse Bash"
@@ -4306,7 +4306,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/hooks/scripts/guard-worktree.sh",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [
     "PreToolUse Bash"
@@ -4481,7 +4481,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/hooks/scripts/session-end.sh",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [
     "SessionEnd"
@@ -4496,7 +4496,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/hooks/scripts/session-start.sh",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [
     "SessionStart"
@@ -4526,7 +4526,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/hooks/scripts/stop-where.sh",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [
     "Stop"
@@ -4556,7 +4556,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/hooks/scripts/wip-commit.sh",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [
     "Stop"
@@ -4727,7 +4727,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/check_drift_signal.py",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -4883,7 +4883,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/check_memory_index.py",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -4974,7 +4974,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/check_project_settings.py",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -5182,7 +5182,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/compose_state.py",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -5377,7 +5377,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/resume_lanes.py",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -5455,7 +5455,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/statusline.py",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -5598,7 +5598,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/checks.json#brain-local-sync",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -5728,7 +5728,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/checks.json#human-guide",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -5819,7 +5819,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/checks.json#memory-systems",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -5897,7 +5897,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/checks.json#registry-closed",
    "plugin": "rails-flow",
-   "proven": false,
+   "proven": true,
    "rails_lines": 0,
    "registered": [],
    "seam": "",
@@ -7687,6 +7687,6 @@
    }
   },
   "components": 579,
-  "neutral_proven": 0
+  "neutral_proven": 34
  }
 }
