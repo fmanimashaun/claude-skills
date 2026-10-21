@@ -305,6 +305,8 @@ def selftest() -> int:
         check_that(f"agents/kamal-configurator.md never names pipeline's {tool} by path (it is handed over)",
                    f"scripts/{tool}" not in text)
     check_that("agents/kamal-configurator.md names no pipeline-root reference file", "reference/stop-conditions.md" not in text)
+    check_that("agents/kamal-configurator.md makes a missing handed-over path a STOP",
+               "A missing or unopenable one is a STOP" in text and "Do not look for a copy" in text)
     for var in ("BREAKER", "SECRET_SCAN", "APM_ADVISORY", "STOP_CONDITIONS"):
         check_that(f"agents/kamal-configurator.md uses the handed-over ${var}", f"${var}" in text)
 
