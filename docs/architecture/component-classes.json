@@ -1594,6 +1594,18 @@
    "class": "neutral",
    "issue": null,
    "nextjs_lines": 0,
+   "path": "plugins/pipeline/scripts/mutations/deploy_target.py",
+   "plugin": "pipeline",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests deploy_target.py"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
    "path": "plugins/pipeline/scripts/mutations/git_guard_pre_commit.py",
    "plugin": "pipeline",
    "rails_lines": 3,
@@ -6991,6 +7003,18 @@
   },
   {
    "class": "rails",
+   "issue": 2179,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/reference/model-tiers.md",
+   "plugin": "rails-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
    "issue": 2182,
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/setup/rails.md",
@@ -7018,9 +7042,9 @@
  "summary": {
   "by_class": {
    "mixed": 199,
-   "neutral": 270,
+   "neutral": 271,
    "nextjs": 3,
-   "rails": 109
+   "rails": 110
   },
   "by_plugin": {
    "design-flow": {
@@ -7046,10 +7070,10 @@
    },
    "pipeline": {
     "mixed": 17,
-    "neutral": 33,
+    "neutral": 34,
     "nextjs": 0,
     "rails": 0,
-    "total": 50
+    "total": 51
    },
    "qa-flow": {
     "mixed": 52,
@@ -7069,8 +7093,8 @@
     "mixed": 3,
     "neutral": 2,
     "nextjs": 0,
-    "rails": 8,
-    "total": 13
+    "rails": 9,
+    "total": 14
    }
   },
   "by_type": {
@@ -7120,17 +7144,17 @@
     "mixed": 15,
     "neutral": 34,
     "nextjs": 3,
-    "rails": 5,
-    "total": 57
+    "rails": 6,
+    "total": 58
    },
    "test": {
     "mixed": 59,
-    "neutral": 96,
+    "neutral": 97,
     "nextjs": 0,
     "rails": 30,
-    "total": 185
+    "total": 186
    }
   },
-  "components": 581
+  "components": 583
  }
 }

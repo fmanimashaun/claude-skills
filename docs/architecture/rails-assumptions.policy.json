@@ -741,6 +741,7 @@
    {
     "match": [
      "plugins/rails-stack/agents/*",
+     "plugins/rails-stack/reference/*",
      "plugins/rails-stack/scripts/*",
      "plugins/rails-stack/scripts/mutations/*"
     ],
