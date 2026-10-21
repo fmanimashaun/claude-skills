@@ -52,38 +52,38 @@ GUARD = Guard(
         ),
         Mutation(
             "a comment, blank or block-comment line is accepted as the line that implements a control",
-            "                elif int(ev.group(2)) in non_code_lines(src, *rules_for(ev.group(1), code_syntax(root))):",
+            "                elif int(ev.group(2)) in non_code_lines(src, *rules_for(ev.group(1), code_syntax(root), data_markers(root))):",
             "                elif False:",
             "evidence on a comment line is incomplete",
         ),
         Mutation(
             # #2119 stack-neutral: a stack's own block comments and heredocs come from its descriptor's code_syntax.
             "the stack's code_syntax is ignored, so a line inside the stack's own block comment counts as code",
-            "                elif int(ev.group(2)) in non_code_lines(src, *rules_for(ev.group(1), code_syntax(root))):",
+            "                elif int(ev.group(2)) in non_code_lines(src, *rules_for(ev.group(1), code_syntax(root), data_markers(root))):",
             "                elif int(ev.group(2)) in non_code_lines(src):",
             "evidence inside a stack block comment is incomplete",
         ),
         Mutation(
             "a block comment never closes, so the code after it reads as comment",
-            "            if closing in raw:\n                closing = None",
+            "            if (raw.startswith(close) if col0 else close in raw):\n                closing = None",
             "            if False:\n                closing = None",
             "evidence on code after a block comment passes",
         ),
         Mutation(
             "a heredoc body counts as code",
-            '            heredocs = [m.group("id") for m in heredoc.finditer(raw)]',
+            '            heredocs = [(m.group("id"), bool(re.match(r"<<[~-]", m.group(0)))) for m in heredoc.finditer(raw)]',
             "            heredocs = []",
             "evidence inside a heredoc body is incomplete",
         ),
         Mutation(
             "only the first of several heredocs on one line is tracked",
-            '            heredocs = [m.group("id") for m in heredoc.finditer(raw)]',
-            '            heredocs = [m.group("id") for m in heredoc.finditer(raw)][:1]',
+            '            heredocs = [(m.group("id"), bool(re.match(r"<<[~-]", m.group(0)))) for m in heredoc.finditer(raw)]',
+            '            heredocs = [(m.group("id"), bool(re.match(r"<<[~-]", m.group(0)))) for m in heredoc.finditer(raw)][:1]',
             "evidence in the second of two heredocs opened on one line is incomplete",
         ),
         Mutation(
             "a committed symlink is read through, so its target path reads as code",
-            '    if tree.returncode != 0 or not tree.stdout.strip() or tree.stdout.split()[0] == "120000":',
+            '    if tree.returncode != 0 or not tree.stdout.strip() or tree.stdout.split()[0] not in ("100644", "100755"):',
             "    if tree.returncode != 0 or not tree.stdout.strip():",
             "a committed symlink is refused, never read through its target",
         ),
@@ -101,16 +101,59 @@ GUARD = Guard(
         ),
         Mutation(
             "the evidence file is read from the working tree, not HEAD",
-            '    if tree.returncode != 0 or not tree.stdout.strip() or tree.stdout.split()[0] == "120000":\n        return None  # not in HEAD, or a symlink: `git show` of a link prints its target path, which would read as code\n    proc = subprocess.run(["git", "-C", str(root), "show", f"HEAD:{p.as_posix()}"], capture_output=True)',
+            '    if tree.returncode != 0 or not tree.stdout.strip() or tree.stdout.split()[0] not in ("100644", "100755"):\n        return None  # not in HEAD, a symlink (`git show` prints its target, which would read as code), a directory or a submodule\n    proc = subprocess.run(["git", "-C", str(root), "show", f"HEAD:{p.as_posix()}"], capture_output=True)',
             '    proc = type("P", (), {"returncode": 0 if (root / p).is_file() else 1, "stdout": (root / p).read_bytes() if (root / p).is_file() else b""})()',
             "evidence in a file that exists only in the working tree is refused",
         ),
         Mutation(
             # #2214 review: a column0 opener (a language that honours it only there) matched after indentation and hid real code.
             "a column0 block opener is matched after indentation again",
-            "        opened = next(((o, c) for o, c, col0 in blocks if (raw if col0 else t).startswith(o)), None)",
-            "        opened = next(((o, c) for o, c, col0 in blocks if t.startswith(o)), None)",
+            "        opened = next(((o, c, col0) for o, c, col0 in blocks if (raw if col0 else t).startswith(o)), None)",
+            "        opened = next(((o, c, col0) for o, c, col0 in blocks if t.startswith(o)), None)",
             "an indented column0 opener is code",
+        ),
+        Mutation(
+            # #2214 adversary: a mid-line or indented closer closed a column0 block.
+            "a column0 block closes anywhere on a line again",
+            "            if (raw.startswith(close) if col0 else close in raw):",
+            "            if close in raw:",
+            "an indented closer does not close a column0 block",
+        ),
+        Mutation(
+            "a span opener after code on the same line is ignored again",
+            "            if not col0 and at > 0 and c not in raw[at + len(o):]:",
+            "            if False:",
+            "a span opened after code hides the lines below",
+        ),
+        Mutation(
+            "a bare heredoc ends at an indented terminator again",
+            "            if (t if indented else raw) == ident:",
+            "            if t == ident:",
+            "an indented line is not a bare heredoc's terminator",
+        ),
+        Mutation(
+            "a data marker stops ending code",
+            "        if raw in end_markers:",
+            "        if False:",
+            "lines after a data marker are not code",
+        ),
+        Mutation(
+            "a directory or other non-file mode is read again",
+            '    if tree.returncode != 0 or not tree.stdout.strip() or tree.stdout.split()[0] not in ("100644", "100755"):',
+            '    if tree.returncode != 0 or not tree.stdout.strip() or tree.stdout.split()[0] == "120000":',
+            "a directory is never read as a cited file",
+        ),
+        Mutation(
+            "an undeclared file type falls back to neutral rules again",
+            "                elif not declared(ev.group(1), code_syntax(root)):",
+            "                elif False:",
+            "a file type no stack declares is refused",
+        ),
+        Mutation(
+            "a row answered twice is last-wins again",
+            "            if n in answers:",
+            "            if False:",
+            "a row answered twice is refused",
         ),
     ),
 )

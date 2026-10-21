@@ -28,7 +28,7 @@
                       "column0": true
                     }
                   ],
-                  "heredoc": "<<[~-]?([\"']?)(?P<id>[A-Z_][A-Z0-9_]*)\\1"
+                  "heredoc": "<<[~-]?([\"'`]?)(?P<id>[A-Za-z_]\\w*)\\1"
                 },
                 {
                   "extensions": [
@@ -46,7 +46,16 @@
                       "column0": false
                     }
                   ],
-                  "heredoc": "<<[~-]?([\"']?)(?P<id>[A-Z_][A-Z0-9_]*)\\1"
+                  "heredoc": "<<[~-]?([\"'`]?)(?P<id>[A-Za-z_]\\w*)\\1"
+                }
+              ],
+            "data_markers": [
+                {
+                  "extensions": [
+                    ".rb",
+                    ".rake"
+                  ],
+                  "marker": "__END__"
                 }
               ],
             "scanners": [

@@ -100,5 +100,65 @@
       "=end"
     ],
     "non_code": []
+  },
+  {
+    "name": "`__END__` at column 0 ends code for the rest of the file; indented it is code",
+    "file": "app/models/e.rb",
+    "lines": [
+      "def x",
+      "  __END__",
+      "end",
+      "__END__",
+      "data = 1",
+      "more"
+    ],
+    "non_code": [
+      4,
+      5,
+      6
+    ]
+  },
+  {
+    "name": "a lowercase and a backtick-quoted heredoc are heredocs; a bare one ends only at column 0",
+    "file": "app/models/f.rb",
+    "lines": [
+      "a = <<~eos",
+      "  body",
+      "  eos",
+      "b = <<`CMD`",
+      "ls",
+      "CMD",
+      "c = <<END",
+      "  END",
+      "END",
+      "done"
+    ],
+    "non_code": [
+      2,
+      3,
+      5,
+      6,
+      8,
+      9
+    ]
+  },
+  {
+    "name": "a mid-line or indented `=end` does not close `=begin`",
+    "file": "app/models/g.rb",
+    "lines": [
+      "=begin",
+      "x =end",
+      "  =end",
+      "hidden",
+      "=end",
+      "code"
+    ],
+    "non_code": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
   }
 ]

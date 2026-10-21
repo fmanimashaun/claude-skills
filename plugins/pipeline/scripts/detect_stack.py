@@ -258,7 +258,9 @@ DESCRIPTOR_SCHEMA: dict = {
     "security": {"checklist": STR, "scanners": STRS, "cases": STR, "syntax_cases": STR,
                  "code_syntax": [{"extensions": STRS, "block_comments": [{"open": STR, "close": STR, "column0": BOOL}], "heredoc": STR}],
                  "boundary_text": [{"boundary": STR, "pattern": STR}],
-                 "boundary_paths": [{"boundary": STR, "pattern": STR}]},
+                 "boundary_paths": [{"boundary": STR, "pattern": STR}],
+                 # data_markers (#2214): a line that is exactly the marker (an end-of-code line such as `__END__`) ends code for the rest of the file.
+                 "data_markers": [{"extensions": STRS, "marker": STR}]},
     "scripts": {"*": STR},
     "review_checklist": STRS,
 }

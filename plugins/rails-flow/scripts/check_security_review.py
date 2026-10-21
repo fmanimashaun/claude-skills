@@ -25,8 +25,14 @@ verbatim. It counts only with a line `Head: <sha>` that is a prefix of the CURRE
   * `transfer` and `eliminate` rows may be answered the same way and are not required.
 A row the model has and the record omits, or a row the record names that the model lacks, is exit 1: the record answers another model.
 
-LIMITS. It proves the record is current, complete and cites a line of code that exists, not that the cited line implements the control; the code-line reading is line-by-line, so a `<<ID` or a comment marker inside a string is misread, and a file that is not code at all (README.md) still counts as code; that is the
-auditor's work and the reviewer's. Nothing stops a session that writes the record by hand, as with `risky_diff.py`. The model is found only
+STRICT (#2214 adversary). A cited file must be a regular file (mode 100644 or 100755) whose type a detected stack declares in
+`security.code_syntax`; any other file type is refused ("declare this file type's comment syntax"), never read with neutral rules. A row
+answered twice is refused, never "last wins".
+
+LIMITS. It proves the record is current, complete and cites a line of code that exists, not that the cited line implements the control. The
+code-line reading is line-by-line, not a parser: a `<<ID` or a comment marker inside a string is misread; a language's multi-line string
+literals (a percent-literal, a quoted string spanning lines) read as code; dead code (`if false`) reads as code; a byte-order mark before line 1
+makes a column-0 opener on line 1 not count. That is the auditor's work and the reviewer's. Nothing stops a session that writes the record by hand, as with `risky_diff.py`. The model is found only
 when the change adds or edits it, so a unit that has a boundary and no model is `security_scope.py`'s concern, not this check's.
 """
 from __future__ import annotations
@@ -56,34 +62,56 @@ EVIDENCE_RE = re.compile(r"([\w./@+-]+\.\w+):(\d+)")
 NEUTRAL_BLOCKS: tuple[tuple[str, str, bool], ...] = (("/*", "*/", False),)
 
 
-def non_code_lines(lines: list[str], blocks: tuple[tuple[str, str, bool], ...] = NEUTRAL_BLOCKS, heredoc: "re.Pattern | None" = None) -> set[int]:
-    """1-based numbers of lines that are not code: blank, a `#` or `//` comment, inside a block comment (`blocks`: open, close),
-    or the body (and terminator) of a heredoc (`heredoc`). A line-by-line reading, not a parser: a heredoc opener inside a string
-    or a comment still opens one, and a comment marker inside a string closes nothing."""
+def non_code_lines(lines: list[str], blocks: tuple[tuple[str, str, bool], ...] = NEUTRAL_BLOCKS, heredoc: "re.Pattern | None" = None,
+                   end_markers: tuple[str, ...] = ()) -> set[int]:
+    """1-based numbers of lines that are not code: blank, a `#` or `//` comment, inside a block comment (`blocks`: open, close, column0),
+    the body (and terminator) of a heredoc (`heredoc`), or anything from a data marker on (`end_markers`, a line that is exactly the
+    marker, such as `__END__` in a language that has one). A line-by-line reading, not a parser: a heredoc opener inside a string or a comment still opens
+    one, and a comment marker inside a string closes nothing.
+
+    A column0 block opens and closes only at the very start of the raw line (#2214 adversary: an indented or mid-line `=end` closes
+    nothing). Any other block opens wherever its opener appears, after code on the same line too (`foo(); /* begin`), and closes at the
+    first closer after it. A heredoc opened with `~` or `-` ends at a line that is its terminator after stripping; a bare one ends only at
+    a line that is exactly the terminator."""
     out: set[int] = set()
-    closing: str | None = None
-    heredocs: list[str] = []
+    closing: tuple[str, bool] | None = None
+    heredocs: list[tuple[str, bool]] = []
     for n, raw in enumerate(lines, 1):
+        raw = raw.rstrip("\r\n")
         t = raw.strip()
+        if raw in end_markers:
+            out.update(range(n, len(lines) + 1))
+            break
         if heredocs:
             out.add(n)
-            if t == heredocs[0]:
+            ident, indented = heredocs[0]
+            if (t if indented else raw) == ident:
                 heredocs.pop(0)
             continue
         if closing is not None:
             out.add(n)
-            if closing in raw:
+            close, col0 = closing
+            if (raw.startswith(close) if col0 else close in raw):
                 closing = None
             continue
-        opened = next(((o, c) for o, c, col0 in blocks if (raw if col0 else t).startswith(o)), None)
+        opened = next(((o, c, col0) for o, c, col0 in blocks if (raw if col0 else t).startswith(o)), None)
         if opened:
             out.add(n)
-            if opened[1] not in t[len(opened[0]):]:
-                closing = opened[1]
-        elif not t or t.startswith(("#", "//")):
+            o, c, col0 = opened
+            if col0 or c not in t[len(o):]:
+                closing = (c, col0)
+            continue
+        if not t or t.startswith(("#", "//")):
             out.add(n)
-        elif heredoc is not None:
-            heredocs = [m.group("id") for m in heredoc.finditer(raw)]
+            continue
+        # This line is code; a non-column0 opener later on it still opens a span for the lines below.
+        for o, c, col0 in blocks:
+            at = raw.find(o)
+            if not col0 and at > 0 and c not in raw[at + len(o):]:
+                closing = (c, False)
+                break
+        if closing is None and heredoc is not None:
+            heredocs = [(m.group("id"), bool(re.match(r"<<[~-]", m.group(0)))) for m in heredoc.finditer(raw)]
     return out
 
 
@@ -96,20 +124,34 @@ def code_syntax(root: Path) -> list[dict]:
     _, report = detect_stack.run(root, detect_stack.manifest_dirs(Path(__file__).resolve()))
     rows = [row for surface in report.get("security") or [] for row in surface.get("code_syntax") or []]
     _SYNTAX[str(root)] = rows
+    _MARKERS[str(root)] = [m for surface in report.get("security") or [] for m in surface.get("data_markers") or []]
     return rows
 
 
+def data_markers(root: Path) -> list[dict]:
+    """The detected stacks' `security.data_markers` (#2214): a line from which nothing is code, scoped by extension."""
+    code_syntax(root)
+    return _MARKERS.get(str(root), [])
+
+
 _SYNTAX: dict[str, list[dict]] = {}
+_MARKERS: dict[str, list[dict]] = {}
 
 
-def rules_for(path: str, rows: list[dict]) -> tuple[tuple[tuple[str, str, bool], ...], "re.Pattern | None"]:
-    """The block comments and heredoc pattern that apply to `path`: the neutral blocks plus every row for its extension."""
+def declared(path: str, rows: list[dict]) -> bool:
+    """Whether a detected stack declares the comment syntax of `path`'s file type (#2214 adversary: never fall back to neutral rules)."""
+    return any(path.endswith(ext) for row in rows for ext in row.get("extensions") or [])
+
+
+def rules_for(path: str, rows: list[dict], markers: list[dict] | None = None) -> tuple[tuple[tuple[str, str, bool], ...], "re.Pattern | None", tuple[str, ...]]:
+    """The block comments, heredoc pattern and data markers that apply to `path`: the neutral blocks plus every row for its extension."""
     blocks, heredoc = list(NEUTRAL_BLOCKS), None
     for row in rows:
         if any(path.endswith(ext) for ext in row.get("extensions") or []):
             blocks += [(b["open"], b["close"], bool(b.get("column0"))) for b in row.get("block_comments") or []]
             heredoc = heredoc or (re.compile(row["heredoc"]) if row.get("heredoc") else None)
-    return tuple(blocks), heredoc
+    ends = tuple(m["marker"] for m in markers or [] if any(path.endswith(ext) for ext in m.get("extensions") or []))
+    return tuple(blocks), heredoc, ends
 
 
 def file_at_head(root: Path, path: str) -> list[str] | None:
@@ -121,8 +163,8 @@ def file_at_head(root: Path, path: str) -> list[str] | None:
     if p.is_absolute() or ".." in p.parts:
         return None
     tree = subprocess.run(["git", "-C", str(root), "ls-tree", "HEAD", "--", p.as_posix()], capture_output=True, text=True)
-    if tree.returncode != 0 or not tree.stdout.strip() or tree.stdout.split()[0] == "120000":
-        return None  # not in HEAD, or a symlink: `git show` of a link prints its target path, which would read as code
+    if tree.returncode != 0 or not tree.stdout.strip() or tree.stdout.split()[0] not in ("100644", "100755"):
+        return None  # not in HEAD, a symlink (`git show` prints its target, which would read as code), a directory or a submodule
     proc = subprocess.run(["git", "-C", str(root), "show", f"HEAD:{p.as_posix()}"], capture_output=True)
     return proc.stdout.decode("utf-8", errors="replace").splitlines() if proc.returncode == 0 else None
 
@@ -140,7 +182,11 @@ def judge(model_text: str, record_text: str, root: Path) -> tuple[list[str], lis
     for line in record_text.splitlines():
         m = ROW_RE.match(line)
         if m:
-            answers[int(m.group(1)[3:])] = (m.group(2).lower(), m.group(3))
+            n = int(m.group(1)[3:])
+            if n in answers:
+                # Never "last wins" (#2214 adversary): `TM-1: not implemented` then `TM-1: implemented …` would hide the finding.
+                incomplete.append(f"TM-{n} is answered twice in the record: one answer per row")
+            answers[n] = (m.group(2).lower(), m.group(3))
     known = {n for n, _, _ in rows}
     for n in sorted(set(answers) - known):
         incomplete.append(f"the record answers TM-{n}, which is not a row of the model: it answers another model")
@@ -162,10 +208,13 @@ def judge(model_text: str, record_text: str, root: Path) -> tuple[list[str], lis
                 ev = EVIDENCE_RE.search(rest)
                 src = file_at_head(root, ev.group(1)) if ev else None
                 if not ev or src is None:
-                    incomplete.append(f"{label}: `implemented` needs evidence as a `file:line` of a file committed at HEAD inside the repository (no absolute or `..` path), got `{rest[:60]}`")
+                    incomplete.append(f"{label}: `implemented` needs evidence as a `file:line` of a regular file committed at HEAD inside the repository (no absolute or `..` path, no symlink or directory), got `{rest[:60]}`")
+                elif not declared(ev.group(1), code_syntax(root)):
+                    incomplete.append(f"{label}: {ev.group(1)}: declare this file type's comment syntax in the stack descriptor (`security.code_syntax`); "
+                                      "a file type no detected stack declares is refused, never read with neutral rules")
                 elif int(ev.group(2)) < 1 or int(ev.group(2)) > len(src):
                     incomplete.append(f"{label}: {ev.group(0)} is past the end of {ev.group(1)}")
-                elif int(ev.group(2)) in non_code_lines(src, *rules_for(ev.group(1), code_syntax(root))):
+                elif int(ev.group(2)) in non_code_lines(src, *rules_for(ev.group(1), code_syntax(root), data_markers(root))):
                     incomplete.append(f"{label}: {ev.group(0)} is blank, a comment or a heredoc body, so it cannot be where the control is implemented")
         else:
             if verdict == "stale":
@@ -277,12 +326,28 @@ def selftest() -> int:
         fixture_git.init(td, "-b", "dev")
         # A made-up language `.x` (=open/=close blocks, <<ID heredocs) proves the mechanism with no real language in this script;
         # each stack proves its own syntax with its descriptor's syntax_cases (below).
-        _SYNTAX[str(root)] = [{"extensions": [".x"], "block_comments": [{"open": "=open", "close": "=close"}],
-                               "heredoc": r"<<(?P<id>[A-Z_][A-Z0-9_]*)"}]
+        # Keyed by both spellings of the root: main() resolves it (macOS /var -> /private/var), and a miss is now refused, not neutral.
+        for key in {str(root), str(root.resolve())}:
+            _SYNTAX[key] = [{"extensions": [".x"], "block_comments": [{"open": "=open", "close": "=close", "column0": True}],
+                             "heredoc": r"<<[~-]?(?P<id>[A-Za-z_]\w*)"}]
+            _MARKERS[key] = [{"extensions": [".x"], "marker": "__DATA__"}]
         (root / "src").mkdir()
         (root / "src/c.x").write_text("a\nb\nc\n# note\n\n=open\nhidden\n=close\nlast\nx = <<TXT\n  select 1\nTXT\n/* block\nmiddle no star\nend */\ntail\n  *args,\ny = [<<X, <<Y]\n  one\nX\n  two\nY\ndone\n")
-        git("add", "src/c.x")
+        # #2214 adversary: a column0 block that a mid-line or indented closer does not close, a span opened after code, `~` and bare
+        # heredocs with lowercase ids, and a data marker. Line numbers are the fixture's API: the cases below cite them.
+        D_X = ["code", "=open", "hidden", "x =close", "  =close", "still hidden", "=close", "after", "foo(); /* begin", "hidden span",
+               "end */", "tail", "y = <<~low", "  body", "  low", "z = <<bare", "  bare", "bare", "code2", "__DATA__", "data"]
+        (root / "src/d.x").write_text("\n".join(D_X) + "\n")
+        (root / "src/e.js").write_text("const a = 1;\n")
+        (root / "src/dir.x").mkdir()
+        (root / "src/dir.x/inner.x").write_text("x\n")
+        git("add", "src/c.x", "src/d.x", "src/e.js", "src/dir.x/inner.x")
         git("commit", "-q", "-m", "base")
+        want_d = {2, 3, 4, 5, 6, 7, 10, 11, 14, 15, 17, 18, 20, 21}
+        got_d = non_code_lines(D_X, *rules_for("src/d.x", _SYNTAX[str(root)], _MARKERS[str(root)]))
+        if got_d != want_d:
+            bad += 1
+            print(f"FAIL the adversary fixture's non-code lines: got {sorted(got_d)}, expected {sorted(want_d)}")
         git("checkout", "-q", "-b", "feat")
         (root / "src/untracked.x").write_text("x = 1\n")
         import os as _os
@@ -337,6 +402,19 @@ def selftest() -> int:
         case("evidence on code after a block comment passes", good.replace("src/c.x:2", "src/c.x:9"), 0, "answered")
         case("evidence inside a heredoc body is incomplete", good.replace("src/c.x:2", "src/c.x:11"), 1, "heredoc")
         case("evidence on a heredoc terminator is incomplete", good.replace("src/c.x:2", "src/c.x:12"), 1, "heredoc")
+        NOT_CODE = "blank, a comment or a heredoc"
+        for label, cite, want in (
+                ("a mid-line closer does not close a column0 block", "src/d.x:4", 1), ("an indented closer does not close a column0 block", "src/d.x:6", 1),
+                ("code after a column0 block closes at column 0 passes", "src/d.x:8", 0), ("a line opening a span after code is itself code", "src/d.x:9", 0),
+                ("a span opened after code hides the lines below", "src/d.x:10", 1), ("a lowercase `~` heredoc body is not code", "src/d.x:14", 1),
+                ("an indented line is not a bare heredoc's terminator", "src/d.x:18", 1), ("code after a bare heredoc passes", "src/d.x:19", 0),
+                ("lines after a data marker are not code", "src/d.x:21", 1)):
+            case(label, good.replace("src/c.x:2", cite), want, NOT_CODE if want else "answered")
+        case("a directory is never read as a cited file", good.replace("src/c.x:2", "src/dir.x:1"), 1, "a regular file committed at HEAD")
+        case("a file type no stack declares is refused, not read with neutral rules", good.replace("src/c.x:2", "src/e.js:1"), 1,
+             "declare this file type's comment syntax in the stack descriptor")
+        case("a row answered twice is refused, not last-wins", good.replace("TM-1: implemented src/c.x:2\n", "TM-1: not implemented\nTM-1: implemented src/c.x:2\n"), 1,
+             "TM-1 is answered twice in the record")
         case("evidence on the line that opens a heredoc is code", good.replace("src/c.x:2", "src/c.x:10"), 0, "answered")
         case("evidence in the middle of a /* */ span with no leading star is incomplete", good.replace("src/c.x:2", "src/c.x:14"), 1, "heredoc")
         case("evidence on code after a /* */ span passes", good.replace("src/c.x:2", "src/c.x:16"), 0, "answered")
@@ -403,7 +481,7 @@ def selftest() -> int:
                 continue
             for c in cases:
                 ran += 1
-                got = non_code_lines(c["lines"], *rules_for(c["file"], sec.get("code_syntax") or []))
+                got = non_code_lines(c["lines"], *rules_for(c["file"], sec.get("code_syntax") or [], sec.get("data_markers") or []))
                 if got != set(c["non_code"]):
                     bad += 1
                     print(f"FAIL {label}: {c['name']}: non-code lines {sorted(got)}, expected {c['non_code']}")
