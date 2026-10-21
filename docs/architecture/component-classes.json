@@ -4442,30 +4442,6 @@
    "via": "decision"
   },
   {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/check_ci_runs_tests.py",
-   "plugin": "rails-flow",
-   "rails_lines": 46,
-   "registered": [],
-   "seam": "",
-   "type": "script",
-   "via": "decision"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/check_coverage_ratchet.py",
-   "plugin": "rails-flow",
-   "rails_lines": 14,
-   "registered": [],
-   "seam": "",
-   "type": "script",
-   "via": "decision"
-  },
-  {
    "class": "mixed",
    "issue": 2183,
    "nextjs_lines": 0,
@@ -4526,18 +4502,6 @@
    "via": "decision"
   },
   {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/check_i18n_setup.py",
-   "plugin": "rails-flow",
-   "rails_lines": 24,
-   "registered": [],
-   "seam": "",
-   "type": "script",
-   "via": "decision"
-  },
-  {
    "class": "mixed",
    "issue": 2183,
    "nextjs_lines": 0,
@@ -4563,18 +4527,6 @@
   },
   {
    "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/check_layer_structure.py",
-   "plugin": "rails-flow",
-   "rails_lines": 40,
-   "registered": [],
-   "seam": "",
-   "type": "script",
-   "via": "decision"
-  },
-  {
-   "class": "rails",
    "issue": 2176,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/check_mandated_gems.py",
@@ -4587,7 +4539,7 @@
   },
   {
    "class": "rails",
-   "issue": 2175,
+   "issue": 2177,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/check_mcp_annotations.py",
    "plugin": "rails-flow",
@@ -4599,19 +4551,7 @@
   },
   {
    "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/check_mcp_end_to_end.py",
-   "plugin": "rails-flow",
-   "rails_lines": 51,
-   "registered": [],
-   "seam": "",
-   "type": "script",
-   "via": "decision"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
+   "issue": 2177,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/check_mcp_personal_fields.py",
    "plugin": "rails-flow",
@@ -4647,7 +4587,7 @@
   },
   {
    "class": "rails",
-   "issue": 2175,
+   "issue": 2183,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/check_migration_order.py",
    "plugin": "rails-flow",
@@ -4683,23 +4623,11 @@
   },
   {
    "class": "rails",
-   "issue": 2175,
+   "issue": 2177,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/check_privacy_inventory.py",
    "plugin": "rails-flow",
    "rails_lines": 40,
-   "registered": [],
-   "seam": "",
-   "type": "script",
-   "via": "decision"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/check_production_config.py",
-   "plugin": "rails-flow",
-   "rails_lines": 73,
    "registered": [],
    "seam": "",
    "type": "script",
@@ -4728,18 +4656,6 @@
    "seam": "",
    "type": "script",
    "via": "declared"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/check_simple_form_only.py",
-   "plugin": "rails-flow",
-   "rails_lines": 71,
-   "registered": [],
-   "seam": "",
-   "type": "script",
-   "via": "decision"
   },
   {
    "class": "neutral",
@@ -4778,30 +4694,6 @@
    "via": "decision"
   },
   {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/check_spec_support.py",
-   "plugin": "rails-flow",
-   "rails_lines": 50,
-   "registered": [],
-   "seam": "",
-   "type": "script",
-   "via": "decision"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/check_tenancy_cop.py",
-   "plugin": "rails-flow",
-   "rails_lines": 94,
-   "registered": [],
-   "seam": "",
-   "type": "script",
-   "via": "decision"
-  },
-  {
    "class": "neutral",
    "issue": null,
    "nextjs_lines": 0,
@@ -4834,18 +4726,6 @@
    "rails_lines": 1,
    "registered": [],
    "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
-   "type": "script",
-   "via": "decision"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/check_unauthenticated_writes.py",
-   "plugin": "rails-flow",
-   "rails_lines": 10,
-   "registered": [],
-   "seam": "",
    "type": "script",
    "via": "decision"
   },
@@ -5030,18 +4910,6 @@
    "via": "decision"
   },
   {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/herb_lint.py",
-   "plugin": "rails-flow",
-   "rails_lines": 77,
-   "registered": [],
-   "seam": "",
-   "type": "script",
-   "via": "decision"
-  },
-  {
    "class": "neutral",
    "issue": null,
    "nextjs_lines": 0,
@@ -5186,18 +5054,6 @@
    "via": "declared"
   },
   {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/structure_ratchet.py",
-   "plugin": "rails-flow",
-   "rails_lines": 14,
-   "registered": [],
-   "seam": "",
-   "type": "script",
-   "via": "decision"
-  },
-  {
    "class": "mixed",
    "issue": 2183,
    "nextjs_lines": 0,
@@ -5283,18 +5139,6 @@
   },
   {
    "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/checks.json#architecture-boundaries",
-   "plugin": "rails-flow",
-   "rails_lines": 0,
-   "registered": [],
-   "seam": "",
-   "type": "gate",
-   "via": "declared"
-  },
-  {
-   "class": "rails",
    "issue": 2177,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/checks.json#architecture-graph-drift",
@@ -5330,18 +5174,6 @@
    "via": "runs branch_rulesets.py"
   },
   {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/checks.json#ci-runs-tests",
-   "plugin": "rails-flow",
-   "rails_lines": 46,
-   "registered": [],
-   "seam": "",
-   "type": "gate",
-   "via": "runs check_ci_runs_tests.py"
-  },
-  {
    "class": "mixed",
    "issue": 2183,
    "nextjs_lines": 0,
@@ -5354,18 +5186,6 @@
    "via": "runs claude_md_structure.py"
   },
   {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/checks.json#coverage-ratchets",
-   "plugin": "rails-flow",
-   "rails_lines": 14,
-   "registered": [],
-   "seam": "",
-   "type": "gate",
-   "via": "runs check_coverage_ratchet.py"
-  },
-  {
    "class": "mixed",
    "issue": 2183,
    "nextjs_lines": 0,
@@ -5376,30 +5196,6 @@
    "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
    "type": "gate",
    "via": "runs docs_layout.py"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/checks.json#erb-lint",
-   "plugin": "rails-flow",
-   "rails_lines": 77,
-   "registered": [],
-   "seam": "",
-   "type": "gate",
-   "via": "runs herb_lint.py"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/checks.json#erb-parse-safety",
-   "plugin": "rails-flow",
-   "rails_lines": 0,
-   "registered": [],
-   "seam": "",
-   "type": "gate",
-   "via": "declared"
   },
   {
    "class": "mixed",
@@ -5439,30 +5235,6 @@
   },
   {
    "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/checks.json#i18n-wired",
-   "plugin": "rails-flow",
-   "rails_lines": 24,
-   "registered": [],
-   "seam": "",
-   "type": "gate",
-   "via": "runs check_i18n_setup.py"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/checks.json#layer-structure",
-   "plugin": "rails-flow",
-   "rails_lines": 40,
-   "registered": [],
-   "seam": "",
-   "type": "gate",
-   "via": "runs check_layer_structure.py"
-  },
-  {
-   "class": "rails",
    "issue": 2176,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/checks.json#mandated-gems",
@@ -5475,7 +5247,7 @@
   },
   {
    "class": "rails",
-   "issue": 2175,
+   "issue": 2177,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/checks.json#mcp-annotations",
    "plugin": "rails-flow",
@@ -5487,19 +5259,7 @@
   },
   {
    "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/checks.json#mcp-end-to-end",
-   "plugin": "rails-flow",
-   "rails_lines": 51,
-   "registered": [],
-   "seam": "",
-   "type": "gate",
-   "via": "runs check_mcp_end_to_end.py"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
+   "issue": 2177,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/checks.json#mcp-personal-fields",
    "plugin": "rails-flow",
@@ -5523,7 +5283,7 @@
   },
   {
    "class": "rails",
-   "issue": 2175,
+   "issue": 2183,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/checks.json#migration-order",
    "plugin": "rails-flow",
@@ -5535,7 +5295,7 @@
   },
   {
    "class": "rails",
-   "issue": 2175,
+   "issue": 2177,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/checks.json#privacy-inventory",
    "plugin": "rails-flow",
@@ -5556,18 +5316,6 @@
    "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
    "type": "gate",
    "via": "runs check_brief.py"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/checks.json#production-config",
-   "plugin": "rails-flow",
-   "rails_lines": 73,
-   "registered": [],
-   "seam": "",
-   "type": "gate",
-   "via": "runs check_production_config.py"
   },
   {
    "class": "rails",
@@ -5594,54 +5342,6 @@
    "via": "runs check_registry_closed.py"
   },
   {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/checks.json#simple-form-only",
-   "plugin": "rails-flow",
-   "rails_lines": 71,
-   "registered": [],
-   "seam": "",
-   "type": "gate",
-   "via": "runs check_simple_form_only.py"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/checks.json#spec-support-wired",
-   "plugin": "rails-flow",
-   "rails_lines": 50,
-   "registered": [],
-   "seam": "",
-   "type": "gate",
-   "via": "runs check_spec_support.py"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/checks.json#structure-ratchet",
-   "plugin": "rails-flow",
-   "rails_lines": 14,
-   "registered": [],
-   "seam": "",
-   "type": "gate",
-   "via": "runs structure_ratchet.py"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/checks.json#tenancy-cop",
-   "plugin": "rails-flow",
-   "rails_lines": 94,
-   "registered": [],
-   "seam": "",
-   "type": "gate",
-   "via": "runs check_tenancy_cop.py"
-  },
-  {
    "class": "mixed",
    "issue": 2183,
    "nextjs_lines": 0,
@@ -5652,18 +5352,6 @@
    "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
    "type": "gate",
    "via": "runs check_toolchain_selftests.py"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/checks.json#unauthenticated-writes",
-   "plugin": "rails-flow",
-   "rails_lines": 10,
-   "registered": [],
-   "seam": "",
-   "type": "gate",
-   "via": "runs check_unauthenticated_writes.py"
   },
   {
    "class": "mixed",
@@ -5882,30 +5570,6 @@
    "via": "tests check_case_in_diff.py"
   },
   {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/mutations/check_ci_runs_tests.py",
-   "plugin": "rails-flow",
-   "rails_lines": 6,
-   "registered": [],
-   "seam": "",
-   "type": "test",
-   "via": "tests check_ci_runs_tests.py"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/mutations/check_coverage_ratchet.py",
-   "plugin": "rails-flow",
-   "rails_lines": 4,
-   "registered": [],
-   "seam": "",
-   "type": "test",
-   "via": "tests check_coverage_ratchet.py"
-  },
-  {
    "class": "mixed",
    "issue": 2183,
    "nextjs_lines": 0,
@@ -5942,18 +5606,6 @@
    "via": "tests check_handoff.py"
   },
   {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/mutations/check_i18n_setup.py",
-   "plugin": "rails-flow",
-   "rails_lines": 3,
-   "registered": [],
-   "seam": "",
-   "type": "test",
-   "via": "tests check_i18n_setup.py"
-  },
-  {
    "class": "mixed",
    "issue": 2183,
    "nextjs_lines": 0,
@@ -5979,18 +5631,6 @@
   },
   {
    "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/mutations/check_layer_structure.py",
-   "plugin": "rails-flow",
-   "rails_lines": 9,
-   "registered": [],
-   "seam": "",
-   "type": "test",
-   "via": "tests check_layer_structure.py"
-  },
-  {
-   "class": "rails",
    "issue": 2176,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/mutations/check_mandated_gems.py",
@@ -6003,7 +5643,7 @@
   },
   {
    "class": "rails",
-   "issue": 2175,
+   "issue": 2177,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/mutations/check_mcp_annotations.py",
    "plugin": "rails-flow",
@@ -6015,19 +5655,7 @@
   },
   {
    "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/mutations/check_mcp_end_to_end.py",
-   "plugin": "rails-flow",
-   "rails_lines": 9,
-   "registered": [],
-   "seam": "",
-   "type": "test",
-   "via": "tests check_mcp_end_to_end.py"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
+   "issue": 2177,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/mutations/check_mcp_personal_fields.py",
    "plugin": "rails-flow",
@@ -6063,7 +5691,7 @@
   },
   {
    "class": "rails",
-   "issue": 2175,
+   "issue": 2183,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/mutations/check_migration_order.py",
    "plugin": "rails-flow",
@@ -6087,7 +5715,7 @@
   },
   {
    "class": "rails",
-   "issue": 2175,
+   "issue": 2177,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/mutations/check_privacy_inventory.py",
    "plugin": "rails-flow",
@@ -6096,18 +5724,6 @@
    "seam": "",
    "type": "test",
    "via": "tests check_privacy_inventory.py"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/mutations/check_production_config.py",
-   "plugin": "rails-flow",
-   "rails_lines": 6,
-   "registered": [],
-   "seam": "",
-   "type": "test",
-   "via": "tests check_production_config.py"
   },
   {
    "class": "neutral",
@@ -6132,18 +5748,6 @@
    "seam": "",
    "type": "test",
    "via": "tests check_registry_closed.py"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/mutations/check_simple_form_only.py",
-   "plugin": "rails-flow",
-   "rails_lines": 28,
-   "registered": [],
-   "seam": "",
-   "type": "test",
-   "via": "tests check_simple_form_only.py"
   },
   {
    "class": "neutral",
@@ -6182,30 +5786,6 @@
    "via": "tests check_spec_review.py"
   },
   {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/mutations/check_spec_support.py",
-   "plugin": "rails-flow",
-   "rails_lines": 10,
-   "registered": [],
-   "seam": "",
-   "type": "test",
-   "via": "tests check_spec_support.py"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/mutations/check_tenancy_cop.py",
-   "plugin": "rails-flow",
-   "rails_lines": 11,
-   "registered": [],
-   "seam": "",
-   "type": "test",
-   "via": "tests check_tenancy_cop.py"
-  },
-  {
    "class": "neutral",
    "issue": null,
    "nextjs_lines": 0,
@@ -6228,18 +5808,6 @@
    "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
    "type": "test",
    "via": "tests check_toolchain_selftests.py"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/mutations/check_unauthenticated_writes.py",
-   "plugin": "rails-flow",
-   "rails_lines": 0,
-   "registered": [],
-   "seam": "",
-   "type": "test",
-   "via": "tests check_unauthenticated_writes.py"
   },
   {
    "class": "neutral",
@@ -6482,18 +6050,6 @@
    "via": "declared"
   },
   {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/mutations/herb_lint.py",
-   "plugin": "rails-flow",
-   "rails_lines": 14,
-   "registered": [],
-   "seam": "",
-   "type": "test",
-   "via": "tests herb_lint.py"
-  },
-  {
    "class": "neutral",
    "issue": null,
    "nextjs_lines": 0,
@@ -6684,18 +6240,6 @@
    "seam": "",
    "type": "test",
    "via": "tests statusline.py"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scripts/mutations/structure_ratchet.py",
-   "plugin": "rails-flow",
-   "rails_lines": 0,
-   "registered": [],
-   "seam": "",
-   "type": "test",
-   "via": "tests structure_ratchet.py"
   },
   {
    "class": "mixed",
@@ -6895,7 +6439,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/checks.json",
    "plugin": "rails-flow",
-   "rails_lines": 29,
+   "rails_lines": 6,
    "registered": [],
    "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
    "type": "support",
@@ -7006,18 +6550,6 @@
    "rails_lines": 4,
    "registered": [],
    "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
-   "type": "support",
-   "via": "decision"
-  },
-  {
-   "class": "rails",
-   "issue": 2175,
-   "nextjs_lines": 0,
-   "path": "plugins/rails-flow/scaffold/tenancy/scoped_lookup.rb",
-   "plugin": "rails-flow",
-   "rails_lines": 10,
-   "registered": [],
-   "seam": "",
    "type": "support",
    "via": "decision"
   },
@@ -7281,9 +6813,117 @@
    "class": "rails",
    "issue": 2175,
    "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/check_ci_runs_tests.py",
+   "plugin": "rails-stack",
+   "rails_lines": 46,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/check_coverage_ratchet.py",
+   "plugin": "rails-stack",
+   "rails_lines": 14,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/check_i18n_setup.py",
+   "plugin": "rails-stack",
+   "rails_lines": 24,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/check_layer_structure.py",
+   "plugin": "rails-stack",
+   "rails_lines": 40,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/check_mcp_end_to_end.py",
+   "plugin": "rails-stack",
+   "rails_lines": 51,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/check_production_config.py",
+   "plugin": "rails-stack",
+   "rails_lines": 73,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
    "path": "plugins/rails-stack/scripts/check_simple_form_only.py",
    "plugin": "rails-stack",
    "rails_lines": 71,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/check_spec_support.py",
+   "plugin": "rails-stack",
+   "rails_lines": 50,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/check_tenancy_cop.py",
+   "plugin": "rails-stack",
+   "rails_lines": 94,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/check_unauthenticated_writes.py",
+   "plugin": "rails-stack",
+   "rails_lines": 10,
    "registered": [],
    "seam": "",
    "type": "script",
@@ -7327,11 +6967,35 @@
   },
   {
    "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/herb_lint.py",
+   "plugin": "rails-stack",
+   "rails_lines": 77,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
    "issue": 2179,
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/scripts/kamal_destination.py",
    "plugin": "rails-stack",
    "rails_lines": 21,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/structure_ratchet.py",
+   "plugin": "rails-stack",
+   "rails_lines": 14,
    "registered": [],
    "seam": "",
    "type": "script",
@@ -7351,6 +7015,306 @@
   },
   {
    "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/checks.json#architecture-boundaries",
+   "plugin": "rails-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/checks.json#ci-runs-tests",
+   "plugin": "rails-stack",
+   "rails_lines": 46,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs check_ci_runs_tests.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/checks.json#coverage-ratchets",
+   "plugin": "rails-stack",
+   "rails_lines": 14,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs check_coverage_ratchet.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/checks.json#erb-lint",
+   "plugin": "rails-stack",
+   "rails_lines": 77,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs herb_lint.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/checks.json#erb-parse-safety",
+   "plugin": "rails-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/checks.json#i18n-wired",
+   "plugin": "rails-stack",
+   "rails_lines": 24,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs check_i18n_setup.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/checks.json#layer-structure",
+   "plugin": "rails-stack",
+   "rails_lines": 40,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs check_layer_structure.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/checks.json#mcp-end-to-end",
+   "plugin": "rails-stack",
+   "rails_lines": 51,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs check_mcp_end_to_end.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/checks.json#production-config",
+   "plugin": "rails-stack",
+   "rails_lines": 73,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs check_production_config.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/checks.json#simple-form-only",
+   "plugin": "rails-stack",
+   "rails_lines": 71,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs check_simple_form_only.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/checks.json#spec-support-wired",
+   "plugin": "rails-stack",
+   "rails_lines": 50,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs check_spec_support.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/checks.json#structure-ratchet",
+   "plugin": "rails-stack",
+   "rails_lines": 14,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs structure_ratchet.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/checks.json#tenancy-cop",
+   "plugin": "rails-stack",
+   "rails_lines": 94,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs check_tenancy_cop.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/checks.json#unauthenticated-writes",
+   "plugin": "rails-stack",
+   "rails_lines": 10,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs check_unauthenticated_writes.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/mutations/check_ci_runs_tests.py",
+   "plugin": "rails-stack",
+   "rails_lines": 6,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests check_ci_runs_tests.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/mutations/check_coverage_ratchet.py",
+   "plugin": "rails-stack",
+   "rails_lines": 4,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests check_coverage_ratchet.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/mutations/check_i18n_setup.py",
+   "plugin": "rails-stack",
+   "rails_lines": 3,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests check_i18n_setup.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/mutations/check_layer_structure.py",
+   "plugin": "rails-stack",
+   "rails_lines": 9,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests check_layer_structure.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/mutations/check_mcp_end_to_end.py",
+   "plugin": "rails-stack",
+   "rails_lines": 9,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests check_mcp_end_to_end.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/mutations/check_production_config.py",
+   "plugin": "rails-stack",
+   "rails_lines": 6,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests check_production_config.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/mutations/check_simple_form_only.py",
+   "plugin": "rails-stack",
+   "rails_lines": 28,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests check_simple_form_only.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/mutations/check_spec_support.py",
+   "plugin": "rails-stack",
+   "rails_lines": 10,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests check_spec_support.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/mutations/check_tenancy_cop.py",
+   "plugin": "rails-stack",
+   "rails_lines": 11,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests check_tenancy_cop.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/mutations/check_unauthenticated_writes.py",
+   "plugin": "rails-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests check_unauthenticated_writes.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/mutations/herb_lint.py",
+   "plugin": "rails-stack",
+   "rails_lines": 14,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests herb_lint.py"
+  },
+  {
+   "class": "rails",
    "issue": 2179,
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/scripts/mutations/kamal_destination.py",
@@ -7360,6 +7324,18 @@
    "seam": "",
    "type": "test",
    "via": "tests kamal_destination.py"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scripts/mutations/structure_ratchet.py",
+   "plugin": "rails-stack",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests structure_ratchet.py"
   },
   {
    "class": "rails",
@@ -7386,6 +7362,18 @@
    "via": "declared"
   },
   {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/checks.json",
+   "plugin": "rails-stack",
+   "rails_lines": 24,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
    "class": "neutral",
    "issue": 2186,
    "nextjs_lines": 0,
@@ -7404,6 +7392,18 @@
    "path": "plugins/rails-stack/reference/model-tiers.md",
    "plugin": "rails-stack",
    "rails_lines": 2,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2175,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/scaffold/tenancy/scoped_lookup.rb",
+   "plugin": "rails-stack",
+   "rails_lines": 10,
    "registered": [],
    "seam": "",
    "type": "support",
@@ -7439,7 +7439,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/setup/rails.md",
    "plugin": "rails-stack",
-   "rails_lines": 94,
+   "rails_lines": 95,
    "registered": [],
    "seam": "",
    "type": "support",

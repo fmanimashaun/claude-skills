@@ -6,11 +6,6 @@
    "summary": "Agents whose whole job is a Rails task (implement in Rails, write migrations, run RSpec, audit with Brakeman, review against Rails practice). They are loaded by every rails-flow install; a Next.js project would see agents it can never use.",
    "issue": 2173
   },
-  "rails-gates": {
-   "title": "The Rails project gates",
-   "summary": "Gate scripts that read a Rails project (simple_form, migrations order, tenancy cop, privacy inventory, production config, MCP checks, i18n, CI-runs-tests, coverage ratchet, spec support, layer structure, herb) and their checks.json registrations. project_gates.py already discovers checks.json from sibling plugins, so this is a move, not new machinery.",
-   "issue": 2175
-  },
   "rails-mandated-gems": {
    "title": "The mandated-gems policy",
    "summary": "mandated_gems.json and the scripts that read or derive it. The list is Rails doctrine by definition; a Node stack needs a different list under its own name.",
@@ -25,6 +20,16 @@
    "title": "The design-flow Rails UI adapter (ERB / ViewComponent gates and porter)",
    "summary": "The design-flow scripts that parse .erb and app/components, the ERB-specific setup cross-check, and the agents that port into Rails (rails-ui-porter, rails-ui-composer). They do NOT move to rails-stack: they live in design-flow's own Rails UI adapter, plugins/design-flow/ui/viewcomponent-erb/, which a stack descriptor selects with ui.implementation, so design stays neutral (owner, via the coordinator, 2026-10-21). Next.js gets its own adapter under #2171.",
    "issue": 2178
+  },
+  "rails-gates-wiki": {
+   "title": "The Rails gates that read the schema reader",
+   "summary": "Three project gates still in rails-flow after #2175 moved the other twelve: check_privacy_inventory imports its schema reader from build_project_wiki.py, and check_mcp_personal_fields and check_mcp_annotations read it through that gate (the first imports the second). A plugin cannot reach a sibling, so they move WITH build_project_wiki.py when the Rails documentation generators move (#2177), each with its checks.json row.",
+   "issue": 2177
+  },
+  "rails-gates-coordinator": {
+   "title": "The Rails gate that reads the coordinator's migration rule",
+   "summary": "check_migration_order is a thin CLI over session_coordinator.migration_findings, which the neutral coordinator also runs. It stays in rails-flow after #2175 and moves with its checks.json row when the coordinator reads the stack's migration rule from the descriptor (#2183).",
+   "issue": 2183
   }
  },
  "rules": [
@@ -66,28 +71,23 @@
   },
   {
    "match": [
-    "plugins/rails-flow/scripts/check_simple_form_only.py",
-    "plugins/rails-flow/scripts/check_migration_order.py",
-    "plugins/rails-flow/scripts/check_tenancy_cop.py",
-    "plugins/rails-flow/scaffold/tenancy/*",
     "plugins/rails-flow/scripts/check_privacy_inventory.py",
-    "plugins/rails-flow/scripts/check_production_config.py",
-    "plugins/rails-flow/scripts/check_unauthenticated_writes.py",
-    "plugins/rails-flow/scripts/check_mcp_annotations.py",
-    "plugins/rails-flow/scripts/check_mcp_end_to_end.py",
     "plugins/rails-flow/scripts/check_mcp_personal_fields.py",
-    "plugins/rails-flow/scripts/check_i18n_setup.py",
-    "plugins/rails-flow/scripts/check_ci_runs_tests.py",
-    "plugins/rails-flow/scripts/check_coverage_ratchet.py",
-    "plugins/rails-flow/scripts/check_spec_support.py",
-    "plugins/rails-flow/scripts/check_layer_structure.py",
-    "plugins/rails-flow/scripts/structure_ratchet.py",
-    "plugins/rails-flow/scripts/herb_lint.py"
+    "plugins/rails-flow/scripts/check_mcp_annotations.py"
    ],
    "decision": "rails-stack",
    "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
-   "how": "moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin",
-   "move": "rails-gates"
+   "how": "held in rails-flow until build_project_wiki.py moves to rails-stack (#2177); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin",
+   "move": "rails-gates-wiki"
+  },
+  {
+   "match": [
+    "plugins/rails-flow/scripts/check_migration_order.py"
+   ],
+   "decision": "rails-stack",
+   "assumes": "parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project",
+   "how": "held in rails-flow until the coordinator reads the migration rule from the descriptor (#2183); a plugin cannot reach a sibling, so it moves WITH the file it imports, with its checks.json row. project_gates.py keeps discovering it from the sibling plugin",
+   "move": "rails-gates-coordinator"
   },
   {
    "match": [
@@ -194,7 +194,7 @@
    ],
    "decision": "detector",
    "assumes": "registers the Rails gates and names Rails paths in applies_when",
-   "how": "the Rails rows leave with their gates (rails-gates, rails-mandated-gems); what remains is stack-neutral",
+   "how": "the Rails rows leave with their gates (most in #2175; the four held gates with #2177 and #2183: rails-gates-wiki, rails-gates-coordinator; and rails-mandated-gems); what remains is stack-neutral",
    "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
    "issues": {
     "rails-flow": 2183,
@@ -729,8 +729,8 @@
    },
    {
     "match": [
-     "plugins/rails-flow/checks.json#architecture-boundaries",
-     "plugins/rails-flow/checks.json#erb-parse-safety"
+     "plugins/rails-stack/checks.json#architecture-boundaries",
+     "plugins/rails-stack/checks.json#erb-parse-safety"
     ],
     "class": "rails",
     "issue": 2175,
@@ -854,11 +854,20 @@
    },
    {
     "match": [
-     "plugins/rails-stack/scripts/check_simple_form_only.py"
+     "plugins/rails-stack/checks.json"
     ],
     "class": "rails",
     "issue": 2175,
-    "why": "a vendored copy of rails-flow's simple_form gate for rails-stack's design-auditor; step 4 (#2175) moves the original and deletes this copy"
+    "why": "the Rails project gates' registrations: the plugin that holds the gates declares them (#2175); project_gates.py discovers this file from the sibling plugin"
+   },
+   {
+    "match": [
+     "plugins/rails-stack/scripts/*",
+     "plugins/rails-stack/scaffold/*"
+    ],
+    "class": "rails",
+    "issue": 2175,
+    "why": "the Rails project gates, their mutation guards and the tenancy scaffold, moved here from rails-flow (#2175); they read a Rails project and exist only for one. The vendored copies above are declared first and keep their own class"
    }
   ]
  }
