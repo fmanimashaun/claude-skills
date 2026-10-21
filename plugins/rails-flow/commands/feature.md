@@ -210,8 +210,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --paths <each file 
   3. **Record the approval** in `docs/product/mockups/<slug>.md` (committed on the branch once Phase 2
      creates it), one line each:
      `Mock-up:` (link or committed file), `Issue:`, `Approved-by:`, `Approval:` (the link to the
-     comment where the owner approved), `Widths:`, `States:`, `Shell:` (always
-     `docs/product/mockups/shell.md`). Then proceed. The plan and the PR
+     comment where the owner approved), `Widths:`, `States:` (`;`-separated, every state designed
+     or `n/a: <reason>`), `Shell:` (always `docs/product/mockups/shell.md`), `Template:`, `Screen:`
+     and `Nav:`. Then proceed. **Once the screen is built** (before Phase 6) add `Story:`, the story
+     file or view that implements it; the gate on the real diff refuses a record without one. The plan and the PR
      cite the record.
 
 The same check runs again on the branch's real diff before merge (Phase 6), so a view the plan did

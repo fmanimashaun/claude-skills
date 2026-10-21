@@ -13,8 +13,14 @@ One file per mock-up, `docs/product/mockups/<slug>.md`, with one `Key: value` li
 | `Approved-by:` | who approved |
 | `Approval:` | the link to the comment where they said so (`…/issues/N#issuecomment-M`) |
 | `Widths:` | at least a phone width (480 or less) and a desktop width (1024 or more) |
-| `States:` | the screen's designed states. Free text to the gate today; the allowed values are defined by the frontend architecture framework (#2220), not here, so there is one list. The QA case catalogue and that framework's state check read it |
+| `States:` | `;`-separated entries; every state of the vocabulary exactly once, each `<state>` (designed) or `<state>: n/a: <reason>`. Example: `loaded; loading: n/a: static page; error; empty-filtered: n/a: no filter; partial: n/a: one source; permission-denied: n/a: public; success: n/a: read only; first-run: n/a: seeded`. At least one state is designed; `loaded` need not be (a system page marks most states n/a) |
 | `Shell:` | `docs/product/mockups/shell.md`, always that path |
+| `Template:` | the page template: `list`, `detail`, `create-edit`, `multi-step`, `dashboard`, `settings`, `search-results`, `sign-in`, or `system: <not-found\|no-permission\|error\|maintenance>` |
+| `Screen:` | this screen's name; unique across records |
+| `Nav:` | `level N under <parent>`, N from 1 to 3. Level 1 sits under the literal `shell`; level N of 2 or 3 sits under the `Screen:` of an existing record at level N-1 |
+| `Story:` | **once the screen is built**: a repo path to the story file (`*.stories.*`) or the user-visible file that implements this mock-up. Required by the gate on the real diff (`--base`), not at plan time (`--paths`) |
+
+The allowed values (templates, system sub-kinds, states, the nav depth cap) are one list, `plugins/rails-flow/reference/mockup-vocabulary.json`, which the gate reads and the frontend architecture framework (#2220) cites. A missing or unreadable list refuses every record. `n/a: <reason>` demands a non-empty reason, not a true one: the reviewer reads the truth. A record whose `Template:`, `States:`, `Screen:` or `Nav:` is missing or outside the vocabulary is refused when it is **added or changed**; existing records are never re-judged.
 
 ## The shell record
 
@@ -51,3 +57,12 @@ The command writes the record only if it then passes. It refuses a signature wit
 A flow diagram is attached to the record of the screen it belongs to (linked from that record's mock-up or kept beside it). It is not recorded on its own, and there is no `Shell: n/a`: a record that names no shell is held.
 
 `mockup-gate: off` on its own line in GUARDRAILS.md turns the whole gate off, shell included.
+
+## Linking the design to the build (`Story:`)
+
+`Story:` joins the two stores: `docs/product/mockups/` holds the proposed design, and the story file (or the view) holds the built one. Reviewers compare the two.
+
+- **On the real diff** (`check_mockup_gate.py --base <base>`, Phase 6 and the PR reviewer) a record without a valid `Story:` is held. A route cannot be checked here: the stack's route list comes with the stack descriptor (#2219).
+- **A JavaScript front-end project without Storybook cannot satisfy `Story:` until #2219**: only a story file, or a path the gate's built-in Rails-shaped UI paths name, is accepted today. The stack descriptor's UI paths lift this.
+- **Certification** (qa-flow's `release_evidence.py stamp`) refuses the stamp when a record with a `Template:` line and a **closed** `Issue:` names no `Story:`, and when an issue cannot be read (an unjudged audit is not a pass). It reads the records as committed at the stamp's revision. A legacy record (no `Template:`) is never failed for this.
+- **By hand or in CI**: `check_mockup_gate.py --audit` prints the same finding list online, plus the legacy records that name no `Story:`. It exits 1 on a finding and 2 when an issue could not be read.

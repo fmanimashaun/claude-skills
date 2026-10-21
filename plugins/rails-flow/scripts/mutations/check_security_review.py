@@ -52,14 +52,14 @@ GUARD = Guard(
         ),
         Mutation(
             "a comment, blank or block-comment line is accepted as the line that implements a control",
-            "                elif int(ev.group(2)) in non_code_lines(src, *rules_for(ev.group(1), code_syntax(root), data_markers(root))):",
+            '                elif int(ev.group(2)) in non_code_lines(src, *rules_for(ev.group(1), code_syntax(root), data_markers(root)),\n                                                         line_comments=line_comments_for(ev.group(1), code_syntax(root))):',
             "                elif False:",
             "evidence on a comment line is incomplete",
         ),
         Mutation(
             # #2119 stack-neutral: a stack's own block comments and heredocs come from its descriptor's code_syntax.
             "the stack's code_syntax is ignored, so a line inside the stack's own block comment counts as code",
-            "                elif int(ev.group(2)) in non_code_lines(src, *rules_for(ev.group(1), code_syntax(root), data_markers(root))):",
+            '                elif int(ev.group(2)) in non_code_lines(src, *rules_for(ev.group(1), code_syntax(root), data_markers(root)),\n                                                         line_comments=line_comments_for(ev.group(1), code_syntax(root))):',
             "                elif int(ev.group(2)) in non_code_lines(src):",
             "evidence inside a stack block comment is incomplete",
         ),
@@ -173,6 +173,60 @@ GUARD = Guard(
             "                if raw.startswith(close):\n                    closing = None",
             "                if False:\n                    closing = None",
             "evidence on code after a block comment passes",
+        ),
+        Mutation(
+            "#2260: a row's line-comment marker is ignored, so a `<!--` line reads as code",
+            '        if not t or t.startswith(("#", "//", *line_comments)):',
+            '        if not t or t.startswith(("#", "//")):',
+            "a line starting with the row's own line-comment marker is not code",
+        ),
+        Mutation(
+            "#2260: the refusal is not applied when a citation is judged",
+            "                elif refusal_for(ev.group(1), src, code_syntax(root)):",
+            "                elif False:",
+            "a file the row's refuse_when matches is refused whole",
+        ),
+        Mutation(
+            "#2260: refuse_when never matches, so a template literal's body lines read as code",
+            '                    if pattern.search(line.lstrip("\\ufeff") if n == 1 else line):',
+            "                    if False:",
+            "a file the row's refuse_when matches is refused whole",
+        ),
+        Mutation(
+            "#2260: every file type counts as declared, so .ts, .jsx and .tsx are read with neutral rules",
+            '    return any(path.endswith(ext) for row in rows for ext in row.get("extensions") or [])',
+            "    return True",
+            "a file type no stack declares is refused, not read with neutral rules",
+        ),
+        Mutation(
+            "#2260: a row's line-comment markers apply to every file type, not only the row's extensions",
+            '    return tuple(m for row in rows if any(path.endswith(ext) for ext in row.get("extensions") or []) for m in row.get("line_comments") or [])',
+            '    return tuple(m for row in rows for m in row.get("line_comments") or [])',
+            "a row's line-comment marker does not apply to another file type",
+        ),
+        Mutation(
+            "#2260: a row's refuse_when applies to every file type, so a .rb file with a lone backtick is refused",
+            '        if any(path.endswith(ext) for ext in row.get("extensions") or []):\n            for refusal in',
+            '        if True:\n            for refusal in',
+            "a row's refuse_when does not apply to another file type",
+        ),
+        Mutation(
+            "#2260: a file is decoded as plain UTF-8, so a byte-order mark stays in line 1 and `\\ufeff// comment` reads as code",
+            'proc.stdout.decode("utf-8-sig", errors="replace").splitlines()',
+            'proc.stdout.decode("utf-8", errors="replace").splitlines()',
+            "a byte-order mark is stripped when a file is read at HEAD",
+        ),
+        Mutation(
+            "#2260: a byte-order mark is kept in line 1 when the lines are judged",
+            '        if n == 1:\n            raw = raw.lstrip("\\ufeff")',
+            '        if False:\n            raw = raw.lstrip("\\ufeff")',
+            "a byte-order mark is not part of line 1",
+        ),
+        Mutation(
+            "#2260: a byte-order mark counts as text before `<!--` on line 1, so a refuse_when pattern misreads it",
+            'pattern.search(line.lstrip("\\ufeff") if n == 1 else line)',
+            "pattern.search(line)",
+            "a byte-order mark is not text before `<!--` on line 1",
         ),
     ),
 )
