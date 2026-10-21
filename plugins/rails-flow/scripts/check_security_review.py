@@ -31,6 +31,7 @@ when the change adds or edits it, so a unit that has a boundary and no model is 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -47,14 +48,18 @@ ROW_RE = re.compile(r"^\s*(?:[-*]\s*)?(?:\*\*)?(TM-\d+)(?:\*\*)?\s*[:—–-]+\s
 EVIDENCE_RE = re.compile(r"([\w./@+-]+\.\w+):(\d+)")
 
 
-HEREDOC_RE = re.compile(r"<<[~-]?([\"']?)([A-Z_][A-Z0-9_]*)\1")
+# WHAT IS NOT CODE (#2119; stack-neutral per #2162). The neutral rules: a blank line, a `#` or `//` comment, a `/* */` span.
+# Each stack adds its own (a language's own block comment, a heredoc) in its descriptor's `security.code_syntax`, scoped by file
+# extension, so this script names no language. A heredoc pattern names the terminator as the group `id`.
+NEUTRAL_BLOCKS: tuple[tuple[str, str], ...] = (("/*", "*/"),)
 
 
-def non_code_lines(lines: list[str]) -> set[int]:
-    """1-based numbers of lines that are not code: blank, a `#` or `//` comment, inside `=begin`/`=end`, inside a `/* */` span, or the body (and terminator) of a
-    heredoc. A line-by-line reading, not a parser: a `<<ID` inside a string or a comment still opens a heredoc, and a comment marker inside a string closes nothing."""
+def non_code_lines(lines: list[str], blocks: tuple[tuple[str, str], ...] = NEUTRAL_BLOCKS, heredoc: "re.Pattern | None" = None) -> set[int]:
+    """1-based numbers of lines that are not code: blank, a `#` or `//` comment, inside a block comment (`blocks`: open, close),
+    or the body (and terminator) of a heredoc (`heredoc`). A line-by-line reading, not a parser: a heredoc opener inside a string
+    or a comment still opens one, and a comment marker inside a string closes nothing."""
     out: set[int] = set()
-    begin = block = False
+    closing: str | None = None
     heredocs: list[str] = []
     for n, raw in enumerate(lines, 1):
         t = raw.strip()
@@ -63,25 +68,46 @@ def non_code_lines(lines: list[str]) -> set[int]:
             if t == heredocs[0]:
                 heredocs.pop(0)
             continue
-        if begin:
+        if closing is not None:
             out.add(n)
-            begin = not raw.startswith("=end")
+            if closing in raw:
+                closing = None
             continue
-        if block:
+        opened = next(((o, c) for o, c in blocks if t.startswith(o)), None)
+        if opened:
             out.add(n)
-            block = "*/" not in raw
-            continue
-        if raw.startswith("=begin"):
-            out.add(n)
-            begin = True
+            if opened[1] not in t[len(opened[0]):]:
+                closing = opened[1]
         elif not t or t.startswith(("#", "//")):
             out.add(n)
-        elif t.startswith("/*"):
-            out.add(n)
-            block = "*/" not in raw
-        else:
-            heredocs = [m.group(2) for m in HEREDOC_RE.finditer(raw)]
+        elif heredoc is not None:
+            heredocs = [m.group("id") for m in heredoc.finditer(raw)]
     return out
+
+
+def code_syntax(root: Path) -> list[dict]:
+    """The detected stacks' `security.code_syntax` rows for the project at `root` (#2119); empty when none or not judged."""
+    if str(root) in _SYNTAX:
+        return _SYNTAX[str(root)]
+    import detect_stack  # noqa: E402  (a sibling script)
+
+    _, report = detect_stack.run(root, detect_stack.manifest_dirs(Path(__file__).resolve()))
+    rows = [row for surface in report.get("security") or [] for row in surface.get("code_syntax") or []]
+    _SYNTAX[str(root)] = rows
+    return rows
+
+
+_SYNTAX: dict[str, list[dict]] = {}
+
+
+def rules_for(path: str, rows: list[dict]) -> tuple[tuple[tuple[str, str], ...], "re.Pattern | None"]:
+    """The block comments and heredoc pattern that apply to `path`: the neutral blocks plus every row for its extension."""
+    blocks, heredoc = list(NEUTRAL_BLOCKS), None
+    for row in rows:
+        if any(path.endswith(ext) for ext in row.get("extensions") or []):
+            blocks += [(b["open"], b["close"]) for b in row.get("block_comments") or []]
+            heredoc = heredoc or (re.compile(row["heredoc"]) if row.get("heredoc") else None)
+    return tuple(blocks), heredoc
 
 
 def file_at_head(root: Path, path: str) -> list[str] | None:
@@ -137,7 +163,7 @@ def judge(model_text: str, record_text: str, root: Path) -> tuple[list[str], lis
                     incomplete.append(f"{label}: `implemented` needs evidence as a `file:line` of a file committed at HEAD inside the repository (no absolute or `..` path), got `{rest[:60]}`")
                 elif int(ev.group(2)) < 1 or int(ev.group(2)) > len(src):
                     incomplete.append(f"{label}: {ev.group(0)} is past the end of {ev.group(1)}")
-                elif int(ev.group(2)) in non_code_lines(src):
+                elif int(ev.group(2)) in non_code_lines(src, *rules_for(ev.group(1), code_syntax(root))):
                     incomplete.append(f"{label}: {ev.group(0)} is blank, a comment or a heredoc body, so it cannot be where the control is implemented")
         else:
             if verdict == "stale":
@@ -244,16 +270,20 @@ def selftest() -> int:
                                   capture_output=True, text=True, check=True).stdout.strip()
 
         git("init", "-q", "-b", "dev")
-        (root / "app").mkdir()
-        (root / "app/c.rb").write_text("a\nb\nc\n# note\n\n=begin\nhidden\n=end\nlast\nx = <<~SQL\n  select 1\nSQL\n/* block\nmiddle no star\nend */\ntail\n  *args,\ny = [<<~X, <<~Y]\n  one\nX\n  two\nY\ndone\n")
-        git("add", "app/c.rb")
+        # A made-up language `.x` (=open/=close blocks, <<ID heredocs) proves the mechanism with no real language in this script;
+        # each stack proves its own syntax with its descriptor's syntax_cases (below).
+        _SYNTAX[str(root)] = [{"extensions": [".x"], "block_comments": [{"open": "=open", "close": "=close"}],
+                               "heredoc": r"<<(?P<id>[A-Z_][A-Z0-9_]*)"}]
+        (root / "src").mkdir()
+        (root / "src/c.x").write_text("a\nb\nc\n# note\n\n=open\nhidden\n=close\nlast\nx = <<TXT\n  select 1\nTXT\n/* block\nmiddle no star\nend */\ntail\n  *args,\ny = [<<X, <<Y]\n  one\nX\n  two\nY\ndone\n")
+        git("add", "src/c.x")
         git("commit", "-q", "-m", "base")
         git("checkout", "-q", "-b", "feat")
-        (root / "app/untracked.rb").write_text("x = 1\n")
+        (root / "src/untracked.x").write_text("x = 1\n")
         import os as _os
 
-        _os.symlink("/etc/hosts", root / "app/link.rb")
-        git("add", "app/link.rb")
+        _os.symlink("/etc/hosts", root / "src/link.x")
+        git("add", "src/link.x")
         git("commit", "-q", "-m", "link")
         (root / MODEL_DIR).mkdir(parents=True)
         (root / MODEL_DIR / "t.md").write_text(MODEL)
@@ -285,39 +315,39 @@ def selftest() -> int:
                 bad += 1
                 print(f"FAIL {label}: expected exit {want} naming `{needle}`, got {got}: {text.strip()[:200]}")
 
-        good = "Head: HEAD\nTM-1: implemented app/c.rb:2\nTM-2: holds a repeated callback is a no-op\nVERDICT: CLEAN\n"
+        good = "Head: HEAD\nTM-1: implemented src/c.x:2\nTM-2: holds a repeated callback is a no-op\nVERDICT: CLEAN\n"
         case("a complete current record passes", good, 0, "answered")
         case("no record at all asks for the pass", None, 1, "missing")
         case("a record for another commit is stale", good, 1, "stale", head_sha_="0" * 40)
         case("a record without a Head line cannot be tied to a commit", good.replace("Head: HEAD\n", ""), 1, "no-head")
         case("a record with no verdict is unusable as a record", good.replace("VERDICT: CLEAN\n", ""), 1, "no-verdict")
-        case("a mitigate row with no answer is incomplete", good.replace("TM-1: implemented app/c.rb:2\n", ""), 1, "TM-1")
+        case("a mitigate row with no answer is incomplete", good.replace("TM-1: implemented src/c.x:2\n", ""), 1, "TM-1")
         case("an accept row with no answer is incomplete", good.replace("TM-2: holds a repeated callback is a no-op\n", ""), 1, "TM-2")
-        case("evidence that is not file:line is incomplete", good.replace("app/c.rb:2", "somewhere"), 1, "file:line")
-        case("evidence for a file that does not exist is incomplete", good.replace("app/c.rb:2", "app/nope.rb:2"), 1, "file:line")
-        case("evidence on a comment line is incomplete", good.replace("app/c.rb:2", "app/c.rb:4"), 1, "blank, a comment or a heredoc")
-        case("evidence on a blank line is incomplete", good.replace("app/c.rb:2", "app/c.rb:5"), 1, "blank, a comment or a heredoc")
-        case("evidence inside =begin/=end is incomplete", good.replace("app/c.rb:2", "app/c.rb:7"), 1, "blank, a comment or a heredoc")
-        case("evidence on the =end line is incomplete", good.replace("app/c.rb:2", "app/c.rb:8"), 1, "blank, a comment or a heredoc")
-        case("evidence on code after a block comment passes", good.replace("app/c.rb:2", "app/c.rb:9"), 0, "answered")
-        case("evidence inside a heredoc body is incomplete", good.replace("app/c.rb:2", "app/c.rb:11"), 1, "heredoc")
-        case("evidence on a heredoc terminator is incomplete", good.replace("app/c.rb:2", "app/c.rb:12"), 1, "heredoc")
-        case("evidence on the line that opens a heredoc is code", good.replace("app/c.rb:2", "app/c.rb:10"), 0, "answered")
-        case("evidence in the middle of a /* */ span with no leading star is incomplete", good.replace("app/c.rb:2", "app/c.rb:14"), 1, "heredoc")
-        case("evidence on code after a /* */ span passes", good.replace("app/c.rb:2", "app/c.rb:16"), 0, "answered")
-        case("a splat line is code, not a comment", good.replace("app/c.rb:2", "app/c.rb:17"), 0, "answered")
-        case("evidence in the second of two heredocs opened on one line is incomplete", good.replace("app/c.rb:2", "app/c.rb:21"), 1, "heredoc")
-        case("evidence after two heredocs on one line passes", good.replace("app/c.rb:2", "app/c.rb:23"), 0, "answered")
-        case("a committed symlink is refused, never read through its target", good.replace("app/c.rb:2", "app/link.rb:1"), 1, "committed at HEAD")
-        case("an absolute evidence path is refused", good.replace("app/c.rb:2", "/etc/hosts:1"), 1, "inside the repository")
-        case("a `..` evidence path is refused", good.replace("app/c.rb:2", "app/../app/c.rb:2"), 1, "inside the repository")
-        case("evidence in a file that exists only in the working tree is refused", good.replace("app/c.rb:2", "app/untracked.rb:1"), 1, "committed at HEAD")
-        case("evidence past the end of the file is incomplete", good.replace("app/c.rb:2", "app/c.rb:99"), 1, "past the end")
-        case("a mitigate row not implemented is BLOCKING, exit 3", good.replace("implemented app/c.rb:2", "not implemented"), 3, "not implemented")
+        case("evidence that is not file:line is incomplete", good.replace("src/c.x:2", "somewhere"), 1, "file:line")
+        case("evidence for a file that does not exist is incomplete", good.replace("src/c.x:2", "src/nope.x:2"), 1, "file:line")
+        case("evidence on a comment line is incomplete", good.replace("src/c.x:2", "src/c.x:4"), 1, "blank, a comment or a heredoc")
+        case("evidence on a blank line is incomplete", good.replace("src/c.x:2", "src/c.x:5"), 1, "blank, a comment or a heredoc")
+        case("evidence inside a stack block comment is incomplete", good.replace("src/c.x:2", "src/c.x:7"), 1, "blank, a comment or a heredoc")
+        case("evidence on the block comment's closing line is incomplete", good.replace("src/c.x:2", "src/c.x:8"), 1, "blank, a comment or a heredoc")
+        case("evidence on code after a block comment passes", good.replace("src/c.x:2", "src/c.x:9"), 0, "answered")
+        case("evidence inside a heredoc body is incomplete", good.replace("src/c.x:2", "src/c.x:11"), 1, "heredoc")
+        case("evidence on a heredoc terminator is incomplete", good.replace("src/c.x:2", "src/c.x:12"), 1, "heredoc")
+        case("evidence on the line that opens a heredoc is code", good.replace("src/c.x:2", "src/c.x:10"), 0, "answered")
+        case("evidence in the middle of a /* */ span with no leading star is incomplete", good.replace("src/c.x:2", "src/c.x:14"), 1, "heredoc")
+        case("evidence on code after a /* */ span passes", good.replace("src/c.x:2", "src/c.x:16"), 0, "answered")
+        case("a splat line is code, not a comment", good.replace("src/c.x:2", "src/c.x:17"), 0, "answered")
+        case("evidence in the second of two heredocs opened on one line is incomplete", good.replace("src/c.x:2", "src/c.x:21"), 1, "heredoc")
+        case("evidence after two heredocs on one line passes", good.replace("src/c.x:2", "src/c.x:23"), 0, "answered")
+        case("a committed symlink is refused, never read through its target", good.replace("src/c.x:2", "src/link.x:1"), 1, "committed at HEAD")
+        case("an absolute evidence path is refused", good.replace("src/c.x:2", "/etc/hosts:1"), 1, "inside the repository")
+        case("a `..` evidence path is refused", good.replace("src/c.x:2", "app/../src/c.x:2"), 1, "inside the repository")
+        case("evidence in a file that exists only in the working tree is refused", good.replace("src/c.x:2", "src/untracked.x:1"), 1, "committed at HEAD")
+        case("evidence past the end of the file is incomplete", good.replace("src/c.x:2", "src/c.x:99"), 1, "past the end")
+        case("a mitigate row not implemented is BLOCKING, exit 3", good.replace("implemented src/c.x:2", "not implemented"), 3, "not implemented")
         case("a stale accept row is a finding, exit 3", good.replace("holds a repeated callback is a no-op", "stale the signature now has a timestamp"), 3, "stale")
         case("a row the model does not have is another model", good + "TM-9: holds x\n", 1, "TM-9")
         case("VERDICT: BLOCKED is exit 3 even with every row answered", good.replace("CLEAN", "BLOCKED"), 3, "BLOCKED")
-        case("a CLEAN verdict does not hide a not-implemented row", good.replace("implemented app/c.rb:2", "not implemented"), 3, "BLOCKING")
+        case("a CLEAN verdict does not hide a not-implemented row", good.replace("implemented src/c.x:2", "not implemented"), 3, "BLOCKING")
         case("through main(): a complete current record passes", good, 0, "answered", base=["--base", "dev"])
         case("through main(): no record asks for the pass", None, 1, "missing", base=["--base", "dev"])
         case("an unknown base is unusable, not clean", good, 2, "UNUSABLE", base=["--base", "nope"])
@@ -342,8 +372,30 @@ def selftest() -> int:
         if got != 2:
             bad += 1
             print(f"FAIL an unreadable model is exit 2: got {got}")
+    # Every stack this script can see proves its own syntax: its syntax_cases name which lines of a sample are not code.
+    import detect_stack  # noqa: E402
+    manifests, _ = detect_stack.load_manifests(detect_stack.manifest_dirs(Path(__file__).resolve()))
+    ran = 0
+    for manifest in manifests:
+        for stack in manifest.get("stacks") or []:
+            sec = ((stack or {}).get("descriptor") or {}).get("security") if isinstance(stack, dict) else None
+            if not isinstance(sec, dict) or not isinstance(sec.get("syntax_cases"), str):
+                continue
+            label = f"{manifest['plugin']}:{stack.get('id')}"
+            try:
+                cases = json.loads((detect_stack.plugin_root(manifest) / sec["syntax_cases"]).read_text(encoding="utf-8"))
+            except (OSError, ValueError) as err:
+                bad += 1
+                print(f"FAIL {label}: cannot read its syntax cases: {err}")
+                continue
+            for c in cases:
+                ran += 1
+                got = non_code_lines(c["lines"], *rules_for(c["file"], sec.get("code_syntax") or []))
+                if got != set(c["non_code"]):
+                    bad += 1
+                    print(f"FAIL {label}: {c['name']}: non-code lines {sorted(got)}, expected {c['non_code']}")
     if bad == 0:
-        print("check_security_review selftest: every row passes")
+        print(f"check_security_review selftest: every row passes, and {ran} stack syntax case(s)")
     return 1 if bad else 0
 
 

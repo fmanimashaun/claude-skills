@@ -4626,6 +4626,18 @@
    "via": "declared"
   },
   {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-flow/scripts/check_security_review.py",
+   "plugin": "rails-flow",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
    "class": "rails",
    "issue": 2175,
    "nextjs_lines": 0,
@@ -5490,6 +5502,18 @@
    "via": "runs check_registry_closed.py"
   },
   {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-flow/checks.json#security-review",
+   "plugin": "rails-flow",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "gate",
+   "via": "runs check_security_review.py"
+  },
+  {
    "class": "rails",
    "issue": 2175,
    "nextjs_lines": 0,
@@ -6028,6 +6052,18 @@
    "seam": "",
    "type": "test",
    "via": "tests check_registry_closed.py"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-flow/scripts/mutations/check_security_review.py",
+   "plugin": "rails-flow",
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests check_security_review.py"
   },
   {
    "class": "rails",
@@ -7065,6 +7101,18 @@
    "class": "rails",
    "issue": 2182,
    "nextjs_lines": 0,
+   "path": "plugins/rails-stack/security/syntax-cases.json",
+   "plugin": "rails-stack",
+   "rails_lines": 3,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2182,
+   "nextjs_lines": 0,
    "path": "plugins/rails-stack/setup/rails.md",
    "plugin": "rails-stack",
    "rails_lines": 94,
@@ -7079,7 +7127,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/stacks.json",
    "plugin": "rails-stack",
-   "rails_lines": 20,
+   "rails_lines": 23,
    "registered": [],
    "seam": "",
    "type": "support",
@@ -7090,9 +7138,9 @@
  "summary": {
   "by_class": {
    "mixed": 199,
-   "neutral": 274,
+   "neutral": 277,
    "nextjs": 3,
-   "rails": 111
+   "rails": 112
   },
   "by_plugin": {
    "design-flow": {
@@ -7132,17 +7180,17 @@
    },
    "rails-flow": {
     "mixed": 104,
-    "neutral": 120,
+    "neutral": 123,
     "nextjs": 0,
     "rails": 73,
-    "total": 297
+    "total": 300
    },
    "rails-stack": {
     "mixed": 3,
     "neutral": 2,
     "nextjs": 0,
-    "rails": 7,
-    "total": 12
+    "rails": 8,
+    "total": 13
    }
   },
   "by_type": {
@@ -7162,10 +7210,10 @@
    },
    "gate": {
     "mixed": 14,
-    "neutral": 12,
+    "neutral": 13,
     "nextjs": 0,
     "rails": 29,
-    "total": 55
+    "total": 56
    },
    "hook": {
     "mixed": 13,
@@ -7176,10 +7224,10 @@
    },
    "script": {
     "mixed": 57,
-    "neutral": 55,
+    "neutral": 56,
     "nextjs": 0,
     "rails": 31,
-    "total": 143
+    "total": 144
    },
    "skill": {
     "mixed": 3,
@@ -7192,17 +7240,17 @@
     "mixed": 15,
     "neutral": 35,
     "nextjs": 3,
-    "rails": 7,
-    "total": 60
+    "rails": 8,
+    "total": 61
    },
    "test": {
     "mixed": 59,
-    "neutral": 98,
+    "neutral": 99,
     "nextjs": 0,
     "rails": 30,
-    "total": 187
+    "total": 188
    }
   },
-  "components": 587
+  "components": 591
  }
 }

@@ -14,6 +14,23 @@
         "security": {
             "checklist": "security/rails.md",
             "cases": "security/boundary-cases.json",
+            "syntax_cases": "security/syntax-cases.json",
+            "code_syntax": [
+                {
+                  "extensions": [
+                    ".rb",
+                    ".rake",
+                    ".erb"
+                  ],
+                  "block_comments": [
+                    {
+                      "open": "=begin",
+                      "close": "=end"
+                    }
+                  ],
+                  "heredoc": "<<[~-]?([\"']?)(?P<id>[A-Z_][A-Z0-9_]*)\\1"
+                }
+              ],
             "scanners": [
               "brakeman",
               "bundler-audit",

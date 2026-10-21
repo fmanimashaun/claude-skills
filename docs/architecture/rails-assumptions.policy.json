@@ -739,7 +739,8 @@
      "plugins/rails-stack/stacks.json",
      "plugins/rails-stack/setup/rails.md",
      "plugins/rails-stack/security/rails.md",
-     "plugins/rails-stack/security/boundary-cases.json"
+     "plugins/rails-stack/security/boundary-cases.json",
+     "plugins/rails-stack/security/syntax-cases.json"
     ],
     "class": "rails",
     "issue": 2182,

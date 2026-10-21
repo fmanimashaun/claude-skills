@@ -6,7 +6,7 @@ GUARD = Guard(
     subject="scripts/check_security_review.py",
     selftest="scripts/check_security_review.py",
     selftest_args=("--selftest",),
-    needs=("scripts/check_threat_model.py", "scripts/classify_door.py", "scripts/risky_diff.py"),
+    needs=("scripts/check_threat_model.py", "scripts/classify_door.py", "scripts/risky_diff.py", "scripts/detect_stack.py"),  # detect_stack: the stack code_syntax (#2119)
     mutations=(
         Mutation(
             "a record for an earlier commit stops being refused",
@@ -52,26 +52,33 @@ GUARD = Guard(
         ),
         Mutation(
             "a comment, blank or block-comment line is accepted as the line that implements a control",
-            "                elif int(ev.group(2)) in non_code_lines(src):",
+            "                elif int(ev.group(2)) in non_code_lines(src, *rules_for(ev.group(1), code_syntax(root))):",
             "                elif False:",
             "evidence on a comment line is incomplete",
         ),
         Mutation(
-            "a line inside =begin/=end counts as code",
-            '            begin = not raw.startswith("=end")',
-            "            begin = True",
+            # #2119 stack-neutral: a stack's own block comments and heredocs come from its descriptor's code_syntax.
+            "the stack's code_syntax is ignored, so a line inside the stack's own block comment counts as code",
+            "                elif int(ev.group(2)) in non_code_lines(src, *rules_for(ev.group(1), code_syntax(root))):",
+            "                elif int(ev.group(2)) in non_code_lines(src):",
+            "evidence inside a stack block comment is incomplete",
+        ),
+        Mutation(
+            "a block comment never closes, so the code after it reads as comment",
+            "            if closing in raw:\n                closing = None",
+            "            if False:\n                closing = None",
             "evidence on code after a block comment passes",
         ),
         Mutation(
             "a heredoc body counts as code",
-            "            heredocs = [m.group(2) for m in HEREDOC_RE.finditer(raw)]",
+            '            heredocs = [m.group("id") for m in heredoc.finditer(raw)]',
             "            heredocs = []",
             "evidence inside a heredoc body is incomplete",
         ),
         Mutation(
             "only the first of several heredocs on one line is tracked",
-            "            heredocs = [m.group(2) for m in HEREDOC_RE.finditer(raw)]",
-            "            heredocs = [m.group(2) for m in HEREDOC_RE.finditer(raw)][:1]",
+            '            heredocs = [m.group("id") for m in heredoc.finditer(raw)]',
+            '            heredocs = [m.group("id") for m in heredoc.finditer(raw)][:1]',
             "evidence in the second of two heredocs opened on one line is incomplete",
         ),
         Mutation(
@@ -82,8 +89,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the middle of a /* */ span counts as code",
-            "        if block:\n            out.add(n)\n            block = \"*/\" not in raw\n            continue",
-            "        if False:\n            out.add(n)\n            block = \"*/\" not in raw\n            continue",
+            "        if closing is not None:\n            out.add(n)",
+            "        if False:\n            out.add(n)",
             "evidence in the middle of a /* */ span with no leading star is incomplete",
         ),
         Mutation(
