@@ -80,12 +80,23 @@ def inside(path: Path, project: Path) -> bool:
     return False
 
 
+# What a version or ready probe inherits: an ALLOWLIST, never the whole environment. direnv or a repository's settings can set
+# BASH_ENV, NODE_OPTIONS, RUBYOPT, PYTHONPATH and their kind from the project, and each makes an interpreter load a file before
+# the CLI prints anything (#2291 adversary; the same reason the hooks unset them, lib/trusted-env.sh). Docker keeps its own
+# connection settings: they choose which daemon answers, not what code runs.
+PROBE_ENV_KEYS = ("HOME", "USER", "LOGNAME", "LANG", "TMPDIR", "TERM", "XDG_CONFIG_HOME", "XDG_RUNTIME_DIR",
+                  "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_CERT_PATH", "DOCKER_TLS_VERIFY")
+
+
 def probe_env(project: Path) -> tuple[dict[str, str], str]:
     """(environment, working directory) for running a CLI on PATH. Its PATH keeps only absolute entries outside the project, so a
-    `#!/usr/bin/env node` script cannot pick up the project's own `node`; it runs from a neutral directory, so nothing reads the
-    project's config by being started inside it (#2291 adversary)."""
+    `#!/usr/bin/env node` script cannot pick up the project's own `node`; the rest of its environment is PROBE_ENV_KEYS and the
+    `LC_*` locale only; it runs from a neutral directory, so nothing reads the project's config by being started inside it.
+    A project file hard-linked into a global directory is not caught (its parents never meet the project): a clone cannot create
+    one, only the user or code already running can."""
     keep = [e for e in os.environ.get("PATH", "").split(os.pathsep) if e and os.path.isabs(e) and not inside(Path(e), project)]
-    return {**os.environ, "PATH": os.pathsep.join(keep)}, tempfile.gettempdir()
+    env = {k: v for k, v in os.environ.items() if k in PROBE_ENV_KEYS or k.startswith("LC_")}
+    return {**env, "PATH": os.pathsep.join(keep)}, tempfile.gettempdir()
 
 
 def ready(command: list[str], env: dict[str, str], cwd: str) -> tuple[bool, str]:
@@ -342,6 +353,28 @@ def selftest() -> int:
                 os.chdir(here)
             probed = Path(where.read_text(encoding="utf-8").strip()) if where.exists() else None
             case(probed is not None and not inside(probed, proj), f"a probe runs outside the project, not in it: {probed}")
+            # an interpreter-option variable from the user's environment (direnv can set it from the project) never reaches a probe
+            evil = proj / "evil.sh"
+            evil.write_text(f"touch '{pwned}'\n", encoding="utf-8")
+            (bindir / "casecli").write_text("#!/bin/bash\necho 'casecli 1.0'\n", encoding="utf-8")
+            os.environ["BASH_ENV"] = str(evil)
+            os.environ["NODE_OPTIONS"] = f"--require {evil}"
+            try:
+                rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
+            finally:
+                os.environ.pop("BASH_ENV", None)
+                os.environ.pop("NODE_OPTIONS", None)
+            case(not pwned.exists(), "BASH_ENV from the environment does not make a bash-script CLI load a project file")
+            env_seen, _ = probe_env(proj)
+            os.environ["NODE_OPTIONS"] = "--require x"
+            os.environ["LC_ALL"] = "C"
+            try:
+                env_seen, _ = probe_env(proj)
+            finally:
+                os.environ.pop("NODE_OPTIONS", None)
+                os.environ.pop("LC_ALL", None)
+            case("NODE_OPTIONS" not in env_seen and env_seen.get("LC_ALL") == "C" and "HOME" in env_seen,
+                 f"a probe's environment is the allowlist plus locale: {sorted(env_seen)}")
             toolchain["clis"] = [c for c in toolchain["clis"] if c["bin"] != "casecli"]
             (plug / "stacks.json").write_text(json.dumps({"plugin": "tc", "stacks": [
                 {"id": "tcs", "all": [{"file": "marker.txt"}], "descriptor": {"toolchain": toolchain}}]}), encoding="utf-8")

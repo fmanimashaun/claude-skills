@@ -119,9 +119,15 @@ GUARD = Guard(
         ),
         Mutation(
             'the probe runs in the current directory, which may be the project',
-            '    return {**os.environ, "PATH": os.pathsep.join(keep)}, tempfile.gettempdir()',
-            '    return {**os.environ, "PATH": os.pathsep.join(keep)}, os.getcwd()',
+            '    return {**env, "PATH": os.pathsep.join(keep)}, tempfile.gettempdir()',
+            '    return {**env, "PATH": os.pathsep.join(keep)}, os.getcwd()',
             'a probe runs outside the project, not in it',
+        ),
+        Mutation(
+            'the probe inherits the whole environment, so BASH_ENV or NODE_OPTIONS from the project reaches it',
+            '    env = {k: v for k, v in os.environ.items() if k in PROBE_ENV_KEYS or k.startswith("LC_")}',
+            '    env = dict(os.environ)',
+            'BASH_ENV from the environment does not make a bash-script CLI load a project file',
         ),
     ),
 )
