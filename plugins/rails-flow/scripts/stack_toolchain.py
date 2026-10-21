@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -70,6 +71,30 @@ def ready(command: list[str]) -> tuple[bool, str]:
     return done.returncode == 0, f"exit {done.returncode}"
 
 
+def locate(row: dict, project: Path) -> str | None:
+    """The CLI's path: on PATH first, then each of the descriptor's `project_paths` inside the project; None when neither."""
+    found = shutil.which(row["bin"])
+    if found:
+        return found
+    for rel in row.get("project_paths") or []:
+        candidate = project / rel
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+def version(row: dict, path: str) -> str:
+    """The first line the CLI prints for its `version` arguments, or why there is none: reported, never judged."""
+    if not row.get("version"):
+        return ""
+    try:
+        done = subprocess.run([path, *row["version"]], capture_output=True, text=True, timeout=READY_TIMEOUT, stdin=subprocess.DEVNULL)
+    except (subprocess.TimeoutExpired, OSError) as err:
+        return f" (version unknown: {type(err).__name__})"
+    first = (done.stdout or done.stderr).strip().splitlines()
+    return f" ({first[0][:80]})" if done.returncode == 0 and first else f" (version unknown: exit {done.returncode})"
+
+
 def audit(project: Path, home: Path, dirs: list[Path] | None = None) -> tuple[int, list[str], list[str]]:
     """(exit code, findings, notes). A finding is something missing, with its steps; a note says what was checked."""
     code, report = detect_stack.run(project, dirs if dirs is not None else detect_stack.manifest_dirs(Path(__file__).resolve()))
@@ -100,20 +125,21 @@ def audit(project: Path, home: Path, dirs: list[Path] | None = None) -> tuple[in
             if row["bin"] in seen:
                 continue
             seen.add(row["bin"])
-            if not shutil.which(row["bin"]):
-                findings.append(f"MISSING cli {row['bin']} is not on PATH ({label}): {row['install']}")
+            path = locate(row, project)
+            if not path:
+                where = " or in the project" if row.get("project_paths") else ""
+                findings.append(f"MISSING cli {row['bin']} is not on PATH{where} ({label}): {row['install']}")
                 continue
             if row.get("ready"):
-                ok, how = ready(row["ready"])
+                ok, how = ready([path, *row["ready"][1:]] if row["ready"][0] == row["bin"] else row["ready"])
                 if not ok:
                     findings.append(f"NOT READY cli {row['bin']}: `{' '.join(row['ready'])}` failed ({how}) ({label}): {row['ready_hint']}")
                     continue
-            notes.append(f"ok   cli {row['bin']} ({label})")
+            notes.append(f"ok   cli {row['bin']}{version(row, path)} ({label})")
     return (1 if findings else 0), findings, notes
 
 
 def selftest() -> int:
-    import os
     import tempfile
     bad = 0
 
@@ -137,7 +163,9 @@ def selftest() -> int:
                                  {"id": "extra@official", "install": "/plugin install extra@official"}],
                      "clis": [{"bin": "okcli", "install": "get okcli", "ready": ["okcli"], "ready_hint": "log in to okcli"},
                               {"bin": "downcli", "install": "get downcli", "ready": ["downcli"], "ready_hint": "start downcli"},
-                              {"bin": "absentcli", "install": "brew install absentcli"}]}
+                              {"bin": "absentcli", "install": "brew install absentcli"},
+                              {"bin": "localcli", "install": "npm install localcli --save-dev",
+                               "project_paths": ["node_modules/.bin/localcli"], "version": ["--version"]}]}
         (plug / "stacks.json").write_text(json.dumps({"plugin": "tc", "stacks": [
             {"id": "tcs", "all": [{"file": "marker.txt"}], "descriptor": {"toolchain": toolchain}}]}), encoding="utf-8")
         home, proj = root / "home", root / "proj"
@@ -157,6 +185,16 @@ def selftest() -> int:
                 return audit(proj, home, [plug])
 
             rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
+            text = "\n".join(findings)
+            case("MISSING cli localcli is not on PATH or in the project" in text and "npm install localcli --save-dev" in text,
+                 f"a project-local CLI that is absent is flagged with its install line: {findings}")
+            local = proj / "node_modules" / ".bin" / "localcli"
+            local.parent.mkdir(parents=True)
+            local.write_text("#!/bin/sh\necho 'localcli 9.8.7'\n", encoding="utf-8")
+            local.chmod(0o755)
+            rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
+            case(not any("localcli" in f for f in findings) and any("ok   cli localcli (localcli 9.8.7)" in n for n in notes),
+                 f"a CLI in the project's node_modules/.bin is found and its version reported: {findings} {notes}")
             text = "\n".join(findings)
             case(rc == 1, f"a missing tool is exit 1: rc={rc}")
             case("MISSING plugin extra@official is not enabled" in text and "/plugin install extra@official" in text,

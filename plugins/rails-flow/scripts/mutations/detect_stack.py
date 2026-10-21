@@ -515,5 +515,47 @@ GUARD = Guard(
             '                    pass\n                except re.error as err:\n                    found.append(f"{where}.security.code_syntax[{i}].refuse_when',
             "a refuse_when pattern that does not compile is a problem",
         ),
+        Mutation(
+            'a plugin id without its marketplace passes',
+            '            if isinstance(row.get("id"), str) and not PLUGIN_ID.fullmatch(row["id"]):',
+            '            if False:',
+            'a plugin id without its marketplace is a problem',
+        ),
+        Mutation(
+            'a CLI given as a path passes',
+            '            if isinstance(row.get("bin"), str) and ("/" in row["bin"] or " " in row["bin"].strip()):',
+            '            if False:',
+            'a CLI given as a path is a problem',
+        ),
+        Mutation(
+            'a ready check with no hint passes',
+            '            if "ready" in row and not row.get("ready_hint"):',
+            '            if False:',
+            'a ready check with no hint is a problem',
+        ),
+        Mutation(
+            'an empty ready command passes',
+            '            if isinstance(ready, list) and (not ready or not all(isinstance(a, str) and a.strip() for a in ready)):',
+            '            if False:',
+            'an empty ready command is a problem',
+        ),
+        Mutation(
+            'toolchain blocks are never validated',
+            '            found.extend(toolchain_problems(stack, where))',
+            '            pass',
+            'a plugin id without its marketplace is a problem',
+        ),
+        Mutation(
+            'the report drops the toolchain list',
+            '"toolchain": toolchains(manifests, matched),',
+            '"toolchain": [],',
+            "the report lists each matched stack's toolchain",
+        ),
+        Mutation(
+            'a toolchain block counts as a flow-facing descriptor, so it owes REQUIRED keys',
+            'PER_STACK_KEYS = ("setup_section", "security", "toolchain")',
+            'PER_STACK_KEYS = ("setup_section", "security")',
+            'a toolchain-only descriptor owes no REQUIRED keys',
+        ),
     ),
 )

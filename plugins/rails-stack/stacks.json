@@ -11,6 +11,9 @@
       "descriptor": {
         "runner_prefix": ["bundle", "exec"],
         "setup_section": "setup/rails.md",
+        "toolchain": {
+            "plugins": [{"id": "rails-stack@claude-skills", "install": "/plugin install rails-stack@claude-skills"}]
+        },
         "security": {
             "checklist": "security/rails.md",
             "cases": "security/boundary-cases.json",
