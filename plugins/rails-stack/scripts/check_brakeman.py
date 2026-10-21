@@ -115,6 +115,13 @@ def _selftest() -> int:
                 _stub(p / "bin", "brakeman", binstub)
             return p
 
+        def safe_run(p: Path) -> tuple[int, list[str]]:
+            """`run`, but a crash fails ITS row with its label instead of ending the selftest before the row is reached."""
+            try:
+                return run(p)
+            except Exception as exc:  # noqa: BLE001
+                return -1, [f"raised {exc!r}"]
+
         emit = lambda report: f"cat <<'EOF'\n{json.dumps(report)}\nEOF\n"  # noqa: E731
         saved_path = os.environ.get("PATH", "")
         os.environ["PATH"] = str(base / "empty-bin") + os.pathsep + "/usr/bin:/bin"  # no brakeman and no bundle unless a case puts one here
@@ -132,7 +139,20 @@ def _selftest() -> int:
             code, lines = run(project("garbage", binstub="echo 'Brakeman is thinking about it'\n"))
             check("output that is not JSON is a failure to run, not a clean pass", code == 2 and any("no JSON report" in ln for ln in lines))
             code, lines = run(project("crash", binstub="echo 'boom' >&2\nexit 4\n"))
-            check("a crash with no report is a failure to run", code == 2)
+            check("a crash with no report is a failure to run, naming its exit code", code == 2 and any("no JSON report (exit 4)" in ln and "boom" in ln for ln in lines))
+            badproj = project("badinterp")
+            (badproj / "bin").mkdir()
+            (badproj / "bin" / "brakeman").write_text("#!/nonexistent/interpreter\n", encoding="utf-8")
+            (badproj / "bin" / "brakeman").chmod(0o755)
+            code, lines = safe_run(badproj)
+            check("a Brakeman that cannot be executed is a failure to run", code == 2 and any("could not run" in ln for ln in lines))
+            global TIMEOUT
+            saved_timeout, TIMEOUT = TIMEOUT, 1
+            try:
+                code, lines = safe_run(project("hang", binstub="sleep 5\n"))
+            finally:
+                TIMEOUT = saved_timeout
+            check("a Brakeman that outlives the timeout is a failure to run, not a clean pass", code == 2 and any("could not run" in ln and "timed out" in ln for ln in lines))
             code, lines = run(project("array", binstub="echo '[]'\n"))
             check("a JSON report that is not an object is a failure to run", code == 2)
             # the Gemfile route: bundle exec brakeman, through a bundle stub that records its arguments

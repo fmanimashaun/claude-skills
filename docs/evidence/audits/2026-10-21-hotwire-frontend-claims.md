@@ -57,30 +57,31 @@ Tally: **18 CONFIRMED** (H1-3, H6-10, H13-18, H20, H21, H23, H24; H24 with one s
 
 | id | verdict | source (file:line at the version) | wording change required before it is skill text | Brakeman / erb_lint |
 |---|---|---|---|---|
-| H1 | CONFIRMED | turbo-site `handbook/04_frames.md:49,260`; turbo v8.0.23 `src/core/frames/frame_view.js:6`, `frame_controller.js:433-435` | `dom_id` is a Rails convention, not Turbo's; also fires `turbo:frame-missing` and raises `TurboFrameMissingError` | no / no |
-| H2 | CONFIRMED | turbo `src/elements/stream_element.js:188-190` (`getElementById`) | true for `target=` (first match only); `targets=` (CSS selector) hits all | no / no |
-| H3 | CONFIRMED | stimulus-site `00_the_origin_of_stimulus.md:65`, `05_managing_state.md:10`; turbo-site `handbook/07_building.md:45` | say "listeners and JS data are discarded by `cloneNode`", not "instance state" | no / no |
+| H1 | CONFIRMED | turbo-site `handbook/04_frames.md:49,260`; turbo v8.0.23 `src/core/frames/frame_view.js:6`, `frame_controller.js:433-435` | `dom_id` is a Rails convention, not Turbo's; also fires `turbo:frame-missing` and raises `TurboFrameMissingError` | no / no [quotes: H1] |
+| H2 | CONFIRMED | turbo `src/elements/stream_element.js:188-190` (`getElementById`) | true for `target=` (first match only); `targets=` (CSS selector) hits all | no / no [quotes: H2] |
+| H3 | CONFIRMED | stimulus-site `00_the_origin_of_stimulus.md:65`, `05_managing_state.md:10`; turbo-site `handbook/07_building.md:45` | say "listeners and JS data are discarded by `cloneNode`", not "instance state" | no / no [quotes: H3] |
 | H4 | INCONCLUSIVE (partly) | stimulus reference lifecycle-callbacks; handbook `06_working_with_external_resources.md:129-156` | docs show the timer cleanup pattern but state no "must undo" rule; restore visits create new instances, so only timers and globals (window/document listeners, third-party instances) accumulate. Rewrite narrowly and re-verify | no / no |
 | H5 | INCONCLUSIVE | stimulus-site `00_the_origin_of_stimulus.md:54` (philosophy) | advice, not a verified failure; record as the maintainer's design stance | no / no |
-| H6 | CONFIRMED | turbo-site `handbook/07_building.md:49,57`; `reference/attributes.md:22` | `turbo:before-cache` resets open UI; `data-turbo-temporary` is for flash and alerts | no / no |
-| H7 | CONFIRMED | turbo-site `handbook/02_drive.md:244-250`; `reference/attributes.md:15` | needs a fingerprint in the asset URL; the importmap-tag case is not in the Turbo docs | no / no |
-| H8 | CONFIRMED (wording) | turbo-site `handbook/02_drive.md:335-337`; turbo `form_submission.js:148-149,242-243`, `navigator.js:29`, `frame_controller.js:194` | a Drive submit needs a redirect ("Form responses must redirect to another location"); **frame submits do not**. `:unprocessable_entity` is the 8.0.x scaffold symbol; `:unprocessable_content` needs Rack 3.1+ (existing `turbo.md:27-29` already says this) | no / no |
-| H9 | CONFIRMED | turbo-site `handbook/04_frames.md:130,161`; `frame_controller.js:433` | "Content missing" only when the response lacks the matching frame; `turbo-visit-control: reload` and `turbo:frame-missing` are alternatives | no / no |
-| H10 | CONFIRMED | turbo-site `handbook/05_streams.md:124-128`; turbo-rails `streams_helper.rb` doc example | say "keep a `format.html` branch (usually a redirect)"; drop "failed stream request gets nothing" (inference) | no / no |
+| H6 | CONFIRMED | turbo-site `handbook/07_building.md:49,57`; `reference/attributes.md:22` | `turbo:before-cache` resets open UI; `data-turbo-temporary` is for flash and alerts | no / no [quotes: H6] |
+| H7 | CONFIRMED | turbo-site `handbook/02_drive.md:244-250`; `reference/attributes.md:15` | needs a fingerprint in the asset URL; the importmap-tag case is not in the Turbo docs | no / no [quotes: H7] |
+| H8 | CONFIRMED | turbo-site `handbook/02_drive.md:335-337`; turbo `form_submission.js:148-149,242-243`, `navigator.js:29`, `frame_controller.js:194` | a Drive submit needs a redirect ("Form responses must redirect to another location"); **frame submits do not**. `:unprocessable_entity` is the 8.0.x scaffold symbol; `:unprocessable_content` needs Rack 3.1+ (existing `turbo.md:27-29` already says this) | no / no [quotes: H8] |
+| H9 | CONFIRMED | turbo-site `handbook/04_frames.md:130,161`; `frame_controller.js:433` | "Content missing" only when the response lacks the matching frame; `turbo-visit-control: reload` and `turbo:frame-missing` are alternatives | no / no [quotes: H9] |
+| H10 | CONFIRMED | turbo-site `handbook/05_streams.md:124-128`; turbo-rails `streams_helper.rb` doc example | say "keep a `format.html` branch (usually a redirect)"; drop "failed stream request gets nothing" (inference) | no / no [quotes: H10] |
 | H11 | INCONCLUSIVE | no official text on OAuth with Turbo | practitioner knowledge only; needs an official or maintainer-issue citation before it is doctrine | no / no |
 | H12 | INCONCLUSIVE (partly) | stimulus-site `05_managing_state.md:10` | DOM-first is confirmed for Stimulus; "server and URL first, never a client store" is **our design stance**: record it as a maintainer decision | no / no |
-| H13 | CONFIRMED | turbo-site `reference/attributes.md:37-41`; turbo `src/util.js:117-124` | frames also get `aria-busy`; form, frame and `html` are marked | no / no |
-| H14 | CONFIRMED (wording) | `reference/attributes.md:27`; turbo `form_submission.js:182-193`, `config/forms.js` | `data-turbo-submits-with` only swaps the label; disabling comes from the default `config.forms.submitter` | no / no |
-| H15 | CONFIRMED | turbo-site `handbook/01_introduction.md:9`; stimulus `04_designing_for_resilience.md:14` | cite the principle only | no / partly (none flags `href="#"`) |
-| H16 | CONFIRMED | turbo-site `handbook/04_frames.md:116`; `reference/frames.md:25-40,109-112` | eager is the default `loading` | no / no |
-| H17 | CONFIRMED | turbo-site `handbook/02_drive.md:351,357`; turbo `link_prefetch_observer.js:47,60-70,175-186` | prefetch is on `mouseenter` only, GET only; skips `data-turbo-method` non-GET, `data-turbo-confirm`, `data-turbo-stream`; opt out per link or with the meta tag | no / no |
-| H18 | CONFIRMED | Rails guide `caching_with_rails.md:159-172` | none | no / no |
+| H13 | CONFIRMED | turbo-site `reference/attributes.md:37-41`; turbo `src/util.js:117-124` | frames also get `aria-busy`; form, frame and `html` are marked | no / no [quotes: H13] |
+| H14 | CONFIRMED | `reference/attributes.md:27`; turbo `form_submission.js:182-193`, `config/forms.js` | `data-turbo-submits-with` only swaps the label; disabling comes from the default `config.forms.submitter` | no / no [quotes: H14] |
+| H15 | CONFIRMED | turbo-site `handbook/01_introduction.md:9`; stimulus `04_designing_for_resilience.md:14` | cite the principle only | no / partly (none flags `href="#"`) [quotes: H15] |
+| H16 | CONFIRMED | turbo-site `handbook/04_frames.md:116`; `reference/frames.md:25-40,109-112` | eager is the default `loading` | no / no [quotes: H16] |
+| H17 | CONFIRMED | turbo-site `handbook/02_drive.md:351,357`; turbo `link_prefetch_observer.js:47,60-70,175-186` | prefetch is on `mouseenter` only, GET only; skips `data-turbo-method` non-GET, `data-turbo-confirm`, `data-turbo-stream`; opt out per link or with the meta tag | no / no [quotes: H17] |
+| H18 | CONFIRMED | Rails guide `caching_with_rails.md:159-172` | none | no / no [quotes: H18] |
 | H19 | INCONCLUSIVE | Rails guide `active_record_querying.md:1757` (generic `strict_loading`) | nothing in turbo-rails ties N+1 to broadcasts; reword as generic N+1 (already `performance-caching.md:173,251`). `_later` moves the render to a job (`broadcasts.rb:46-95`) but does not remove the queries | no / no |
-| H20 | CONFIRMED | Rails Security guide `security.md:972,993,982-986` | the guide does not name `raw` or `html_safe` in that section | **Brakeman yes**: `CheckCrossSiteScripting`, `CheckSanitizeMethods`, `CheckStripTags`; erb_lint partly (`ErbSafety`; `Rubocop` linter with `Rails/OutputSafety` if enabled) |
-| H21 | CONFIRMED | turbo-site `handbook/04_frames.md:256`; Rails guide `security.md:508-514`; rails `exception_wrapper.rb:21` | rejection is 422 via `rescue_responses` | Brakeman partly (`CheckForgerySetting`, not a missing header); erb_lint no |
+| H20 | CONFIRMED | Rails Security guide `security.md:972,993,982-986` | the guide does not name `raw` or `html_safe` in that section | **Brakeman yes**: `CheckCrossSiteScripting`, `CheckSanitizeMethods`, `CheckStripTags`; erb_lint partly (`ErbSafety`; `Rubocop` linter with `Rails/OutputSafety` if enabled) [quotes: H20] |
+| H21 | CONFIRMED | turbo-site `handbook/04_frames.md:256`; Rails guide `security.md:508-514`; rails `exception_wrapper.rb:21` | rejection is 422 via `rescue_responses` | Brakeman partly (`CheckForgerySetting`, not a missing header); erb_lint no [quotes: H21] |
 | H22 | **REFUTED as worded** | turbo-rails v2.0.23 `app/channels/turbo/streams/stream_name.rb`, `streams_channel.rb` (`subscribed`), `streams_helper.rb`, `lib/turbo.rb:15` (no `expires_in`) | the premise "the signature is the access control" is wrong. **Restated, CONFIRMED by the same sources:** the signature protects the **integrity** of a stream name (a client cannot forge or alter one); it is not authorization. `Turbo::StreamsChannel#subscribed` does not check `current_user`, anyone holding a valid signed name can subscribe, and the name does not expire. Access control is (a) which pages embed the name, (b) Action Cable connection auth, (c) a custom `channel:` with `subscription_allowed?` (documented in `streams_channel.rb`). Per-user stream names stand as name hygiene only | Brakeman no; erb_lint no |
-| H23 | CONFIRMED | turbo-rails `broadcasts.rb:112-113` (`ApplicationController.render`), `:46-95`; `README.md:222-229` | no request, session or cookies in a broadcast render, so `current_user` is undefined or nil; pass data as locals | no / no |
-| H24 | CONFIRMED (sub-claim unverified) | turbo `progress_bar.js:108-115`, `util.js:179-185`; Rails guide `security.md:1450,1471-1473,1492-1498` | the importmap-tag nonce behaviour is not in the guide section read: unverified, keep it out of skill text until it is | Brakeman no; erb_lint partly (`RequireScriptNonce`, not the progress-bar style) |
+| H22r | CONFIRMED | turbo-rails v2.0.23 `app/channels/turbo/streams_channel.rb` (the `subscribed` method rejects only when the signed name does not verify) | the restated claim: the signature protects the **integrity** of a stream name (it cannot be forged or altered); it is not authorization, anyone holding a valid signed name can subscribe, and the name does not expire | Brakeman no; erb_lint no [quotes: H22r] |
+| H23 | CONFIRMED | turbo-rails `broadcasts.rb:112-113` (`ApplicationController.render`), `:46-95`; `README.md:222-229` | no request, session or cookies in a broadcast render, so `current_user` is undefined or nil; pass data as locals | no / no [quotes: H23] |
+| H24 | CONFIRMED | turbo `progress_bar.js:108-115`, `util.js:179-185`; Rails guide `security.md:1450,1471-1473,1492-1498` | the importmap-tag nonce behaviour is not in the guide section read: unverified, keep it out of skill text until it is | Brakeman no; erb_lint partly (`RequireScriptNonce`, not the progress-bar style) [quotes: H24] |
 
 **Tool coverage, summarised.** Brakeman covers only H20 (XSS) and, partly, H21; erb_lint covers H20 and H24 partly and H15 not at all. **No upstream check covers H1-H19, H22 or H23**, so any enforcement for those is ours (`checks.json`), and only where a pattern can be detected mechanically; the rest is labelled advice.
 
@@ -102,8 +103,8 @@ Tally: **18 CONFIRMED** (H1-3, H6-10, H13-18, H20, H21, H23, H24; H24 with one s
 
 | id | verdict | source | wording change required | Brakeman / erb_lint |
 |---|---|---|---|---|
-| H25 | CONFIRMED | turbo-site `handbook/04_frames.md` (a link or form with `data-turbo-frame` drives the named frame); turbo v8.0.23 `src/core/frames/frame_controller.js:446-450`; the literal "Content missing" is at `src/core/frames/frame_view.js:6` (checked directly: the second verifier could not find it, the first did) | "Content missing" is the frame's default text; Turbo also raises `TurboFrameMissingError` and fires a cancelable `turbo:frame-missing`, which an app can handle or turn into a visit. The frame is matched by id | no / no |
-| H26 | CONFIRMED with corrections | turbo `form_submission.js:140-153`, `frame_controller.js:246-260,489` (`_top` is not frame-handled), `stream_observer.js:44-50` | (1) a 422 re-renders in the frame only if the response contains a matching `<turbo-frame id="modal">`; without one it is the frame-missing error, not a whole-page replace. (2) a successful non-GET submit must redirect or return a stream; a plain 200 HTML raises "Form responses must redirect to another location". (3) a redirect inside a frame loads into the frame and needs a matching frame, so to leave the modal use `data-turbo-frame="_top"` or respond with a stream. (4) a stream `update` of `modal` clears it; the handbook does not state this for frame-targeted forms, it is confirmed from source | no / no |
+| H25 | CONFIRMED | turbo-site `handbook/04_frames.md` (a link or form with `data-turbo-frame` drives the named frame); turbo v8.0.23 `src/core/frames/frame_controller.js:446-450`; the literal "Content missing" is at `src/core/frames/frame_view.js:6` (checked directly: the second verifier could not find it, the first did) | "Content missing" is the frame's default text; Turbo also raises `TurboFrameMissingError` and fires a cancelable `turbo:frame-missing`, which an app can handle or turn into a visit. The frame is matched by id | no / no [quotes: H25] |
+| H26 | CONFIRMED | turbo `form_submission.js:140-153`, `frame_controller.js:246-260,489` (`_top` is not frame-handled), `stream_observer.js:44-50` | (1) a 422 re-renders in the frame only if the response contains a matching `<turbo-frame id="modal">`; without one it is the frame-missing error, not a whole-page replace. (2) a successful non-GET submit must redirect or return a stream; a plain 200 HTML raises "Form responses must redirect to another location". (3) a redirect inside a frame loads into the frame and needs a matching frame, so to leave the modal use `data-turbo-frame="_top"` or respond with a stream. (4) a stream `update` of `modal` clears it; the handbook does not state this for frame-targeted forms, it is confirmed from source | no / no [quotes: H26] |
 
 **Final tally for phase 1: 20 CONFIRMED (H1-3, H6-10, H13-18, H20, H21, H23-26), 1 REFUTED as worded and restated (H22), 5 INCONCLUSIVE (H4, H5, H11, H12, H19)**, of 26 claims. The modal-CRUD design choice itself (section D) stays a maintainer decision.
 
@@ -131,3 +132,92 @@ Measured with `git grep` over `origin/dev` (415ccc352) of the Retask repository,
 2. **Modal CRUD plus Frames and Streams flow**: H25, H26 with the corrected wording, H1, H8, H9, H10 and their checks.
 3. **Composition and performance**: H2, H3 (review verdict, #2225), H5, H7, H13, H15, H16, H17, H18 (review verdict), H21, H23, H24.
 Each step: skill text first only for CONFIRMED claims with the wording fixes of section C, the check and its negative fixture and mutation guard in the same PR, CHANGELOG naming the citation and the version boundary.
+
+## H. Verbatim quotes for the CONFIRMED verdicts
+
+Each phrase below was matched against the raw text of its URL (the #2233 procedure, `scripts/check_verdict_quotes.py`). A CONFIRMED verdict that quotes a page the verifier did not see cannot pass this check.
+
+```quotes H1
+https://raw.githubusercontent.com/hotwired/turbo/v8.0.23/src/core/frames/frame_view.js | turbo v8.0.23 | Content missing
+```
+
+```quotes H2
+https://raw.githubusercontent.com/hotwired/turbo/v8.0.23/src/elements/stream_element.js | turbo v8.0.23 | getElementById(this.target)
+```
+
+```quotes H3
+https://raw.githubusercontent.com/hotwired/stimulus-site/main/_source/handbook/00_the_origin_of_stimulus.md | stimulus-site main, read 2026-10-21 | State is stored in the HTML, so that controllers can be discarded between page changes
+```
+
+```quotes H6
+https://raw.githubusercontent.com/hotwired/turbo-site/main/_source/handbook/07_building.md | turbo-site main, read 2026-10-21 | Listen for the `turbo:before-cache` event if you need to prepare the document before Turbo Drive caches it
+```
+
+```quotes H7
+https://raw.githubusercontent.com/hotwired/turbo-site/main/_source/handbook/02_drive.md | turbo-site main, read 2026-10-21 | data-turbo-track="reload"
+```
+
+```quotes H8
+https://raw.githubusercontent.com/hotwired/turbo-site/main/_source/handbook/02_drive.md | turbo-site main, read 2026-10-21 | HTTP 303 redirect response
+```
+
+```quotes H9
+https://raw.githubusercontent.com/hotwired/turbo-site/main/_source/handbook/04_frames.md | turbo-site main, read 2026-10-21 | setting the target to `_top`
+```
+
+```quotes H10
+https://raw.githubusercontent.com/hotwired/turbo-site/main/_source/handbook/05_streams.md | turbo-site main, read 2026-10-21 | text/vnd.turbo-stream.html
+```
+
+```quotes H13
+https://raw.githubusercontent.com/hotwired/turbo-site/main/_source/reference/attributes.md | turbo-site main, read 2026-10-21 | `aria-busy` is added to
+```
+
+```quotes H14
+https://raw.githubusercontent.com/hotwired/turbo-site/main/_source/reference/attributes.md | turbo-site main, read 2026-10-21 | specifies text to display when submitting a form
+```
+
+```quotes H15
+https://raw.githubusercontent.com/hotwired/turbo-site/main/_source/handbook/01_introduction.md | turbo-site main, read 2026-10-21 | progressively enhanced web applications
+```
+
+```quotes H16
+https://raw.githubusercontent.com/hotwired/turbo-site/main/_source/reference/frames.md | turbo-site main, read 2026-10-21 | Content will be replaced when the frame becomes visible
+```
+
+```quotes H17
+https://raw.githubusercontent.com/hotwired/turbo-site/main/_source/handbook/02_drive.md | turbo-site main, read 2026-10-21 | <meta name="turbo-prefetch" content="false">
+```
+
+```quotes H18
+https://raw.githubusercontent.com/rails/rails/v8.0.2/guides/source/caching_with_rails.md | rails v8.0.2 | belongs_to :product, touch: true
+```
+
+```quotes H20
+https://raw.githubusercontent.com/rails/rails/v8.0.2/guides/source/security.md | rails v8.0.2 | escape all output
+```
+
+```quotes H21
+https://raw.githubusercontent.com/hotwired/turbo-site/main/_source/handbook/04_frames.md | turbo-site main, read 2026-10-21 | X-CSRF-TOKEN
+```
+
+```quotes H22r
+https://raw.githubusercontent.com/hotwired/turbo-rails/v2.0.23/app/channels/turbo/streams_channel.rb | turbo-rails v2.0.23 | If the signed stream name cannot be verified, the subscription is rejected.
+```
+
+```quotes H23
+https://raw.githubusercontent.com/hotwired/turbo-rails/v2.0.23/app/channels/turbo/streams/broadcasts.rb | turbo-rails v2.0.23 | ApplicationController.render(formats: [ format ], **rendering)
+```
+
+```quotes H24
+https://raw.githubusercontent.com/hotwired/turbo/v8.0.23/src/core/drive/progress_bar.js | turbo v8.0.23 | element.nonce = cspNonce
+```
+
+```quotes H25
+https://raw.githubusercontent.com/hotwired/turbo-site/main/_source/handbook/04_frames.md | turbo-site main, read 2026-10-21 | it can drive another named frame by setting the target
+```
+
+```quotes H26
+https://raw.githubusercontent.com/hotwired/turbo/v8.0.23/src/core/drive/form_submission.js | turbo v8.0.23 | Form responses must redirect to another location
+```
+

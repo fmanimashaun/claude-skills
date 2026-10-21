@@ -34,10 +34,22 @@ GUARD = Guard(
             "output that is not JSON is a failure to run, not a clean pass",
         ),
         Mutation(
-            "a crash with no report is read as clean",
+            "a Brakeman that cannot be executed or times out is read as clean",
             '        return 2, [f"brakeman could not run',
             '        return 0, [f"brakeman could not run',
-            "a crash with no report is a failure to run",
+            "a Brakeman that cannot be executed is a failure to run",
+        ),
+        Mutation(
+            "a crash with no report is read as clean",
+            '        return 2, [f"brakeman gave no JSON report (exit {done.returncode}): {tail}"]',
+            '        return 0, [f"brakeman gave no JSON report (exit {done.returncode}): {tail}"]',
+            "a crash with no report is a failure to run, naming its exit code",
+        ),
+        Mutation(
+            "a timeout is read as clean",
+            "    except (OSError, subprocess.TimeoutExpired) as exc:",
+            "    except OSError as exc:",
+            "a Brakeman that outlives the timeout is a failure to run, not a clean pass",
         ),
         Mutation(
             "a JSON report that is not an object is read as clean",
