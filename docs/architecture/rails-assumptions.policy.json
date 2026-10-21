@@ -827,7 +827,10 @@
     "match": [
      "plugins/nextjs-stack/.claude-plugin/*",
      "plugins/nextjs-stack/skills/*",
-     "plugins/nextjs-stack/stacks.json"
+     "plugins/nextjs-stack/stacks.json",
+     "plugins/nextjs-stack/checks.json",
+     "plugins/nextjs-stack/scripts/*",
+     "plugins/nextjs-stack/scripts/mutations/*"
     ],
     "class": "nextjs",
     "issue": 2165,

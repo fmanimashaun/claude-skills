@@ -55,6 +55,7 @@ import rails_assumptions as ra  # noqa: E402  (the scanner, the policy loader, t
 REPO = ra.REPO
 HTML_OUT = "docs/architecture/component-classes.html"
 JSON_OUT = "docs/architecture/component-classes.json"
+PROOF = "docs/architecture/neutral-proof.json"  # written by prove_neutral.py --record: the components that ran clean on a Next.js and an empty project (#2205)
 CLASSES = ("neutral", "rails", "nextjs", "mixed")
 TYPES = ("command", "agent", "hook", "skill", "script", "gate", "test", "support")
 FROM_DECISION = {"rails-stack": "rails", "detector": "mixed", "reword": "mixed", "neutral": "neutral"}
@@ -264,6 +265,15 @@ def classify(root: Path, policy: dict, files: list[str] | None = None) -> tuple[
             findings.append(f"declaration {d['match'][0]}: matches no component (the file moved or the glob is wrong): delete or fix it")
         if d.get("class") == "mixed" and (not d.get("seam") or not isinstance(d.get("issue"), int)):
             findings.append(f"declaration {d['match'][0]}: mixed needs a `seam` and a plan issue number")
+    proof_file = root / PROOF
+    proven = set(json.loads(proof_file.read_text(encoding="utf-8")).get("proven", [])) if proof_file.is_file() else set()
+    paths = {c["path"] for c in comps}
+    for comp in comps:
+        comp["proven"] = comp["path"] in proven and bool(comp["info"]) and comp["info"]["class"] == "neutral"
+    for path in sorted(proven):
+        match = next((c for c in comps if c["path"] == path), None)
+        if match is None or not match["proven"]:
+            findings.append(f"{PROOF} records {path} as proven, but it is not a neutral component any more: re-run `prove_neutral.py --record` after reclassifying")
     return sorted(comps, key=lambda c: (c["plugin"], TYPES.index(c["type"]), c["path"])), findings
 
 
@@ -285,14 +295,14 @@ def summarise(comps: list[dict]) -> dict:
         row["total"] += 1
         if c["info"]:
             row[c["info"]["class"]] += 1
-    return {"components": len(comps), "by_class": {k: by_class.get(k, 0) for k in CLASSES}, "by_plugin": dict(sorted(by_plugin.items())),
+    return {"components": len(comps), "neutral_proven": sum(1 for c in comps if c.get("proven")), "by_class": {k: by_class.get(k, 0) for k in CLASSES}, "by_plugin": dict(sorted(by_plugin.items())),
             "by_type": {t: by_type[t] for t in TYPES if t in by_type}}
 
 
 def build_json(comps: list[dict]) -> str:
     rows = [{"path": c["path"], "plugin": c["plugin"], "type": c["type"], "class": c["info"]["class"] if c["info"] else None,
              "seam": c["info"]["seam"] if c["info"] else "", "issue": c["info"]["issue"] if c["info"] else None,
-             "via": c["info"]["via"] if c["info"] else "", "registered": c["registered"], "rails_lines": len(c["rails"]), "nextjs_lines": len(c["next"])}
+             "via": c["info"]["via"] if c["info"] else "", "proven": bool(c.get("proven")), "registered": c["registered"], "rails_lines": len(c["rails"]), "nextjs_lines": len(c["next"])}
             for c in comps]
     return json.dumps({"generated_by": "scripts/component_classes.py", "components": rows}, indent=1, sort_keys=True) + "\n"
 
@@ -338,6 +348,7 @@ SCRIPT = """(function () {
   var byPlugin = tally(function (r) { return r.dataset.plugin; }), byKind = tally(function (r) { return r.dataset.type; });
   var byClass = tally(function () { return "all"; })["all"] || {total: 0};
   document.querySelector("[data-total]").textContent = rows.length;
+  document.getElementById("by-proven").innerHTML = '<span class="tag neutral">neutral &#10003; proven</span> (included in neutral): ' + rows.filter(function (r) { return r.dataset.proven === "1"; }).length;
   document.getElementById("by-class").innerHTML = '<table><tr><th>class</th><th class="num">components</th></tr>' +
     CLASSES.map(function (c) { return "<tr><td>" + tag(c) + '</td><td class="num">' + (byClass[c] || 0) + "</td></tr>"; }).join("") + "</table>";
   document.getElementById("by-plugin").innerHTML = table("plugin", Object.keys(byPlugin).sort(), byPlugin, function (k) { return "<code>" + esc(k) + "</code>"; });
@@ -351,7 +362,9 @@ SCRIPT = """(function () {
 })();"""
 
 
-def _tag(cls: str | None) -> str:
+def _tag(cls: str | None, proven: bool = False) -> str:
+    if proven:
+        return '<span class="tag neutral">neutral &#10003; proven</span>'
     return f'<span class="tag {cls}">{cls}</span>' if cls else '<span class="tag mixed">unclassified</span>'
 
 
@@ -366,7 +379,10 @@ def build_html(comps: list[dict]) -> str:
       "<code>python3 scripts/component_classes.py --check</code> fails when this page is stale. Issue #2192, under the nextjs-stack epic #2162.</p>")
     w('<div class="box"><h2 style="margin-top:0;border:0">How to read this</h2>')
     w("<p>Every hook, command, agent, skill, script and gate we ship is listed once, under the plugin it ships in, with one class:</p><ul>")
-    w(f'<li>{_tag("neutral")} works the same on any stack. A scan of its text finds no Rails or Next.js reference.</li>')
+    w(f'<li>{_tag("neutral")} works the same on any stack. A scan of its text finds no Rails or Next.js reference. '
+      f'{_tag("neutral", True)} means more: the component was also <b>run</b> on a Next.js project and on an empty one, with Rails tools replaced by traps, and called none of them and did not crash. '
+      "<b>Limits:</b> the run does not trace file reads, and a Rails tool called by absolute path (for example <code>/usr/bin/ruby</code>) bypasses the traps, so proven means &ldquo;no trapped call and no crash&rdquo;, not &ldquo;cannot touch Rails&rdquo;. "
+      "Commands and agents are instructions, not code, so they can only be &ldquo;nothing found&rdquo; until a real downstream run covers them.</li>")
     w(f'<li>{_tag("rails")} exists only for Rails projects. It will move into the <code>rails-stack</code> plugin, or for a design-flow component stay in its Rails UI adapter (<code>ui/viewcomponent-erb</code>); the issue that moves it is named.</li>')
     w(f'<li>{_tag("nextjs")} exists only for Next.js projects.</li>')
     w(f'<li>{_tag("mixed")} stays where it is but still assumes a stack somewhere. The <b>seam</b> says where it will ask the stack detector instead '
@@ -390,6 +406,7 @@ def build_html(comps: list[dict]) -> str:
     w('<noscript><p class="mute">The totals and the per-plugin counts are computed in the page; enable JavaScript to see them. '
       "<code>python3 scripts/component_classes.py</code> prints the same numbers.</p></noscript>")
     w('<h2>Totals (<span data-total></span> components)</h2><div class="wrap" id="by-class"></div>')
+    w('<p id="by-proven"></p>')
     w('<h2>By plugin</h2><div class="wrap" id="by-plugin"></div>')
     w('<h2>By kind</h2><div class="wrap" id="by-kind"></div>')
     plugins = sorted({c["plugin"] for c in comps})
@@ -407,8 +424,9 @@ def build_html(comps: list[dict]) -> str:
                 i = c["info"] or {}
                 name = c["path"].split("/", 2)[2] if c["path"].startswith("plugins/") else c["path"].split("/", 1)[1]
                 issue = f"#{i['issue']}" if isinstance(i.get("issue"), int) else ""
-                w(f'<tr data-plugin="{e(plugin)}" data-type="{kind}" data-class="{i.get("class") or "unclassified"}">'
-                  f"<td><code>{e(name)}</code></td><td>{_tag(i.get('class'))}</td><td>{e(i.get('seam') or '')}</td><td>{issue}</td>"
+                proven_attr = ' data-proven="1"' if c.get("proven") else ""
+                w(f'<tr data-plugin="{e(plugin)}" data-type="{kind}" data-class="{i.get("class") or "unclassified"}"{proven_attr}>'
+                  f"<td><code>{e(name)}</code></td><td>{_tag(i.get('class'), bool(c.get('proven')))}</td><td>{e(i.get('seam') or '')}</td><td>{issue}</td>"
                   f"<td>{e(', '.join(c['registered']))}</td></tr>")
             w("</table></div></details>")
     w("</main><script>" + SCRIPT.replace("__CLASSES__", json.dumps(list(CLASSES))).replace("__TYPES__", json.dumps(list(TYPES))) + "</script></body></html>")
@@ -424,7 +442,7 @@ NODE_PROBE = r"""
 const fs = require("fs");
 const html = fs.readFileSync(process.argv[2], "utf8");
 const script = html.match(/<script>([\s\S]*)<\/script>/)[1];
-const rows = [...html.matchAll(/<tr data-plugin="([^"]*)" data-type="([^"]*)" data-class="([^"]*)">/g)].map(m => ({dataset: {plugin: m[1], type: m[2], class: m[3]}}));
+const rows = [...html.matchAll(/<tr data-plugin="([^"]*)" data-type="([^"]*)" data-class="([^"]*)"( data-proven="1")?>/g)].map(m => ({dataset: {plugin: m[1], type: m[2], class: m[3], proven: m[4] ? "1" : ""}}));
 const els = {}, counts = [...html.matchAll(/data-count="([^"]*)"/g)].map(m => ({key: m[1], getAttribute: () => m[1], textContent: ""}));
 const total = {textContent: ""};
 const document = {querySelectorAll: s => s.startsWith("tr") ? rows : counts, querySelector: () => total, getElementById: id => els[id] || (els[id] = {innerHTML: ""})};
@@ -432,7 +450,7 @@ new Function("document", script)(document);
 const text = h => h.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 const byClass = text(els["by-class"].innerHTML).replace(/^class components /, "");
 const all = {}; counts.forEach(c => all[c.key] = String(c.textContent));
-console.log(JSON.stringify({total: total.textContent, by_class: byClass, counts: all}));
+console.log(JSON.stringify({total: total.textContent, by_class: byClass, proven: text(els["by-proven"].innerHTML), counts: all}));
 """
 
 
@@ -452,7 +470,7 @@ def _selftest() -> int:
             for rel, text in files.items():
                 (root / rel).parent.mkdir(parents=True, exist_ok=True)
                 (root / rel).write_text(text, encoding="utf-8")
-            return classify(root, policy, sorted(files))
+            return classify(root, policy, sorted(f for f in files if f != PROOF))
 
     def pol(decl: list[dict] | None = None, rules: list[dict] | None = None) -> dict:
         return {"moves": {"M1": {"title": "t", "summary": "s", "issue": 7}}, "rules": rules or [],
@@ -463,17 +481,28 @@ def _selftest() -> int:
     comps, f = run(clean, pol())
     check("neutral components that name nothing are clean", f == [] and {c["info"]["class"] for c in comps} == {"neutral"})
     check("every file is one component", len(comps) == 2)
+    proof = {PROOF: json.dumps({"floor": 1, "proven": ["plugins/p/scripts/b.py"]})}
+    comps, f = run({**clean, **proof}, pol())
+    check("a neutral component recorded as proven is shown proven", f == [] and [c["path"] for c in comps if c["proven"]] == ["plugins/p/scripts/b.py"])
+    check("the page and the JSON carry the proven level", "neutral &#10003; proven" in build_html(comps) and any(r["proven"] for r in json.loads(build_json(comps))["components"]))
+    check("a component not in the proof file is not shown proven", not [c for c in comps if c["path"] == "plugins/p/commands/a.md" and c["proven"]])
+    _, f = run({**clean, PROOF: json.dumps({"proven": ["plugins/p/scripts/gone.py"]})}, pol())
+    check("a proof entry for a component that is not there is a finding", any("not a neutral component any more" in x for x in f))
+    _, f = run({**clean, "plugins/p/scripts/c.py": "bin/rails db:migrate\n", PROOF: json.dumps({"proven": ["plugins/p/scripts/c.py"]})},
+               pol(rules=[{"match": ["plugins/p/scripts/c.py"], "decision": "detector", "seam": "s", "issue": 1, "how": "h"}], decl=[{"match": ["plugins/p/commands/*", "plugins/p/scripts/b.py"], "class": "neutral", "why": "w"}]))
+    check("a proven record for a component that is no longer neutral is a finding", any("not a neutral component any more" in x for x in f))
     # #2247: a committed page must not hold an aggregate, or every PR that adds a component conflicts with every other one. The
     # invariant: adding one component changes the lines of that component and NOTHING else, in the JSON and in the HTML.
+    plain, _ = run(clean, pol())
     bigger, _ = run({**clean, "plugins/p/scripts/zz_new.py": "print(2)\n"}, pol())
-    check("the committed JSON holds no aggregate", "summary" not in json.loads(build_json(comps)))
+    check("the committed JSON holds no aggregate", "summary" not in json.loads(build_json(plain)))
     for label, build in (("JSON", build_json), ("HTML", build_html)):
-        before, after = build(comps).splitlines(), build(bigger).splitlines()
+        before, after = build(plain).splitlines(), build(bigger).splitlines()
         extra = [x for x in after if x not in before]
         check(f"adding one component changes only its own lines in the {label}", bool(extra) and all("zz_new.py" in x for x in extra) and all(x in after for x in before))
     # The page's script is run on a fixture with two plugins and two classes, so a wrong cell (a per-plugin or per-plugin-and-kind count)
     # cannot hide behind a one-plugin page.
-    mixed_files = {**clean, "plugins/q/scripts/r1.py": "print(1)\n", "plugins/q/scripts/r2.py": "print(2)\n", "plugins/q/commands/c.md": "do it\n"}
+    mixed_files = {**clean, PROOF: json.dumps({"floor": 1, "proven": ["plugins/p/scripts/b.py"]}), "plugins/q/scripts/r1.py": "print(1)\n", "plugins/q/scripts/r2.py": "print(2)\n", "plugins/q/commands/c.md": "do it\n"}
     mixed_pol = pol(decl=[{"match": ["plugins/p/commands/*", "plugins/p/scripts/*", "plugins/q/commands/*"], "class": "neutral", "why": "w"},
                           {"match": ["plugins/q/scripts/*"], "class": "rails", "issue": 7, "why": "w"}])
     mixed, mf = run(mixed_files, mixed_pol)
@@ -490,6 +519,7 @@ def _selftest() -> int:
         probe = json.loads(r.stdout) if r.returncode == 0 and r.stdout.strip() else {}
         want = summarise(mixed)
         check("the page's script reports the same total as summarise()", str(probe.get("total")) == str(want["components"]))
+        check("the page's script counts the proven components from their rows", probe.get("proven") == "neutral &#10003; proven (included in neutral): 1")
         check("the page's script reports the same per-class counts as summarise()",
               probe.get("by_class") == " ".join(f"{k} {want['by_class'][k]}" for k in CLASSES))
         # EVERY count the page writes, per plugin and per plugin-and-kind, against the rows it was built from.
