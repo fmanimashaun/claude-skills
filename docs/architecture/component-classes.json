@@ -4547,7 +4547,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/check_mockup_gate.py",
    "plugin": "rails-flow",
-   "rails_lines": 22,
+   "rails_lines": 23,
    "registered": [],
    "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
    "type": "script",

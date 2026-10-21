@@ -3,6 +3,8 @@
 
 Run:  check_mockup_gate.py --base dev [--root DIR]            # the branch's diff, before merge
       check_mockup_gate.py --paths app/views/a.html.erb ...   # the plan's files, at Phase 1
+      check_mockup_gate.py --adopt-shell SRC.html SRC.html ... --approval URL --approved-by @who --issue "#n"
+                           --widths "1280, 390" --states "default, collapsed"      # record the app's shell (#2211)
       check_mockup_gate.py --selftest
       optional on either: --record docs/product/mockups/<slug>.md
 
@@ -26,6 +28,21 @@ approval itself as a link to the comment where they said so, and the widths (a p
 and a desktop width ≥ 1024) and states it covers. The branch must add or change the record, or name
 it with --record. An approval with no link is a sentence anyone can type.
 
+THE SHELL (#2211). A mock-up is drawn inside the app's own shell: its layout and navigation, not a free-standing
+screen. The shell is a RECORDED, APPROVED thing the project owns: `docs/product/mockups/shell.md`, a record in the
+format above plus `Kind: shell`, `Shell-sources:` (two or more approved HTML mock-ups of DIFFERENT screens) and
+`Shell-signature:`. The signature is DERIVED, never typed: the landmark elements (header, nav, main, footer, aside)
+and every element id that all the sources share, so what two screens have in common is the shell and what differs
+is content. `--adopt-shell` derives and writes it (`--keep` may narrow it to some of what the sources share, to drop an id two
+screens have in common by chance; it cannot add one); the gate recomputes what the sources share and fails on a token they no longer share.
+Every other record carries `Shell: docs/product/mockups/shell.md`. When its mock-up is a repo HTML file it must hold
+every signature token as an ELEMENT (a word in text, a comment or a script is not one); an image, PDF or link can
+only be checked for the reference and the output says so. A project with no recorded shell is held on its first
+UI change: that change must be the shell (rule 2 of the owner's ruling). A signature too small to tell a shell from
+any page (no `main`, or fewer than SHELL_MIN_TOKENS tokens) is refused: an empty signature passes everything.
+Measured on a downstream project's 52 HTML mock-ups: no class token was in even 75% of them (utility classes),
+landmark tags alone were in 27 to 51, and the ids the layout owns (#main, #toasts, #modal) in 27: so tags and ids.
+
 WHAT IT DOES NOT: prove the linked comment says "approved", or that the build matches the mock-up.
 The first is the reviewer's click; the second is the screenshot comparison before merge.
 
@@ -39,6 +56,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+from html.parser import HTMLParser
 import subprocess
 import sys
 import tempfile
@@ -59,6 +77,12 @@ NOT_UI = re.compile(r"\.(json|xml)(\.[a-z]+)?$")
 SEEN_ANYWAY = re.compile(r"^app/views/pwa/")
 RECORD_DIR = "docs/product/mockups/"
 RECORD_KEYS = ("Mock-up", "Issue", "Approved-by", "Approval", "Widths", "States")
+# The shell (#2211): one record every other record points at.
+SHELL_RECORD = RECORD_DIR + "shell.md"
+SHELL_KEYS = ("Kind", "Shell", "Shell-sources", "Shell-signature")
+LANDMARKS = frozenset(("header", "nav", "main", "footer", "aside"))
+SHELL_MIN_TOKENS = 3
+HTML_MOCK = re.compile(r"\.html?$", re.I)
 APPROVAL_URL = re.compile(r"^https://github\.com/[^/\s]+/[^/\s]+/(issues|pull)/\d+"
                           r"#(issuecomment-\d+|discussion_r\d+|pullrequestreview-\d+)$")
 MOCK_FILE = re.compile(r"\.(html?|png|jpe?g|webp|pdf|svg)$", re.I)
@@ -357,15 +381,188 @@ def _starts_block(s, pos):
     return bool(MARKER.match(s, j))
 
 
+# --------------------------------------------------------------------------- the shell (#2211)
+
+class _Tokens(HTMLParser):
+    """The landmark elements and the element ids of a mock-up, as a set of tokens.
+
+    Only START TAGS count, so a word in text, an id inside a comment, or a tag inside a script string is not a token: HTMLParser reads
+    script and style bodies as data and comments as comments. The contents of a <template> are real elements (a mock-up board keeps its
+    screens there)."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.tokens: set[str] = set()
+
+    def _see(self, tag: str, attrs: list) -> None:
+        if tag in LANDMARKS:
+            self.tokens.add(tag)
+        for key, value in attrs:
+            if key == "id" and value and value.strip():
+                self.tokens.add("#" + value.strip())
+
+    def handle_starttag(self, tag, attrs):
+        self._see(tag, attrs)
+
+    def handle_startendtag(self, tag, attrs):
+        self._see(tag, attrs)
+
+
+def shell_tokens(text: str) -> set[str]:
+    parser = _Tokens()
+    parser.feed(text)
+    parser.close()
+    return parser.tokens
+
+
+def derive_signature(texts: list[str]) -> list[str]:
+    """What every one of `texts` has in common: the shell. Content that differs between screens drops out."""
+    sets = [shell_tokens(t) for t in texts]
+    return sorted(set.intersection(*sets)) if sets else []
+
+
+def signature_line(tokens: list[str]) -> str:
+    return ", ".join(tokens)
+
+
+def signature_weak(tokens: list[str]) -> str | None:
+    """Why a signature cannot stand for a shell, or None. An empty signature passes every page: the gate would be unable to fail."""
+    if "main" not in tokens:
+        return "no `main` landmark in common"
+    if len(tokens) < SHELL_MIN_TOKENS:
+        return f"only {len(tokens)} token(s) in common ({signature_line(tokens)}), fewer than {SHELL_MIN_TOKENS}"
+    return None
+
+
+def read_fields(path: Path) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^\s*(?:[-*]\s*)?\**([A-Za-z-]+)\**:\s*(.*?)\s*$", line)
+        if m and m.group(1) in RECORD_KEYS + SHELL_KEYS:
+            fields[m.group(1)] = m.group(2)
+    return fields
+
+
+def _html_text(root: Path, rel: str) -> str | None:
+    """The text of a repo HTML file, or None when `rel` is not one, or resolves outside the repo."""
+    f = root / rel
+    if not HTML_MOCK.search(rel) or not f.is_file():
+        return None
+    try:
+        f.resolve().relative_to(root.resolve())
+    except ValueError:
+        return None
+    return f.read_text(encoding="utf-8", errors="replace")
+
+
+def shell_record_problems(root: Path, rel: str, fields: dict[str, str]) -> list[str]:
+    sources = list(dict.fromkeys(x.strip() for x in fields.get("Shell-sources", "").split(",") if x.strip()))
+    out: list[str] = []
+    if len(sources) < 2:
+        out.append(f"{rel}: Shell-sources must name two or more different approved HTML mock-ups (a shell is what two screens share), got {len(sources)}")
+    texts = []
+    for src in sources:
+        text = _html_text(root, src)
+        if text is None:
+            out.append(f"{rel}: Shell-source {src!r} is not an HTML file inside the repo")
+        else:
+            texts.append(text)
+    if out:
+        return out
+    derived = derive_signature(texts)
+    typed = [t.strip() for t in fields.get("Shell-signature", "").split(",") if t.strip()]
+    if not typed:
+        return [f"{rel}: no `Shell-signature:` line (`--adopt-shell` derives it)"]
+    invented = [t for t in typed if t not in derived]
+    if invented:
+        return [f"{rel}: Shell-signature names {', '.join(invented)}, which the sources no longer share (a source changed, or the line was typed "
+                f"by hand): they share `{signature_line(derived)}`; re-run --adopt-shell"]
+    weak = signature_weak(typed)
+    if weak:
+        out.append(f"{rel}: the signature has {weak}: it cannot tell a shell from any page")
+    return out
+
+
+def shell_reference_problems(root: Path, rel: str, fields: dict[str, str]) -> list[str]:
+    """A record that is not the shell: it names the shell, the shell is valid, and an HTML mock-up holds the shell's signature."""
+    ref = fields.get("Shell", "")
+    if not ref:
+        return [f"{rel}: no `Shell: {SHELL_RECORD}` line: draw the mock-up inside the app's own shell (its layout and navigation), "
+                f"not as a free-standing screen"]
+    if ref != SHELL_RECORD:
+        return [f"{rel}: Shell {ref!r} must be {SHELL_RECORD}, the project's one recorded shell"]
+    shell = root / SHELL_RECORD
+    if not shell.is_file():
+        return [f"{rel}: {SHELL_RECORD} does not exist: this project has no recorded shell, so the first UI change is the shell itself: "
+                f"mock up the layout, navigation and foundation screens, get them approved, then run --adopt-shell"]
+    shell_fields = read_fields(shell)
+    problems = record_problems(root, SHELL_RECORD)
+    if problems:
+        return problems
+    text = _html_text(root, fields.get("Mock-up", ""))
+    if text is not None:
+        have = shell_tokens(text)
+        missing = [t for t in shell_fields["Shell-signature"].split(", ") if t not in have]
+        if missing:
+            return [f"{rel}: the mock-up {fields['Mock-up']} is not drawn inside the app's shell: it has no element for "
+                    f"{', '.join(missing)} (the shell is {SHELL_RECORD})"]
+    return []
+
+
+def reference_only(root: Path, rel: str) -> bool:
+    """A non-shell record whose mock-up is not a repo HTML file: only its `Shell:` reference was checked."""
+    f = root / rel
+    if not f.is_file():
+        return False
+    fields = read_fields(f)
+    return fields.get("Kind", "").lower() != "shell" and _html_text(root, fields.get("Mock-up", "")) is None
+
+
+def adopt_shell(root: Path, sources: list[str], approval: str, approved_by: str, issue: str, widths: str, states: str,
+                keep: list[str] | None = None) -> tuple[int, list[str]]:
+    """Derive the shell from approved mock-ups of different screens and record it. Writes nothing unless the record then passes.
+
+    `keep` narrows the signature to some of what the sources share, to drop an id two screens happen to have in common: it can
+    only choose among derived tokens, never add one (a hand-typed token is the one thing the gate refuses)."""
+    sources = list(dict.fromkeys(sources))
+    rec = root / SHELL_RECORD
+    lines = ["# Shell — the application's layout and navigation (#2211)",
+             f"Mock-up: {sources[0] if sources else ''}", f"Issue: {issue}", f"Approved-by: {approved_by}", f"Approval: {approval}",
+             f"Widths: {widths}", f"States: {states}", "Kind: shell", f"Shell-sources: {', '.join(sources)}"]
+    texts = [_html_text(root, src) for src in sources]
+    if not sources or any(t is None for t in texts):
+        bad = [s for s, t in zip(sources, texts) if t is None]
+        return 1, [f"--adopt-shell needs HTML mock-ups inside the repo (got {len(sources)}"
+                   f"{'; not HTML files in the repo: ' + ', '.join(bad) if bad else ''})"]
+    derived = derive_signature([t for t in texts if t is not None])
+    chosen = sorted(set(keep)) if keep else derived
+    invented = [t for t in chosen if t not in derived]
+    if invented:
+        return 1, [f"refused: --keep names {', '.join(invented)}, which the mock-ups do not all have. They share: {signature_line(derived)}"]
+    weak = signature_weak(chosen)
+    if weak:
+        return 1, [f"refused: the signature has {weak}. An empty or tiny signature passes every page; mock up the layout and navigation "
+                   f"on each screen, or name screens of the same shell. The mock-ups share: {signature_line(derived) or 'nothing'}"]
+    lines.append(f"Shell-signature: {signature_line(chosen)}")
+    before = rec.read_text(encoding="utf-8") if rec.is_file() else None
+    rec.parent.mkdir(parents=True, exist_ok=True)
+    rec.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    problems = record_problems(root, SHELL_RECORD)
+    if problems:
+        if before is None:
+            rec.unlink()
+        else:
+            rec.write_text(before, encoding="utf-8")
+        return 1, ["refused, nothing written:"] + problems
+    return 0, [f"recorded {SHELL_RECORD}: signature {signature_line(chosen)}"] + (
+        [f"the mock-ups also share {signature_line([t for t in derived if t not in chosen])}: dropped by --keep"] if chosen != derived else [])
+
+
 def record_problems(root: Path, rel: str) -> list[str]:
     path = root / rel
     if not path.is_file():
         return [f"{rel}: no such mock-up record"]
-    fields: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        m = re.match(r"^\s*(?:[-*]\s*)?\**([A-Za-z-]+)\**:\s*(.*?)\s*$", line)
-        if m and m.group(1) in RECORD_KEYS:
-            fields[m.group(1)] = m.group(2)
+    fields = read_fields(path)
     out = [f"{rel}: no `{k}:` line" for k in RECORD_KEYS if not fields.get(k)]
     mock = fields.get("Mock-up", "")
     if mock.startswith("https://"):
@@ -394,13 +591,22 @@ def record_problems(root: Path, rel: str) -> list[str]:
     widths = [int(w) for w in re.findall(r"\d+", fields.get("Widths", ""))]
     if fields.get("Widths") and not (any(w <= 480 for w in widths) and any(w >= 1024 for w in widths)):
         out.append(f"{rel}: Widths {fields['Widths']!r} must include a phone width (≤ 480) and a desktop width (≥ 1024)")
+    is_shell = fields.get("Kind", "").lower() == "shell"
+    if rel == SHELL_RECORD and not is_shell:
+        out.append(f"{rel}: the recorded shell must say `Kind: shell`")
+    elif is_shell and rel != SHELL_RECORD:
+        out.append(f"{rel}: `Kind: shell` belongs only in {SHELL_RECORD}: a project has one shell")
+    elif is_shell:
+        out += shell_record_problems(root, rel, fields)
+    else:
+        out += shell_reference_problems(root, rel, fields)
     return out
 
 
 def run(root: Path, changed: list[str], record: str | None) -> tuple[int, list[str]]:
     """The whole decision. main() and the selftest both come through here."""
     ui = ui_paths(changed)
-    if not ui:
+    if not ui and SHELL_RECORD not in changed:
         return 0, ["no user-visible change: no mock-up needed"]
     if declared_off(root):
         return 0, [f"{len(ui)} user-visible file(s), and GUARDRAILS.md declares `mockup-gate: off`"]
@@ -413,7 +619,10 @@ def run(root: Path, changed: list[str], record: str | None) -> tuple[int, list[s
     problems = [p for r in records for p in record_problems(root, r)]
     if problems:
         return 1, problems
-    return 0, [f"{len(ui)} user-visible file(s); approved mock-up recorded in {', '.join(records)}"]
+    what = f"{len(ui)} user-visible file(s); approved mock-up recorded in" if ui else "the recorded shell is valid:"
+    notes = [f"{r}: the mock-up is not an HTML file, so only its `Shell:` reference was checked; the reviewer confirms the layout"
+             for r in records if reference_only(root, r)]
+    return 0, [f"{what} {', '.join(records)}"] + notes
 
 
 # --------------------------------------------------------------------------- selftest
@@ -425,7 +634,13 @@ Approved-by: @owner
 Approval: https://github.com/acme/app/issues/12#issuecomment-99
 Widths: 1280, 390
 States: default, empty, error
+Shell: docs/product/mockups/shell.md
 """
+
+# Two screens of one shell: they share header, nav, main#main and #toasts; #screen-a and #screen-b are content (#2211).
+SHELL_A = '<html><body><header></header><nav></nav><main id="main"><div id="screen-a"></div></main><div id="toasts"></div></body></html>'
+SHELL_B = '<html><body><header></header><nav></nav><main id="main"><div id="screen-b"></div></main><div id="toasts"></div></body></html>'
+APPROVAL = "https://github.com/acme/app/issues/1#issuecomment-5"
 
 
 def selftest() -> int:
@@ -460,6 +675,11 @@ def selftest() -> int:
         rec = root / "docs/product/mockups"
         rec.mkdir(parents=True)
         view = ["app/views/invoices/index.html.erb"]
+        (rec / "shell-a.html").write_text(SHELL_A)
+        (rec / "shell-b.html").write_text(SHELL_B)
+        code, msg = adopt_shell(root, ["docs/product/mockups/shell-a.html", "docs/product/mockups/shell-b.html"],
+                                APPROVAL, "@owner", "#1", "1280, 390", "default, collapsed")
+        check_that("CONTROL: the fixture shell is adopted (the records below point at it)", code == 0, msg)
 
         code, _ = run(root, ["app/models/invoice.rb"], None)
         check_that("CONTROL: a backend-only change passes with no record", code == 0)
@@ -486,7 +706,7 @@ def selftest() -> int:
         check_that("a mock-up with no desktop width is held", code == 1 and any("phone width" in m for m in msg), msg)
         code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "docs/product/mockups/missing.html"))
         check_that("a mock-up file that does not exist is held", code == 1 and any("neither" in m for m in msg), msg)
-        (root / "docs/product/mockups/bell.html").write_text("<html></html>")
+        (root / "docs/product/mockups/bell.html").write_text(SHELL_A)    # a mock-up drawn inside the fixture shell (#2211)
         code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "docs/product/mockups/bell.html"))
         check_that("CONTROL: a committed mock-up file passes", code == 0, msg)
 
@@ -682,6 +902,140 @@ def selftest() -> int:
         check_that("PR #1478 final review CONTROL: an info-string fence still fences", code == 1, msg)
         (root / "GUARDRAILS.md").unlink()
 
+    # The shell (#2211). A FRESH root per question; every case runs through run() or adopt_shell(), the entry points.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        rec = root / "docs/product/mockups"
+        rec.mkdir(parents=True)
+        view = ["app/views/invoices/index.html.erb"]
+        SHELL = "docs/product/mockups/shell.md"
+        A, B = "docs/product/mockups/shell-a.html", "docs/product/mockups/shell-b.html"
+
+        def put(name: str, text: str) -> None:
+            (rec / name).write_text(text)
+
+        def feature(mock: str, record_text: str | None = None) -> tuple[int, list[str]]:
+            (rec / "f.md").write_text(record_text or GOOD.replace("https://example.com/mockups/bell", mock))
+            return run(root, view + ["docs/product/mockups/f.md"], None)
+
+        put("shell-a.html", SHELL_A)
+        put("shell-b.html", SHELL_B)
+        put("on-shell.html", SHELL_A.replace("screen-a", "other"))
+        # Rule 2: no recorded shell. A UI change with a feature record is held; the message says what to do.
+        code, msg = feature("docs/product/mockups/on-shell.html")
+        check_that("#2211: with no recorded shell a feature record is held, and the message names the way out",
+                   code == 1 and any("no recorded shell" in m and "--adopt-shell" in m for m in msg), msg)
+        # --adopt-shell refuses what cannot be a shell.
+        code, msg = adopt_shell(root, [A], APPROVAL, "@owner", "#1", "1280, 390", "default")
+        check_that("#2211: one source is refused (a shell is what two screens share)", code == 1 and not (root / SHELL).exists(), msg)
+        code, msg = adopt_shell(root, [A, A], APPROVAL, "@owner", "#1", "1280, 390", "default")
+        check_that("#2211: the same file twice is one source, refused", code == 1 and not (root / SHELL).exists(), msg)
+        code, msg = adopt_shell(root, [A, "docs/product/mockups/nope.html"], APPROVAL, "@owner", "#1", "1280, 390", "default")
+        check_that("#2211: a source that does not exist is refused", code == 1 and not (root / SHELL).exists(), msg)
+        put("bare-a.html", "<html><body><div id='x'>a</div></body></html>")
+        put("bare-b.html", "<html><body><div id='y'>b</div></body></html>")
+        code, msg = adopt_shell(root, ["docs/product/mockups/bare-a.html", "docs/product/mockups/bare-b.html"],
+                                APPROVAL, "@owner", "#1", "1280, 390", "default")
+        check_that("#2211: two screens sharing nothing give an EMPTY signature, which passes every page: refused",
+                   code == 1 and not (root / SHELL).exists() and any("no `main`" in m for m in msg), msg)
+        put("thin-a.html", "<html><body><main>a</main></body></html>")
+        put("thin-b.html", "<html><body><main>b</main></body></html>")
+        code, msg = adopt_shell(root, ["docs/product/mockups/thin-a.html", "docs/product/mockups/thin-b.html"],
+                                APPROVAL, "@owner", "#1", "1280, 390", "default")
+        check_that("#2211: a signature of `main` alone is too small: refused",
+                   code == 1 and not (root / SHELL).exists() and any("fewer than" in m for m in msg), msg)
+        code, msg = adopt_shell(root, [A, B], "approved in chat", "@owner", "#1", "1280, 390", "default")
+        check_that("#2211: an adoption with no approval link writes nothing", code == 1 and not (root / SHELL).exists(), msg)
+        code, msg = adopt_shell(root, [A, B], APPROVAL, "@owner", "#1", "1280, 390", "default")
+        check_that("#2211 CONTROL: two screens of one shell are adopted", code == 0 and (root / SHELL).is_file(), msg)
+        check_that("#2211: the derived signature drops each screen's own content",
+                   "Shell-signature: #main, #toasts, header, main, nav" in (root / SHELL).read_text(), (root / SHELL).read_text())
+
+        # --keep narrows to some of what the sources share, and cannot add.
+        full_record = (root / SHELL).read_text()
+        code, msg = adopt_shell(root, [A, B], APPROVAL, "@owner", "#1", "1280, 390", "default", keep=["header", "main", "nav"])
+        check_that("#2211: --keep records only the tokens kept", code == 0 and "Shell-signature: header, main, nav" in (root / SHELL).read_text(), msg)
+        put("no-toasts.html", SHELL_A.replace('<div id="toasts"></div>', ""))
+        code, msg = feature("docs/product/mockups/no-toasts.html")
+        check_that("#2211: a token dropped by --keep is no longer required", code == 0, msg)
+        code, msg = adopt_shell(root, [A, B], APPROVAL, "@owner", "#1", "1280, 390", "default", keep=["header", "main", "nav", "#sidebar"])
+        check_that("#2211: --keep naming a token the screens do not share is refused", code == 1 and any("do not all have" in m and "#sidebar" in m for m in msg), msg)
+        code, msg = adopt_shell(root, [A, B], APPROVAL, "@owner", "#1", "1280, 390", "default", keep=["main", "nav"])
+        check_that("#2211: --keep down to two tokens is refused", code == 1 and any("passes every page" in m for m in msg), msg)
+        (root / SHELL).write_text(full_record)
+        code, msg = feature("docs/product/mockups/on-shell.html")
+        check_that("#2211 CONTROL: a mock-up that holds the whole signature passes", code == 0, msg)
+        put("no-toasts.html", SHELL_A.replace('<div id="toasts"></div>', ""))
+        code, msg = feature("docs/product/mockups/no-toasts.html")
+        check_that("#2211: a mock-up missing one shell element is held, and names it",
+                   code == 1 and any("#toasts" in m for m in msg), msg)
+        put("free.html", "<html><body><main><div id='screen-a'>just a card</div></main></body></html>")
+        code, msg = feature("docs/product/mockups/free.html")
+        check_that("#2211: a free-standing screen is held", code == 1 and any("not drawn inside" in m for m in msg), msg)
+        # Near misses: the tokens appear, but not as elements.
+        put("prose.html", "<html><body><main>the nav and header and #toasts and #main</main></body></html>")
+        code, msg = feature("docs/product/mockups/prose.html")
+        check_that("#2211 near miss: the shell's words in text are not its elements", code == 1, msg)
+        put("commented.html", "<html><body><!-- <header></header><nav></nav><div id=\"toasts\"></div> --><main id=\"main\"></main></body></html>")
+        code, msg = feature("docs/product/mockups/commented.html")
+        check_that("#2211 near miss: elements inside a comment are not elements", code == 1, msg)
+        put("scripted.html", "<html><body><script>var s='<header></header><nav></nav><div id=\"toasts\"></div>';</script><main id=\"main\"></main></body></html>")
+        code, msg = feature("docs/product/mockups/scripted.html")
+        check_that("#2211 near miss: markup inside a script string is not elements", code == 1, msg)
+        put("boarded.html", "<html><body><main id=\"main\"><template id=\"t\"><header></header><nav></nav><div id=\"toasts\"></div></template></main></body></html>")
+        code, msg = feature("docs/product/mockups/boarded.html")
+        check_that("#2211 CONTROL: a mock-up board keeps its screens in <template>, and those elements count", code == 0, msg)
+        # A mock-up that is not HTML: the reference is all that can be checked, and the output says so.
+        (rec / "card.png").write_bytes(b"\x89PNG")
+        code, msg = feature("docs/product/mockups/card.png")
+        check_that("#2211: an image mock-up passes on the reference alone, and says it was not checked",
+                   code == 0 and any("only its `Shell:` reference" in m for m in msg), msg)
+        code, msg = feature("x", GOOD.replace("Shell: docs/product/mockups/shell.md\n", "").replace("https://example.com/mockups/bell", "docs/product/mockups/card.png"))
+        check_that("#2211: a record with no Shell line is held, whatever its mock-up", code == 1 and any("no `Shell:" in m for m in msg), msg)
+        code, msg = feature("x", GOOD.replace("Shell: docs/product/mockups/shell.md", "Shell: docs/product/mockups/other.md").replace("https://example.com/mockups/bell", "docs/product/mockups/card.png"))
+        check_that("#2211: a record naming another file as the shell is held", code == 1 and any("must be" in m for m in msg), msg)
+        # Drift: a source changed after adoption, and a hand-typed signature.
+        put("shell-b.html", SHELL_B.replace("<nav></nav>", ""))
+        code, msg = feature("docs/product/mockups/on-shell.html")
+        check_that("#2211: a source edited after adoption is a drift, held", code == 1 and any("no longer share" in m for m in msg), msg)
+        put("shell-b.html", SHELL_B)
+        text = (root / SHELL).read_text()
+        (root / SHELL).write_text(text.replace("Shell-signature: #main, #toasts, header, main, nav", "Shell-signature: main"))
+        code, msg = feature("docs/product/mockups/on-shell.html")
+        check_that("#2211: a hand-typed signature too small to be a shell is held", code == 1 and any("cannot tell" in m for m in msg), msg)
+        (root / SHELL).write_text(text.replace("Shell-signature: #main, #toasts, header, main, nav", "Shell-signature: #main, #sidebar, #toasts, header, main, nav"))
+        code, msg = feature("docs/product/mockups/on-shell.html")
+        check_that("#2211: a hand-typed token the sources do not share is held", code == 1 and any("no longer share" in m and "#sidebar" in m for m in msg), msg)
+        (root / SHELL).write_text(text.replace("Shell-sources: " + A + ", " + B, "Shell-sources: " + A))
+        code, msg = feature("docs/product/mockups/on-shell.html")
+        check_that("#2211: a shell record that lists one source is held", code == 1 and any("two or more" in m for m in msg), msg)
+        (root / SHELL).write_text(text.replace("Kind: shell\n", ""))
+        code, msg = feature("docs/product/mockups/on-shell.html")
+        check_that("#2211: the shell record without `Kind: shell` is held", code == 1 and any("Kind: shell" in m for m in msg), msg)
+        (root / SHELL).write_text(text)
+        # Changing the shell record is judged on its own, with no UI file in the change.
+        code, msg = run(root, [SHELL], None)
+        check_that("#2211 CONTROL: a change that only touches a valid shell record passes", code == 0, msg)
+        (root / SHELL).write_text(text.replace("Shell-signature: #main, #toasts, header, main, nav", "Shell-signature: main"))
+        code, msg = run(root, [SHELL], None)
+        check_that("#2211: a change that only touches a broken shell record is held, with no UI file in it", code == 1, msg)
+        (root / SHELL).write_text(text)
+        # Kind: shell anywhere else would be a second shell.
+        code, msg = feature("x", text.replace("Mock-up: docs/product/mockups/shell-a.html", "Mock-up: docs/product/mockups/on-shell.html"))
+        check_that("#2211: `Kind: shell` in another record is held", code == 1 and any("belongs only" in m for m in msg), msg)
+        # A source outside the repository is not read.
+        with tempfile.TemporaryDirectory() as elsewhere:     # its own directory: mutants run in parallel
+            outside = Path(elsewhere) / "outside-shell.html"
+            outside.write_text(SHELL_A)
+            (rec / "link.html").symlink_to(outside)
+            code, msg = adopt_shell(root, [A, "docs/product/mockups/link.html"], APPROVAL, "@owner", "#1", "1280, 390", "default")
+            check_that("#2211: a source that resolves outside the repo is refused", code == 1, msg)
+        # The opt-out still switches the whole gate off, shell included.
+        (root / "GUARDRAILS.md").write_text("# G\n\n- mockup-gate: off\n")
+        (root / SHELL).unlink()
+        code, msg = feature("docs/product/mockups/free.html")
+        check_that("#2211 CONTROL: `mockup-gate: off` holds nothing, with or without a shell", code == 0, msg)
+
     # The git path main() takes: a new, untracked view must count (the #1341 blind spot). A FRESH
     # directory: the one above holds untracked records, which would rightly count as on the branch.
     with tempfile.TemporaryDirectory() as tmp:
@@ -714,10 +1068,34 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--root", default=".", type=Path)
     ap.add_argument("--paths", nargs="+", help="the plan's files, instead of the branch's diff")
     ap.add_argument("--record", help=f"the mock-up record, when the branch does not touch one ({RECORD_DIR}<slug>.md)")
+    ap.add_argument("--adopt-shell", nargs="+", metavar="SRC.html",
+                    help=f"record the app's shell from two or more approved HTML mock-ups of different screens ({SHELL_RECORD}, #2211)")
+    ap.add_argument("--keep", help="with --adopt-shell: comma-separated tokens to keep of what the mock-ups share (drops content ids two screens "
+                                   "happen to have in common; it cannot add a token)")
+    for flag in ("approval", "approved-by", "issue", "widths", "states"):
+        ap.add_argument(f"--{flag}", help="with --adopt-shell: the value of the record's line of that name")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
     if a.selftest:
         return selftest()
+    if a.adopt_shell:
+        missing = [f for f in ("approval", "approved_by", "issue", "widths", "states") if not getattr(a, f)]
+        if missing:
+            print("--adopt-shell also needs " + ", ".join("--" + m.replace("_", "-") for m in missing), file=sys.stderr)
+            return 2
+        root = a.root.resolve()
+        def inside(x: str) -> str:
+            try:
+                return Path(x).resolve().relative_to(root).as_posix()
+            except ValueError:
+                return x            # outside the repo: adopt_shell refuses it by name
+        srcs = [inside(x) for x in a.adopt_shell]
+        code, lines = adopt_shell(root, srcs, a.approval, a.approved_by, a.issue, a.widths, a.states,
+                                  [t.strip() for t in a.keep.split(',') if t.strip()] if a.keep else None)
+        print(("SHELL: refused -- " if code else "SHELL: ok -- ") + lines[0])
+        for line in lines[1:]:
+            print(f"  {line}")
+        return code
     try:
         changed = a.paths if a.paths else list(diff(a.root, a.base))
     except Unusable as exc:

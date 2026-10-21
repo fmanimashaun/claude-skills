@@ -2946,7 +2946,7 @@
    "invokes": [],
    "kind": "agent",
    "lines": [
-    152
+    156
    ],
    "move": ""
   },
@@ -3221,12 +3221,12 @@
     "hotwire": 1
    },
    "invokes": [
-    237
+    244
    ],
    "kind": "command",
    "lines": [
-    225,
-    237
+    232,
+    244
    ],
    "move": ""
   },
@@ -5469,50 +5469,51 @@
   "plugins/rails-flow/scripts/check_mockup_gate.py": {
    "assumes": "hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test",
    "categories": {
-    "concept": 15,
+    "concept": 16,
     "hotwire": 1,
-    "path": 20,
+    "path": 21,
     "tool": 1
    },
    "decision": "detector",
    "how": "reads source globs, risky paths and commands from the detector's stack descriptor",
    "ids": {
-    "app-layers": 18,
+    "app-layers": 19,
     "binstub": 1,
     "db": 1,
-    "erb": 8,
+    "erb": 9,
     "hotwire": 1,
     "rails-word": 2,
     "ruby-file": 5,
     "spec-dir": 1
    },
    "invokes": [
-    622
+    842
    ],
    "kind": "script",
    "lines": [
     5,
-    50,
-    51,
-    53,
-    59,
-    382,
-    438,
-    439,
-    440,
-    443,
-    444,
-    446,
-    447,
-    450,
-    452,
-    456,
-    462,
-    464,
-    622,
-    664,
-    695,
-    696
+    68,
+    69,
+    71,
+    77,
+    579,
+    653,
+    654,
+    655,
+    658,
+    659,
+    661,
+    662,
+    665,
+    667,
+    671,
+    677,
+    684,
+    842,
+    884,
+    910,
+    1049,
+    1050
    ],
    "move": ""
   },
@@ -8144,16 +8145,16 @@
  "policy": "docs/architecture/rails-assumptions.policy.json",
  "summary": {
   "by_category": {
-   "concept": 1966,
+   "concept": 1967,
    "gem": 138,
    "hotwire": 104,
-   "path": 1245,
+   "path": 1246,
    "tool": 890
   },
   "by_decision": {
    "detector": {
     "files": 90,
-    "lines": 1228
+    "lines": 1229
    },
    "neutral": {
     "files": 7,
@@ -8196,7 +8197,7 @@
    "rails-flow": {
     "detector": 50,
     "files": 135,
-    "lines": 2289,
+    "lines": 2290,
     "neutral": 3,
     "rails-stack": 47,
     "reword": 35
@@ -8241,7 +8242,7 @@
    },
    "script": {
     "files": 88,
-    "lines": 2247
+    "lines": 2248
    },
    "selftest": {
     "files": 16,
@@ -8254,14 +8255,14 @@
   },
   "by_pattern": {
    "active-framework": 20,
-   "app-layers": 602,
+   "app-layers": 603,
    "bin-rails": 125,
    "binstub": 53,
    "brakeman": 8,
    "bundler": 85,
    "bundler-audit": 5,
    "db": 137,
-   "erb": 360,
+   "erb": 361,
    "erb-lint": 73,
    "gem": 138,
    "gemfile": 176,
@@ -8279,6 +8280,6 @@
    "spec-dir": 182
   },
   "files": 228,
-  "lines": 3203
+  "lines": 3204
  }
 }
