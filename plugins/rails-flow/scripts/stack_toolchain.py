@@ -17,9 +17,9 @@ Exit: 0 every declared tool is present and ready
 from __future__ import annotations
 
 import argparse
+import re
 import json
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -71,17 +71,31 @@ def ready(command: list[str]) -> tuple[bool, str]:
     return done.returncode == 0, f"exit {done.returncode}"
 
 
+def on_path(name: str) -> Path | None:
+    """`name` on PATH, resolved through symlinks. Only absolute PATH entries count: a relative one (`.`, `bin`, an empty entry)
+    names whatever directory the audit happens to run in, which is the project's own (#2291 review)."""
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        if not entry or not os.path.isabs(entry):
+            continue
+        candidate = Path(entry) / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate.resolve()
+    return None
+
+
 def locate(row: dict, project: Path) -> tuple[str | None, bool]:
-    """(the CLI's path, whether it is the project's own copy): on PATH first, then each of the descriptor's `project_paths`.
-    A project copy must resolve inside the project, so a symlink pointing out of it is not one."""
-    found = shutil.which(row["bin"])
-    if found:
-        return found, False
+    """(the CLI's path, whether it is the project's own copy). The descriptor's `project_paths` come first, so a global CLI
+    never hides the one the project pins; then PATH. Every hit is RESOLVED and judged by where it really lives: anything under
+    the project is the project's copy, never executed, however it was reached (a node_modules/.bin that direnv, `npm run` or a
+    shell rc put on PATH). A project path that resolves outside the project (a symlink out) is not the project's copy."""
     root = project.resolve()
     for rel in row.get("project_paths") or []:
         candidate = (project / rel).resolve()
         if candidate.is_relative_to(root) and candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate), True
+    found = on_path(row["bin"])
+    if found:
+        return str(found), found.is_relative_to(root)
     return None, False
 
 
@@ -138,7 +152,13 @@ def audit(project: Path, home: Path, dirs: list[Path] | None = None) -> tuple[in
                 notes.append(f"ok   cli {row['bin']} at {os.path.relpath(path, project.resolve())} (the project's own copy: not run) ({label})")
                 continue
             if row.get("ready"):
-                ok, how = ready([path, *row["ready"][1:]] if row["ready"][0] == row["bin"] else row["ready"])
+                probe = Path(path) if row["ready"][0] == row["bin"] else on_path(row["ready"][0])
+                if probe is None or probe.resolve().is_relative_to(project.resolve()):
+                    # the probe binary is missing from PATH, or is the project's own: it is not run, so readiness is unknown
+                    findings.append(f"NOT READY cli {row['bin']}: `{row['ready'][0]}` is not a binary outside the project, so "
+                                    f"`{' '.join(row['ready'])}` was not run ({label}): {row['ready_hint']}")
+                    continue
+                ok, how = ready([str(probe), *row["ready"][1:]])
                 if not ok:
                     findings.append(f"NOT READY cli {row['bin']}: `{' '.join(row['ready'])}` failed ({how}) ({label}): {row['ready_hint']}")
                     continue
@@ -216,6 +236,53 @@ def selftest() -> int:
             local.unlink()
             local.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             local.chmod(0o755)
+            # #2291 review: the project's node_modules/.bin on PATH (direnv, `npm run`, a shell rc) is still the project's copy.
+            pwned = proj / "PWNED"
+            local.write_text(f"#!/bin/sh\ntouch '{pwned}'\n", encoding="utf-8")
+            os.environ["PATH"] = f"{local.parent}{os.pathsep}{bindir}{os.pathsep}/usr/bin{os.pathsep}/bin"
+            toolchain["clis"].append({"bin": "localcli2", "install": "get localcli2", "version": ["--version"]})
+            (local.parent / "localcli2").write_text(f"#!/bin/sh\ntouch '{pwned}'\n", encoding="utf-8")
+            (local.parent / "localcli2").chmod(0o755)
+            (plug / "stacks.json").write_text(json.dumps({"plugin": "tc", "stacks": [
+                {"id": "tcs", "all": [{"file": "marker.txt"}], "descriptor": {"toolchain": toolchain}}]}), encoding="utf-8")
+            rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
+            case(not pwned.exists(), "a project binary reached through PATH is never executed")
+            case(any("ok   cli localcli2 at node_modules/.bin/localcli2 (the project's own copy: not run)" in n for n in notes),
+                 f"a project binary reached through PATH is reported as the project's copy: {notes} {findings}")
+            # a relative PATH entry names the directory the audit runs in: skipped
+            os.environ["PATH"] = f".{os.pathsep}{bindir}{os.pathsep}/usr/bin{os.pathsep}/bin"
+            here = os.getcwd()
+            os.chdir(local.parent)
+            try:
+                rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
+            finally:
+                os.chdir(here)
+            case(not pwned.exists() and any("MISSING cli localcli2" in f for f in findings),
+                 f"a relative PATH entry is not searched: {findings}")
+            # project_paths come before PATH: a global copy never hides the project-pinned one
+            os.environ["PATH"] = f"{bindir}{os.pathsep}/usr/bin{os.pathsep}/bin"
+            (bindir / "localcli").write_text("#!/bin/sh\necho 'global 1.0'\n", encoding="utf-8")
+            (bindir / "localcli").chmod(0o755)
+            rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
+            case(any("ok   cli localcli at node_modules/.bin/localcli (the project's own copy: not run)" in n for n in notes),
+                 f"the project-pinned CLI is found before a global one: {notes}")
+            (bindir / "localcli").unlink()
+            # a ready command naming another binary that is the project's own is not run either
+            toolchain["clis"].append({"bin": "okcli2", "install": "get okcli2", "ready": ["localcli2", "status"], "ready_hint": "h2"})
+            (bindir / "okcli2").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            (bindir / "okcli2").chmod(0o755)
+            (plug / "stacks.json").write_text(json.dumps({"plugin": "tc", "stacks": [
+                {"id": "tcs", "all": [{"file": "marker.txt"}], "descriptor": {"toolchain": toolchain}}]}), encoding="utf-8")
+            os.environ["PATH"] = f"{bindir}{os.pathsep}{local.parent}{os.pathsep}/usr/bin{os.pathsep}/bin"
+            rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
+            case(not pwned.exists() and any("NOT READY cli okcli2" in f and "was not run" in f for f in findings),
+                 f"a ready probe that is the project's own binary is not run: {findings}")
+            toolchain["clis"] = [c for c in toolchain["clis"] if c["bin"] not in ("localcli2", "okcli2")]
+            (plug / "stacks.json").write_text(json.dumps({"plugin": "tc", "stacks": [
+                {"id": "tcs", "all": [{"file": "marker.txt"}], "descriptor": {"toolchain": toolchain}}]}), encoding="utf-8")
+            (local.parent / "localcli2").unlink()
+            local.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            os.environ["PATH"] = f"{bindir}{os.pathsep}/usr/bin{os.pathsep}/bin"
             text = "\n".join(findings)
             case(rc == 1, f"a missing tool is exit 1: rc={rc}")
             case("MISSING plugin extra@official is not enabled" in text and "/plugin install extra@official" in text,
@@ -224,7 +291,7 @@ def selftest() -> int:
                  f"a CLI not on PATH is flagged with its install line: {findings}")
             case("NOT READY cli downcli" in text and "start downcli" in text,
                  f"a CLI whose ready check fails is flagged with its hint: {findings}")
-            case(not any("okcli" in f for f in findings) and any("ok   cli okcli" in n for n in notes),
+            case(not any(re.search(r"\bcli okcli\b(?!2)", f) for f in findings) and any("ok   cli okcli (" in n for n in notes),
                  f"a present, ready CLI is not flagged: {findings} {notes}")
             case(not any("tc-stack@m" in f for f in findings), f"a plugin the user scope enables is not flagged: {findings}")
             rc, findings, _ = run_with({"enabledPlugins": {"tc-stack@m": True, "extra@official": True}},

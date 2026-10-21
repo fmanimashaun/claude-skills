@@ -17,8 +17,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a CLI missing from PATH counts as present",
-            '    found = shutil.which(row["bin"])\n    if found:\n        return found, False',
-            '    found = shutil.which(row["bin"]) or "/bin/sh"\n    if found:\n        return found, False',
+            '    found = on_path(row["bin"])\n    if found:',
+            '    found = on_path(row["bin"]) or Path("/bin/sh")\n    if found:',
             "a CLI not on PATH is flagged with its install line",
         ),
         Mutation(
@@ -80,6 +80,30 @@ GUARD = Guard(
             '        if candidate.is_relative_to(root) and candidate.is_file()',
             '        if candidate.is_file()',
             'a project path that is a symlink out of the project is not the CLI',
+        ),
+        Mutation(
+            "a PATH hit is never judged by where it lives, so the project's node_modules/.bin on PATH is run",
+            '        return str(found), found.is_relative_to(root)',
+            '        return str(found), False',
+            'a project binary reached through PATH is never executed',
+        ),
+        Mutation(
+            'relative PATH entries are searched',
+            '        if not entry or not os.path.isabs(entry):',
+            '        if not entry:',
+            'a relative PATH entry is not searched',
+        ),
+        Mutation(
+            "PATH is checked before the project's own paths, so a global CLI hides the pinned one",
+            '    for rel in row.get("project_paths") or []:\n        candidate = (project / rel).resolve()',
+            '    for rel in ([] if on_path(row["bin"]) else row.get("project_paths") or []):\n        candidate = (project / rel).resolve()',
+            'the project-pinned CLI is found before a global one',
+        ),
+        Mutation(
+            "a ready probe that is the project's own binary is run",
+            '                if probe is None or probe.resolve().is_relative_to(project.resolve()):',
+            '                if probe is None:',
+            "a ready probe that is the project's own binary is not run",
         ),
     ),
 )
