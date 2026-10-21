@@ -168,16 +168,34 @@ GUARD = Guard(
             "a criterion indented as code is refused",
         ),
         Mutation(
-            "an indented fence is accepted again",
+            "a fence inside a blockquote or list item is accepted again",
+            '        if re.match(r"\\s+(?:`{3,}|~{3,})", line) or (inner != line and re.match(r"`{3,}|~{3,}", inner)):',
             '        if re.match(r"\\s+(?:`{3,}|~{3,})", line):',
-            '        if False:',
-            "an indented fence is refused",
+            "a fence inside a blockquote hides a quoted criterion",
         ),
         Mutation(
             "only row and table findings refuse the model again, so a missing Threats heading reads as no model rows",
             "        table_findings = tm.check(model_text)[0]",
             "        table_findings = [f for f in tm.check(model_text)[0] if f.startswith(\"threat row\")]",
             "adversary input",
+        ),
+        Mutation(
+            "an indented fence is accepted again",
+            '        if re.match(r"\\s+(?:`{3,}|~{3,})", line) or (inner != line and re.match(r"`{3,}|~{3,}", inner)):',
+            '        if inner != line and re.match(r"`{3,}|~{3,}", inner):',
+            "an indented fence is refused",
+        ),
+        Mutation(
+            "a backtick in a backtick fence's info string is accepted again",
+            '        if not fence and mark and mark.group(1)[0] == "`" and "`" in mark.group(2):',
+            '        if False:',
+            "a backtick in the info string makes it no fence",
+        ),
+        Mutation(
+            "a raw HTML block is accepted again",
+            '            if re.match(r" {0,3}<(?:[A-Za-z][\\w-]*|/[A-Za-z]|[!?])", line):',
+            '            if False:',
+            "a criterion inside a details block",
         ),
     ),
 )
