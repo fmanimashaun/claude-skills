@@ -95,13 +95,13 @@ ADVICE_UNBASED: tuple[tuple[str, str], ...] = (
     ('AGENTS.md', "## Write the mechanism out; don't compress it into a label"),
     ('AGENTS.md', '## End the analysis with the call, then make it'),
     ('AGENTS.md', '## Act as an advisor, not an assistant'),
-    ('plugins/rails-stack/skills/parallel-session-lane/SKILL.md', '**Its limit, stated: it protects against accident, not impersonation.**'),
-    ('plugins/rails-stack/skills/parallel-session-lane/SKILL.md', '3. **Clean up when done, with the teardown.**'),
+    ('plugins/core-skills/skills/parallel-session-lane/SKILL.md', '**Its limit, stated: it protects against accident, not impersonation.**'),
+    ('plugins/core-skills/skills/parallel-session-lane/SKILL.md', '3. **Clean up when done, with the teardown.**'),
     ('CLAUDE.md', '**INCONCLUSIVE leaves doctrine unchanged.**'),
     ('CLAUDE.md', '### An issue body is not an authority'),
     ('plugins/rails-flow/commands/fix.md', 'classify the failure before you debug it'),
-    ('plugins/rails-stack/skills/quality-pass/SKILL.md', 'It is ADVISORY and never a merge'),
-    ('plugins/rails-stack/skills/quality-pass/SKILL.md', '**Advisory. Always.**'),
+    ('plugins/core-skills/skills/quality-pass/SKILL.md', 'It is ADVISORY and never a merge'),
+    ('plugins/core-skills/skills/quality-pass/SKILL.md', '**Advisory. Always.**'),
 )
 
 
@@ -169,10 +169,10 @@ DOCTRINE_SOURCES = (
     "CLAUDE.md",
     "AGENTS.md",
     "docs/doctrine/harness-doctrine.md",
-    "plugins/rails-stack/skills/code-review/SKILL.md",
-    "plugins/rails-stack/skills/quality-pass/SKILL.md",
-    "plugins/rails-stack/skills/derived-artifacts/SKILL.md",
-    "plugins/rails-stack/skills/parallel-session-lane/SKILL.md",
+    "plugins/core-skills/skills/code-review/SKILL.md",
+    "plugins/core-skills/skills/quality-pass/SKILL.md",
+    "plugins/core-skills/skills/derived-artifacts/SKILL.md",
+    "plugins/core-skills/skills/parallel-session-lane/SKILL.md",
     "plugins/rails-flow/commands/feature.md",
     "plugins/rails-flow/commands/handoff.md",
     "plugins/rails-flow/commands/secure-design.md",
@@ -405,7 +405,7 @@ CLAIMS: tuple[Claim, ...] = (
     # ---- claims-vs-enforcement, the class this map is about ---------------------------------
     Claim(
         claim="A guarantee stated in prose that nothing makes true is a defect, not a style issue.",
-        stated_in="plugins/rails-stack/skills/code-review/SKILL.md",
+        stated_in="plugins/core-skills/skills/code-review/SKILL.md",
         anchor="gate-that-cannot-fail",
         kind=GUARANTEE,
         enforced_by=("script:scripts/lint_self_consistency.py", "gate:self-consistency",
@@ -499,7 +499,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="A carve-out that silences a check needs a negative test proving the check still fires "
               "outside it.",
-        stated_in="plugins/rails-stack/skills/code-review/SKILL.md",
+        stated_in="plugins/core-skills/skills/code-review/SKILL.md",
         anchor="carve-out-without-negative-test",
         kind=GUARANTEE,
         enforced_by=("script:scripts/maintainer_doctor_selftest.py", "mutation:maintainer_doctor"),
@@ -534,7 +534,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="Derived numbers are read from the generator's structured source, never regex-parsed "
               "out of its generated prose, and are asserted against the source's declared totals.",
-        stated_in="plugins/rails-stack/skills/derived-artifacts/SKILL.md",
+        stated_in="plugins/core-skills/skills/derived-artifacts/SKILL.md",
         anchor="Go to the structured source, not the generated prose",
         kind=GUARANTEE,
         enforced_by=("script:scripts/build_coverage_artifact.py", "gate:coverage artifact selftest"),
@@ -598,7 +598,7 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         claim="The maintainer copy of a shipped skill cannot drift from the skill it is derived from.",
-        stated_in="plugins/rails-stack/skills/parallel-session-lane/SKILL.md",
+        stated_in="plugins/core-skills/skills/parallel-session-lane/SKILL.md",
         anchor="## 1. One worktree per unit of work — before lanes, and without asking anyone",
         kind=GUARANTEE,
         enforced_by=("gate:maintainer skill drift",),
@@ -611,7 +611,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="Working in the wrong worktree during a parallel session is refused, not merely advised "
               "against.",
-        stated_in="plugins/rails-stack/skills/parallel-session-lane/SKILL.md",
+        stated_in="plugins/core-skills/skills/parallel-session-lane/SKILL.md",
         anchor="## 4. Confirm your worktree before any edit",
         kind=GUARANTEE,
         enforced_by=("hook:plugins/rails-flow/hooks/scripts/guard-lane.sh",),
@@ -621,7 +621,7 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         claim="Two concurrent sessions are never assigned overlapping lanes.",
-        stated_in="plugins/rails-stack/skills/parallel-session-lane/SKILL.md",
+        stated_in="plugins/core-skills/skills/parallel-session-lane/SKILL.md",
         anchor="refuses** overlapping lanes",
         kind=GUARANTEE,
         enforced_by=("script:plugins/rails-flow/scripts/assign_lanes.py", "mutation:assign_lanes",
@@ -635,7 +635,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="A session that holds an unmerged recorded lane, or that adds a worktree for a branch or "
               "issue which already has an unmerged one, is refused `git worktree add`.",
-        stated_in="plugins/rails-stack/skills/parallel-session-lane/SKILL.md",
+        stated_in="plugins/core-skills/skills/parallel-session-lane/SKILL.md",
         anchor="**What makes it true: the rails-flow `guard-worktree` hook.**",
         kind=GUARANTEE,
         enforced_by=("hook:plugins/rails-flow/hooks/scripts/guard-worktree.sh", "gate:hook gates", "gate:hook gates (release)", "gate:hook gates (worktree)",
@@ -650,7 +650,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="The worktree guard protects against accident, not impersonation: a session's identity is "
               "the session id it sends.",
-        stated_in="plugins/rails-stack/skills/parallel-session-lane/SKILL.md",
+        stated_in="plugins/core-skills/skills/parallel-session-lane/SKILL.md",
         anchor="**Its limit, stated: it protects against accident, not impersonation.**",
         kind=ADVICE,
         refs=(1581,),
@@ -662,7 +662,7 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         claim="A session ends its worktree with the teardown when its PR merges or its review finishes.",
-        stated_in="plugins/rails-stack/skills/parallel-session-lane/SKILL.md",
+        stated_in="plugins/core-skills/skills/parallel-session-lane/SKILL.md",
         anchor="3. **Clean up when done, with the teardown.**",
         kind=ADVICE,
         refs=(1581, 2058),
@@ -836,7 +836,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="The quality pass never blocks a merge -- a gate on taste gets switched off, and then "
               "nothing checks quality at all.",
-        stated_in="plugins/rails-stack/skills/quality-pass/SKILL.md",
+        stated_in="plugins/core-skills/skills/quality-pass/SKILL.md",
         anchor="It is ADVISORY and never a merge",
         kind=ADVICE,
         enforced_by=("gate:shared shapes", "script:scripts/check_shared_shapes.py"),
@@ -846,7 +846,7 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         claim="A gate that needs a carve-out on its first real input is taste wearing a count.",
-        stated_in="plugins/rails-stack/skills/quality-pass/SKILL.md",
+        stated_in="plugins/core-skills/skills/quality-pass/SKILL.md",
         anchor="**Advisory. Always.**",
         kind=ADVICE,
         refs=(476,),
@@ -994,12 +994,24 @@ def base_baseline(source: str | None) -> tuple[set[tuple[str, str]] | None, str]
     return None, "the base's scripts/doctrine_map.py has neither ADVICE_UNBASED nor CLAIMS"
 
 
+# A skill that MOVED between plugins keeps its rows, so the ratchet reads its new path as the old one when it asks
+# the base. Temporary: delete an entry once the move is on the base, where its list already names the new path (#2186).
+PATH_MOVES = (("plugins/core-skills/skills/", "plugins/rails-stack/skills/"),)
+
+
+def _was(path: str) -> str:
+    for new, old in PATH_MOVES:
+        if path.startswith(new):
+            return old + path[len(new):]
+    return path
+
+
 def ratchet_findings(unbased: tuple[tuple[str, str], ...], allowed: set[tuple[str, str]] | None, why: str) -> list[str]:
     """Every unbased-list entry the base did not allow: a row added in the same change as its own grandfather entry."""
     if allowed is None:
         return [f"unbased-advice baseline unchecked — {why}; the list 'may only shrink' cannot be shown, so this is a finding (#2254)"]
     return [f"unbased-advice baseline raised — {e[0]} :: {e[1]!r} is not on the base's list ({BASE_REF}); a new unbased row is "
-            f"refused, not grandfathered (#2224)" for e in unbased if tuple(e) not in allowed]
+            f"refused, not grandfathered (#2224)" for e in unbased if tuple(e) not in allowed and (_was(e[0]), e[1]) not in allowed]
 
 
 def comparison_point(ref: str = BASE_REF, git=None) -> tuple[str | None, str]:
@@ -1405,6 +1417,13 @@ def _selftest() -> int:
         check("before the list existed, an entry may grandfather only a base advice row",
               ratchet_findings((("doc.md", "old row"),), *base_baseline(base_before)) == []
               and any("baseline raised" in x for x in ratchet_findings((("doc.md", "kept"),), *base_baseline(base_before))))
+        moved = 'ADVICE_UNBASED: tuple = (("plugins/rails-stack/skills/s/SKILL.md", "old row"),)\n'
+        check("a row that moved with its skill is not a new row (#2186)",
+              ratchet_findings((("plugins/core-skills/skills/s/SKILL.md", "old row"),), *base_baseline(moved)) == [])
+        check("a NEW row under the moved path is still refused",
+              any("baseline raised" in x for x in ratchet_findings((("plugins/core-skills/skills/s/SKILL.md", "new row"),), *base_baseline(moved))))
+        check("a row under a path that did not move is not forgiven by the move",
+              any("baseline raised" in x for x in ratchet_findings((("plugins/hotwire/skills/s/SKILL.md", "old row"),), *base_baseline(moved))))
         check("a base row whose kind is positional is read (no false refusal)",
               ratchet_findings((("doc.md", "pos row"),),
                                *base_baseline('CLAIMS = (\n    Claim("c", "doc.md", "pos row", ADVICE),\n)\n')) == [])

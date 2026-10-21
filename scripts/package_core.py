@@ -39,6 +39,36 @@ import os, sys, tempfile, zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILLS_DIR = os.path.join(ROOT, "plugins", "rails-stack", "skills")  # #2182: rails-stack is its own plugin dir
+# Where each skill lives. A skill that moved (#2186) is named here; rails-stack keeps a one-line redirect stub
+# under the old name for two releases, and a stub is never packaged: `dist/<skill>.skill` is the real skill.
+PLUGINS = ("rails-stack", "core-skills")
+HOMES = {"code-review": "core-skills", "quality-pass": "core-skills",
+         "derived-artifacts": "core-skills", "parallel-session-lane": "core-skills"}
+
+
+def skill_dirs(plugins_root: str = os.path.join(ROOT, "plugins"), plugins=PLUGINS, homes=HOMES) -> dict:
+    """`{skill name: the skills directory that holds the real one}`. A name found in two plugins is refused
+    unless `homes` says which one is real (the other is the redirect stub); a name `homes` places somewhere
+    it is not found is refused too, so a moved skill cannot silently stop being packaged."""
+    found: dict[str, list[str]] = {}
+    for plugin in plugins:
+        d = os.path.join(plugins_root, plugin, "skills")
+        if os.path.isdir(d):
+            for n in sorted(os.listdir(d)):
+                if os.path.isdir(os.path.join(d, n)):
+                    found.setdefault(n, []).append(plugin)
+    out = {}
+    for n, where in found.items():
+        home = homes.get(n)
+        if len(where) > 1 and home is None:
+            raise SystemExit(f"skill {n!r} exists in {' and '.join(where)} and HOMES says which is real: it does not")
+        if home is not None and home not in where:
+            raise SystemExit(f"skill {n!r} is homed in {home!r} but is not there (found in {', '.join(where)})")
+        out[n] = os.path.join(plugins_root, home or where[0], "skills")
+    for n, home in homes.items():
+        if n not in out:
+            raise SystemExit(f"skill {n!r} is homed in {home!r} but exists nowhere")
+    return out
 DIST = os.path.join(ROOT, "dist")
 
 # git's own binary test: NUL in the first 8000 bytes.
@@ -155,6 +185,28 @@ def selftest() -> int:
           canonical_bytes(b"a\rb") == b"a\rb")
     check("CRLF becomes LF", canonical_bytes(b"a\r\nb") == b"a\nb")
 
+    # 4. Where a skill is built from (#2186): a moved skill is packaged from its home, never from the stub.
+    def _plugins(layout):
+        root = tempfile.mkdtemp(prefix="pkg-plugins-")
+        for plugin, names in layout.items():
+            for n in names:
+                os.makedirs(os.path.join(root, plugin, "skills", n))
+        return root
+
+    def _refused(layout, homes):
+        try:
+            skill_dirs(_plugins(layout), ("rails-stack", "core-skills"), homes)
+        except SystemExit:
+            return True
+        return False
+
+    ok = skill_dirs(_plugins({"rails-stack": ["a", "b"], "core-skills": ["a"]}), ("rails-stack", "core-skills"), {"a": "core-skills"})
+    check("a moved skill is built from its home, not from the redirect stub", ok["a"].split(os.sep)[-2] == "core-skills")
+    check("a skill that did not move is built from where it is", ok["b"].split(os.sep)[-2] == "rails-stack")
+    check("a name in two plugins with no declared home is refused", _refused({"rails-stack": ["a"], "core-skills": ["a"]}, {}))
+    check("a skill homed where it is not is refused", _refused({"rails-stack": ["a"], "core-skills": []}, {"a": "core-skills"}))
+    check("a skill homed nowhere it exists is refused", _refused({"rails-stack": [], "core-skills": []}, {"a": "core-skills"}))
+
     print(f"ran {total} packaging assertion(s), {total - len(failures)} passed")
     if failures:
         print("\nFAILED:")
@@ -169,8 +221,8 @@ if __name__ == "__main__":
     argv = sys.argv[1:]
     if "--selftest" in argv:
         sys.exit(selftest())
-    names = argv or sorted(os.listdir(SKILLS_DIR))
-    for n in names:
-        if os.path.isdir(os.path.join(SKILLS_DIR, n)):
-            out = build(n)
+    dirs = skill_dirs()
+    for n in argv or sorted(dirs):
+        if n in dirs:
+            out = build(n, dirs[n])
             print(f"{out}  {os.path.getsize(out)} bytes")

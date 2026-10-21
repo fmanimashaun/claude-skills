@@ -11,7 +11,7 @@
   "plugins": [
     {
       "name": "rails-stack",
-      "description": "Rails 8.1 + Hotwire development doctrine: vanilla-first stack, pure RSpec testing, Turbo/Stimulus/Hotwire Native, OpenAPI docs via rswag, ruby_llm AI features, Kamal 2 deployment, plus the design system (tokens, layout primitives, component catalog), review doctrine for the defect class authors are blind to — code that does not do what its own docs, config and project rules claim — and an advisory quality pass (reuse, simplification, efficiency, altitude) that runs second and never blocks a merge. Bundles the rails-8, hotwire, design-system, code-review, quality-pass, derived-artifacts and parallel-session-lane skills.",
+      "description": "Rails 8.1 + Hotwire development doctrine: vanilla-first stack, pure RSpec testing, Turbo/Stimulus/Hotwire Native, OpenAPI docs via rswag, ruby_llm AI features, Kamal 2 deployment, plus the design system (tokens, layout primitives, component catalog). Bundles the rails-8, hotwire and design-system skills; code-review, quality-pass, derived-artifacts and parallel-session-lane moved to core-skills (a dependency) and keep a redirect here for two releases.",
       "source": "./plugins/rails-stack",
       "strict": false,
       "skills": [
@@ -36,6 +36,33 @@
         "design-system",
         "code-review",
         "doctrine"
+      ],
+      "category": "development"
+    },
+    {
+      "name": "core-skills",
+      "description": "The stack-neutral skills every flow and stack plugin uses, installed once: code-review (does the code do what its own docs, config and rules claim), quality-pass (an advisory second pass: reuse, simplification, efficiency, altitude), derived-artifacts (a generated file, its source and the check that they agree) and parallel-session-lane (working beside other sessions in one repository). Nothing in it names a framework.",
+      "source": "./plugins/core-skills",
+      "strict": false,
+      "skills": [
+        "./skills/code-review",
+        "./skills/quality-pass",
+        "./skills/derived-artifacts",
+        "./skills/parallel-session-lane"
+      ],
+      "author": {
+        "name": "Fisayo Animashaun",
+        "url": "https://github.com/fmanimashaun/claude-skills"
+      },
+      "homepage": "https://github.com/fmanimashaun/claude-skills#readme",
+      "repository": "https://github.com/fmanimashaun/claude-skills",
+      "license": "MIT",
+      "keywords": [
+        "code-review",
+        "quality",
+        "skills",
+        "parallel-sessions",
+        "neutral"
       ],
       "category": "development"
     },
@@ -125,7 +152,7 @@
     },
     {
       "name": "flow-suite",
-      "description": "One install for rails-flow, qa-flow and pipeline: a bundle whose manifest declares the three as dependencies (a manifest only, no components of its own).",
+      "description": "One install for rails-flow, qa-flow and pipeline (with the core-skills they use): a bundle whose manifest declares them as dependencies (a manifest only, no components of its own).",
       "source": "./plugins/flow-suite",
       "author": {
         "name": "Fisayo Animashaun",

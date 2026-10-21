@@ -98,7 +98,7 @@ looks like, and treating it as a block would make every finished edge permanent.
 **A READY verdict says what it does not know.** On an issue that declares no edges it prints a
 note: the tracker names no blocker, which is not the same as nothing blocking it. Until the epic
 backfill lands that is the common case, and reporting the first as the second would be the
-`unverified-negative` class from `plugins/rails-stack/skills/code-review/SKILL.md` — a green light nobody could
+`unverified-negative` class from `plugins/core-skills/skills/code-review/SKILL.md` — a green light nobody could
 calibrate. An issue that *did* declare gets no note, because a caveat on every verdict is a
 caveat nobody reads.
 
@@ -142,7 +142,7 @@ tool's own input.
 bodies — it would be read as an edge.
 
 Requiring a tag makes extraction unambiguous, but strictness that silently drops a near-miss is
-the `gate-that-cannot-fail` class from `plugins/rails-stack/skills/code-review/SKILL.md`: nobody would ever learn
+the `gate-that-cannot-fail` class from `plugins/core-skills/skills/code-review/SKILL.md`: nobody would ever learn
 their block was invisible. So the two near-misses are **detected and reported**:
 
 - a fence whose content is **nothing but declarations** under some other tag (or none) — "tag it

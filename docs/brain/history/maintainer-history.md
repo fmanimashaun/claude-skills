@@ -574,7 +574,7 @@ are load-bearing rather than stylistic.
   `plugins/rails-flow/scripts/check_handoff.py` reconciling a tier table against the agents it describes. Do not "strengthen"
   it into refusing copies; that would contradict the doctrine it guards.
 
-The worked example (`plugins/rails-stack/skills/quality-pass/references/worked-example.md`) records the pass's first
+The worked example (`plugins/core-skills/skills/quality-pass/references/worked-example.md`) records the pass's first
 real run and the decision it produced — **not to extract**, with the measurement behind it. Read it
 before proposing a de-duplication here: the textual overlap across those four files was 29% and the
 extractable mechanism about 6%, and the gap between those two numbers is the whole lesson.

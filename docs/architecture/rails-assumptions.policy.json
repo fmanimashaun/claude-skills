@@ -819,16 +819,16 @@
    },
    {
     "match": [
-     "plugins/rails-stack/skills/quality-pass",
-     "plugins/rails-stack/skills/derived-artifacts"
+     "plugins/core-skills/skills/quality-pass",
+     "plugins/core-skills/skills/derived-artifacts"
     ],
     "class": "neutral",
     "why": "stack-neutral doctrine, bundled under the rails-stack name today; step 8 gives them a plugin of their own (#2186)"
    },
    {
     "match": [
-     "plugins/rails-stack/skills/code-review",
-     "plugins/rails-stack/skills/parallel-session-lane"
+     "plugins/core-skills/skills/code-review",
+     "plugins/core-skills/skills/parallel-session-lane"
     ],
     "class": "mixed",
     "seam": "stack-neutral doctrine whose examples name Rails; the Rails examples move out when core-skills is split (step 8)",

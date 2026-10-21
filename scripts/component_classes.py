@@ -82,18 +82,18 @@ def components_scope(root: Path) -> list[str]:
 
 
 # The shipped skills: plugins/rails-stack/skills/<name>/ since #2182 (skills/<name>/ before).
-SKILLS_PREFIX = "plugins/rails-stack/skills/"
+SKILLS_PREFIXES = ("plugins/rails-stack/skills/", "plugins/core-skills/skills/")  # core-skills since #2186
 
 
 def _skill_parts(path: str) -> int:
     """How many leading path parts name a skill directory, or 0 when the path is not in a skill."""
-    if path.startswith(SKILLS_PREFIX):
+    if path.startswith(SKILLS_PREFIXES):
         return 4
     return 2 if path.startswith("skills/") else 0
 
 
 def plugin_of(path: str) -> str:
-    return SKILLS_PLUGIN if _skill_parts(path) else path.split("/")[1]
+    return path.split("/")[1] if _skill_parts(path) and path.startswith("plugins/") else SKILLS_PLUGIN if _skill_parts(path) else path.split("/")[1]
 
 
 def type_of(path: str) -> str:
@@ -205,7 +205,7 @@ def classify(root: Path, policy: dict, files: list[str] | None = None) -> tuple[
         cid = component_id(path)
         if cid == path:
             continue
-        s = skills.setdefault(cid, {"path": cid, "plugin": SKILLS_PLUGIN, "type": "skill", "rails": [], "next": [], "info": None, "files": 0})
+        s = skills.setdefault(cid, {"path": cid, "plugin": plugin_of(cid + "/"), "type": "skill", "rails": [], "next": [], "info": None, "files": 0})
         s["files"] += 1
         s["rails"] += [f"{path.split('/', 2)[2]}:{n}" for n in rails_hits.get(path, {}).get("lines", [])]
         s["next"] += [f"{path.split('/', 2)[2]}:{n}" for n in next_hits.get(path, {}).get("lines", [])]

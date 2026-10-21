@@ -1,0 +1,8 @@
+{
+  "name": "core-skills",
+  "description": "The stack-neutral skills every flow and stack plugin uses, installed once: code-review (does the code do what its own docs, config and rules claim), quality-pass (advisory reuse, simplification, efficiency, altitude), derived-artifacts (a generated file, its source and the check that they agree) and parallel-session-lane (working beside other sessions in one repository). Nothing in it names a framework.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Fisayo Animashun"
+  }
+}

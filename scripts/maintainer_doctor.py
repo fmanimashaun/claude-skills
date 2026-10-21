@@ -1240,7 +1240,7 @@ class Doctor:
         git stores a symlink as mode 120000 — so none of the three matched, and all three sat
         UNTRACKED in the guard written to hide them, directly under doctrine warning about
         656 MB of licensed blobs the rule could not actually stop. That is
-        `claims-vs-enforcement` from plugins/rails-stack/skills/code-review/SKILL.md, so it is re-checked by script
+        `claims-vs-enforcement` from plugins/core-skills/skills/code-review/SKILL.md, so it is re-checked by script
         rather than remembered.
 
         Asserted in a THROWAWAY repo seeded with our `.gitignore`, against paths that DO NOT

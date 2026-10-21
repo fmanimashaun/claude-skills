@@ -33,24 +33,20 @@ The design system — how to architect and build consistent, modern, responsive 
 
 ## `code-review`
 
-Review doctrine for the class of defect authors are systematically blind to — code that is correct on its own terms but does not do what its own documentation, config, comments or project rules claim it does.
+Moved to the core-skills plugin; load core-skills:code-review.
 
 
 ## `quality-pass`
 
-A SECOND review pass over changed code, for quality rather than correctness — reuse (is this duplicating something that already exists?), simplification (redundant or derivable state, copy-paste with variation, dead code left behind), efficiency (repeated I/O, work hoisted out of a loop, independent work run in series) and altitude (a bandaid where the root cause is reachable, a special case where the mechanism generalises).
-
-1 reference file(s): `worked-example`
+Moved to the core-skills plugin; load core-skills:quality-pass.
 
 
 ## `derived-artifacts`
 
-How to build anything whose numbers come from somewhere else — read the generator's structured source, never regex-parse generated prose, and assert every derived total against the source's own declared totals.
+Moved to the core-skills plugin; load core-skills:derived-artifacts.
 
 
 ## `parallel-session-lane`
 
-Operating protocol for working as one of several agent sessions against the same repository at once — take your own worktree and test database, announce the FILE PATHS you are about to touch, query git for claimed decision numbers and migration timestamps rather than asking a peer, and copy the gitignored files a fresh worktree lacks before trusting any test result.
-
-6 reference file(s): `isolated-resources`, `one-issue-at-a-time`, `process-hygiene`, `reading-a-list`, `session-identity`, `where-i-stopped`
+Moved to the core-skills plugin; load core-skills:parallel-session-lane.
 

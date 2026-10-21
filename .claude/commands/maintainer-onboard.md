@@ -53,7 +53,7 @@ Read, in this order:
    flow, why "never commit to `main`" is a correctness rule rather than tidiness, the two-step
    arm→promote release, and the doctrine-verifier gate that blocks skill edits without a cited
    source.
-2. **`plugins/rails-stack/skills/code-review/SKILL.md`** — the review doctrine, applied to your own diff *before*
+2. **`plugins/core-skills/skills/code-review/SKILL.md`** — the review doctrine, applied to your own diff *before*
    anyone else's. It is shipped doctrine, so it is the same rules a user's `pr-reviewer` runs.
 3. The component you are about to touch — `plugins/rails-stack/skills/*/references/`, or the plugin's agents and
    commands.

@@ -1,4 +1,4 @@
-<!-- GENERATED from plugins/rails-stack/skills/parallel-session-lane/references/isolated-resources.md by scripts/build_maintainer_skills.py — do not edit.
+<!-- GENERATED from plugins/core-skills/skills/parallel-session-lane/references/isolated-resources.md by scripts/build_maintainer_skills.py — do not edit.
      The shipped skill is the source of truth; this copy exists because this repository's
      own sessions do not load `rails-stack`, so the doctrine would otherwise reach every
      consumer except its maintainers. Edit the source and re-run the script. -->

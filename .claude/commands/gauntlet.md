@@ -66,4 +66,4 @@ It is a manual step, so it is not in the table above and never makes a gauntlet 
 - **A fix that adds a new parsing path re-runs `shell-adversary`**, even if it was CLEAN, because the
   fix is a new diff.
 - Then do the rest of the checklist: the sweep, and your own read of the diff against
-  `plugins/rails-stack/skills/code-review/SKILL.md`. The gauntlet does not replace either.
+  `plugins/core-skills/skills/code-review/SKILL.md`. The gauntlet does not replace either.
