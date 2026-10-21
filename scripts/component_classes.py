@@ -431,8 +431,8 @@ const document = {querySelectorAll: s => s.startsWith("tr") ? rows : counts, que
 new Function("document", script)(document);
 const text = h => h.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 const byClass = text(els["by-class"].innerHTML).replace(/^class components /, "");
-const plugin = {}; counts.filter(c => !c.key.includes("|")).forEach(c => plugin[c.key] = c.textContent);
-console.log(JSON.stringify({total: total.textContent, by_class: byClass, counts: plugin}));
+const all = {}; counts.forEach(c => all[c.key] = String(c.textContent));
+console.log(JSON.stringify({total: total.textContent, by_class: byClass, counts: all}));
 """
 
 
@@ -471,7 +471,14 @@ def _selftest() -> int:
         before, after = build(comps).splitlines(), build(bigger).splitlines()
         extra = [x for x in after if x not in before]
         check(f"adding one component changes only its own lines in the {label}", bool(extra) and all("zz_new.py" in x for x in extra) and all(x in after for x in before))
-    page = build_html(comps)
+    # The page's script is run on a fixture with two plugins and two classes, so a wrong cell (a per-plugin or per-plugin-and-kind count)
+    # cannot hide behind a one-plugin page.
+    mixed_files = {**clean, "plugins/q/scripts/r1.py": "print(1)\n", "plugins/q/scripts/r2.py": "print(2)\n", "plugins/q/commands/c.md": "do it\n"}
+    mixed_pol = pol(decl=[{"match": ["plugins/p/commands/*", "plugins/p/scripts/*", "plugins/q/commands/*"], "class": "neutral", "why": "w"},
+                          {"match": ["plugins/q/scripts/*"], "class": "rails", "issue": 7, "why": "w"}])
+    mixed, mf = run(mixed_files, mixed_pol)
+    check("the two-plugin fixture classifies cleanly", mf == [] and {c["info"]["class"] for c in mixed} == {"neutral", "rails"})
+    page = build_html(mixed)
     check("the HTML counts its own rows in the page instead of storing totals", "<span data-total></span>" in page and "components)</h2>" in page and "<script>" in page)
     node = shutil.which("node")
     check("node is on PATH (the page's totals are checked by running its script)", node is not None)
@@ -481,12 +488,20 @@ def _selftest() -> int:
             Path(tmp, "d.js").write_text(NODE_PROBE, encoding="utf-8")
             r = subprocess.run([node, str(Path(tmp, "d.js")), str(Path(tmp, "p.html"))], capture_output=True, text=True, check=False)
         probe = json.loads(r.stdout) if r.returncode == 0 and r.stdout.strip() else {}
-        want = summarise(comps)
+        want = summarise(mixed)
         check("the page's script reports the same total as summarise()", str(probe.get("total")) == str(want["components"]))
         check("the page's script reports the same per-class counts as summarise()",
               probe.get("by_class") == " ".join(f"{k} {want['by_class'][k]}" for k in CLASSES))
-        check("the page's script reports the same per-plugin counts as summarise()",
-              str(probe.get("counts", {}).get("p")) == str(want["by_plugin"]["p"]["total"]))
+        # EVERY count the page writes, per plugin and per plugin-and-kind, against the rows it was built from.
+        expect: dict[str, str] = {}
+        for plugin in {c["plugin"] for c in mixed}:
+            expect[plugin] = str(want["by_plugin"][plugin]["total"])
+            for kind in {c["type"] for c in mixed if c["plugin"] == plugin}:
+                rows = [c for c in mixed if c["plugin"] == plugin and c["type"] == kind]
+                tally = Counter(c["info"]["class"] if c["info"] else "unclassified" for c in rows)
+                expect[f"{plugin}|{kind}"] = f"{len(rows)}: " + ", ".join(f"{tally[k]} {k}" for k in (*CLASSES, "unclassified") if tally.get(k))
+        check("the page's script reports every per-plugin and per-plugin-and-kind count as the rows give them",
+              bool(expect) and probe.get("counts") == expect)
     _, f = run({**clean, "plugins/p/hooks/new.sh": "echo\n"}, pol())
     check("a component nothing declares is a finding", any("no class declared" in x for x in f))
     _, f = run({**clean, "plugins/p/scripts/c.py": "run('bin/rails db:migrate')\n"}, pol())

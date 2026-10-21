@@ -78,7 +78,13 @@ GUARD = Guard(
             "#2247: the page's own script counts a row twice, so its totals disagree with the data",
             "x.total++;",
             "x.total += 2;",
-            "the page's script reports the same per-plugin counts as summarise()",
+            "the page's script reports every per-plugin and per-plugin-and-kind count as the rows give them",
+        ),
+        Mutation(
+            "#2247: the page's per-plugin-and-kind cell shows a wrong per-class number, which a one-plugin total never sees",
+            'return x[c] + " " + c;',
+            'return (x[c] + 1) + " " + c;',
+            "the page's script reports every per-plugin and per-plugin-and-kind count as the rows give them",
         ),
     ),
 )
