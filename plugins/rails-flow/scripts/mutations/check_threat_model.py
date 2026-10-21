@@ -141,5 +141,23 @@ GUARD = Guard(
             '    if False:',
             "a second Threats section is found",
         ),
+        Mutation(
+            "a row without a leading pipe is ignored again",
+            '        if ln.strip() and not ln.startswith("|"):',
+            '        if False:',
+            "a row without a leading pipe is refused",
+        ),
+        Mutation(
+            "an HTML comment in the Threats section is allowed again",
+            '    if raw and "<!--" in raw.group(1):',
+            '    if False:',
+            "a comment inside a cell is refused",
+        ),
+        Mutation(
+            "a row with the wrong number of cells is padded and read again",
+            "                if len(cells) != 6:",
+            "                if False:",
+            "a row with five cells is refused",
+        ),
     ),
 )

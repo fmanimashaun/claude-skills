@@ -108,6 +108,14 @@ def check(text: str) -> tuple[list[str], int]:
             bullets = [ln.lstrip("-* ").strip() for ln in lines if ln[:1] in "-*" and len(ln) > 1]
             if not [b for b in bullets if not _is_filler(b)]:
                 findings.append(f"section `## {s}` needs at least one `-` bullet with content")
+    # STRICT, not interpreted (#2213 adversary): the raw `## Threats` section holds the table and nothing else, every row with a leading pipe,
+    # no HTML comment. A renderer and this reader then agree on every row, because anything they could disagree on is refused.
+    raw = re.search(r"^##\s+Threats\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    if raw and "<!--" in raw.group(1):
+        findings.append("`## Threats`: no HTML comments in security tables or criteria; delete the row instead")
+    for ln in (raw.group(1).splitlines() if raw else []):
+        if ln.strip() and not ln.startswith("|"):
+            findings.append(f"`## Threats`: write each row with a leading pipe, and nothing but the table in this section: `{ln.strip()[:60]}`")
     if len(re.findall(r"^##\s+Threats\s*$", _uncommented(text), re.M)) > 1:
         findings.append("`## Threats` appears more than once: one table, or a reader sees only the first")
     m = re.search(r"^##\s+Threats\s*$(.*?)(?=^##\s|\Z)", _uncommented(text), re.M | re.S)
@@ -125,6 +133,8 @@ def check(text: str) -> tuple[list[str], int]:
                 if all(set(c) <= set("-: ") for c in cells):
                     continue
                 rows += 1
+                if len(cells) != 6:
+                    findings.append(f"threat row `{ln.strip()[:50]}`: a row has exactly six cells, got {len(cells)} (an escaped `\\|` counts as a split)")
                 cells += [""] * (6 - len(cells))
                 rid, threat, stride, component, decision, reason = cells[:6]
                 label = f"threat row `{threat[:50] or '(blank)'}`"
@@ -197,6 +207,14 @@ A webhook.
         ("a heading inside a comment is missing", ok.replace("## Security requirements\n- verify the signature", "<!--\n## Security requirements\n- verify the signature\n-->"), 1, "missing section `## Security requirements`"),
         ("TM-1 and TM-01 are the same ID", ok.replace("| TM-4 |", "| TM-01 |"), 1, "already used"),
         ("a second Threats section is found", ok + "## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-9 | x | S | y | mitigate | z |\n", 1, "appears more than once"),
+        ("a row without a leading pipe is refused", ok.replace("| TM-4 | Replay | R | webhook | accept | idempotent, harmless |", "TM-4 | Replay | R | webhook | accept | idempotent, harmless |"), 1, "write each row with a leading pipe"),
+        ("prose inside the Threats section is refused", ok.replace("|---|---|---|---|---|---|", "Rows below.\n|---|---|---|---|---|---|"), 1, "nothing but the table"),
+        ("a sub-heading inside the Threats section is refused", ok.replace("| TM-4 |", "### More\n| TM-4 |"), 1, "nothing but the table"),
+        ("an indented row is refused", ok.replace("| TM-4 |", "    | TM-4 |"), 1, "leading pipe"),
+        ("a comment inside a cell is refused", ok.replace("signature checked", "signature <!-- checked -->"), 1, "no HTML comments"),
+        ("a row with five cells is refused", ok.replace("| accept | idempotent, harmless |", "| accept |"), 1, "exactly six cells"),
+        ("a row with seven cells is refused", ok.replace("| signature checked |", "| signature checked | extra |"), 1, "exactly six cells"),
+        ("an escaped pipe in a cell is refused", ok.replace("Forged callback", "Forged \\| callback"), 1, "exactly six cells"),
         ("a table with no rows is unusable, not clean", ok.split("|---|---|---|---|---|")[0] + "|---|---|---|---|---|---|\n## Security requirements\n- x\n", 2, ""),
     ]
     bad = 0

@@ -332,12 +332,22 @@ def run() -> int:
     sec_check("a [security] criterion citing no row is a finding", sec.replace(" (TM-1)", ""), rows, "cites no threat-model row")
     sec_check("a [security] criterion citing a row that does not exist is a finding", sec.replace("(TM-1)", "(TM-9)"), rows, "not a row of the threat model")
     sec_check("a [security] criterion citing an accept row is a finding", sec.replace("(TM-1)", "(TM-2)"), rows, "not a `mitigate` row")
-    sec_check("a tag and a citation inside an html comment do not count", sec.replace("[security] (TM-1)", "<!-- [security] (TM-1) -->"), rows, "TM-1")
-    sec_check("a citation inside an html comment does not count", sec.replace("[security] (TM-1)", "[security] <!-- (TM-1) -->"), rows, "cites no threat-model row")
+    def sec_refused(label, body, needle):
+        _tick()
+        try:
+            found = cc.check(cc.parse(_write(body)), None, rows)
+        except cc.Unusable as exc:
+            if needle.lower() not in str(exc).lower():
+                FAILURES.append(f"{label}: refused, but not naming {needle!r}: {exc}")
+            return
+        FAILURES.append(f"{label}: expected UNUSABLE naming {needle!r}, got {found}")
+    # STRICT (#2213 adversary): a shape outside the one we read is refused, never interpreted.
+    sec_refused("a tag and a citation inside an html comment are refused", sec.replace("[security] (TM-1)", "<!-- [security] (TM-1) -->"), "no HTML comments")
+    sec_refused("a citation inside an html comment is refused", sec.replace("[security] (TM-1)", "[security] <!-- (TM-1) -->"), "no HTML comments")
     sec_check("a citation inside a code span does not count", sec.replace("[security] (TM-1)", "[security] `(TM-1)`"), rows, "cites no threat-model row")
     sec_check("a mention mid-sentence is not a citation", sec.replace("[security] (TM-1)", "[security] (unlike TM-1 this one is fine)"), rows, "cites no threat-model row")
     sec_check("a citation followed by more words is not in the slot", sec.replace("(TM-1)", "(TM-1) and more words follow"), rows, "cites no threat-model row")
-    sec_check("a trailing html comment does not break the citation slot", sec.replace("(TM-1)", "(TM-1) <!-- reviewed -->"), rows, None)
+    sec_refused("a trailing html comment is refused", sec.replace("(TM-1)", "(TM-1) <!-- reviewed -->"), "no HTML comments")
     sec_check("a list of ids in the slot cites each", sec.replace("[security] (TM-1)", "[security] (TM-1, TM-3)"), rows, None)
     # an existing model with no readable table is exit 2, never 0
     import tempfile as _t
@@ -345,7 +355,11 @@ def run() -> int:
     (d / "ac.md").write_text(sec, encoding="utf-8")
     (d / "bad-model.md").write_text("# not a model\n", encoding="utf-8")
     (d / "old-model.md").write_text("## Threats\n| Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|\n| x | S | y | mitigate | z |\n", encoding="utf-8")
-    for label, mf in (("a model with no table is exit 2", "bad-model.md"), ("a model without the ID column is exit 2", "old-model.md")):
+    (d / "empty-model.md").write_text("# T\n## What we are building\nA hook.\n## Trust boundaries\n- a -> b: c\n## Threats\n"
+                                      "| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n"
+                                      "## Security requirements\n- verify the body\n", encoding="utf-8")
+    for label, mf in (("a model with no table is exit 2", "bad-model.md"), ("a model without the ID column is exit 2", "old-model.md"),
+                      ("a complete model whose table has no rows is exit 2", "empty-model.md")):
         _tick()
         got = cc.main([str(d / "ac.md"), "--threat-model", str(d / mf)])
         if got != 2:
@@ -359,7 +373,9 @@ def run() -> int:
     (deep / "unit.md").write_text(GOOD, encoding="utf-8")
     (repo / "docs" / "security" / "threat-models").mkdir(parents=True)
     (repo / "docs" / "security" / "threat-models" / "unit.md").write_text(
-        "## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-1 | Forged | S | hook | mitigate | sig |\n", encoding="utf-8")
+        "# T\n## What we are building\nA webhook.\n## Trust boundaries\n- partner -> app: the body\n"
+        "## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n| TM-1 | Forged | S | hook | mitigate | sig checked |\n"
+        "## Security requirements\n- verify the signature\n", encoding="utf-8")
     (deep / "other.md").write_text(GOOD, encoding="utf-8")
     for label, name, want, needle in (
             ("a criteria file deeper than docs/product/acceptance still finds its model at the repo root", "unit.md", 1, ""),
@@ -392,12 +408,36 @@ def run() -> int:
             FAILURES.append(f"a model row with {label} is refused, not dropped: expected exit 2, got {got}: {err.getvalue()[:200]}")
     # A criterion inside a multi-line comment or a fenced block is not live, so it cites nothing (#2213 adversary).
     ac2 = "- **AC-2** Given a signed callback, when the log is written, then the body is filtered from the log line [security] covers: TM-3\n"
-    sec_check("a criterion inside a multi-line comment does not cite", sec.replace(ac2, "<!--\n" + ac2 + "-->\n"), rows, "TM-3")
-    sec_check("a criterion inside an unclosed comment does not cite", sec.replace(ac2, "<!-- draft\n" + ac2), rows, "TM-3")
+    sec_refused("a criterion inside a multi-line comment is refused", sec.replace(ac2, "<!--\n" + ac2 + "-->\n"), "no HTML comments")
+    sec_refused("a criterion inside an unclosed comment is refused", sec.replace(ac2, "<!-- draft\n" + ac2), "no HTML comments")
+    sec_refused("`<!--` inside a code span is refused too", sec.replace("then the response", "then `<!--` the response"), "no HTML comments")
+    sec_refused("a fence closed with text after its marker is refused", sec.replace(ac2, "```\nx\n``` done\n" + ac2), "only its marker")
+    sec_refused("a fence that never closes is refused", sec.replace(ac2, "````\n" + ac2 + "```\n"), "never closes")
+    sec_refused("a criterion indented as code is refused", sec.replace(ac2, "\n    " + ac2), "indented four spaces")
+    sec_refused("a criterion tab-indented as code is refused", sec.replace(ac2, "\n\t" + ac2), "indented four spaces")
     sec_check("a criterion inside a backtick fence does not cite", sec.replace(ac2, "```\n" + ac2 + "```\n"), rows, "TM-3")
     sec_check("a criterion inside a tilde fence does not cite", sec.replace(ac2, "~~~md\n" + ac2 + "~~~\n"), rows, "TM-3")
     sec_check("a tag inside a code span is not a tag", sec.replace("[security] (TM-1)", "`[security]` (TM-1)"), rows, "TM-1")
     sec_check("a criterion after a closed fence still cites", sec.replace(ac2, "```\nx\n```\n" + ac2), rows, None)
+    sec_refused("an indented fence is refused", sec.replace(ac2, "  ```\nx\n  ```\n" + ac2), "start of its line")
+    # The adversary's own inputs (#2213, pass 2), replayed end to end through main(): each is refused unless its record says why it passes.
+    import json as _json
+    corpus = _json.loads((Path(__file__).resolve().parent / "fixtures" / "security-adversary-2213.json").read_text(encoding="utf-8"))
+    for case in corpus:
+        _tick()
+        root = Path(_t.mkdtemp(prefix="railsflow-adv-"))
+        (root / ".git").mkdir()
+        (root / "docs" / "product" / "acceptance").mkdir(parents=True)
+        (root / "docs" / "security" / "threat-models").mkdir(parents=True)
+        (root / "docs" / "product" / "acceptance" / "x.md").write_text(case["criteria"], encoding="utf-8")
+        (root / "docs" / "security" / "threat-models" / case["model_name"]).write_text(case["model"], encoding="utf-8")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            got = cc.main([str(root / "docs" / "product" / "acceptance" / "x.md")])
+        if "passes" in case and got != 0:
+            FAILURES.append(f"adversary input `{case['name']}` should pass ({case['passes']}), got exit {got}: {err.getvalue()[:160]}")
+        elif "passes" not in case and got == 0:
+            FAILURES.append(f"adversary input `{case['name']}` got through (exit 0)")
     sec_check("a model with only accept rows asks for nothing", GOOD, [(1, "Replay", "accept")], None)
     sec_check("no model, no security rule", GOOD, [], None)
 

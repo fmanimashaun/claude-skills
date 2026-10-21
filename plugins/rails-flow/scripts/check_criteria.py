@@ -154,22 +154,35 @@ class Criterion:
         return rest.strip(" ,.;:`*")
 
 
-def _blank_hidden_blocks(text: str) -> str:
-    """HTML comments (multi-line, or unclosed to the end) and fenced code blocks blanked, line count kept, so a criterion inside one
-    is not live (#2213 adversary). Line-based parsing could not see either."""
-    text = re.sub(r"<!--.*?(?:-->|\Z)", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.S)
-    out, fence = [], ""
-    for line in text.split("\n"):
-        mark = re.match(r"\s{0,3}(`{3,}|~{3,})", line)
+NO_COMMENTS = "no HTML comments in security tables or criteria; delete the row or criterion instead"
+
+
+def _strict_lines(text: str, path: Path) -> str:
+    """The criteria file in the one shape we read, or Unusable (#2213 adversary: hand-parsed Markdown always has another edge, so a shape
+    outside this one is refused, never interpreted). No `<!--` anywhere; a fence closes on a line holding only its marker, and is closed
+    before the end; no criterion indented as code. Lines inside a closed fence are blanked: a renderer shows them as code, not criteria."""
+    if "<!--" in text:
+        raise Unusable(f"{path}: {NO_COMMENTS}")
+    out, fence, opened_at = [], "", 0
+    for n, line in enumerate(text.split("\n"), start=1):
+        if re.match(r"\s+(?:`{3,}|~{3,})", line):
+            raise Unusable(f"{path}:{n} write a fence at the start of its line: an indented one means different things in and out of a list")
+        mark = re.match(r"(`{3,}|~{3,})(.*)$", line)
         if fence:
             if mark and mark.group(1)[0] == fence[0] and len(mark.group(1)) >= len(fence):
+                if mark.group(2).strip():
+                    raise Unusable(f"{path}:{n} a fence closes on a line holding only its marker, got `{line.strip()[:40]}`")
                 fence = ""
             out.append("")
         elif mark:
-            fence = mark.group(1)
+            fence, opened_at = mark.group(1), n
             out.append("")
         else:
+            if re.match(r"(?: {4}|\t)", line) and (BOLD_ID_RE.search(line) or DEF_RE.match(line.strip())):
+                raise Unusable(f"{path}:{n} a criterion indented four spaces is a code block to a renderer: write it at the start of the line")
             out.append(line)
+    if fence:
+        raise Unusable(f"{path}:{opened_at} a fence opened here never closes, so everything after it is code")
     return "\n".join(out)
 
 
@@ -179,7 +192,7 @@ def parse(path: Path) -> list[Criterion]:
 
     unit = ""
     out: list[Criterion] = []
-    for line_no, raw in enumerate(_blank_hidden_blocks(path.read_text(encoding="utf-8")).splitlines(), start=1):
+    for line_no, raw in enumerate(_strict_lines(path.read_text(encoding="utf-8"), path).splitlines(), start=1):
         heading = UNIT_RE.match(raw)
         if heading:
             unit = heading.group(1)
@@ -405,9 +418,10 @@ def main(argv: list[str] | None = None) -> int:
 
         model_text = model.read_text(encoding="utf-8")
         rows = tm.threat_rows(model_text)
-        # threat_rows skips a row it cannot read; a skipped row would drop its requirement silently, so any table finding refuses (#2213 adversary).
-        table_findings = [f for f in tm.check(model_text)[0] if f.startswith(("threat row", "`## Threats`"))]
-        if rows and table_findings:
+        # threat_rows skips a row it cannot read, and a skipped row would drop its requirement silently: a model check_threat_model
+        # does not pass is refused whole (#2213 adversary).
+        table_findings = tm.check(model_text)[0]
+        if table_findings:
             print(f"UNUSABLE: {model} has threat rows this check cannot trust -- fix them first:", file=sys.stderr)
             for f in table_findings:
                 print(f"  - {f}", file=sys.stderr)
