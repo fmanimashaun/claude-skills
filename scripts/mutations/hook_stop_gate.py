@@ -60,7 +60,13 @@ GUARD = Guard(
             "the stop gate stops checking the plan advisory",
             '        if ! aout="$(python3 "$achecker" --slug "$slug" --root . 2>&1)"; then',
             '        if false; then',
-            "criteria naming a webhook with no advisor record block",
+            "criteria naming a webhook with no plan-advisor record block",
+        ),
+        Mutation(
+            "a missing advisory_scope.py is skipped silently again",
+            '      if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ ! -f "$achecker" ]; then',
+            '      if false; then',
+            "a plugin root missing advisory_scope.py fails closed",
         ),
     ),
 )

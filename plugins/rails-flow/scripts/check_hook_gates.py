@@ -637,8 +637,8 @@ def stop_gate_fixtures() -> None:
     # The criteria pass here (the later exit 2 is the no-spec rule), so the note can only come from the success path.
     check("stop-gate: criteria that pass with no threat model still say the security check was skipped (#2213)",
           "security check skipped" in out and "acceptance criteria do not hold" not in out, f"exit {code}: {out.strip()[:300]!r}")
-    # THE PLAN ADVISORY (#2262): criteria naming a security boundary owe a recorded advisor pass, so the gate blocks without one.
-    def advisory_scenario(record: str | None) -> tuple[int, str]:
+    # THE PLAN ADVISORY (#2262): criteria naming a security boundary owe a recorded plan-advisor pass, so the gate blocks without one.
+    def advisory_scenario(record: str | None, plugin_root: Path | None = None) -> tuple[int, str]:
         with scratch_dir() as td:
             repo = Path(td) / "repo"
             _git_repo(repo)
@@ -654,19 +654,24 @@ def stop_gate_fixtures() -> None:
                 env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
                 _run([sys.executable, str(HOOKS.parents[1] / "scripts" / "advisory_scope.py"), "--begin", "--slug", "widgets", "--root", str(repo)],
                      check=True, capture_output=True, env=env)
-                rec = repo / "docs/evidence/reviews/plans/widgets/advisor.md"
+                rec = repo / "docs/evidence/reviews/plans/widgets/plan-advisor.md"
                 rec.write_text(rec.read_text() + record)
             stubs = Path(td) / "bin"
             stubs.mkdir()
             _stub(stubs, "bundle", passing)
             return run_hook("stop-gate.sh", cwd=repo, stdin="{}", path_prefix=[stubs],
-                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(plugin_root or HOOKS.parents[1])})
 
+    with scratch_dir() as broken:
+        (Path(broken) / "scripts").mkdir()
+        code, out = advisory_scenario(None, Path(broken))
+    check("stop-gate: a plugin root missing advisory_scope.py fails closed, never a silent skip (#2267 review)",
+          code == 2 and "advisory_scope.py is missing" in out, f"exit {code}: {out.strip()[:240]!r}")
     code, out = advisory_scenario(None)
-    check("stop-gate: criteria naming a webhook with no advisor record block (#2262)",
+    check("stop-gate: criteria naming a webhook with no plan-advisor record block (#2262)",
           code == 2 and "plan advisory is owed" in out, f"exit {code}: {out.strip()[:240]!r}")
     code, out = advisory_scenario("- A-1 trusts the body\nVERDICT: PROCEED\nDisposition A-1: accepted | verify the signature before parsing\n")
-    check("stop-gate: a disposed advisor record lets the plan through (#2262)",
+    check("stop-gate: a disposed plan-advisor record lets the plan through (#2262)",
           "plan advisory is owed" not in out, f"exit {code}: {out.strip()[:240]!r}")
     code, out = paths_scenario("docs/acceptance/widgets.md")
     check("stop-gate: criteria at the pre-layout docs/acceptance/<slug>.md still count",

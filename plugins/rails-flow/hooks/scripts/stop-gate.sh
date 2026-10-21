@@ -115,10 +115,18 @@ case "$branch" in
       fi
     fi
     # THE PLAN ADVISORY (#2262). Once the unit has criteria, a plan that crosses a security boundary, changes structure, the data
-    # model or a dependency, or spans six or more components needs a recorded, disposed `advisor` (Fable) pass for the plan as it
+    # model or a dependency, or spans six or more components needs a recorded, disposed `plan-advisor` (Fable) pass for the plan as it
     # is now. Exit 1 from the check blocks; exit 2 (no plan, an unreadable record) blocks too: an unknown plan is not "not required".
     if [ -f "$criteria" ] && command -v python3 >/dev/null 2>&1; then
       achecker="${CLAUDE_PLUGIN_ROOT:-}/scripts/advisory_scope.py"
+      # A plugin root with no advisory_scope.py is a broken install: fail closed, never a silent skip (#2267 review). With no plugin
+      # root at all (run outside the hook runtime) the gate says so and goes on, as its other checks do.
+      if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ ! -f "$achecker" ]; then
+        echo "rails-flow stop gate: the plan advisory cannot be checked: $achecker is missing (a broken plugin install)." >&2
+        exit 2
+      elif [ ! -f "$achecker" ]; then
+        echo "rails-flow stop gate: plan advisory NOT checked: CLAUDE_PLUGIN_ROOT is unset, so advisory_scope.py cannot be found." >&2
+      fi
       if [ -f "$achecker" ]; then
         if ! aout="$(python3 "$achecker" --slug "$slug" --root . 2>&1)"; then
           {

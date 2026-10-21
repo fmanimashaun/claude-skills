@@ -111,7 +111,7 @@ gh api "repos/{owner}/{repo}/issues/100/sub_issues" -F sub_issue_id="$child_id"
 ```
 
 **Before filing, the plan advisory (#2262).** `advisory_scope.py --slug <slug>` reads the slice plan; exit 1 means a
-Fable `advisor` pass is owed before any issue is filed, run as in `/rails-flow:feature` Phase 1 (`--begin`, the agent, a
+Fable `plan-advisor` pass is owed before any issue is filed, run as in `/rails-flow:feature` Phase 1 (`--begin`, the agent, a
 disposition per finding, `--stamp`). Filing is a command, not a hook, so this step is the check: run it and act on its exit.
 
 **6. Commit the plan** (`docs/product/slices/<slug>.md`) by name, with the filed number next to each

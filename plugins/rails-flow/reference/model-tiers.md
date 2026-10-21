@@ -117,7 +117,7 @@ not a nicety — and why the mechanical column below has to name the proof for e
 | `design-auditor` | mechanical | `haiku` | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical | `haiku` | `architecture_graph.py` regenerates and its digest guard fails on drift |
 | `adversary` | adversarial | `fable` | — |
-| `advisor` | adversarial | `fable` | — |
+| `plan-advisor` | adversarial | `fable` | — |
 <!-- rails-flow:tiers:end -->
 
 The markers are load-bearing: `check_handoff.py --agents <dir> --tiers <this file>` parses **that**
@@ -128,7 +128,7 @@ become folklore again. A stale row naming an agent that no longer exists fails t
 expensive model than the user chose, because a pin spends their money on our authority. The owner's rule of 2026-10-08 (on #1702)
 is the exception: *Fable is the model for adversarial attack passes, the ones that try to break a change*, and ordinary reviews stay
 on the default. So the table has a third tier, `adversarial`, and `check_handoff.py --tiers` accepts it for exactly the agents in
-its `PINNED_UP` list (today `adversary` and `advisor`), pinned to exactly the model named there; any other agent claiming it, and any other pin
+its `PINNED_UP` list (today `adversary` and `plan-advisor`), pinned to exactly the model named there; any other agent claiming it, and any other pin
 of `fable` or `opus`, is still refused. The reasons it is safe enough to be the exception: the agent runs only on a **risky**
 diff (`risky_diff.py` decides, #1819), once per PR head, not on every review; and `fable` is a documented subagent alias
 (https://code.claude.com/docs/en/sub-agents, "Choose a model"). What is **not claimed**: what happens for a user whose plan or
@@ -136,7 +136,7 @@ organization cannot use Fable beyond what fact 4 records for a blocked family al
 the Anthropic API and Claude Platform on AWS, the inherited model elsewhere). The agent is read-only and a `VERDICT: BLOCKED`
 from it is a finding for a human, never an automatic stop.
 
-**`advisor` is the second deliberate pin up, also `fable` (#2262).** The owner's direction of 2026-10-21 (*"we should make fable
+**`plan-advisor` is the second deliberate pin up, also `fable` (#2262).** The owner's direction of 2026-10-21 (*"we should make fable
 advisory a standard flow in our plugin"*) extends the adversarial tier from attacking a finished diff to challenging a plan before
 it is built. The same reasons make it safe enough: it runs only when `advisory_scope.py` says the plan crosses a security boundary,
 changes structure, the data model or a dependency, or spans six or more components; once per plan, not per review; and its answer

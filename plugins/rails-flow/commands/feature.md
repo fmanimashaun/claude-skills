@@ -162,8 +162,8 @@ plugin, agent, command, skill, hook, gate or descriptor key), the data model or 
 Then:
 
 1. `advisory_scope.py --begin --slug <slug>` writes the record header and a snapshot of the plan as reviewed.
-2. Run the `advisor` agent (model `fable`) on the plan files; append its answer **verbatim** to
-   `docs/evidence/reviews/plans/<slug>/advisor.md`.
+2. Run the `plan-advisor` agent (model `fable`) on the plan files; append its answer **verbatim** to
+   `docs/evidence/reviews/plans/<slug>/plan-advisor.md`.
 3. Answer every finding on its own line: `Disposition A-n: accepted | <what changed in the plan>`, `rejected | <why>`, or
    `deferred | #<issue>`. Never drop one.
 4. Revise the plan for what you accepted, then `advisory_scope.py --stamp --slug <slug>`. It refuses when a finding is

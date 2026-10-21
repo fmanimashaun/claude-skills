@@ -90,7 +90,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a short override reason is accepted",
-            "        good = [m for m in overrides if m and len(m.group(2)) >= REASON_MIN and not _filler(m.group(2))]",
+            "        good = [m for m in overrides if m and len(m.group(2)) >= REASON_MIN and not _filler(m.group(2)) and ISSUE_CHECK(m.group(3))]",
             "        good = [m for m in overrides if m]",
             "RETHINK with a short override is refused",
         ),
@@ -111,6 +111,43 @@ GUARD = Guard(
             "|descriptor key|schema key)s?\\b\", re.I)",
             "|descriptor key|schema key|check)s?\\b\", re.I)",
             "an app's ordinary check is not structure",
+        ),
+        Mutation(
+            # #2267 review: an override's #n was only pattern-matched.
+            "an override's issue is not checked",
+            " and not _filler(m.group(2)) and ISSUE_CHECK(m.group(3))]",
+            " and not _filler(m.group(2))]",
+            "an override citing an issue that cannot be read is refused",
+        ),
+        Mutation(
+            "an answer with no findings passes",
+            "    if not findings and not any(",
+            "    if False and not any(",
+            "an answer reduced to a bare verdict is refused",
+        ),
+        Mutation(
+            "more than seven findings pass",
+            "    if len(findings) > MAX_FINDINGS:",
+            "    if False:",
+            "more than seven findings are refused",
+        ),
+        Mutation(
+            "a rewritten snapshot passes",
+            "    if snapshot is not None and plan_hash(snapshot) != reviewed:",
+            "    if False:",
+            "a snapshot rewritten after the review is refused",
+        ),
+        Mutation(
+            "a missing snapshot passes",
+            "    if snapshot is None:\n        problems.append",
+            "    if False:\n        problems.append",
+            "a missing snapshot is refused",
+        ),
+        Mutation(
+            "a branch with no prefix has no slug again",
+            '    return out.split("/", 1)[1].replace("/", "-") if "/" in out else out',
+            '    return out.split("/", 1)[1].replace("/", "-") if "/" in out else ""',
+            "a branch with no prefix is its own slug",
         ),
     ),
 )

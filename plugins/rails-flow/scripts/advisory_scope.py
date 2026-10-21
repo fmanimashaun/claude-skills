@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Say whether a unit's PLAN needs a Fable `advisor` pass before it is built, and whether that pass is recorded and disposed (#2262).
+"""Say whether a unit's PLAN needs a Fable `plan-advisor` pass before it is built, and whether that pass is recorded and disposed (#2262).
 
 Run:  advisory_scope.py [--slug S] [--root DIR]                 classify the unit's plan; when required, check its record
       advisory_scope.py --begin [--slug S] [--root DIR]         write the record header and the reviewed-plan snapshot, before the pass
@@ -7,7 +7,7 @@ Run:  advisory_scope.py [--slug S] [--root DIR]                 classify the uni
       advisory_scope.py --selftest
 Exit: 0 not required, or required and the record is usable: every finding disposed, VERDICT PROCEED (or RETHINK with an override),
         and it covers the plan as it is now
-      1 required and the record is missing, incomplete, stale, or RETHINK with no override: run `advisor` (model: fable) and record it
+      1 required and the record is missing, incomplete, stale, or RETHINK with no override: run `plan-advisor` (model: fable) and record it
       2 cannot classify: no plan files for the unit, or an unreadable record. An unknown plan is not "not required"
 
 WHY (#2262, owner direction 2026-10-21: "we should make fable advisory a standard flow in our plugin"). The `adversary` attacks a
@@ -27,7 +27,7 @@ REQUIRED when any category fires (each is the whole definition of its category):
                 6+: 9. At 6, the 30% most cross-cutting fire. Re-take it: `gh pr list --state merged --base dev --limit 30 --json files`,
                 count each PR's distinct first-two-segment paths outside `BOOKKEEPING`.
 
-THE RECORD, `docs/evidence/reviews/plans/<slug>/advisor.md`:
+THE RECORD, `docs/evidence/reviews/plans/<slug>/plan-advisor.md`:
   * `--begin` writes `Plan: <file>` per plan file, `Plan-SHA256: <hash>`, `Categories: <...>`, and a snapshot of the plan beside the
     record (`reviewed-plan.txt`); the advisor's answer is appended verbatim. Its findings are `A-n` lines; its last
     `VERDICT:` line is PROCEED or RETHINK.
@@ -61,11 +61,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 PLAN_FILES = ("docs/product/acceptance/{slug}.md", "docs/product/handoff/{slug}.md", "docs/product/specs/{slug}.md",
               "docs/security/threat-models/{slug}.md", "docs/product/slices/{slug}.md",
               "docs/acceptance/{slug}.md", "docs/handoff/{slug}.md")  # the pre-layout paths the stop gate still reads (#1700)
-RECORD = "docs/evidence/reviews/plans/{slug}/advisor.md"
+RECORD = "docs/evidence/reviews/plans/{slug}/plan-advisor.md"
 SNAPSHOT = "reviewed-plan.txt"
 BREADTH = 6
 RESTAMP_MAX = 0.30
 REASON_MIN = 20
+MAX_FINDINGS = 7
 
 PATH_RE = re.compile(r"`([A-Za-z0-9_.@-][\w.@/-]*/[\w.@/-]+)`")
 # Plugin structure, not app code: an app's own `hooks/` (a UI framework's) or `commands/` folder is not a hook or a command.
@@ -162,8 +163,20 @@ def _filler(reason: str) -> bool:
     return check_threat_model._is_filler(reason)
 
 
-def judge_record(record: str, current_hash: str, current_files: list[str], current_cats: set[str]) -> list[str]:
-    """Why the record does not cover the plan as it is now; empty when it does."""
+def issue_readable(ref: str) -> bool:
+    """Whether `#n` names an issue `gh` can read; False when it cannot be read (fails closed, #2267 review)."""
+    try:
+        proc = subprocess.run(["gh", "issue", "view", ref.lstrip("#"), "--json", "number"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0
+
+
+ISSUE_CHECK = issue_readable  # the selftest swaps in a stub, so it never calls the network
+
+
+def judge_record(record: str, current_hash: str, current_files: list[str], current_cats: set[str], snapshot: str | None) -> list[str]:
+    """Why the record does not cover the plan as it is now; empty when it does. `snapshot` is the reviewed-plan file (None: absent)."""
     lines = record.splitlines()
     problems: list[str] = []
     files = [ln.split(":", 1)[1].strip() for ln in lines if ln.startswith("Plan:")]
@@ -172,6 +185,12 @@ def judge_record(record: str, current_hash: str, current_files: list[str], curre
     cats = next((ln.split(":", 1)[1] for ln in lines if ln.startswith("Categories:")), None)
     if not files or not reviewed or cats is None:
         return ["the record has no `Plan:`, `Plan-SHA256:` or `Categories:` header: write it with `advisory_scope.py --begin`"]
+    # The reviewed hash is the snapshot's (#2267 review): refreshing either one with the current plan would clear the stale and the 30%
+    # checks. This stops an accidental refresh; a deliberate forgery rewrites both, and nothing here can tell.
+    if snapshot is None:
+        problems.append(f"no reviewed-plan snapshot ({SNAPSHOT}) beside the record: run `--begin` before the advisor pass")
+    if snapshot is not None and plan_hash(snapshot) != reviewed:
+        problems.append(f"the reviewed-plan snapshot does not match `Plan-SHA256`: one was rewritten after the review; run a new advisor pass")
     if missing := [f for f in current_files if f not in files]:
         problems.append(f"plan files written after the review are not covered: {', '.join(missing)}: run a new advisor pass")
     if current_hash != reviewed and (not disposed or disposed[-1] != current_hash):
@@ -188,6 +207,11 @@ def judge_record(record: str, current_hash: str, current_files: list[str], curre
         m = FINDING_RE.match(ln)
         if m and not DISPOSITION_RE.match(ln) and m.group(1) not in findings:
             findings.append(m.group(1))
+    # An answer with no `A-n` line is no answer, unless it says so (#2267 review); and the agent's contract is at most seven.
+    if not findings and not any(re.match(r"^\s*Findings\s*:\s*none\b", ln, re.I) for ln in lines):
+        problems.append("the advisor's answer has no `A-n` finding and no `Findings: none` line: save the answer verbatim")
+    if len(findings) > MAX_FINDINGS:
+        problems.append(f"the answer has {len(findings)} findings; the advisor returns at most {MAX_FINDINGS}: run the agent, do not pad its answer")
     disposed_ids: dict[str, int] = {}
     for ln in lines:
         m = DISPOSITION_RE.match(ln)
@@ -211,7 +235,7 @@ def judge_record(record: str, current_hash: str, current_files: list[str], curre
             problems.append(f"finding {fid} is disposed twice: one disposition per finding")
     if verdicts and verdicts[-1] == "RETHINK":
         overrides = [OVERRIDE_RE.match(ln) for ln in lines if ln.strip().lower().startswith("override")]
-        good = [m for m in overrides if m and len(m.group(2)) >= REASON_MIN and not _filler(m.group(2))]
+        good = [m for m in overrides if m and len(m.group(2)) >= REASON_MIN and not _filler(m.group(2)) and ISSUE_CHECK(m.group(3))]
         if not good:
             problems.append("VERDICT: RETHINK blocks until a fresh advisor pass on the revised plan says PROCEED, or an "
                             f"`Override: <who> | <reason, {REASON_MIN}+ characters> | #<issue>` line records who decided")
@@ -227,7 +251,8 @@ def changed_share(before: str, after: str) -> float:
 def slug_of(root: Path) -> str:
     # symbolic-ref, not rev-parse: it names the branch before its first commit too (a plan is often written before any).
     out = subprocess.run(["git", "-C", str(root), "symbolic-ref", "--short", "-q", "HEAD"], capture_output=True, text=True).stdout.strip()
-    return out.split("/", 1)[1].replace("/", "-") if "/" in out else ""
+    # A branch with no prefix is its own slug (#2267 review): "" would read as "no advisory owed".
+    return out.split("/", 1)[1].replace("/", "-") if "/" in out else out
 
 
 def main(argv: list[str]) -> int:
@@ -257,7 +282,7 @@ def main(argv: list[str]) -> int:
         (record.parent / SNAPSHOT).write_text(text, encoding="utf-8")
         record.write_text("".join(f"Plan: {f}\n" for f in files) + f"Plan-SHA256: {plan_hash(text)}\n"
                           f"Categories: {', '.join(sorted(cats))}\n\n", encoding="utf-8")
-        print(f"{record}: header written; run `advisor` on the plan and append its answer verbatim")
+        print(f"{record}: header written; run `plan-advisor` on the plan and append its answer verbatim")
         return 0
     if not cats:
         print("advisory optional: the plan names no security boundary, structure, data-model or dependency change, "
@@ -265,7 +290,7 @@ def main(argv: list[str]) -> int:
         return 0
     if not record.is_file():
         print(f"advisory REQUIRED ({'; '.join(f'{k}: {v}' for k, v in sorted(cats.items()))}), and no record at {record}.\n"
-              f"Run `advisory_scope.py --begin`, then the `advisor` agent on the plan, append its answer, dispose each finding.",
+              f"Run `advisory_scope.py --begin`, then the `plan-advisor` agent on the plan, append its answer, dispose each finding.",
               file=sys.stderr)
         return 1
     try:
@@ -279,7 +304,8 @@ def main(argv: list[str]) -> int:
             print(f"no reviewed-plan snapshot at {snap}: run `--begin` before the advisor pass", file=sys.stderr)
             return 1
         share = changed_share(snap.read_text(encoding="utf-8"), text)
-        open_ = [p for p in judge_record(body + f"\nDisposed-SHA256: {plan_hash(text)}\n", plan_hash(text), files, set(cats))]
+        open_ = [p for p in judge_record(body + f"\nDisposed-SHA256: {plan_hash(text)}\n", plan_hash(text), files, set(cats),
+                                         snap.read_text(encoding="utf-8"))]
         if share > RESTAMP_MAX:
             open_.append(f"{share:.0%} of the plan changed since review, over {RESTAMP_MAX:.0%}: run a new advisor pass")
         if open_:
@@ -288,7 +314,8 @@ def main(argv: list[str]) -> int:
         record.write_text(body.rstrip("\n") + f"\nDisposed-SHA256: {plan_hash(text)}\nChanged: {share:.0%}\n", encoding="utf-8")
         print(f"stamped: {share:.0%} of the plan changed since review")
         return 0
-    problems = judge_record(body, plan_hash(text), files, set(cats))
+    snap = record.parent / SNAPSHOT
+    problems = judge_record(body, plan_hash(text), files, set(cats), snap.read_text(encoding="utf-8") if snap.is_file() else None)
     if problems:
         print(f"{record} does not cover the plan:\n" + "\n".join(f"  - {p}" for p in problems), file=sys.stderr)
         return 1
@@ -315,7 +342,7 @@ def selftest() -> int:  # noqa: C901 -- one fixture table, read top to bottom
     for label, text, want in (
             ("a plain plan triggers nothing", "Add a notes field to `src/views/notes.tpl`.", set()),
             ("a webhook is security", "Receive the partner webhook at `src/hooks/partner.py`.", {"security"}),
-            ("a new agent path is structure", "Write `plugins/x/agents/advisor.md`.", {"structure"}),
+            ("a new agent path is structure", "Write `plugins/x/agents/plan-advisor.md`.", {"structure"}),
             ("plan text adding a hook is structure", "Add a hook that refuses the push.", {"structure"}),
             ("an app's ordinary check is not structure", "Add a check that the email is present.", set()),
             ("an app's own hooks folder is not structure", "Refactor `src/hooks/use_cart.py`.", set()),
@@ -333,6 +360,10 @@ def selftest() -> int:  # noqa: C901 -- one fixture table, read top to bottom
         got = set(categories(empty, text, planned_paths(text), lay, marks))
         check(got == want, f"{label}: got {sorted(got)}, expected {sorted(want)}")
 
+    global ISSUE_CHECK
+    ISSUE_CHECK = lambda ref: ref == "#9"  # noqa: E731 -- the stub: only #9 "exists"
+    SNAP = "== docs/product/acceptance/u.md\nthe reviewed plan\n"
+    HS, H2 = plan_hash(SNAP), plan_hash("the revised plan")
     good = ("Plan: docs/product/acceptance/u.md\nPlan-SHA256: H\nCategories: security\n\n"
             "Findings:\n- A-1 the token outlives logout\n- A-2 the layer order is backwards\n"
             "VERDICT: PROCEED\n"
@@ -359,11 +390,26 @@ def selftest() -> int:  # noqa: C901 -- one fixture table, read top to bottom
              good.replace("VERDICT: PROCEED", "VERDICT: RETHINK") + "Override: owner | the premise is deliberate, per the ruling | #9\n", "H", cats, None),
             ("a header-less record is refused", "VERDICT: PROCEED\n", "H", cats, "--begin"),
     ):
-        problems = judge_record(rec, h, files, cur_cats)
+        rec = rec.replace("Plan-SHA256: H\n", f"Plan-SHA256: {HS}\n").replace("Disposed-SHA256: H2", f"Disposed-SHA256: {H2}")
+        problems = judge_record(rec, {"H": HS, "H2": H2}[h], files, cur_cats, SNAP)
         ok = (not problems) if needle is None else any(needle in p for p in problems)
         check(ok, f"{label}: {problems}")
-    check(any("not covered" in p for p in judge_record(good, "H", files + ["docs/security/threat-models/u.md"], cats)),
+    goodh = good.replace("Plan-SHA256: H\n", f"Plan-SHA256: {HS}\n")
+    check(any("not covered" in p for p in judge_record(goodh, HS, files + ["docs/security/threat-models/u.md"], cats, SNAP)),
           "a plan file written after the review is not covered")
+    for label, rec, snap, needle in (
+            ("an answer reduced to a bare verdict is refused", goodh.split("Findings:")[0] + "VERDICT: PROCEED\n", SNAP, "no `A-n` finding"),
+            ("an explicit no-findings answer is covered", goodh.split("Findings:")[0] + "Findings: none\nVERDICT: PROCEED\n", SNAP, None),
+            ("more than seven findings are refused",
+             goodh.replace("VERDICT: PROCEED\n", "".join(f"- A-{i} more\n" for i in range(3, 9)) + "VERDICT: PROCEED\n")
+             + "".join(f"Disposition A-{i}: rejected | not relevant to this unit at all\n" for i in range(3, 9)), SNAP, "at most 7"),
+            ("a snapshot rewritten after the review is refused", goodh, "== a refreshed snapshot\n", "does not match"),
+            ("a missing snapshot is refused", goodh, None, "no reviewed-plan snapshot"),
+            ("an override citing an issue that cannot be read is refused",
+             goodh.replace("VERDICT: PROCEED", "VERDICT: RETHINK") + "Override: owner | the premise is deliberate, per the ruling | #404\n", SNAP, "RETHINK blocks"),
+    ):
+        problems = judge_record(rec, HS, files, cats, snap)
+        check((not problems) if needle is None else any(needle in p for p in problems), f"{label}: {problems}")
     check(abs(changed_share("a\nb\nc\nd\n", "a\nb\nc\nX\n") - 0.25) < 1e-9, "a quarter of the lines changed is 25%")
 
     # main(), end to end in a scratch repo: --begin, the record, --stamp under and over the threshold, and the exits.
@@ -401,6 +447,9 @@ def selftest() -> int:  # noqa: C901 -- one fixture table, read top to bottom
         acc.write_text("\n".join(lines[:5] + [ln + " differently" for ln in lines[5:]]) + "\n", encoding="utf-8")
         code, out = run("--stamp")
         check(code == 1 and "over 30%" in out, f"a rewrite over 30% cannot be stamped: {code} {out[:160]}")
+    with tempfile.TemporaryDirectory() as td2:
+        fixture_git.init(td2, "-b", "plain")
+        check(slug_of(Path(td2)) == "plain", f"a branch with no prefix is its own slug: got {slug_of(Path(td2))!r}")
     if bad == 0:
         print("advisory_scope selftest: every case passes")
     return 1 if bad else 0

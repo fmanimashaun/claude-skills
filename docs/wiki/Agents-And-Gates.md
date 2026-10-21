@@ -55,13 +55,13 @@
 | agent | tier · model | tools | named by | what proves its output |
 |---|---|---|---|---|
 | `adversary` | adversarial · fable | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix` | — |
-| `advisor` | adversarial · fable | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:secure-design`, `/rails-flow:setup-flow`, `/rails-flow:slice` | — |
 | `claim-verifier` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:issues` | — |
 | `claude-skills-reporter` | judgement · inherit | Read, Grep, Glob, Bash, Write, Skill | `/rails-flow:report`, `/rails-flow:setup-flow` | — |
 | `code-reviewer` | judgement · inherit | Read | — | — |
 | `design-auditor` | mechanical · haiku | Read | — | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical · haiku | Read, Grep, Glob, Edit, Write, Bash | `/rails-flow:explain`, `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:setup-flow` | `architecture_graph.py` regenerates and its digest guard fails on drift |
 | `migration-writer` | judgement · inherit | Read | — | — |
+| `plan-advisor` | adversarial · fable | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:secure-design`, `/rails-flow:slice` | — |
 | `pr-reviewer` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:pr-comments`, `/rails-flow:retro` | — |
 | `rails-developer` | judgement · inherit | Read | — | — |
 | `security-auditor` | judgement · inherit | Read | `/rails-flow:feature`, `/rails-flow:secure-design` | — |
@@ -383,7 +383,7 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `design-auditor` | mechanical | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical | `architecture_graph.py` regenerates and its digest guard fails on drift |
 | `adversary` | adversarial | — |
-| `advisor` | adversarial | — |
+| `plan-advisor` | adversarial | — |
 
 ### `rails-stack`
 

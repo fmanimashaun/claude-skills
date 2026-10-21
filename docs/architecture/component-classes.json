@@ -4291,19 +4291,6 @@
    "class": "neutral",
    "issue": null,
    "nextjs_lines": 0,
-   "path": "plugins/rails-flow/agents/advisor.md",
-   "plugin": "rails-flow",
-   "proven": false,
-   "rails_lines": 0,
-   "registered": [],
-   "seam": "",
-   "type": "agent",
-   "via": "declared"
-  },
-  {
-   "class": "neutral",
-   "issue": null,
-   "nextjs_lines": 0,
    "path": "plugins/rails-flow/agents/claim-verifier.md",
    "plugin": "rails-flow",
    "proven": false,
@@ -4377,6 +4364,19 @@
    "seam": "",
    "type": "agent",
    "via": "decision"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-flow/agents/plan-advisor.md",
+   "plugin": "rails-flow",
+   "proven": false,
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "agent",
+   "via": "declared"
   },
   {
    "class": "mixed",
