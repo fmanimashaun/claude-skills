@@ -451,15 +451,17 @@
    "match": [
     "plugins/design-flow/scripts/llm_tell_detector.py",
     "plugins/design-flow/scripts/prompt_library.py",
-    "plugins/design-flow/hooks/scripts/design-tells.sh"
+    "plugins/design-flow/hooks/scripts/design-tells.sh",
+    "plugins/design-flow/scripts/mutations/ui_adapter.py"
    ],
    "decision": "neutral",
-   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path",
+   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter guard names the one adapter file its selftest needs",
    "how": "nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding",
    "lines": {
     "plugins/design-flow/scripts/llm_tell_detector.py": 5,
     "plugins/design-flow/scripts/prompt_library.py": 1,
-    "plugins/design-flow/hooks/scripts/design-tells.sh": 4
+    "plugins/design-flow/hooks/scripts/design-tells.sh": 4,
+    "plugins/design-flow/scripts/mutations/ui_adapter.py": 1
    }
   },
   {

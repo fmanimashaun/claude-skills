@@ -11,8 +11,8 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 | `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 84 | 1814 |
 | `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 90 | 1243 |
 | `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 45 | 166 |
-| `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change | 10 | 34 |
-| **all** | | **229** | **3257** |
+| `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change | 11 | 35 |
+| **all** | | **230** | **3258** |
 
 ## By flow
 
@@ -21,7 +21,7 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 | `rails-flow` | 135 | 2289 | 47 | 50 | 35 | 3 |
 | `qa-flow` | 36 | 275 | 0 | 29 | 6 | 1 |
 | `pipeline` | 19 | 89 | 3 | 9 | 4 | 3 |
-| `design-flow` | 39 | 604 | 34 | 2 | 0 | 3 |
+| `design-flow` | 40 | 605 | 34 | 2 | 0 | 4 |
 
 ## By what is named
 
@@ -30,7 +30,7 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 | tool | 896 |
 | gem | 138 |
 | path | 1252 |
-| concept | 2028 |
+| concept | 2029 |
 | hotwire | 96 |
 
 A line that names two things counts once per category it names in this table and once overall in the totals above.
@@ -312,11 +312,12 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `agents/rails-ui-composer.md:4`<br>L4, 26, 28, 70 | agent | 4 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
 | `agents/rails-ui-porter.md:5`<br>L5, 7, 8, 27, 31 +7 more | agent | 12 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
 | `checks.json:10`<br>L10, 21, 24, 35, 38 +13 more | data | 18 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
-| `hooks/scripts/design-tells.sh:11`<br>L11, 20, 23, 24 | hook | 4 | a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path | `neutral` | nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding |
+| `hooks/scripts/design-tells.sh:11`<br>L11, 20, 23, 24 | hook | 4 | a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter guard names the one adapter file its selftest needs | `neutral` | nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding |
 | `hooks/scripts/lib/trusted-env.sh:13`<br>L13, 18, 29, 37, 45 +2 more | hook | 7 | a Gemfile is one of two markers that locate the repository root (.git alone also works), and the env scrub names Ruby variables (RUBY*, GEM_*, BUNDLE_*) among many others | `detector` | the env scrub keeps working exactly as today; only its stack facts (the repo-root markers and the RUBY*/GEM_*/BUNDLE_* names) move to a per-stack list the stack descriptor provides |
 | `scripts/detect_stack.py:14`<br>L14, 15, 37, 290, 519 +18 more | script | 23 | a byte-identical mirror of rails-flow's stack detector (the detect-stack-drift rule holds it equal); its docstring and fixtures name Rails markers | `detector` | stays a mirror so design-flow resolves its UI adapter with no other plugin installed; it is reworded where the canonical copy is (#2215), never here alone |
-| `scripts/llm_tell_detector.py:447`<br>L447, 477, 578, 775, 777 | script | 5 | a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path | `neutral` | nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding |
-| `scripts/prompt_library.py:574`<br>L574 | script | 1 | a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path | `neutral` | nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding |
+| `scripts/llm_tell_detector.py:447`<br>L447, 477, 578, 775, 777 | script | 5 | a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter guard names the one adapter file its selftest needs | `neutral` | nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding |
+| `scripts/mutations/ui_adapter.py:11`<br>L11 | mutation | 1 | a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter guard names the one adapter file its selftest needs | `neutral` | nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding |
+| `scripts/prompt_library.py:574`<br>L574 | script | 1 | a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter guard names the one adapter file its selftest needs | `neutral` | nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding |
 | `ui/viewcomponent-erb/README.md:1`<br>L1, 3, 4, 5, 10 | doc | 5 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
 | `ui/viewcomponent-erb/adapter.json:2`<br>L2, 4 | data | 2 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |
 | `ui/viewcomponent-erb/audit.md:1`<br>L1, 13, 31, 34, 38 +2 more | doc | 7 | scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent | `rails-stack` (design-flow-erb) | lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack |

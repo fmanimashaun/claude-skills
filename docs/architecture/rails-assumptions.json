@@ -102,7 +102,7 @@
    "move": "design-flow-erb"
   },
   "plugins/design-flow/hooks/scripts/design-tells.sh": {
-   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path",
+   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter guard names the one adapter file its selftest needs",
    "categories": {
     "concept": 2,
     "tool": 2
@@ -195,7 +195,7 @@
    "move": ""
   },
   "plugins/design-flow/scripts/llm_tell_detector.py": {
-   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path",
+   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter guard names the one adapter file its selftest needs",
    "categories": {
     "concept": 6,
     "tool": 1
@@ -218,8 +218,25 @@
    ],
    "move": ""
   },
+  "plugins/design-flow/scripts/mutations/ui_adapter.py": {
+   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter guard names the one adapter file its selftest needs",
+   "categories": {
+    "concept": 1
+   },
+   "decision": "neutral",
+   "how": "nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding",
+   "ids": {
+    "erb": 1
+   },
+   "invokes": [],
+   "kind": "mutation",
+   "lines": [
+    11
+   ],
+   "move": ""
+  },
   "plugins/design-flow/scripts/prompt_library.py": {
-   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path",
+   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter guard names the one adapter file its selftest needs",
    "categories": {
     "concept": 1,
     "path": 1
@@ -8220,7 +8237,7 @@
  "policy": "docs/architecture/rails-assumptions.policy.json",
  "summary": {
   "by_category": {
-   "concept": 2028,
+   "concept": 2029,
    "gem": 138,
    "hotwire": 96,
    "path": 1252,
@@ -8232,8 +8249,8 @@
     "lines": 1243
    },
    "neutral": {
-    "files": 10,
-    "lines": 34
+    "files": 11,
+    "lines": 35
    },
    "rails-stack": {
     "files": 84,
@@ -8247,9 +8264,9 @@
   "by_flow": {
    "design-flow": {
     "detector": 2,
-    "files": 39,
-    "lines": 604,
-    "neutral": 3,
+    "files": 40,
+    "lines": 605,
+    "neutral": 4,
     "rails-stack": 34,
     "reword": 0
    },
@@ -8304,8 +8321,8 @@
     "lines": 1
    },
    "mutation": {
-    "files": 49,
-    "lines": 291
+    "files": 50,
+    "lines": 292
    },
    "reference": {
     "files": 8,
@@ -8337,7 +8354,7 @@
    "bundler": 85,
    "bundler-audit": 5,
    "db": 137,
-   "erb": 409,
+   "erb": 410,
    "erb-lint": 73,
    "gem": 138,
    "gemfile": 186,
@@ -8354,7 +8371,7 @@
    "ruby-file": 1222,
    "spec-dir": 182
   },
-  "files": 229,
-  "lines": 3257
+  "files": 230,
+  "lines": 3258
  }
 }

@@ -711,6 +711,18 @@
    "via": "tests research_record.py"
   },
   {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/design-flow/scripts/mutations/ui_adapter.py",
+   "plugin": "design-flow",
+   "rails_lines": 1,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests ui_adapter.py"
+  },
+  {
    "class": "rails",
    "issue": 2178,
    "nextjs_lines": 0,
@@ -7150,17 +7162,17 @@
  "summary": {
   "by_class": {
    "mixed": 178,
-   "neutral": 285,
+   "neutral": 286,
    "nextjs": 3,
    "rails": 126
   },
   "by_plugin": {
    "design-flow": {
     "mixed": 2,
-    "neutral": 60,
+    "neutral": 61,
     "nextjs": 0,
     "rails": 45,
-    "total": 107
+    "total": 108
    },
    "flow-suite": {
     "mixed": 0,
@@ -7257,12 +7269,12 @@
    },
    "test": {
     "mixed": 56,
-    "neutral": 97,
+    "neutral": 98,
     "nextjs": 0,
     "rails": 33,
-    "total": 186
+    "total": 187
    }
   },
-  "components": 592
+  "components": 593
  }
 }
