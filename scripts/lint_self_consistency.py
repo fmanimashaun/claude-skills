@@ -4662,15 +4662,9 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     return (dead + unenforced + undocumented + undoc_cmds + docs_paths + growth + hook_lib + hook_start + gate_onfail + fixture_git + schema_drift + fixture_bypass + submod + bare + misdesc + unbounded + author_me + components + call_sites + invisible
             + markers + uncontained + nonhermetic + pointers + clone_paths + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
-<<<<<<< HEAD
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + planted + dangling + flat_role
-            + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
-            + findings_copy + rel_xplugin
-=======
-            + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + dangling + flat_role
             + agents_md + undoc_skill + ui_adapter + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
             + findings_copy + detect_copy + vendored_copy + rel_xplugin
->>>>>>> origin/dev
             + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
             coverage)
 

@@ -1730,7 +1730,6 @@ GUARD = Guard(
             "a named gate on a Stop hook is out of scope (the field has no effect there): silent",
         ),
         Mutation(
-<<<<<<< HEAD
             # #2208: a hook planted in .git/hooks under a machine whose system config sets core.hooksPath never runs.
             "a selftest planting a hook under the machine's git config stops being a finding",
             "        if not _HOOK_DIR_RESOLVED.search(code):\n",
@@ -1760,7 +1759,8 @@ GUARD = Guard(
             'paths = [p for pattern in ("scripts/**/*", "plugins/*/scripts/**/*") for p in ROOT.glob(pattern) if p.suffix in (".py", ".sh")]',
             'paths = [p for pattern in ("scripts/*", "plugins/*/scripts/*") for p in ROOT.glob(pattern) if p.suffix in (".py", ".sh")]',
             "a nested selftest planting a hook is scanned too",
-=======
+        ),
+        Mutation(
             # #2178: the pointer from a stack descriptor to its design-flow UI adapter.
             "an adapter that names an agent with no agents/<name>.md is accepted",
             '                if not (ROOT / "plugins/design-flow/agents" / f"{name}.md").is_file():\n',
@@ -1772,7 +1772,6 @@ GUARD = Guard(
             '                if declared is not None and declared != f"design-flow:{name}":\n',
             "                if False:\n",
             "ui-adapter-unresolved / ...a descriptor porter that disagrees with the adapter",
->>>>>>> origin/dev
         ),
     ),
 )
