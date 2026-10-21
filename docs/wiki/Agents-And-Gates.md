@@ -2,17 +2,17 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**37 shipped agents · 54 shipped commands · 5 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
+**37 shipped agents · 55 shipped commands · 5 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
 | `design-flow` | 1.46.3 | 5 | 12 | 5 |
 | `flow-suite` | 1.0.0 | — | — | — |
 | `nextjs-stack` | 0.1.0 | — | — | — |
-| `pipeline` | 1.5.2 | 2 | 9 | 2 |
+| `pipeline` | 1.5.2 | 1 | 9 | 1 |
 | `qa-flow` | 1.39.0 | 11 | 8 | 11 |
-| `rails-flow` | 1.65.0 | 13 | 25 | 13 |
-| `rails-stack` | 1.76.1 | 6 | — | 6 |
+| `rails-flow` | 1.65.0 | 13 | 26 | 13 |
+| `rails-stack` | 1.76.1 | 7 | — | 7 |
 
 ## Agents
 
@@ -25,14 +25,13 @@
 | `brand-guardian` | judgement · inherit | Read, Grep, Glob, Edit, Bash, Skill | `/design-flow:variants` | — |
 | `design-auditor` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/design-flow:audit`, `/design-flow:variants` | — |
 | `design-critic` | judgement · inherit | Read, Grep, Glob, Skill | `/design-flow:critique` | — |
-| `design-porter` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:canvas`, `/design-flow:port` | — |
-| `ui-composer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:component`, `/design-flow:mobile`, `/design-flow:port`, `/design-flow:variants` | — |
+| `rails-ui-composer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:component`, `/design-flow:mobile`, `/design-flow:port`, `/design-flow:variants` | — |
+| `rails-ui-porter` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:canvas`, `/design-flow:port` | — |
 
 ### `pipeline`
 
 | agent | tier · model | tools | named by | what proves its output |
 |---|---|---|---|---|
-| `kamal-configurator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/pipeline:deploy-cloud` | — |
 | `pipeline-coordinator` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/pipeline:pipeline`, `/pipeline:setup-pipeline`, `/pipeline:status` | — |
 
 ### `qa-flow`
@@ -64,7 +63,7 @@
 | `migration-writer` | judgement · inherit | Read | — | — |
 | `pr-reviewer` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:pr-comments`, `/rails-flow:retro` | — |
 | `rails-developer` | judgement · inherit | Read | — | — |
-| `security-auditor` | judgement · inherit | Read | — | — |
+| `security-auditor` | judgement · inherit | Read | `/rails-flow:secure-design` | — |
 | `skill-curator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/rails-flow:curate` | — |
 | `spec-reviewer` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:retro`, `/rails-flow:spec` | — |
 | `test-runner` | mechanical · haiku | Read | — | `bundle exec rspec` exit status — 0 failures or the gate blocks |
@@ -75,6 +74,7 @@
 |---|---|---|---|---|
 | `code-reviewer` | judgement · inherit | Read, Grep, Glob, Bash, Skill | — | — |
 | `design-auditor` | mechanical · haiku | Read, Grep, Glob, Bash, Skill | — | the mandated greps must come back empty (`form_with`, `f.label`) |
+| `kamal-configurator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | — | — |
 | `migration-writer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash | — | — |
 | `rails-developer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | — | — |
 | `security-auditor` | judgement · inherit | Read, Grep, Glob, Bash | — | — |
@@ -106,26 +106,25 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | design-flow conformance collector | `design-flow` | `python3 plugins/design-flow/scripts/rendered_conformance.py --check-collector` | live check |
 | design-flow design prompt selftest | `design-flow` | `python3 plugins/design-flow/scripts/design_prompt.py --selftest` | selftest |
 | design-flow doctrine path selftest | `design-flow` | `python3 plugins/design-flow/scripts/doctrine_path.py --selftest` | selftest |
-| design-flow modal fit | `design-flow` | `python3 plugins/design-flow/scripts/check_modal_fit.py --selftest` | selftest |
+| design-flow modal fit | `design-flow` | `python3 plugins/design-flow/ui/viewcomponent-erb/scripts/check_modal_fit.py --selftest` | selftest |
 | design-flow palette candidates | `design-flow` | `python3 plugins/design-flow/scripts/palette_candidates.py --check` | live check |
 | design-flow palette candidates selftest | `design-flow` | `python3 plugins/design-flow/scripts/palette_candidates.py --selftest` | selftest |
 | design-flow palette gates selftest | `design-flow` | `python3 plugins/design-flow/scripts/palette_gates.py --selftest` | selftest |
-| design-flow port fidelity gate | `design-flow` | `python3 plugins/design-flow/scripts/port_fidelity_gate.py --selftest` | selftest |
+| design-flow port fidelity gate | `design-flow` | `python3 plugins/design-flow/ui/viewcomponent-erb/scripts/port_fidelity_gate.py --selftest` | selftest |
 | design-flow prompt library selftest | `design-flow` | `python3 plugins/design-flow/scripts/prompt_library.py --selftest` | selftest |
 | design-flow rendered conformance | `design-flow` | `python3 plugins/design-flow/scripts/rendered_conformance.py --selftest` | selftest |
 | design-flow scale contiguity | `design-flow` | `python3 plugins/design-flow/scripts/check_scale_contiguity.py` | live check |
 | design-flow scale contiguity selftest | `design-flow` | `python3 plugins/design-flow/scripts/check_scale_contiguity.py --selftest` | selftest |
-| design-flow setup cross-check | `design-flow` | `python3 plugins/design-flow/scripts/setup_doctrine_crosscheck.py --quiet` | live check |
-| design-flow setup cross-check selftest | `design-flow` | `python3 plugins/design-flow/scripts/setup_doctrine_crosscheck.py --selftest` | selftest |
-| design-flow table layout | `design-flow` | `python3 plugins/design-flow/scripts/check_table_layout.py --selftest` | selftest |
+| design-flow setup cross-check | `design-flow` | `python3 plugins/design-flow/ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py --quiet` | live check |
+| design-flow setup cross-check selftest | `design-flow` | `python3 plugins/design-flow/ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py --selftest` | selftest |
+| design-flow table layout | `design-flow` | `python3 plugins/design-flow/ui/viewcomponent-erb/scripts/check_table_layout.py --selftest` | selftest |
 | design-flow tells vs our own doctrine | `design-flow` | `python3 plugins/design-flow/scripts/llm_tell_detector.py --doctrine-selfcheck` | live check |
-| design-flow token drift selftest | `design-flow` | `python3 plugins/design-flow/scripts/check_token_drift.py --selftest` | selftest |
-| design-flow variant conformance | `design-flow` | `python3 plugins/design-flow/scripts/variant_conformance.py --selftest` | selftest |
+| design-flow token drift selftest | `design-flow` | `python3 plugins/design-flow/ui/viewcomponent-erb/scripts/check_token_drift.py --selftest` | selftest |
+| design-flow variant conformance | `design-flow` | `python3 plugins/design-flow/ui/viewcomponent-erb/scripts/variant_conformance.py --selftest` | selftest |
 | pipeline apm advisory | `pipeline` | `python3 plugins/pipeline/scripts/apm_advisory.py --selftest` | selftest |
 | pipeline committed-secret scan | `pipeline` | `python3 plugins/pipeline/scripts/scan_committed_secrets.py --selftest` | selftest |
 | pipeline git guards | `pipeline` | `python3 plugins/pipeline/scripts/git_guard_selftest.py` | live check |
 | pipeline hook install | `pipeline` | `python3 plugins/pipeline/scripts/install_git_hooks_selftest.py` | live check |
-| pipeline kamal destination | `pipeline` | `python3 plugins/pipeline/scripts/kamal_destination.py --selftest` | selftest |
 | pipeline release build | `pipeline` | `python3 plugins/pipeline/scripts/release_build.py --selftest` | selftest |
 | pipeline status board | `pipeline` | `python3 plugins/pipeline/scripts/status_board.py --selftest` | selftest |
 | pipeline status hook | `pipeline` | `python3 plugins/pipeline/scripts/pipeline_status_selftest.py` | live check |
@@ -203,10 +202,12 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | rails-flow where-stopped helper | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/where_stopped.py --selftest` | selftest |
 | rails-flow work order | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --selftest` | selftest |
 | rails-flow worktree guard helper | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/worktree_guard.py --selftest` | selftest |
+| rails-stack tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/rails-stack/agents --tiers plugins/rails-stack/reference/model-tiers.md` | live check |
 | stack detector selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/detect_stack.py --selftest` | selftest |
 | stack manifests valid | `rails-flow` | `python3 plugins/rails-flow/scripts/detect_stack.py --check` | live check |
 | status line | `rails-flow` | `python3 plugins/rails-flow/scripts/statusline.py --selftest` | selftest |
 | worktree teardown wording | `rails-flow` | `python3 plugins/rails-flow/scripts/worktree_teardown.py --check-wording` | live check |
+| rails-stack kamal destination | `rails-stack` | `python3 plugins/rails-stack/scripts/kamal_destination.py --selftest` | selftest |
 | agent output contract | `repo` | `python3 scripts/check_agent_output_contract.py` | live check |
 | agent output contract selftest | `repo` | `python3 scripts/check_agent_output_contract.py --selftest` | selftest |
 | always-on cost | `repo` | `python3 scripts/check_always_on_cost.py` | live check |
@@ -330,18 +331,17 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 
 | agent | tier | what proves its output |
 |---|---|---|
-| `ui-composer` | judgement | — |
+| `rails-ui-composer` | judgement | — |
 | `design-auditor` | judgement | — |
 | `brand-guardian` | judgement | — |
 | `design-critic` | judgement | — |
-| `design-porter` | judgement | — |
+| `rails-ui-porter` | judgement | — |
 
 ### `pipeline`
 
 | agent | tier | what proves its output |
 |---|---|---|
 | `pipeline-coordinator` | judgement | — |
-| `kamal-configurator` | judgement | — |
 
 ### `qa-flow`
 
@@ -387,5 +387,6 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `rails-developer` | judgement | — |
 | `test-runner` | mechanical | `bundle exec rspec` exit status — 0 failures or the gate blocks |
 | `design-auditor` | mechanical | the mandated greps must come back empty (`form_with`, `f.label`) |
+| `kamal-configurator` | judgement | — |
 
 Manifest cross-check: the 7 plugin directories inventoried are exactly the ones marketplace.json installs.

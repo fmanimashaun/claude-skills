@@ -110,5 +110,17 @@ GUARD = Guard(
             '            r"\\bNEVER_MATCHES_ANYTHING_X\\b|',
             "`Current.*` and Current.account are Rails idioms",
         ),
+        Mutation(
+            "#2247: the aggregate summary is committed in the JSON again, so every PR that touches a flow conflicts with every other",
+            '"generated_by": "scripts/rails_assumptions.py", "policy": POLICY,',
+            '"generated_by": "scripts/rails_assumptions.py", "policy": POLICY, "summary": summarise(decided),',
+            "the committed JSON holds no aggregate",
+        ),
+        Mutation(
+            "#2247: a count is written into the page's decisions table again",
+            '        w(f"| `{d}` | {meaning[d]} |")',
+            '        w(f"| `{d}` | {meaning[d]} | {len(decided)} |")',
+            "adding one file changes only its own lines in the page",
+        ),
     ),
 )

@@ -6,7 +6,7 @@ argument-hint: "<component name or screen>  [e.g. pricing-card | settings form |
 # /design-flow:component — $ARGUMENTS
 
 Build (or fix) `$ARGUMENTS` to the **design-system** doctrine. Delegate to the
-**ui-composer** agent. Never freehand CSS — compose.
+**rails-ui-composer** agent. Never freehand CSS — compose.
 
 ## Preconditions
 

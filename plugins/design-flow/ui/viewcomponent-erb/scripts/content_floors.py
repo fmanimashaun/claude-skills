@@ -50,7 +50,7 @@ FLOORS = Path(".design-flow") / "content-floors.json"
 # READ FROM plugin.json AT RUNTIME, never a constant here: a hardcoded version is a second copy that
 # drifts from the one that ships, and would report the version this file was written against rather
 # than the version doing the counting.
-PLUGIN_JSON = Path(__file__).resolve().parents[1] / ".claude-plugin" / "plugin.json"
+PLUGIN_JSON = Path(__file__).resolve().parents[3] / ".claude-plugin" / "plugin.json"   # design-flow's; the adapter is `ui/<implementation>/scripts/` inside it (#2178)
 
 
 def toolchain_version() -> str:
