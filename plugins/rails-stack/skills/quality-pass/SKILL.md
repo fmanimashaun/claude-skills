@@ -6,7 +6,7 @@ description: Moved to the core-skills plugin; load core-skills:quality-pass. Thi
 # quality-pass has moved
 
 This skill now lives in the **core-skills** plugin, so a project that uses another stack does not have
-to install the Rails doctrine to get it. Load **`core-skills:quality-pass`** instead. `rails-stack` declares
+to install another stack's doctrine to get it. Load **`core-skills:quality-pass`** instead. `rails-stack` declares
 `core-skills` as a dependency, so installing or updating `rails-stack` installs it; if it is missing,
 run `/plugin install core-skills@claude-skills`.
 

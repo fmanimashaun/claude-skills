@@ -521,6 +521,24 @@
   "declared": [
    {
     "match": [
+     "plugins/core-skills/.claude-plugin/*",
+     "plugins/core-skills/README.md"
+    ],
+    "class": "neutral",
+    "why": "the core-skills manifest and README: a plugin of stack-neutral skills, named so a Next.js project does not install the Rails doctrine to get a code review (#2186)"
+   },
+   {
+    "match": [
+     "plugins/rails-stack/skills/code-review",
+     "plugins/rails-stack/skills/quality-pass",
+     "plugins/rails-stack/skills/derived-artifacts",
+     "plugins/rails-stack/skills/parallel-session-lane"
+    ],
+    "class": "neutral",
+    "why": "a one-line redirect to the skill's new home in core-skills (#2186), kept for two releases so a project that pins `rails-stack:<skill>` is told where it went; it names no framework"
+   },
+   {
+    "match": [
      "plugins/design-flow/agents/*"
     ],
     "class": "neutral",

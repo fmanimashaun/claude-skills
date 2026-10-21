@@ -2,7 +2,7 @@
 
 The four stack-neutral skills that `rails-flow`, `rails-stack` and `nextjs-stack` all use, installed
 once instead of once per stack. Before #2186 they were bundled in `rails-stack`, which made a
-Next.js project install the Rails doctrine to get a code review.
+project on any other stack install that stack's doctrine to get a code review.
 
 | skill | what it is for |
 |---|---|
