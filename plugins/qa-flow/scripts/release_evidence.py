@@ -438,6 +438,54 @@ def already_published(base: Path, rev: str, published: str, record: str) -> str 
     return None
 
 
+# #2226: a design that shipped must name the screen that implements it. The issue lookup is replaced by the selftest (None: the real one).
+STORY_ISSUE_STATE = None
+MOCKUP_DIR = "docs/product/mockups"        # the reader's RECORD_DIR, without the slash; the selftest asserts they agree
+
+
+def _mockup_records():
+    """The record reader, a byte-identical copy of rails-flow's (held by the vendored-copy-drift lint). Imported only when there are records to
+    read, so a project with none, and every fixture that stages this script alone, never needs it."""
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import mockup_records
+    return mockup_records
+
+
+def check_mockup_stories(base: Path, rev: str | None) -> list[str]:
+    """Findings for mock-up records whose issue is closed but that name no `Story:`, or whose issue cannot be read.
+
+    Read as committed at `rev` when the release gate gives one (a record fixed only in the gate's working tree is not what dev will promote),
+    from the working tree otherwise. A project with no records has nothing to say. ONLINE only for a new-format record that lacks `Story:`;
+    an issue that cannot be read refuses the stamp: an unjudged audit is not a pass."""
+    with tempfile.TemporaryDirectory() as td:
+        root = base
+        if rev:
+            listed = subprocess.run(["git", "-C", str(base), "ls-tree", "-r", "--name-only", rev, "--", MOCKUP_DIR],
+                                    capture_output=True, text=True, timeout=30)
+            if listed.returncode != 0:
+                return [f"mock-up stories: cannot list the mock-up records committed at {rev[:12]}"]
+            names = [n for n in listed.stdout.splitlines() if n.endswith(".md")]
+            if not names:
+                return []
+            problems = committed_tree(base, rev, names, Path(td))
+            if problems:
+                return [f"mock-up stories: {p}" for p in problems]
+            root = Path(td)
+        elif not (base / MOCKUP_DIR).is_dir():
+            return []
+        try:
+            records = _mockup_records()
+        except ImportError as exc:
+            # FAIL CLOSED: records exist and the reader that judges them is gone (a plugin install missing its copy). A stamp that skipped the
+            # check would certify a design nobody linked to a screen, and a traceback is not a verdict.
+            return [f"mock-up stories: this project has mock-up records but the reader that checks them ({exc}) is missing from qa-flow: "
+                    f"reinstall the plugin, or copy plugins/rails-flow/scripts/mockup_records.py beside release_evidence.py"]
+        failing, unjudged, _legacy, _judged = records.audit_results(root, STORY_ISSUE_STATE or records.issue_state)
+    return [f"mock-up stories: {line}" for line in failing + unjudged]
+
+
 def check_stamp(stamp: Path, base: Path, grandfather: bool | None = None,
                 rev: str | None = None,
                 grandfather_before: str | None = None) -> tuple[list[str], list[str], list[str]]:
@@ -544,6 +592,7 @@ def check_stamp(stamp: Path, base: Path, grandfather: bool | None = None,
                 findings += [f"{label}: {f}" for f in fn()]
             except Unusable as exc:
                 findings.append(f"{label}: {exc}")
+    findings += check_mockup_stories(base, rev)
     # A directory ends in "/" (the gate matches it as a prefix); the sweep is ONE file, matched exactly.
     # #1987: the certify flow's own stamp step also writes, after the certified commit, the report the stamp
     # names and a README beside the sweep. So the README in the sweep's folder (validated above as authz-<version>/)
@@ -949,6 +998,102 @@ def selftest() -> int:
         rc, out, err = run("--rev", "HEAD")
         check("stamp: a schema-2 stamp naming no evidence is refused", rc == 1 and out == "" and "first_boot" in err,
               (rc, out, err))
+
+        # #2226: a design that shipped must name the screen that implements it, or the stamp is refused.
+        recdir = proj / "docs/product/mockups"
+        recdir.mkdir(parents=True)
+
+        def record(name: str, issue: str, *, template: bool = True, story: str | None = None) -> None:
+            (recdir / name).write_text(f"# x\nMock-up: https://example.com/{name}\nIssue: {issue}\n" + ("Template: list\n" if template else "")
+                                       + (f"Story: {story}\n" if story else ""), encoding="utf-8")
+
+        def commit_records(msg: str) -> None:
+            subprocess.run([*g, "add", "docs"], check=True)
+            subprocess.run([*g, "commit", "-q", "--allow-empty", "-m", msg], check=True)
+
+        issue_states = {"1": "CLOSED", "2": "OPEN", "3": None}
+        check("stamp #2226: this script's records folder is the reader's", MOCKUP_DIR + "/" == _mockup_records().RECORD_DIR)
+        real_state = STORY_ISSUE_STATE
+        globals()["STORY_ISSUE_STATE"] = lambda _root, ref: issue_states.get(ref.rsplit("/", 1)[-1])
+        try:
+            put({**base, **ev})
+            record("a.md", "#1")
+            commit_records("a record, closed issue, no story")
+            rc, out, err = run("--rev", "HEAD")
+            check("stamp #2226: a shipped design (closed issue) that names no Story refuses the stamp",
+                  rc == 1 and out == "" and "mock-up stories" in err and "a.md" in err, (rc, out, err))
+            record("a.md", "#1", story="src/A.stories.tsx")
+            commit_records("the record links its story")
+            rc, out, err = run("--rev", "HEAD")
+            check("stamp #2226 CONTROL: the same record with a Story passes", rc == 0, (rc, out, err))
+            record("a.md", "#2")
+            commit_records("an open issue: not built yet")
+            rc, out, err = run("--rev", "HEAD")
+            check("stamp #2226 CONTROL: a record whose issue is still open passes", rc == 0, (rc, out, err))
+            record("a.md", "#3")
+            commit_records("an issue gh cannot read")
+            rc, out, err = run("--rev", "HEAD")
+            check("stamp #2226: an issue that cannot be read refuses the stamp: an unjudged audit is not a pass",
+                  rc == 1 and "could not be read" in err, (rc, out, err))
+            record("a.md", "#1", template=False)
+            commit_records("a legacy record, closed issue, no story")
+            rc, out, err = run("--rev", "HEAD")
+            check("stamp #2226 CONTROL: a legacy record (no Template) without a Story does not refuse the stamp", rc == 0, (rc, out, err))
+            record("a.md", "#1")
+            commit_records("back to a failing record")
+            record("a.md", "#1", story="src/A.stories.tsx")        # fixed in the working tree only, never committed
+            rc, out, err = run("--rev", "HEAD")
+            check("stamp #2226: with --rev the record is read as COMMITTED: a fix only in the working tree is refused",
+                  rc == 1 and "mock-up stories" in err, (rc, out, err))
+            rc, out, err = run()
+            check("stamp #2226 CONTROL: without --rev the working tree is read, and the fixed record passes", rc == 0, (rc, out, err))
+            # The reader missing from the install: with records the stamp is refused by name; with none it never needed the reader.
+            record("a.md", "#2")
+            commit_records("a record again")
+            saved = sys.modules.get("mockup_records")
+            sys.modules["mockup_records"] = None          # `import mockup_records` now raises ImportError
+            try:
+                try:
+                    rc, out, err = run("--rev", "HEAD")
+                except Exception as exc:                  # a crash is a failed check here, not the end of the selftest
+                    rc, out, err = -1, "", f"Traceback: {exc!r}"
+                check("stamp #2226: records present and the reader missing refuses the stamp BY NAME, not with a traceback",
+                      rc == 1 and "mockup_records.py" in err and "Traceback" not in err, (rc, out, err))
+                (recdir / "a.md").unlink()
+                commit_records("no records, no reader")
+                rc, out, err = run("--rev", "HEAD")
+                check("stamp #2226 CONTROL: no records and the reader missing is fine: the reader is imported only when there is something to read",
+                      rc == 0, (rc, out, err))
+            finally:
+                if saved is None:
+                    sys.modules.pop("mockup_records", None)
+                else:
+                    sys.modules["mockup_records"] = saved
+            # The same, as the install would see it: this script staged ALONE (no reader beside it), run as the release gate runs it.
+            with tempfile.TemporaryDirectory() as alone:
+                staged = Path(alone) / "release_evidence.py"
+                staged.write_text(Path(__file__).read_text(encoding="utf-8"), encoding="utf-8")
+                put({**base, **ev})
+                record("a.md", "#2")
+                commit_records("a record, reader absent")
+                done = subprocess.run([sys.executable, str(staged), "stamp", "--rev", "HEAD"], cwd=proj, capture_output=True, text=True)
+                check("stamp #2226: staged without the reader, with records present, the real CLI refuses the stamp by name",
+                      done.returncode == 1 and "mockup_records.py" in done.stderr and "Traceback" not in done.stderr,
+                      (done.returncode, done.stdout, done.stderr))
+                (recdir / "a.md").unlink(missing_ok=True)
+                commit_records("no records, staged alone")
+                done = subprocess.run([sys.executable, str(staged), "stamp", "--rev", "HEAD"], cwd=proj, capture_output=True, text=True)
+                check("stamp #2226 CONTROL: staged without the reader and no records, the CLI passes: nothing needed it",
+                      done.returncode == 0, (done.returncode, done.stdout, done.stderr))
+            (recdir / "a.md").unlink(missing_ok=True)
+            commit_records("no records")
+            rc, out, err = run("--rev", "HEAD")
+            check("stamp #2226 CONTROL: a project whose records are gone has nothing to say", rc == 0, (rc, out, err))
+        finally:
+            globals()["STORY_ISSUE_STATE"] = real_state
+            shutil.rmtree(recdir, ignore_errors=True)
+            subprocess.run([*g, "add", "-u"], check=True)
+            subprocess.run([*g, "commit", "-q", "--allow-empty", "-m", "records removed"], check=True)
 
         # GRANDFATHERING is decided from git: the committer date of the stamp's commit (#1437 round 3).
         cut = "2026-09-29T00:00:00+00:00"

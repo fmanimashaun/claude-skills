@@ -1,0 +1,2 @@
+section: design-flow
+- **design-flow's copy of the stack detector accepts the new `security.code_syntax` keys — `plugins/design-flow/scripts/detect_stack.py`** (#2260). The byte-identical mirror of rails-flow's `detect_stack.py` (held by the `detect-stack-drift` rule) now validates the optional `line_comments` and `refuse_when` keys of a `code_syntax` row. No design-flow behaviour changes. The version is assigned at promotion.

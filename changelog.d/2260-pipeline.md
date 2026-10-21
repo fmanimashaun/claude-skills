@@ -1,0 +1,2 @@
+section: pipeline
+- **pipeline's copy of the stack detector accepts the new `security.code_syntax` keys — `plugins/pipeline/scripts/detect_stack.py`** (#2260). The byte-identical mirror of rails-flow's `detect_stack.py` (held by the `detect-stack-drift` rule) now validates the optional `line_comments` and `refuse_when` keys of a `code_syntax` row. No pipeline behaviour changes. The version is assigned at promotion.
