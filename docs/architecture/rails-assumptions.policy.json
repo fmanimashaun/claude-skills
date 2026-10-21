@@ -124,7 +124,12 @@
    "assumes": "the stack detector's own prose and fixtures name Rails and Next.js; the markers it reads are data in each plugin's stacks.json",
    "how": "a byte-identical mirror of plugins/rails-flow/scripts/detect_stack.py, held by the detect-stack-drift rule (a plugin installs alone and cannot import another's code); reworded only in the canonical copy",
    "seam": "pipeline:deploy-cloud asks deploy_target.py, which imports this mirror, which stack declares a deploy agent (#2179)",
-   "issues": {"rails-flow": 2183, "qa-flow": 2184, "pipeline": 2184, "design-flow": 2185}
+   "issues": {
+    "rails-flow": 2183,
+    "qa-flow": 2184,
+    "pipeline": 2184,
+    "design-flow": 2185
+   }
   },
   {
    "match": [
@@ -433,16 +438,16 @@
     "plugins/design-flow/scripts/llm_tell_detector.py",
     "plugins/design-flow/scripts/prompt_library.py",
     "plugins/design-flow/hooks/scripts/design-tells.sh",
-    "plugins/design-flow/scripts/mutations/ui_adapter.py"
+    "plugins/design-flow/scripts/ui_adapter.py"
    ],
    "decision": "neutral",
-   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter guard names the one adapter file its selftest needs",
+   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter selftest resolves a real Rails-shaped project against the shipped rails-stack manifest, the one case that meets a real descriptor",
    "how": "nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding",
    "lines": {
     "plugins/design-flow/scripts/llm_tell_detector.py": 5,
     "plugins/design-flow/scripts/prompt_library.py": 1,
     "plugins/design-flow/hooks/scripts/design-tells.sh": 4,
-    "plugins/design-flow/scripts/mutations/ui_adapter.py": 1
+    "plugins/design-flow/scripts/ui_adapter.py": 3
    }
   },
   {
@@ -837,7 +842,8 @@
     "class": "rails",
     "issue": 2173,
     "why": "the Rails specialist agents (implement in Rails, migrations, RSpec, Brakeman, Rails review, simple_form audit), moved here from rails-flow"
-   },   {
+   },
+   {
     "match": [
      "plugins/rails-stack/hooks/hooks.json",
      "plugins/rails-stack/hooks/scripts/guard-migrate.sh",
@@ -847,7 +853,6 @@
     "issue": 2174,
     "why": "the Rails-only hooks (a migration guard on a new db/migrate file, rubocop auto-correct on a .rb edit) and the manifest that registers them, moved here from rails-flow"
    },
-
    {
     "match": [
      "plugins/rails-stack/scripts/findings.py"

@@ -1,5 +1,5 @@
 ---
-description: Scaffold the design system into the project through its UI adapter — @theme token architecture (brand primitives -> semantic roles -> Utopia fluid scale), layout-primitive @utility recipes, base ViewComponents, dark mode. Idempotent; brand-parameterized.
+description: Scaffold the design system into the project through its UI adapter — token architecture (brand primitives -> semantic roles -> Utopia fluid scale), layout-primitive recipes, base components, dark mode. Idempotent; brand-parameterized.
 argument-hint: "[brand pack: <pack> or <pack>:<variant>, e.g. fidara:fmworkflows]"
 ---
 

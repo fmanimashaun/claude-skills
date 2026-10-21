@@ -452,11 +452,11 @@
    "nextjs_lines": 0,
    "path": "plugins/design-flow/scripts/ui_adapter.py",
    "plugin": "design-flow",
-   "rails_lines": 0,
+   "rails_lines": 3,
    "registered": [],
    "seam": "",
    "type": "script",
-   "via": "declared"
+   "via": "decision"
   },
   {
    "class": "rails",
@@ -709,18 +709,6 @@
    "seam": "",
    "type": "test",
    "via": "tests research_record.py"
-  },
-  {
-   "class": "neutral",
-   "issue": null,
-   "nextjs_lines": 0,
-   "path": "plugins/design-flow/scripts/mutations/ui_adapter.py",
-   "plugin": "design-flow",
-   "rails_lines": 1,
-   "registered": [],
-   "seam": "",
-   "type": "test",
-   "via": "tests ui_adapter.py"
   },
   {
    "class": "rails",
@@ -1064,7 +1052,7 @@
    "nextjs_lines": 0,
    "path": "plugins/design-flow/ui/viewcomponent-erb/adapter.json",
    "plugin": "design-flow",
-   "rails_lines": 2,
+   "rails_lines": 3,
    "registered": [],
    "seam": "",
    "type": "support",
@@ -7487,7 +7475,7 @@
    "nextjs_lines": 0,
    "path": "plugins/rails-stack/stacks.json",
    "plugin": "rails-stack",
-   "rails_lines": 22,
+   "rails_lines": 21,
    "registered": [],
    "seam": "",
    "type": "support",

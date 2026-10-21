@@ -6,9 +6,15 @@ GUARD = Guard(
     # a refusal: a detector that could not judge, or found nothing, read as a clean verdict, and the command then scaffolds or audits
     # against the wrong stack with nothing raised.
     name="ui_adapter",
-    subject="scripts/ui_adapter.py",
-    selftest="scripts/ui_adapter.py",   # --selftest lives in the module
-    needs=("ui/viewcomponent-erb/adapter.json",),   # the selftest resolves every adapter the plugin ships
+    subject="plugins/design-flow/scripts/ui_adapter.py",
+    selftest="plugins/design-flow/scripts/ui_adapter.py",   # --selftest lives in the module
+    # a repo-root guard, not a plugin one: the selftest resolves a real project against the real rails-stack manifest through the mirrored detector,
+    # so those files stage at their repo paths beside design-flow's.
+    needs=("plugins/design-flow/ui/viewcomponent-erb/adapter.json", "plugins/design-flow/scripts/detect_stack.py",
+           "plugins/design-flow/agents", "plugins/design-flow/.claude-plugin/plugin.json",
+           # the detector refuses a descriptor naming an agent or a file that does not exist (agents, setup section, security checklist),
+           # so the whole rails-stack plugin the real descriptor lives in stages with it
+           "plugins/rails-stack"),
     mutations=(
         Mutation(
             "a detector that cannot judge the project (exit 2 or problems) is read as an answer",
@@ -41,10 +47,16 @@ GUARD = Guard(
             "an implementation with no adapter is refused, not defaulted to another stack",
         ),
         Mutation(
-            "the descriptor's token file is dropped, so design_prompt looks for a default that no stack names",
-            '"stack": stack, "tokens_file": tokens_file}',
-            '"stack": stack, "tokens_file": None}',
-            "...and the token file the descriptor named",
+            "the adapter's token file is dropped, so design_prompt looks for a default that no stack names",
+            '"tokens_file": spec.get("tokens_file")}',
+            '"tokens_file": None}',
+            "...and the token file the adapter names",
+        ),
+        Mutation(
+            "the detected stack's descriptor is never consulted, so every project resolves nothing",
+            "    impls = implementations(detected)\n    if not impls:",
+            "    impls = set()\n    if not impls:",
+            "a project the real manifest recognises resolves",
         ),
     ),
 )

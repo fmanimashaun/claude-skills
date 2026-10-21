@@ -102,7 +102,7 @@
    "move": "design-flow-erb"
   },
   "plugins/design-flow/hooks/scripts/design-tells.sh": {
-   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter guard names the one adapter file its selftest needs",
+   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter selftest resolves a real Rails-shaped project against the shipped rails-stack manifest, the one case that meets a real descriptor",
    "categories": {
     "concept": 2,
     "tool": 2
@@ -171,31 +171,31 @@
     14,
     15,
     37,
-    290,
-    519,
-    520,
-    534,
-    535,
-    537,
-    539,
-    583,
-    584,
-    591,
+    303,
+    574,
+    575,
+    589,
+    590,
+    592,
+    594,
     638,
-    665,
+    639,
+    646,
     703,
-    705,
-    709,
-    712,
-    716,
-    718,
-    734,
-    748
+    730,
+    768,
+    770,
+    774,
+    777,
+    781,
+    783,
+    799,
+    813
    ],
    "move": ""
   },
   "plugins/design-flow/scripts/llm_tell_detector.py": {
-   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter guard names the one adapter file its selftest needs",
+   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter selftest resolves a real Rails-shaped project against the shipped rails-stack manifest, the one case that meets a real descriptor",
    "categories": {
     "concept": 6,
     "tool": 1
@@ -218,25 +218,8 @@
    ],
    "move": ""
   },
-  "plugins/design-flow/scripts/mutations/ui_adapter.py": {
-   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter guard names the one adapter file its selftest needs",
-   "categories": {
-    "concept": 1
-   },
-   "decision": "neutral",
-   "how": "nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding",
-   "ids": {
-    "erb": 1
-   },
-   "invokes": [],
-   "kind": "mutation",
-   "lines": [
-    11
-   ],
-   "move": ""
-  },
   "plugins/design-flow/scripts/prompt_library.py": {
-   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter guard names the one adapter file its selftest needs",
+   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter selftest resolves a real Rails-shaped project against the shipped rails-stack manifest, the one case that meets a real descriptor",
    "categories": {
     "concept": 1,
     "path": 1
@@ -251,6 +234,28 @@
    "kind": "script",
    "lines": [
     574
+   ],
+   "move": ""
+  },
+  "plugins/design-flow/scripts/ui_adapter.py": {
+   "assumes": "a multi-stack scanner names file types (erb, rb) beside jsx, tsx, vue, slim and haml in its extension and fence lists, and one fixture uses a sample view path; the ui_adapter selftest resolves a real Rails-shaped project against the shipped rails-stack manifest, the one case that meets a real descriptor",
+   "categories": {
+    "concept": 2,
+    "path": 1
+   },
+   "decision": "neutral",
+   "how": "nothing to change: the lists enumerate every stack's templates and the sample path is arbitrary; a new line naming Rails here is a finding",
+   "ids": {
+    "erb": 1,
+    "gemfile": 1,
+    "ruby-file": 1
+   },
+   "invokes": [],
+   "kind": "script",
+   "lines": [
+    177,
+    178,
+    182
    ],
    "move": ""
   },
@@ -287,11 +292,13 @@
   "plugins/design-flow/ui/viewcomponent-erb/adapter.json": {
    "assumes": "scans .erb, app/components and Rails assets, or ports into ERB and ViewComponent",
    "categories": {
-    "concept": 3
+    "concept": 3,
+    "path": 1
    },
    "decision": "rails-stack",
    "how": "lives in design-flow's Rails UI adapter (ui/viewcomponent-erb), selected by descriptor ui.implementation; not moved to rails-stack",
    "ids": {
+    "app-layers": 1,
     "erb": 2,
     "rails-word": 1
    },
@@ -299,7 +306,8 @@
    "kind": "data",
    "lines": [
     2,
-    4
+    4,
+    5
    ],
    "move": "design-flow-erb"
   },

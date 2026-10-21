@@ -66,7 +66,7 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 **Setup** — design system, tokens and the brand pack
 
-- `/design-flow:setup` — Scaffold the design system into the project through its UI adapter — @theme token architecture (brand primitives -> semantic roles -> Utopia fluid scale), layout-primitive @utility recipes, base ViewComponents, dark mode.
+- `/design-flow:setup` — Scaffold the design system into the project through its UI adapter — token architecture (brand primitives -> semantic roles -> Utopia fluid scale), layout-primitive recipes, base components, dark mode.
 - `/design-flow:tokens` — Export native design tokens (Phase 3) from the app's token source of truth — generate Android (colors.xml + Theme.Fidara) and iOS (SwiftUI Color) token files so fully-native screens match the web by construction.
 
 

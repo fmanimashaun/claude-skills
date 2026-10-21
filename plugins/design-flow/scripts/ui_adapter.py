@@ -60,7 +60,7 @@ def implementations(detected: dict) -> set[str]:
     return found
 
 
-def resolve(implementation: str, stack: str | None = None, tokens_file: str | None = None, plugin: Path = PLUGIN) -> dict:
+def resolve(implementation: str, stack: str | None = None, plugin: Path = PLUGIN) -> dict:
     adapter_dir = plugin / "ui" / implementation
     spec_file = adapter_dir / "adapter.json"
     if not spec_file.is_file():
@@ -72,7 +72,7 @@ def resolve(implementation: str, stack: str | None = None, tokens_file: str | No
     except (OSError, ValueError) as exc:
         raise Unresolved(f"{spec_file} is unreadable: {exc}")
     return {"implementation": implementation, "dir": str(adapter_dir), "agents": spec.get("agents", {}),
-            "checks": spec.get("checks", []), "stack": stack, "tokens_file": tokens_file}
+            "checks": spec.get("checks", []), "stack": stack, "tokens_file": spec.get("tokens_file")}
 
 
 def resolve_project(project: Path) -> dict:
@@ -82,8 +82,7 @@ def resolve_project(project: Path) -> dict:
     if not impls:
         raise Unresolved("the detected stack(s) "
                          f"{[s.get('id') for s in detected['stacks']]} declare no ui.implementation, so there is no UI adapter to run")
-    ui = detected["descriptor"]["ui"]
-    return resolve(next(iter(impls)), stack=",".join(s.get("id", "") for s in detected["stacks"]), tokens_file=ui.get("tokens_file"))
+    return resolve(next(iter(impls)), stack=",".join(s.get("id", "") for s in detected["stacks"]))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -122,10 +121,10 @@ def selftest() -> int:
         plugin = root / "plugins" / "design-flow"
         (plugin / "ui" / "demo-ui").mkdir(parents=True)
         (plugin / "ui" / "demo-ui" / "adapter.json").write_text(json.dumps(
-            {"id": "demo-ui", "agents": {"porter": "demo-porter", "composer": "demo-composer"}, "checks": ["token-drift"]}))
-        got = resolve("demo-ui", stack="demo", tokens_file="a.css", plugin=plugin)
+            {"id": "demo-ui", "tokens_file": "a.css", "agents": {"porter": "demo-porter", "composer": "demo-composer"}, "checks": ["token-drift"]}))
+        got = resolve("demo-ui", stack="demo", plugin=plugin)
         check("a declared implementation resolves to its adapter dir", got["dir"].endswith("ui/demo-ui"))
-        check("...and the token file the descriptor named", got["tokens_file"] == "a.css" and got["stack"] == "demo")
+        check("...and the token file the adapter names", got["tokens_file"] == "a.css" and got["stack"] == "demo")
         check("...with its agents and checks", got["agents"]["porter"] == "demo-porter" and got["checks"] == ["token-drift"])
         for bad, why in (("nextjs-tsx", "an implementation with no adapter is refused, not defaulted to another stack"),
                          ("../etc", "a path-shaped id cannot escape ui/")):
@@ -165,6 +164,24 @@ def selftest() -> int:
         fake.write_text('import json\nprint(json.dumps({"stacks": [{"id": "demo"}], "problems": [], "descriptor": {"ui": {"implementation": "demo-ui"}}}))\n')
         check("a clean answer is returned", detect(root, fake)["stacks"][0]["id"] == "demo")
 
+    # THE REAL DESCRIPTOR (#2185 review): the fixtures above never meet a shipped stacks.json, so a stale detector copy that rejects the
+    # real manifest ("descriptor.security is not a declared descriptor key") passed all of them while `ui_adapter.py <project>` exited 2
+    # on every project. In the clone the sibling rails-stack manifest is there, so resolve a real Rails-shaped project against it.
+    if PLUGIN.parent.name == "plugins":
+        manifest = PLUGIN.parent / "rails-stack" / "stacks.json"
+        check("the clone's rails-stack manifest is present for the real-descriptor case", manifest.is_file())
+        if manifest.is_file():
+            with tempfile.TemporaryDirectory() as td:
+                project = Path(td)
+                (project / "config").mkdir()
+                (project / "Gemfile").write_text("", encoding="utf-8")
+                (project / "config" / "application.rb").write_text("", encoding="utf-8")
+                try:
+                    got = resolve_project(project)
+                    check("a project the real manifest recognises resolves to the adapter its descriptor names",
+                          got["implementation"] == "viewcomponent-erb" and bool(got["tokens_file"]) and bool(got["agents"].get("porter")))
+                except Unresolved as exc:
+                    check(f"a project the real manifest recognises resolves ({exc})", False)
     # every adapter this plugin ships resolves, and names its porter and composer
     shipped = sorted(p.parent.name for p in (PLUGIN / "ui").glob("*/adapter.json"))
     check("at least one adapter ships", bool(shipped))

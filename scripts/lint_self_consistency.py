@@ -48,8 +48,9 @@ WHAT IT CHECKS
                               or one is missing -- qa-reporter runs its own copy (#1680)
   vendored-copy-drift         a file rails-stack vendors from rails-flow (triage_failures.py, check_simple_form_only.py,
                               agent-output-contract.md) differs from its canonical copy, or one is missing (#2173)
-  detect-stack-drift          the two shipped copies of scripts/detect_stack.py (rails-flow, pipeline) differ,
-                              or one is missing -- pipeline's deploy_target.py imports its own copy (#2179)
+  detect-stack-drift          the three shipped copies of scripts/detect_stack.py (rails-flow, pipeline, design-flow)
+                              differ, or one is missing -- pipeline's deploy_target.py and design-flow's ui_adapter.py
+                              import their own copy (#2179, #2185)
   cross-plugin-relative-path  shipped markdown that runs `../<other-plugin>/...`, which resolves in the
                               clone and not in an install's per-plugin cache directories (#1680)
   fixture-git-bypass          a git call with the fixture identity (`t@t`) outside fixture_git -- a fixture's git
@@ -879,8 +880,11 @@ def check_vendored_copy_drift() -> tuple[list[Finding], int]:
 # detector, which rails-flow owns. A plugin installs alone and cannot import another's code, so pipeline ships a copy and
 # `deploy_target.py` imports it (the sibling-plugin discovery is the detector's own, called once, not a third copy of it).
 # A fix to the detector that misses the copy would route a deploy by a stale reading of the descriptor.
+# design-flow's `ui_adapter.py` (#2185) reads the project's `descriptor.ui` through the same kind of copy: a stale one rejected the current
+# rails-stack manifest and made every project unresolvable, with nothing to say so.
 DETECT_STACK_COPIES = ("plugins/rails-flow/scripts/detect_stack.py",
-                       "plugins/pipeline/scripts/detect_stack.py")
+                       "plugins/pipeline/scripts/detect_stack.py",
+                       "plugins/design-flow/scripts/detect_stack.py")
 
 
 def check_detect_stack_drift() -> tuple[list[Finding], int]:
@@ -891,7 +895,7 @@ def check_detect_stack_drift() -> tuple[list[Finding], int]:
         p = ROOT / rel
         if not p.is_file():
             findings.append(Finding("detect-stack-drift", rel, 0,
-                                    "missing -- pipeline's deploy_target.py has no detector to import (#2179); "
+                                    "missing -- the plugin's own script that imports or runs it has no detector (#2179, #2185); "
                                     "copy it from plugins/rails-flow/scripts/detect_stack.py"))
             continue
         texts[rel] = p.read_bytes()
@@ -899,7 +903,7 @@ def check_detect_stack_drift() -> tuple[list[Finding], int]:
     for rel in DETECT_STACK_COPIES[1:]:
         if canonical is not None and texts.get(rel, canonical) != canonical:
             findings.append(Finding("detect-stack-drift", rel, 0,
-                                    f"differs from {DETECT_STACK_COPIES[0]} -- one stack detector, two copies: a deploy "
+                                    f"differs from {DETECT_STACK_COPIES[0]} -- one stack detector, several copies: a deploy "
                                     "would be routed by a different reading of the descriptors than every other flow's. "
                                     "Copy the canonical file over it (cp) and re-run"))
     return findings, len(DETECT_STACK_COPIES)
@@ -5828,6 +5832,8 @@ def selftest() -> int:
     scenario("a detect_stack copy that differs by one byte is a finding", rule="detect-stack-drift",
              expect_finding=True, files={DETECT_STACK_COPIES[0]: DS, DETECT_STACK_COPIES[1]: DS + "\n"},
              only=check_detect_stack_drift)
+    scenario("a stale design-flow detect_stack copy is a finding", rule="detect-stack-drift", expect_finding=True, says="differs from",
+             files={DETECT_STACK_COPIES[0]: DS, DETECT_STACK_COPIES[1]: DS, DETECT_STACK_COPIES[2]: DS + "\n"}, only=check_detect_stack_drift)
     scenario("a missing pipeline detect_stack is a finding", rule="detect-stack-drift", expect_finding=True,
              files={DETECT_STACK_COPIES[0]: DS}, only=check_detect_stack_drift)
     XP = "cross-plugin-relative-path"
