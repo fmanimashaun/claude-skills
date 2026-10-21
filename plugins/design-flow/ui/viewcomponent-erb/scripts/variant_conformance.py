@@ -110,7 +110,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # The detector is RUN, not reimplemented (see the docstring). A failed import is fatal rather
 # than a quiet fallback to a private copy of its rules: two rule sets drifting apart is exactly
 # what #157 criterion 7 forbade, and a silent fallback is how it would happen.
+# the UI adapter is `ui/<implementation>/scripts/` inside design-flow (#2178); the neutral detector and the packs are beside `ui/`
+DF = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(DF, "scripts"))
 try:
     import llm_tell_detector as tells
 except Exception as exc:  # pragma: no cover - environment, not logic
@@ -312,7 +315,7 @@ def resolve_pack(app_root: str, brand: str | None, override: str | None) -> tupl
         return None, "the manifest declares no `brand`"
     slug = brand.split(":", 1)[0]
     for base in (os.path.join(app_root, "brands", slug),
-                 os.path.join(HERE, "..", "brands", slug)):
+                 os.path.join(DF, "brands", slug)):
         theme = os.path.join(base, "theme.css")
         if os.path.isfile(theme):
             return theme, os.path.normpath(base)

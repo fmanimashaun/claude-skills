@@ -36,7 +36,7 @@ so the disagreement would only ever cost you credibility.
 
 `Read, Grep, Glob`. **No `Edit`, no `Write`, no `Bash`.** A lens that rewrites the surface it is
 judging stops being a second opinion and becomes an unreviewed author. If a suggestion is worth
-applying, `ui-composer` applies it.
+applying, `rails-ui-composer` applies it.
 
 ## How to read a surface
 

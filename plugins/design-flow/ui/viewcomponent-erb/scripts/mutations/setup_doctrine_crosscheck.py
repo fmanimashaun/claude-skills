@@ -3,8 +3,8 @@ from mutation_types import Guard, Mutation  # noqa: F401
 
 GUARD = Guard(
     name="setup_doctrine_crosscheck",
-    subject="scripts/setup_doctrine_crosscheck.py",
-    selftest="scripts/setup_doctrine_crosscheck.py",
+    subject="ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py",
+    selftest="ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py",
     # It now IMPORTS the shared doctrine resolver (#617), so the staged mutant dies at import
     # without it. This guard had no `needs` at all, which is why adding one by searching for the
     # next `needs=(` landed in a neighbouring guard — a reminder that "the next occurrence" is

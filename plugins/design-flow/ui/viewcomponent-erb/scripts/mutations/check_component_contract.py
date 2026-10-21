@@ -3,12 +3,12 @@ from mutation_types import Guard, Mutation  # noqa: F401
 
 GUARD = Guard(
     name="check_component_contract",
-    subject="scripts/check_component_contract.py",
-    selftest="scripts/check_component_contract.py",
+    subject="ui/viewcomponent-erb/scripts/check_component_contract.py",
+    selftest="ui/viewcomponent-erb/scripts/check_component_contract.py",
     # It now imports the shared ratchet (#1187). Undeclared, the mutant dies on
     # ModuleNotFoundError and an environmental death reads as a caught mutation.
-    deps=("scripts/content_floors.py",),
-    needs=("scripts/source_text.py",),   # comments are blanked here (#1128)
+    deps=("ui/viewcomponent-erb/scripts/content_floors.py",),
+    needs=("ui/viewcomponent-erb/scripts/source_text.py",),   # comments are blanked here (#1128)
     mutations=(
         # The splat's name is hard-coded again, so `**input_html` stored as `@input_html` reads as dropped.
         Mutation(

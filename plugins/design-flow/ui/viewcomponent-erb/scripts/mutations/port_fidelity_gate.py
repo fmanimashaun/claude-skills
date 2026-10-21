@@ -4,8 +4,8 @@ from mutation_types import Guard, Mutation  # noqa: F401
 GUARD = Guard(
     # #1873. The runner grades 3 as n/a, so "no manifest" must be 3 and a manifest without its port report must still fail.
     name="port_fidelity_gate",
-    subject="scripts/port_fidelity_gate.py",
-    selftest="scripts/port_fidelity_gate.py",   # --selftest lives in the module
+    subject="ui/viewcomponent-erb/scripts/port_fidelity_gate.py",
+    selftest="ui/viewcomponent-erb/scripts/port_fidelity_gate.py",   # --selftest lives in the module
     needs=(),                                    # the selftest's fixtures never reach canvas_manifest.py
     mutations=(
         Mutation(

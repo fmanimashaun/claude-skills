@@ -48,7 +48,11 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# THE UI ADAPTER LIVES INSIDE design-flow (#2178): `ui/<implementation>/scripts/`, so the plugin root is three directories up, and the neutral core
+# (doctrine_path, brand_pack_lint, the brand packs) is `scripts/` and `brands/` beside `ui/`.
+DF = HERE.parents[2]
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(DF / "scripts"))
 
 import doctrine_path                    # noqa: E402 -- same plugin, one resolver
 import brand_pack_lint as bpl           # noqa: E402 -- same plugin, one theme-aware parser
@@ -61,12 +65,12 @@ import brand_pack_lint as bpl           # noqa: E402 -- same plugin, one theme-a
 # Third recurrence of #617's class, second after the resolver existed.
 # The pack baselines. `parents[1]` is safe where #617's parent-counting was not: this stays INSIDE
 # design-flow, whose layout is fixed, rather than reaching across the clone/install boundary.
-BRANDS = Path(__file__).resolve().parents[1] / "brands"
+BRANDS = DF / "brands"
 BRAND_RB = Path("config/initializers/brand.rb")
 # The pack SLUG, which is not `default_variant`. See `resolve_baseline`.
 PACK_DECL = re.compile(r"""\bconfig\.x\.brand\.pack\s*=\s*(?P<q>['"])(?P<slug>[a-z0-9_-]+)(?P=q)""")
 
-_DOCTRINE = doctrine_path.find(Path(__file__).resolve())
+_DOCTRINE = doctrine_path.find(DF / "scripts" / "x.py")   # the resolver counts from a design-flow script path
 DOC = ((_DOCTRINE / "references" / "foundations-tokens.md") if _DOCTRINE
        else Path("foundations-tokens.md"))          # unresolvable: main() refuses, naming every root
 DEFAULT_CSS = Path("app/assets/tailwind/application.css")

@@ -7,9 +7,9 @@ from mutation_types import Guard, Mutation  # noqa: F401
 # out of a string, or granting every edge instead of the one the panel slides from).
 GUARD = Guard(
     name="check_modal_fit",
-    subject="scripts/check_modal_fit.py",
-    selftest="scripts/check_modal_fit.py",
-    deps=("scripts/content_floors.py", "scripts/source_text.py"),
+    subject="ui/viewcomponent-erb/scripts/check_modal_fit.py",
+    selftest="ui/viewcomponent-erb/scripts/check_modal_fit.py",
+    deps=("ui/viewcomponent-erb/scripts/content_floors.py", "ui/viewcomponent-erb/scripts/source_text.py"),
     mutations=(
         Mutation("an unbounded dialog stops being a finding", "    if missing:\n", "    if False:\n",
                  "a dialog capped with 100vh and no inset wrapper is caught"),
