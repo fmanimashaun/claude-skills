@@ -16,7 +16,9 @@ GUARD = Guard(
            # #1520: component_versions() reads each plugin's own version.
            "plugins/rails-flow/.claude-plugin/plugin.json", "plugins/qa-flow/.claude-plugin/plugin.json",
            "plugins/pipeline/.claude-plugin/plugin.json", "plugins/design-flow/.claude-plugin/plugin.json",
-           "plugins/flow-suite/.claude-plugin/plugin.json"),
+           "plugins/flow-suite/.claude-plugin/plugin.json",
+           # #2182 moved rails-stack's version into its own plugin.json; #2198 added nextjs-stack (v1.158.0 proof).
+           "plugins/rails-stack/.claude-plugin/plugin.json", "plugins/nextjs-stack/.claude-plugin/plugin.json"),
     mutations=(
         Mutation(
             "the tag being armed loses its exemption, so every arm reports its own release as a ghost",
