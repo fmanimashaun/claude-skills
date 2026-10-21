@@ -6217,26 +6217,26 @@
     14,
     15,
     37,
-    296,
-    567,
-    568,
-    582,
-    583,
-    585,
-    587,
-    631,
-    632,
+    303,
+    574,
+    575,
+    589,
+    590,
+    592,
+    594,
+    638,
     639,
-    686,
-    713,
-    751,
-    753,
-    757,
-    760,
-    764,
-    766,
-    782,
-    796
+    646,
+    703,
+    730,
+    768,
+    770,
+    774,
+    777,
+    781,
+    783,
+    799,
+    813
    ],
    "move": ""
   },
@@ -7159,7 +7159,7 @@
    "kind": "mutation",
    "lines": [
     12,
-    193
+    200
    ],
    "move": ""
   },
@@ -7239,25 +7239,6 @@
     22,
     28,
     29
-   ],
-   "move": ""
-  },
-  "plugins/rails-flow/scripts/mutations/security_scope.py": {
-   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
-   "categories": {
-    "path": 2
-   },
-   "decision": "reword",
-   "followed": "plugins/rails-flow/scripts/security_scope.py",
-   "how": "reworded in the slice that touches the file; no code changes",
-   "ids": {
-    "app-layers": 2
-   },
-   "invokes": [],
-   "kind": "mutation",
-   "lines": [
-    18,
-    19
    ],
    "move": ""
   },
@@ -7544,29 +7525,6 @@
     241,
     251,
     279
-   ],
-   "move": ""
-  },
-  "plugins/rails-flow/scripts/security_scope.py": {
-   "assumes": "prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour",
-   "categories": {
-    "concept": 4,
-    "path": 2
-   },
-   "decision": "reword",
-   "how": "reworded in the slice that touches the file; no code changes",
-   "ids": {
-    "app-layers": 1,
-    "rails-word": 2,
-    "ruby-file": 2,
-    "spec-dir": 1
-   },
-   "invokes": [],
-   "kind": "script",
-   "lines": [
-    53,
-    154,
-    187
    ],
    "move": ""
   },
@@ -8186,10 +8144,10 @@
  "policy": "docs/architecture/rails-assumptions.policy.json",
  "summary": {
   "by_category": {
-   "concept": 1970,
+   "concept": 1966,
    "gem": 138,
    "hotwire": 104,
-   "path": 1249,
+   "path": 1245,
    "tool": 890
   },
   "by_decision": {
@@ -8206,8 +8164,8 @@
     "lines": 1673
    },
    "reword": {
-    "files": 65,
-    "lines": 283
+    "files": 63,
+    "lines": 278
    }
   },
   "by_flow": {
@@ -8237,11 +8195,11 @@
    },
    "rails-flow": {
     "detector": 50,
-    "files": 137,
-    "lines": 2294,
+    "files": 135,
+    "lines": 2289,
     "neutral": 3,
     "rails-stack": 47,
-    "reword": 37
+    "reword": 35
    }
   },
   "by_kind": {
@@ -8270,8 +8228,8 @@
     "lines": 2
    },
    "mutation": {
-    "files": 45,
-    "lines": 263
+    "files": 44,
+    "lines": 261
    },
    "reference": {
     "files": 8,
@@ -8282,8 +8240,8 @@
     "lines": 11
    },
    "script": {
-    "files": 89,
-    "lines": 2250
+    "files": 88,
+    "lines": 2247
    },
    "selftest": {
     "files": 16,
@@ -8296,7 +8254,7 @@
   },
   "by_pattern": {
    "active-framework": 20,
-   "app-layers": 605,
+   "app-layers": 602,
    "bin-rails": 125,
    "binstub": 53,
    "brakeman": 8,
@@ -8310,17 +8268,17 @@
    "hotwire": 104,
    "rails-config": 109,
    "rails-idiom": 53,
-   "rails-word": 315,
+   "rails-word": 313,
    "rake": 56,
    "routes": 37,
    "rspec": 186,
    "rubocop": 84,
    "rubocop-yml": 2,
    "ruby": 215,
-   "ruby-file": 1222,
-   "spec-dir": 183
+   "ruby-file": 1220,
+   "spec-dir": 182
   },
-  "files": 230,
-  "lines": 3208
+  "files": 228,
+  "lines": 3203
  }
 }

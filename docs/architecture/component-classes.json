@@ -5022,16 +5022,16 @@
    "via": "decision"
   },
   {
-   "class": "mixed",
-   "issue": 2183,
+   "class": "neutral",
+   "issue": null,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/security_scope.py",
    "plugin": "rails-flow",
-   "rails_lines": 3,
+   "rails_lines": 0,
    "registered": [],
-   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "seam": "",
    "type": "script",
-   "via": "decision"
+   "via": "declared"
   },
   {
    "class": "mixed",
@@ -6510,14 +6510,14 @@
    "via": "tests risky_diff.py"
   },
   {
-   "class": "mixed",
-   "issue": 2183,
+   "class": "neutral",
+   "issue": null,
    "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/mutations/security_scope.py",
    "plugin": "rails-flow",
-   "rails_lines": 2,
+   "rails_lines": 0,
    "registered": [],
-   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
+   "seam": "",
    "type": "test",
    "via": "tests security_scope.py"
   },
@@ -7041,6 +7041,30 @@
    "class": "rails",
    "issue": 2182,
    "nextjs_lines": 0,
+   "path": "plugins/rails-stack/security/boundary-cases.json",
+   "plugin": "rails-stack",
+   "rails_lines": 3,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2182,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-stack/security/rails.md",
+   "plugin": "rails-stack",
+   "rails_lines": 5,
+   "registered": [],
+   "seam": "",
+   "type": "support",
+   "via": "declared"
+  },
+  {
+   "class": "rails",
+   "issue": 2182,
+   "nextjs_lines": 0,
    "path": "plugins/rails-stack/setup/rails.md",
    "plugin": "rails-stack",
    "rails_lines": 94,
@@ -7065,10 +7089,10 @@
  "generated_by": "scripts/component_classes.py",
  "summary": {
   "by_class": {
-   "mixed": 201,
-   "neutral": 272,
+   "mixed": 199,
+   "neutral": 274,
    "nextjs": 3,
-   "rails": 109
+   "rails": 111
   },
   "by_plugin": {
    "design-flow": {
@@ -7107,8 +7131,8 @@
     "total": 129
    },
    "rails-flow": {
-    "mixed": 106,
-    "neutral": 118,
+    "mixed": 104,
+    "neutral": 120,
     "nextjs": 0,
     "rails": 73,
     "total": 297
@@ -7117,8 +7141,8 @@
     "mixed": 3,
     "neutral": 2,
     "nextjs": 0,
-    "rails": 5,
-    "total": 10
+    "rails": 7,
+    "total": 12
    }
   },
   "by_type": {
@@ -7151,8 +7175,8 @@
     "total": 49
    },
    "script": {
-    "mixed": 58,
-    "neutral": 54,
+    "mixed": 57,
+    "neutral": 55,
     "nextjs": 0,
     "rails": 31,
     "total": 143
@@ -7168,17 +7192,17 @@
     "mixed": 15,
     "neutral": 35,
     "nextjs": 3,
-    "rails": 5,
-    "total": 58
+    "rails": 7,
+    "total": 60
    },
    "test": {
-    "mixed": 60,
-    "neutral": 97,
+    "mixed": 59,
+    "neutral": 98,
     "nextjs": 0,
     "rails": 30,
     "total": 187
    }
   },
-  "components": 585
+  "components": 587
  }
 }

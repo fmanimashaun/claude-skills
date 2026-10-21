@@ -737,11 +737,13 @@
     "match": [
      "plugins/rails-stack/.claude-plugin/*",
      "plugins/rails-stack/stacks.json",
-     "plugins/rails-stack/setup/rails.md"
+     "plugins/rails-stack/setup/rails.md",
+     "plugins/rails-stack/security/rails.md",
+     "plugins/rails-stack/security/boundary-cases.json"
     ],
     "class": "rails",
     "issue": 2182,
-    "why": "the rails-stack manifest, its stacks.json and its setup section (both moved from the repo root): they name the Rails doctrine the plugin bundles, the Rails markers the detector reads, and the Rails-only setup repairs (#2180)"
+    "why": "the rails-stack manifest, its stacks.json and its setup section (both moved from the repo root): they name the Rails doctrine the plugin bundles, the Rails markers the detector reads, and the Rails-only setup repairs (#2180); its security surface: the STRIDE checklist and the cases proving its boundary spellings (#2117)"
    },
    {
     "match": [

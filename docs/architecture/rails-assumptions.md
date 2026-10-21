@@ -10,15 +10,15 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 |---|---|---:|---:|
 | `rails-stack` | exists only for Rails projects; moves to `rails-stack` and registers through its manifest | 68 | 1673 |
 | `detector` | flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163) | 90 | 1228 |
-| `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 65 | 283 |
+| `reword` | prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched | 63 | 278 |
 | `neutral` | incidental hits (an example, a fixture, a fragment of another word); nothing to change | 7 | 24 |
-| **all** | | **230** | **3208** |
+| **all** | | **228** | **3203** |
 
 ## By flow
 
 | flow | files | lines | `rails-stack` | `detector` | `reword` | `neutral` |
 |---|---:|---:|---:|---:|---:|---:|
-| `rails-flow` | 137 | 2294 | 47 | 50 | 37 | 3 |
+| `rails-flow` | 135 | 2289 | 47 | 50 | 35 | 3 |
 | `qa-flow` | 36 | 275 | 0 | 29 | 6 | 1 |
 | `pipeline` | 19 | 89 | 3 | 9 | 4 | 3 |
 | `design-flow` | 38 | 550 | 18 | 2 | 18 | 0 |
@@ -29,8 +29,8 @@ Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: t
 |---|---:|
 | tool | 890 |
 | gem | 138 |
-| path | 1249 |
-| concept | 1970 |
+| path | 1245 |
+| concept | 1966 |
 | hotwire | 104 |
 
 A line that names two things counts once per category it names in this table and once overall in the totals above.
@@ -183,7 +183,7 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `scripts/ci_verdict_hint.py:193`<br>L193, 195 | script | 2 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
 | `scripts/classify_door.py:15`<br>L15, 18, 20, 42, 43 +29 more | script | 34 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/claude_md_structure.py:115`<br>L115, 116, 117, 118, 119 +12 more | script | 17 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
-| `scripts/detect_stack.py:14`<br>L14, 15, 37, 296, 567 +18 more | script | 23 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
+| `scripts/detect_stack.py:14`<br>L14, 15, 37, 303, 574 +18 more | script | 23 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/dev_baseline.py:4`<br>L4, 10, 26, 53, 54 +25 more | script | 30 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
 | `scripts/docs_layout.py:55`<br>L55, 77, 85, 461, 466 +24 more | script | 29 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/extract_claims.py:232`<br>L232 | script | 1 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
@@ -215,11 +215,10 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `scripts/mutations/ci_verdict_hint.py:28`<br>L28 ↳ | mutation | 1 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
 | `scripts/mutations/classify_door.py:27`<br>L27, 45, 46, 62, 65 ↳ | mutation | 5 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/mutations/claude_md_structure.py:50`<br>L50 ↳ | mutation | 1 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
-| `scripts/mutations/detect_stack.py:12`<br>L12, 193 ↳ | mutation | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
+| `scripts/mutations/detect_stack.py:12`<br>L12, 200 ↳ | mutation | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/mutations/dev_baseline.py:27`<br>L27, 28, 29, 30 ↳ | mutation | 4 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
 | `scripts/mutations/herb_lint.py:13`<br>L13, 15, 18, 29, 30 +9 more ↳ | mutation | 14 | parses Ruby, ERB, Gemfile, db/ or Rails config to judge a Rails project | `rails-stack` (rails-gates) | moves with its checks.json row; project_gates.py keeps discovering it from the sibling plugin |
 | `scripts/mutations/risky_diff.py:16`<br>L16, 18, 22, 28, 29 ↳ | mutation | 5 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
-| `scripts/mutations/security_scope.py:18`<br>L18, 19 ↳ | mutation | 2 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/mutations/self_consistency.py:23`<br>L23 ↳ | mutation | 1 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/mutations/session_coordinator.py:138`<br>L138 ↳ | mutation | 1 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/mutations/test_preflight.py:17`<br>L17, 46, 51, 74, 94 +26 more ↳ | mutation | 31 | hardwires bundle exec rspec, spec/ paths and Rails binstubs as the test command | `detector` | asks the detector for the stack's test command, paths and preflight steps; the Rails values become the rails-stack answer |
@@ -227,7 +226,6 @@ Files: `agents/kamal-configurator.md` (pipeline), `scripts/kamal_destination.py`
 | `scripts/project_gates.py:360`<br>L360, 361, 391, 424, 425 +17 more | script | 22 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/retro.py:149`<br>L149, 249, 324, 351, 354 +15 more | script | 20 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/risky_diff.py:16`<br>L16, 18, 20, 25, 46 +49 more | script | 54 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
-| `scripts/security_scope.py:53`<br>L53, 154, 187 | script | 3 | prose, examples or metadata that name Rails, RSpec or .rb files and drive no behaviour | `reword` | reworded in the slice that touches the file; no code changes |
 | `scripts/self_consistency.py:30`<br>L30, 34, 62, 63, 138 +6 more | script | 11 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/self_consistency_selftest.py:11`<br>L11, 65, 69, 71, 75 +38 more ↳ | selftest | 43 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
 | `scripts/session_coordinator.py:184`<br>L184, 192, 193, 459, 469 +22 more | script | 27 | hardwires Rails paths (app/, db/, config/routes.rb), Rails commands (rake, bin/rails) or .rb extensions as what counts as source, risk or a test | `detector` | reads source globs, risky paths and commands from the detector's stack descriptor |
