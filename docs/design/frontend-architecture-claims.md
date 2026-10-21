@@ -85,3 +85,13 @@ Three verifier runs fetched the sources. C = CONFIRMED, R = REFUTED (wording mus
 | C33 | C (thresholds) | web.dev/articles/vitals | thresholds as C23; the default-plus-override is our decision |
 
 **Tally (33):** 23 CONFIRMED (of which 7 need rewording or narrowing: C7, C12, C15, C20, C22, C27, C33), 2 REFUTED as worded (C26, C32), 6 INCONCLUSIVE (C8, C16, C17, C28, C30, C31), 2 maintainer decisions (C9, C25). Three INCONCLUSIVE claims (C17, C28, C31) have a real source for a narrower wording (Carbon, Carbon, web.dev) and are candidates for one re-verification pass; the rest stay out.
+
+## Re-verification of the narrowed wording (doctrine-verifier, 2026-10-21)
+
+| # | Verdict | Citation | Use as |
+|---|---|---|---|
+| C17' | CONFIRMED | carbondesignsystem.com/patterns/empty-states-pattern/ | Carbon's empty states include a permissions case: "The user does not have permission to view the data", with the action "Suggest steps or process to request access." Cite Carbon only |
+| C28' | PARTIAL, reworded | carbondesignsystem.com/patterns/disabled-states/ | Carbon hides an element the user lacks permission to "view, interact with, or take action on"; it disables for temporary dependencies (it does not say "only"). The enable instructions belong to the optional inline notification, which "should describe how the user can enable or re-enable the disabled component". Cite Carbon only |
+| C31' | CONFIRMED | developer.chrome.com/docs/lighthouse/accessibility/managed-focus (web.dev/managed-focus redirects here) | after a route change that fetches new content, "find a good heading in the newly loaded content and direct focus to it". Cite the developer.chrome.com URL |
+
+**Updated tally (33):** 25 CONFIRMED (C17 and C31 join the 23; C28 ships only in its reworded Carbon form, counted below), 2 REFUTED as worded (C26, C32), 3 INCONCLUSIVE and out (C8, C16, C30), 1 PARTIAL reworded (C28), 2 maintainer decisions (C9, C25). Total 33.
