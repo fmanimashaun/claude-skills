@@ -25,8 +25,8 @@
 | `brand-guardian` | judgement · inherit | Read, Grep, Glob, Edit, Bash, Skill | `/design-flow:variants` | — |
 | `design-auditor` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/design-flow:audit`, `/design-flow:variants` | — |
 | `design-critic` | judgement · inherit | Read, Grep, Glob, Skill | `/design-flow:critique` | — |
-| `design-porter` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:canvas`, `/design-flow:port` | — |
-| `ui-composer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:component`, `/design-flow:mobile`, `/design-flow:port`, `/design-flow:variants` | — |
+| `rails-ui-composer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:component`, `/design-flow:mobile`, `/design-flow:port`, `/design-flow:variants` | — |
+| `rails-ui-porter` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:canvas`, `/design-flow:port` | — |
 
 ### `pipeline`
 
@@ -106,21 +106,21 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | design-flow conformance collector | `design-flow` | `python3 plugins/design-flow/scripts/rendered_conformance.py --check-collector` | live check |
 | design-flow design prompt selftest | `design-flow` | `python3 plugins/design-flow/scripts/design_prompt.py --selftest` | selftest |
 | design-flow doctrine path selftest | `design-flow` | `python3 plugins/design-flow/scripts/doctrine_path.py --selftest` | selftest |
-| design-flow modal fit | `design-flow` | `python3 plugins/design-flow/scripts/check_modal_fit.py --selftest` | selftest |
+| design-flow modal fit | `design-flow` | `python3 plugins/design-flow/ui/viewcomponent-erb/scripts/check_modal_fit.py --selftest` | selftest |
 | design-flow palette candidates | `design-flow` | `python3 plugins/design-flow/scripts/palette_candidates.py --check` | live check |
 | design-flow palette candidates selftest | `design-flow` | `python3 plugins/design-flow/scripts/palette_candidates.py --selftest` | selftest |
 | design-flow palette gates selftest | `design-flow` | `python3 plugins/design-flow/scripts/palette_gates.py --selftest` | selftest |
-| design-flow port fidelity gate | `design-flow` | `python3 plugins/design-flow/scripts/port_fidelity_gate.py --selftest` | selftest |
+| design-flow port fidelity gate | `design-flow` | `python3 plugins/design-flow/ui/viewcomponent-erb/scripts/port_fidelity_gate.py --selftest` | selftest |
 | design-flow prompt library selftest | `design-flow` | `python3 plugins/design-flow/scripts/prompt_library.py --selftest` | selftest |
 | design-flow rendered conformance | `design-flow` | `python3 plugins/design-flow/scripts/rendered_conformance.py --selftest` | selftest |
 | design-flow scale contiguity | `design-flow` | `python3 plugins/design-flow/scripts/check_scale_contiguity.py` | live check |
 | design-flow scale contiguity selftest | `design-flow` | `python3 plugins/design-flow/scripts/check_scale_contiguity.py --selftest` | selftest |
-| design-flow setup cross-check | `design-flow` | `python3 plugins/design-flow/scripts/setup_doctrine_crosscheck.py --quiet` | live check |
-| design-flow setup cross-check selftest | `design-flow` | `python3 plugins/design-flow/scripts/setup_doctrine_crosscheck.py --selftest` | selftest |
-| design-flow table layout | `design-flow` | `python3 plugins/design-flow/scripts/check_table_layout.py --selftest` | selftest |
+| design-flow setup cross-check | `design-flow` | `python3 plugins/design-flow/ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py --quiet` | live check |
+| design-flow setup cross-check selftest | `design-flow` | `python3 plugins/design-flow/ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py --selftest` | selftest |
+| design-flow table layout | `design-flow` | `python3 plugins/design-flow/ui/viewcomponent-erb/scripts/check_table_layout.py --selftest` | selftest |
 | design-flow tells vs our own doctrine | `design-flow` | `python3 plugins/design-flow/scripts/llm_tell_detector.py --doctrine-selfcheck` | live check |
-| design-flow token drift selftest | `design-flow` | `python3 plugins/design-flow/scripts/check_token_drift.py --selftest` | selftest |
-| design-flow variant conformance | `design-flow` | `python3 plugins/design-flow/scripts/variant_conformance.py --selftest` | selftest |
+| design-flow token drift selftest | `design-flow` | `python3 plugins/design-flow/ui/viewcomponent-erb/scripts/check_token_drift.py --selftest` | selftest |
+| design-flow variant conformance | `design-flow` | `python3 plugins/design-flow/ui/viewcomponent-erb/scripts/variant_conformance.py --selftest` | selftest |
 | pipeline apm advisory | `pipeline` | `python3 plugins/pipeline/scripts/apm_advisory.py --selftest` | selftest |
 | pipeline committed-secret scan | `pipeline` | `python3 plugins/pipeline/scripts/scan_committed_secrets.py --selftest` | selftest |
 | pipeline git guards | `pipeline` | `python3 plugins/pipeline/scripts/git_guard_selftest.py` | live check |
@@ -331,11 +331,11 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 
 | agent | tier | what proves its output |
 |---|---|---|
-| `ui-composer` | judgement | — |
+| `rails-ui-composer` | judgement | — |
 | `design-auditor` | judgement | — |
 | `brand-guardian` | judgement | — |
 | `design-critic` | judgement | — |
-| `design-porter` | judgement | — |
+| `rails-ui-porter` | judgement | — |
 
 ### `pipeline`
 

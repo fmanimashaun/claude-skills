@@ -60,7 +60,7 @@ generated nothing:
       d=$(mktemp -d); mkdir -p "$d/doctrine"
       git archive $c skills/design-system | tar -x -C "$d/doctrine" --strip-components=2
       git show $c:plugins/design-flow/commands/setup.md > "$d/setup.md"
-      python3 plugins/design-flow/scripts/setup_doctrine_crosscheck.py \
+      python3 plugins/design-flow/ui/viewcomponent-erb/scripts/setup_doctrine_crosscheck.py \
         --setup "$d/setup.md" --doctrine "$d/doctrine"; echo "$c -> exit=$?"
     done
     # ced38c4 (defective, pre-fix) -> exit=1   5902250 (in-branch fix) -> exit=0
@@ -98,16 +98,19 @@ import sys
 # --------------------------------------------------------------------------
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-# scripts -> design-flow -> plugins -> repo root
-_REPO = os.path.normpath(os.path.join(_HERE, "..", "..", ".."))
-DEFAULT_SETUP = os.path.join(_HERE, "..", "commands", "setup.md")
+# ui/viewcomponent-erb/scripts -> viewcomponent-erb -> ui -> design-flow (#2178): the adapter is inside the plugin, whose `commands/` and neutral `scripts/` are beside `ui/`
+_DF = os.path.normpath(os.path.join(_HERE, "..", "..", ".."))
+# design-flow -> plugins -> repo root
+_REPO = os.path.normpath(os.path.join(_DF, "..", ".."))
+DEFAULT_SETUP = os.path.join(_DF, "commands", "setup.md")
 # RESOLVED, not counted. Four `..` hops reach the doctrine in a marketplace clone and land a
 # directory short from an install, where the cache interposes `<bundle>/<version>/` — #617. The
 # shared resolver knows both shapes; falling back to the clone path keeps the message honest when
 # neither exists.
 sys.path.insert(0, _HERE)
+sys.path.insert(0, os.path.join(_DF, "scripts"))
 import doctrine_path                                    # noqa: E402 — same plugin, one resolver
-_FOUND = doctrine_path.find(os.path.join(_HERE, "x.py"))
+_FOUND = doctrine_path.find(os.path.join(_DF, "scripts", "x.py"))
 DEFAULT_DOCTRINE = str(_FOUND) if _FOUND else os.path.join(_REPO, "plugins", "rails-stack", "skills", "design-system")
 
 # `Rails.configuration.x.<key>` or the equivalent `Rails.application.config.x.<key>`.

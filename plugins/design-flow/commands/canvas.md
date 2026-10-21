@@ -67,7 +67,7 @@ answered the brief or drifted from it.
 
 ## 5. When the canvas comes back
 
-Hand it to **`/design-flow:port`** (the `design-porter` agent) and read
+Hand it to **`/design-flow:port`** (the `rails-ui-porter` agent) and read
 `design-system/references/design-handoff.md` first. If step 2 reported no gaps, the returned `:root`
 should carry **your** token names — which is what makes §2's *"drop the `:root` block"* safe by
 construction rather than by careful reading.

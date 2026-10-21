@@ -6,7 +6,7 @@ Run:  python3 design_prompt.py --surface dashboard
       python3 design_prompt.py --selftest
 
 WHY THIS EXISTS (#745). The inbound half of the loop shipped first: `design-handoff.md` and the
-`design-porter` agent turn a Claude Design canvas into Rails + Hotwire. But the cost of that port is
+`rails-ui-porter` agent turn a Claude Design canvas into Rails + Hotwire. But the cost of that port is
 decided BEFORE it starts, by the prompt.
 
 Measured on a real artboard: `Ledger auth.dc.html` declares **50 of its own `:root` tokens** and makes

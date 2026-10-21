@@ -1,5 +1,5 @@
 ---
-description: Port a Claude Design output — JSX/TSX, or a `<x-dc>` canvas export — into this Rails 8 + Hotwire app, faithful to the design and aligned to the design system by construction. Dispatches to the design-porter agent under design-system's design-handoff mapping.
+description: Port a Claude Design output — JSX/TSX, or a `<x-dc>` canvas export — into this Rails 8 + Hotwire app, faithful to the design and aligned to the design system by construction. Dispatches to the rails-ui-porter agent per design-handoff.
 ---
 
 # /design-flow:port
@@ -10,7 +10,7 @@ brings the result back.
 **Why this is a command and not freehand work.** A whole-app audit on a live project found **20
 alignable divergences** — raw hex, bespoke `.field`/`.label`, `form_with` field forms, hand-rolled
 card and grid CSS, CDN fonts — concentrated in exactly the two surfaces that had been ported ad-hoc
-from Claude Design canvases. A `ui-composer` composes *from* the system; nothing owned translating a
+from Claude Design canvases. A `rails-ui-composer` composes *from* the system; nothing owned translating a
 source *into* it, and that step is where all of it entered.
 
 ## Preconditions
@@ -41,13 +41,13 @@ Exit 1 means an old place still holds files. **Stop**, run the command it prints
 **Step 0 — the checklist is extracted, not written.** Before any code:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/canvas_manifest.py" extract "<canvas>.dc.html" --out "docs/design/<surface>/<canvas>.manifest.json"
+python3 "${CLAUDE_PLUGIN_ROOT}/ui/viewcomponent-erb/scripts/canvas_manifest.py" extract "<canvas>.dc.html" --out "docs/design/<surface>/<canvas>.manifest.json"
 ```
 
 Every heading, copy run, control, repeat, conditional, icon and data label the canvas specifies becomes one item
 with a stable id. That manifest is the porter's checklist and the denominator of "done" (#908).
 
-Dispatch the **`design-porter`** agent. It works the order in `design-handoff.md`:
+Dispatch the **`rails-ui-porter`** agent. It works the order in `design-handoff.md`:
 
 1. **Identify the source format** — JSX/TSX or `<x-dc>` canvas. They carry the same design and are
    read differently.
@@ -73,7 +73,7 @@ Dispatch the **`design-porter`** agent. It works the order in `design-handoff.md
   `token-gap`, or `deferred` + the reason the user approved — and this is clean:
 
   ```bash
-  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/canvas_manifest.py" check "docs/design/<surface>/<canvas>.manifest.json" --report "docs/design/<surface>/<canvas>.port-report.json"
+  python3 "${CLAUDE_PLUGIN_ROOT}/ui/viewcomponent-erb/scripts/canvas_manifest.py" check "docs/design/<surface>/<canvas>.manifest.json" --report "docs/design/<surface>/<canvas>.port-report.json"
   ```
 
   It refuses while any item is unaccounted for, and an `implemented` whose text is in neither the named file nor

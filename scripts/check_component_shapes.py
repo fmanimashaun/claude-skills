@@ -18,7 +18,7 @@ WHAT IT ASSERTS, and each half matters:
   1. **Every catalogue row has an entry.** Drawn, or `drawable: false` WITH a reason. Silence is not
      an option, because silence is indistinguishable from an oversight.
   2. **Every entry names a real row.** A shape for a component that no longer exists is a component
-     offered in pen that `ui-composer` cannot build — the exact drift the mirror prevents.
+     offered in pen that `rails-ui-composer` cannot build — the exact drift the mirror prevents.
   3. **Every part is one the generator draws**, and every role it names is one `theme.css` declares.
      A shape referencing an undeclared role would be reported at generation time and silently absent
      from the library; catching it here makes it a build failure instead of a quiet gap.
@@ -99,7 +99,7 @@ def check(md: str, shapes: dict, roles: set[str]) -> list[str]:
         for name in orphans:
             problems.append(
                 f"`{name}` has a shape but is not a components.md row. A component offered in pen "
-                f"that `ui-composer` cannot build is the drift this mirror exists to prevent.")
+                f"that `rails-ui-composer` cannot build is the drift this mirror exists to prevent.")
 
     for name, entry in entries.items():
         if entry.get("drawable") is False:

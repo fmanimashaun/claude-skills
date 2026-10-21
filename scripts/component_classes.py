@@ -11,7 +11,7 @@ WHY THIS EXISTS. The owner's words: "stack specific hooks, commands, mods and so
 so nobody could see which parts of the toolchain are already neutral. This page lists all of them, per plugin, with one class each:
 
   neutral  works the same on every stack; the scan finds no Rails or Next.js reference in it
-  rails    exists only for Rails projects; it moves to rails-stack (the issue is named)
+  rails    exists only for Rails projects; it moves to rails-stack, or for a design-flow component lives in its Rails UI adapter (the issue is named)
   nextjs   exists only for Next.js projects
   mixed    stays where it is but still assumes a stack in places; it names its seam (where it will ask the stack detector, or that it is
            wording only) and the plan issue that fixes it
@@ -329,7 +329,7 @@ def build_html(comps: list[dict]) -> str:
     w('<div class="box"><h2 style="margin-top:0;border:0">How to read this</h2>')
     w("<p>Every hook, command, agent, skill, script and gate we ship is listed once, under the plugin it ships in, with one class:</p><ul>")
     w(f'<li>{_tag("neutral")} works the same on any stack. A scan of its text finds no Rails or Next.js reference.</li>')
-    w(f'<li>{_tag("rails")} exists only for Rails projects. It will move into the <code>rails-stack</code> plugin; the issue that moves it is named.</li>')
+    w(f'<li>{_tag("rails")} exists only for Rails projects. It will move into the <code>rails-stack</code> plugin, or for a design-flow component stay in its Rails UI adapter (<code>ui/viewcomponent-erb</code>); the issue that moves it is named.</li>')
     w(f'<li>{_tag("nextjs")} exists only for Next.js projects.</li>')
     w(f'<li>{_tag("mixed")} stays where it is but still assumes a stack somewhere. The <b>seam</b> says where it will ask the stack detector instead '
       "(or that it is only wording), and the issue is the plan step that fixes it.</li></ul>")
