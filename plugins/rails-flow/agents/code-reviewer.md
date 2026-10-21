@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: MOVED to rails-stack as `rails-stack:code-reviewer` (#2173). Do not delegate here; resolve the stack's `reviewer` role instead (rails-flow reference/stack-roles.md). Kept for two releases so a project that updated rails-flow first is told, not broken.
+description: Moved to rails-stack:code-reviewer (#2173). Resolve the `reviewer` role instead.
 tools: Read
 model: inherit
 ---

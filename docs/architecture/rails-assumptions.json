@@ -2839,7 +2839,7 @@
    "invokes": [],
    "kind": "agent",
    "lines": [
-    8
+    10
    ],
    "move": "rails-agents"
   },
@@ -2963,7 +2963,7 @@
    "invokes": [],
    "kind": "agent",
    "lines": [
-    8
+    10
    ],
    "move": "rails-agents"
   },

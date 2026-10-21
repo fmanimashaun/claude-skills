@@ -5650,10 +5650,10 @@ def selftest() -> int:
     scenario("identical findings.py copies are silent", rule="findings-script-drift", expect_finding=False,
              files={c: FS for c in FINDINGS_COPIES}, only=check_findings_script_drift)
     scenario("a findings.py copy that differs by one byte is a finding", rule="findings-script-drift",
-             expect_finding=True, files={FINDINGS_COPIES[0]: FS, FINDINGS_COPIES[1]: FS + "\n"},
+             expect_finding=True, files={**{c: FS for c in FINDINGS_COPIES}, FINDINGS_COPIES[1]: FS + "\n"},
              only=check_findings_script_drift)
     scenario("a missing qa-flow findings.py is a finding", rule="findings-script-drift", expect_finding=True,
-             files={FINDINGS_COPIES[0]: FS}, only=check_findings_script_drift)
+             files={c: FS for c in FINDINGS_COPIES if c != FINDINGS_COPIES[1]}, only=check_findings_script_drift)
     scenario("a rails-stack findings.py that differs by one byte is a finding", rule="findings-script-drift",
              expect_finding=True, files={**{c: FS for c in FINDINGS_COPIES}, FINDINGS_COPIES[2]: FS + "\n"},
              only=check_findings_script_drift)

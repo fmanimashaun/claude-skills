@@ -1,6 +1,6 @@
 ---
 name: rails-developer
-description: MOVED to rails-stack as `rails-stack:rails-developer` (#2173). Do not delegate here; resolve the stack's `developer` role instead (rails-flow reference/stack-roles.md). Kept for two releases so a project that updated rails-flow first is told, not broken.
+description: Moved to rails-stack:rails-developer (#2173). Resolve the `developer` role instead.
 tools: Read
 model: inherit
 ---
