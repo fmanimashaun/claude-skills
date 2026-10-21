@@ -41,6 +41,8 @@ BUILDERS = (
     ("coverage page", "build_coverage_artifact.py", ("docs/evidence/coverage.html",)),
     ("wiki reference", "build_wiki.py", ("docs/wiki/",)),
     ("doctrine map", "doctrine_map.py", ("docs/architecture/doctrine-map.html",)),
+    ("rails assumptions", "rails_assumptions.py", ("docs/architecture/rails-assumptions.md", "docs/architecture/rails-assumptions.json")),
+    ("component classes", "component_classes.py", ("docs/architecture/component-classes.html", "docs/architecture/component-classes.json")),
     ("dist/*.skill", "package_core.py", ("dist/",)),
     ("maintainer skill mirrors", "build_maintainer_skills.py", (".claude/skills/",)),
     ("mandated gems", "derive_mandated_gems.py", ("plugins/rails-flow/mandated_gems.json",)),

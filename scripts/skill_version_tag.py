@@ -47,8 +47,20 @@ def carries(manifest_text: str, plugin: str, version: str) -> bool:
         for p in plugins)
 
 
+def plugin_json_carries(text: str, version: str) -> bool:
+    """Whether a plugin.json text is at `version`. Unreadable is False."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return False
+    return isinstance(data, dict) and data.get("version") == version
+
+
 def tags_carrying(repo: Path, plugin: str, version: str) -> list[str]:
-    """Every release tag carrying `plugin` at `version`, oldest first (version sort)."""
+    """Every release tag carrying `plugin` at `version`, oldest first (version sort).
+
+    A tag carries it in its manifest entry (rails-stack before #2182) or in
+    `plugins/<plugin>/.claude-plugin/plugin.json` (every plugin since #2182)."""
     tags = _git(repo, "tag", "--list", "v*", "--sort=v:refname")
     if tags.returncode != 0:
         raise OSError(tags.stderr.strip() or "git tag failed")
@@ -58,6 +70,10 @@ def tags_carrying(repo: Path, plugin: str, version: str) -> list[str]:
         # Early tags predate the manifest; that is "not carried", not an error.
         if shown.returncode == 0 and carries(shown.stdout, plugin, version):
             found.append(tag)
+            continue
+        pj = _git(repo, "show", f"{tag}:plugins/{plugin}/.claude-plugin/plugin.json")
+        if pj.returncode == 0 and plugin_json_carries(pj.stdout, version):
+            found.append(tag)
     return found
 
 
@@ -66,7 +82,11 @@ def first_tag(repo: Path, plugin: str, version: str) -> str | None:
     return found[0] if found else None
 
 
-def differing_trees(repo: Path, tags: list[str], tree: str = "skills") -> list[str]:
+# Where the skills tree is at a tag: inside the rails-stack plugin since #2182, at the root before.
+TREES = ("plugins/rails-stack/skills", "skills")
+
+
+def differing_trees(repo: Path, tags: list[str], tree: str | None = None) -> list[str]:
     """One tag per distinct `tree` after the first tag's -- the first tag that carries it.
 
     One rails-stack version is usually one skills tree, but not always: measured over every tag,
@@ -77,8 +97,12 @@ def differing_trees(repo: Path, tags: list[str], tree: str = "skills") -> list[s
     def tree_id(tag: str) -> str:
         # `--verify -q`: a plain rev-parse ECHOES an argument it cannot resolve, so two tags that
         # both lack the tree would compare as different.
-        got = _git(repo, "rev-parse", "--verify", "-q", f"{tag}:{tree}")
-        return got.stdout.strip() if got.returncode == 0 else ""
+        # A tree is hashed by its content, so skills that only MOVED (#2182) keep the same id.
+        for candidate in (tree,) if tree else TREES:
+            got = _git(repo, "rev-parse", "--verify", "-q", f"{tag}:{candidate}")
+            if got.returncode == 0:
+                return got.stdout.strip()
+        return ""
     if len(tags) < 2:
         return []
     seen = {tree_id(tags[0])}
@@ -221,6 +245,36 @@ def selftest() -> int:
                 os.environ["GIT_CEILING_DIRECTORIES"] = env_before
         check("main(): outside a repository exits 2, not 1", (rc, out.getvalue()) == (2, ""),
               (rc, out.getvalue(), err.getvalue()))
+
+    # #2182: rails-stack became plugins/rails-stack/, so later tags carry its version in plugin.json
+    # and its skills under plugins/rails-stack/skills. Both shapes must resolve, and a tree that only
+    # moved must not be named as different.
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        _git(repo, "init", "-q")
+
+        def snapshot(tag: str, files: dict[str, str]) -> None:
+            for rel, text in files.items():
+                (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+                (repo / rel).write_text(text, encoding="utf-8")
+            _git(repo, "add", "--", *files)
+            fixture_git.run(repo, "commit", "-qm", tag, check=False)
+            _git(repo, "tag", tag)
+
+        snapshot("v1.157.0", {MANIFEST: json.dumps({"plugins": [{"name": "rails-stack", "version": "1.76.0"}]}),
+                              "skills/a/SKILL.md": "rule"})
+        _git(repo, "rm", "-q", "-r", "skills")
+        snapshot("v1.158.0", {MANIFEST: json.dumps({"plugins": [{"name": "rails-stack", "source": "./plugins/rails-stack"}]}),
+                              "plugins/rails-stack/.claude-plugin/plugin.json": json.dumps({"name": "rails-stack", "version": "1.76.0"}),
+                              "plugins/rails-stack/skills/a/SKILL.md": "rule"})
+        snapshot("v1.159.0", {"plugins/rails-stack/.claude-plugin/plugin.json": json.dumps({"name": "rails-stack", "version": "1.77.0"})})
+        check("a version in plugins/<name>/.claude-plugin/plugin.json is found (post-#2182 tag)",
+              first_tag(repo, "rails-stack", "1.77.0") == "v1.159.0", first_tag(repo, "rails-stack", "1.77.0"))
+        check("one version across the move is carried by both shapes",
+              tags_carrying(repo, "rails-stack", "1.76.0") == ["v1.157.0", "v1.158.0"],
+              tags_carrying(repo, "rails-stack", "1.76.0"))
+        check("a skills tree that only moved is not named as a different tree",
+              differing_trees(repo, ["v1.157.0", "v1.158.0"]) == [], differing_trees(repo, ["v1.157.0", "v1.158.0"]))
 
     print(f"skill_version_tag selftest: {checks} check(s)")
     if failures:

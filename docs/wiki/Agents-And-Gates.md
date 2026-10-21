@@ -6,11 +6,13 @@
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
-| `design-flow` | 1.46.2 | 5 | 12 | 5 |
+| `design-flow` | 1.46.3 | 5 | 12 | 5 |
 | `flow-suite` | 1.0.0 | — | — | — |
+| `nextjs-stack` | 0.1.0 | — | — | — |
 | `pipeline` | 1.5.2 | 2 | 9 | 2 |
-| `qa-flow` | 1.38.1 | 11 | 8 | 11 |
-| `rails-flow` | 1.64.0 | 13 | 25 | 13 |
+| `qa-flow` | 1.39.0 | 11 | 8 | 11 |
+| `rails-flow` | 1.65.0 | 13 | 25 | 13 |
+| `rails-stack` | 1.76.1 | — | — | — |
 
 ## Agents
 
@@ -190,6 +192,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | rails-flow where-stopped helper | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/where_stopped.py --selftest` | selftest |
 | rails-flow work order | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --selftest` | selftest |
 | rails-flow worktree guard helper | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/worktree_guard.py --selftest` | selftest |
+| stack detector selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/detect_stack.py --selftest` | selftest |
+| stack manifests valid | `rails-flow` | `python3 plugins/rails-flow/scripts/detect_stack.py --check` | live check |
 | status line | `rails-flow` | `python3 plugins/rails-flow/scripts/statusline.py --selftest` | selftest |
 | worktree teardown wording | `rails-flow` | `python3 plugins/rails-flow/scripts/worktree_teardown.py --check-wording` | live check |
 | agent output contract | `repo` | `python3 scripts/check_agent_output_contract.py` | live check |
@@ -209,6 +213,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | checks.json paths selftest | `repo` | `python3 scripts/check_manifest_paths.py --selftest` | selftest |
 | claude plugin validate --strict | `repo` | `python3 scripts/check_plugin_validate.py` | live check |
 | close-on-dev-merge selftest | `repo` | `python3 scripts/close_on_dev_merge.py --selftest` | selftest |
+| component classes drift | `repo` | `python3 scripts/component_classes.py --check` | live check |
+| component classes selftest | `repo` | `python3 scripts/component_classes.py --selftest` | selftest |
 | component passthrough | `repo` | `python3 scripts/check_component_passthrough.py` | live check |
 | component passthrough selftest | `repo` | `python3 scripts/check_component_passthrough.py --selftest` | selftest |
 | component shapes reconciled | `repo` | `python3 scripts/check_component_shapes.py` | live check |
@@ -262,10 +268,14 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | page pacing | `repo` | `python3 scripts/check_page_pacing.py` | live check |
 | page pacing selftest | `repo` | `python3 scripts/check_page_pacing.py --selftest` | selftest |
 | pid record selftest | `repo` | `python3 scripts/pid_record_selftest.py` | live check |
+| plugin install shape | `repo` | `python3 scripts/check_plugin_install_shape.py` | live check |
+| plugin install shape selftest | `repo` | `python3 scripts/check_plugin_install_shape.py --selftest` | selftest |
 | plugin validate selftest | `repo` | `python3 scripts/check_plugin_validate.py --selftest` | selftest |
 | published blocks | `repo` | `python3 scripts/check_published_blocks.py` | live check |
 | published blocks selftest | `repo` | `python3 scripts/check_published_blocks.py --selftest` | selftest |
 | python floor selftest | `repo` | `python3 scripts/check_python_floor.py --selftest` | selftest |
+| rails assumptions drift | `repo` | `python3 scripts/rails_assumptions.py --check` | live check |
+| rails assumptions selftest | `repo` | `python3 scripts/rails_assumptions.py --selftest` | selftest |
 | registry reader parity | `repo` | `python3 scripts/check_registry_reader_parity.py` | live check |
 | registry reader parity selftest | `repo` | `python3 scripts/check_registry_reader_parity.py --selftest` | selftest |
 | release notes complete | `repo` | `python3 scripts/extract_release_notes.py --check --all-tags` | live check |
@@ -282,6 +292,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | skill routing | `repo` | `python3 scripts/check_skill_routing.py` | live check |
 | skill routing selftest | `repo` | `python3 scripts/check_skill_routing.py --selftest` | selftest |
 | skill version tag selftest | `repo` | `python3 scripts/skill_version_tag.py --selftest` | selftest |
+| stack markers detect their projects | `repo` | `python3 scripts/check_stack_markers.py` | live check |
 | status board record readers | `repo` | `python3 scripts/check_coordination_readers.py` | live check |
 | status board record readers selftest | `repo` | `python3 scripts/check_coordination_readers.py --selftest` | selftest |
 | structural grid | `repo` | `python3 scripts/check_structural_grid.py` | live check |
@@ -355,4 +366,4 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `doc-updater` | mechanical | `architecture_graph.py` regenerates and its digest guard fails on drift |
 | `adversary` | adversarial | — |
 
-Manifest cross-check: the 5 plugin directories inventoried are exactly the ones marketplace.json installs.
+Manifest cross-check: the 7 plugin directories inventoried are exactly the ones marketplace.json installs.

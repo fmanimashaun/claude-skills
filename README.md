@@ -23,6 +23,7 @@ Then add the flows you want:
 /plugin install design-flow@claude-skills     # UI, design system, assets
 /plugin install qa-flow@claude-skills         # independent QA
 /plugin install pipeline@claude-skills        # release lifecycle
+/plugin install nextjs-stack@claude-skills    # Next.js + Supabase + Vercel stack
 ```
 
 Or take rails-flow, qa-flow and pipeline in one step. `flow-suite` is a bundle whose manifest only declares them as dependencies, and installing a plugin installs its dependencies ([docs](https://code.claude.com/docs/en/plugins/dependencies#bundle-plugins-for-a-team)):
@@ -50,7 +51,7 @@ Settings → Capabilities → Skills. Each is self-contained.
 
 ```bash
 git clone https://github.com/fmanimashaun/claude-skills.git /tmp/cs
-mkdir -p .claude/skills && cp -R /tmp/cs/skills/* .claude/skills/
+mkdir -p .claude/skills && cp -R /tmp/cs/plugins/rails-stack/skills/* .claude/skills/
 ```
 
 **For every project.** Same copy, into `~/.claude/skills/` instead.
@@ -72,6 +73,7 @@ you actually got — installed versions drift from what you think you installed 
 | **design-flow** | UI and design system work — components, tokens, audits, a curated asset library, and an optional pen.dev tier for exploring screens visually before any code is written. |
 | **qa-flow** | An **independent** QA engineer that treats the developer's claims as unverified and produces evidence. |
 | **pipeline** | Build → verify → certify → release, with circuit breakers for unattended runs. |
+| **nextjs-stack** | The Next.js + Supabase + Vercel stack: how the three fit together, pointing to Vercel's official plugin, the Next.js skills and `supabase/agent-skills` for each platform's own guidance. It declares the stack's markers for the stack detector. |
 
 ### The seven skills in `rails-stack`
 
@@ -175,8 +177,8 @@ maintainer would otherwise have to ask for.
 ## Repository layout
 
 ```
-skills/              the seven skills — the doctrine that ships
-plugins/             rails-flow · qa-flow · pipeline · design-flow
+plugins/             rails-stack (the seven skills — the doctrine that ships) · rails-flow · qa-flow ·
+                     pipeline · design-flow · flow-suite
 dist/                packaged .skill files for claude.ai
 docs/                architecture, coverage and wiki pages
 scripts/             the gates that keep all of the above honest

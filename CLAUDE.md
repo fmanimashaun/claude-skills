@@ -14,7 +14,7 @@ holds the harness-neutral rules (measure before you assert; write the mechanism 
 - **Distributed (what users install):** the plugins in `.claude-plugin/marketplace.json` —
   `rails-stack` (bundling the `rails-8`, `hotwire`, `design-system`, `code-review`, `quality-pass`,
   `derived-artifacts` and `parallel-session-lane` skills), `rails-flow`, `qa-flow`, `pipeline`,
-  `design-flow`, `flow-suite` (a manifest-only bundle of the first three flows) — plus `dist/*.skill` for claude.ai upload. Keep this list in step with the manifest;
+  `design-flow`, `flow-suite` (a manifest-only bundle of the first three flows), `nextjs-stack` (the Next.js + Supabase + Vercel stack) — plus `dist/*.skill` for claude.ai upload. Keep this list in step with the manifest;
   `lint_self_consistency.py`'s `undocumented-plugin` rule catches a plugin named **nowhere**, and
   cannot tell that the mention is in this list rather than in prose.
 - **Not distributed (maintainer tooling):** everything under `.claude/` — commands, agents, one skill
@@ -35,10 +35,10 @@ holds the harness-neutral rules (measure before you assert; write the mechanism 
 4. Branch `fix/*` or `feature/*` **off `dev`** → *Git flow*.
 5. Every check you add must be able to fail: a `--selftest`, and a guard (see the two roots below).
 6. Edited a command or skill? `python3 scripts/lint_markdown_shell.py` and `lint_markdown_code.py`.
-   Edited `skills/**`? `python3 scripts/package_core.py`, commit the `dist/` change → *Packaging*.
+   Edited `plugins/rails-stack/skills/**`? `python3 scripts/package_core.py`, commit the `dist/` change → *Packaging*.
 7. CHANGELOG **fragment** `changelog.d/<issue>-<slug>.md` (required: a bullet added straight to `### Unreleased` is refused by the `changelog direct bullets` gate, #1841), naming a path in backticks → *Versioning*.
 8. Run the sweep locally — `python3 scripts/maintainer_doctor.py --gates-only --fast` (~45 s) — and
-   review your own diff against `skills/code-review/SKILL.md` → *Verify our own claims*.
+   review your own diff against `plugins/rails-stack/skills/code-review/SKILL.md` → *Verify our own claims*.
 9. PR **into `dev`**, a line `Fixes #n` per issue it completes (`Refs #n` if partial), **no version bump** → *Git flow*.
 10. Merge on green. A fix that lands after an arm and before its promotion is **folded** into the
     armed block, never left `Unreleased` and never re-armed → *Versioning*.
@@ -150,8 +150,8 @@ same failure conditions.
   what a user can install (#143/#144).
 - Notes for unshipped work are a fragment, `changelog.d/<issue>-<slug>.md`, that the arm folds under **`### Unreleased`**; the
   bullet names a path it changed in backticks (`changelog-bullet-unplaceable`); a late one is `--fold --into <tag>`.
-- At the arm: components version **independently** — skill content → the rails-stack `version` in
-  `marketplace.json`; a plugin's code → its `plugin.json`; always `metadata.version`. Patch for fixes,
+- At the arm: components version **independently** — skill content → the version in
+  `plugins/rails-stack/.claude-plugin/plugin.json`; a plugin's code → its `plugin.json`; always `metadata.version`. Patch for fixes,
   minor for capabilities. **Every bump gets a CHANGELOG entry**.
 - **One `### … (release vX.Y.Z)` block per COMPONENT that this promotion bumps**, every heading naming
   the tag that ships. `extract_release_notes.py --check --all-tags` refuses a heading for a tag that
@@ -189,21 +189,21 @@ a floor, not a ceiling.
 The recurring class is **claims-vs-enforcement**: a guarantee stated in prose that nothing makes true.
 `python3 scripts/lint_self_consistency.py` is the mechanical half (dead settings keys, unenforced flags,
 `undocumented-plugin`, unbounded `gh` queries, broken doc pointers, and the rest — `--selftest` names
-every rule). The judgement half is the shipped `code-review` skill (`skills/code-review/SKILL.md`):
+every rule). The judgement half is the shipped `code-review` skill (`plugins/rails-stack/skills/code-review/SKILL.md`):
 `carve-out-without-negative-test`, `coverage-gap`, `doctrine-contradiction`, `unverified-negative`,
 `gate-that-cannot-fail`. Read it against your own diff first. When you find one contradiction, grep
 for the pattern — the class travels in groups.
 
-The **quality pass** (`skills/quality-pass/SKILL.md`) is a second, advisory pass — reuse,
+The **quality pass** (`plugins/rails-stack/skills/quality-pass/SKILL.md`) is a second, advisory pass — reuse,
 simplification, efficiency, altitude — and **never blocks a merge**. Its worked example
-(`skills/quality-pass/references/worked-example.md`) records the decision *not to extract* with the
+(`plugins/rails-stack/skills/quality-pass/references/worked-example.md`) records the decision *not to extract* with the
 measurement behind it; `scripts/check_shared_shapes.py` refuses only a number there disagreeing with
 the repo, and must not be "strengthened" into refusing copies.
 
 ## Packaging (skills)
 
 `scripts/package_core.py` is the one `.skill` builder: ZIP_STORED, pinned `create_system`, normalised
-line endings, binaries detected git's way (a NUL in the first 8000 bytes). After any `skills/**` edit
+line endings, binaries detected git's way (a NUL in the first 8000 bytes). After any `plugins/rails-stack/skills/**` edit
 run it and commit only the intended `dist/` change. The CI drift guard fails a release whose committed
 `dist/` is not a clean build. `--selftest` proves CRLF == LF output.
 

@@ -91,7 +91,7 @@ MUST_NOT_IGNORE = (
     "scripts/build_coverage.py",                    # not everything is ignored
     f"{CORPORA_DIR}-notes/README.md",               # exact name, not a prefix
     "docs/flowbite-notes.md",                       # `/flowbite*` is root-anchored
-    "skills/design-system/references/coverage.md",   # the drift guard needs this committed
+    "plugins/rails-stack/skills/design-system/references/coverage.md",   # the drift guard needs this committed
 )
 
 GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -128,7 +128,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # which is exactly how the README came to name version 1.3.1 while the marketplace shipped 1.80.
     ("wiki reference drift", ("python3", "scripts/build_wiki.py", "--check")),
     ("wiki reference selftest", ("python3", "scripts/build_wiki.py", "--selftest")),
-    # #1004: `.claude/skills/**` is DERIVED from `skills/**`, because this repository's own sessions
+    # #1004: `.claude/skills/**` is DERIVED from `plugins/rails-stack/skills/**`, because this repository's own sessions
     # load `remember` and nothing else — so the parallel-session doctrine reached every consumer
     # except the maintainers who then collided over it four times in a day. One source, one derived
     # copy, and a gate so the copy cannot quietly stop matching: two homes for one rule is the
@@ -263,8 +263,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # duplication gate — nothing here refuses a copy. It refuses a number in shipped doctrine
     # disagreeing with the repo, exactly as the tier gates below reconcile a table against agents.
     ("shared shapes", ("python3", "scripts/check_shared_shapes.py")),
+    ("rails assumptions drift", ("python3", "scripts/rails_assumptions.py", "--check")),
+    ("component classes drift", ("python3", "scripts/component_classes.py", "--check")),
     ("worktree teardown wording", ("python3", "plugins/rails-flow/scripts/worktree_teardown.py", "--check-wording")),
     ("shared shapes selftest", ("python3", "scripts/check_shared_shapes.py", "--selftest")),
+    ("rails assumptions selftest", ("python3", "scripts/rails_assumptions.py", "--selftest")),
+    ("component classes selftest", ("python3", "scripts/component_classes.py", "--selftest")),
     # #92 (Phase 5), and the same shape a third time: `page-anatomies.md` -> How a page is paced
     # states a count measured from `coverage.md`, a band range, and a worked sequence whose whole
     # point is that consecutive bands differ. NOT a design gate — nothing here judges a sequence.
@@ -284,6 +288,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("structural grid selftest", ("python3", "scripts/check_structural_grid.py", "--selftest")),
     ("packaging determinism", ("python3", "scripts/package_core.py", "--selftest")),
     ("rails-flow self-consistency", ("python3", "plugins/rails-flow/scripts/self_consistency.py", "--selftest")),
+    # #2163: the stack detector proves itself (a fixture per stack, a combined project, an empty one, and every bad manifest).
+    ("stack detector selftest", ("python3", "plugins/rails-flow/scripts/detect_stack.py", "--selftest")),
+    # #2181: every stack manifest this repo ships is readable, judgeable, and declares only descriptor keys of their declared shape (descriptor-key-undeclared).
+    ("stack manifests valid", ("python3", "plugins/rails-flow/scripts/detect_stack.py", "--check")),
     # The mods rails-flow ships, under plain Node with a hand-built host (#1547). `claude plugin test` is the
     # engine-integration check and needs the `claude` CLI, which the gate runners do not have.
     ("mod unit tests", ("python3", "plugins/rails-flow/scripts/check_mods.py")),
@@ -599,6 +607,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1881 (slice 1 of #1683): what each shipped plugin costs every session before anything is invoked, ratcheted.
     ("always-on cost", ("python3", "scripts/check_always_on_cost.py")),
     ("always-on cost selftest", ("python3", "scripts/check_always_on_cost.py", "--selftest")),
+    # #2165 (e6's review of #2198): the SHIPPED stack markers detect hand-written Next.js, Supabase and Vercel projects. `detect_stack.py --check`
+    # validates a manifest's shape; this catches a well-formed typo (`next` -> `nxt`) that matches no real project.
+    ("stack markers detect their projects", ("python3", "scripts/check_stack_markers.py")),
     ("hook output budget", ("python3", "scripts/check_hook_output_budget.py")),
     # #1887. Third-party SessionStart hooks are reported, not gated (we do not ship them); the report's own logic is a gate.
     ("third-party hooks report selftest", ("python3", "scripts/report_third_party_hooks.py", "--selftest")),
@@ -647,6 +658,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("sweep proof wiring", ("python3", "scripts/sweep_proof.py", "check-wiring")),
     ("vendored alone", ("python3", "scripts/check_vendored_alone.py")),
     ("vendored alone selftest", ("python3", "scripts/check_vendored_alone.py", "--selftest")),
+    ("plugin install shape", ("python3", "scripts/check_plugin_install_shape.py")),
+    ("plugin install shape selftest", ("python3", "scripts/check_plugin_install_shape.py", "--selftest")),
     # #1556. How a process-group fixture learns its gate's pids: atomically, and waited for.
     ("pid record selftest", ("python3", "scripts/pid_record_selftest.py")),
 )
@@ -1179,7 +1192,7 @@ class Doctor:
         git stores a symlink as mode 120000 — so none of the three matched, and all three sat
         UNTRACKED in the guard written to hide them, directly under doctrine warning about
         656 MB of licensed blobs the rule could not actually stop. That is
-        `claims-vs-enforcement` from skills/code-review/SKILL.md, so it is re-checked by script
+        `claims-vs-enforcement` from plugins/rails-stack/skills/code-review/SKILL.md, so it is re-checked by script
         rather than remembered.
 
         Asserted in a THROWAWAY repo seeded with our `.gitignore`, against paths that DO NOT

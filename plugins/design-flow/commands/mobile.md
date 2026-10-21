@@ -7,7 +7,7 @@ disable-model-invocation: true
 # /design-flow:mobile — $ARGUMENTS
 
 Add the **web side** of Hotwire Native parity so the same UI runs in the native shells with
-correct chrome. Delegate to **ui-composer**; follow `skills/design-system/references/mobile.md`
+correct chrome. Delegate to **ui-composer**; follow rails-stack's `skills/design-system/references/mobile.md`
 (doctrine) + `mobile-reference-implementation.md` (code). This is Phase 2 — web is already done;
 this does NOT modify any native app repo (Kotlin/Swift shells live there).
 

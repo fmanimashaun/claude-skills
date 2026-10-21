@@ -6,14 +6,13 @@
   },
   "metadata": {
     "description": "Rails 8 & Hotwire development skills — vanilla-first stack, pure RSpec, Turbo/Stimulus/Hotwire Native, OpenAPI via rswag, ruby_llm, Kamal 2",
-    "version": "1.157.6"
+    "version": "1.158.0"
   },
   "plugins": [
     {
       "name": "rails-stack",
-      "version": "1.76.0",
       "description": "Rails 8.1 + Hotwire development doctrine: vanilla-first stack, pure RSpec testing, Turbo/Stimulus/Hotwire Native, OpenAPI docs via rswag, ruby_llm AI features, Kamal 2 deployment, plus the design system (tokens, layout primitives, component catalog), review doctrine for the defect class authors are blind to — code that does not do what its own docs, config and project rules claim — and an advisory quality pass (reuse, simplification, efficiency, altitude) that runs second and never blocks a merge. Bundles the rails-8, hotwire, design-system, code-review, quality-pass, derived-artifacts and parallel-session-lane skills.",
-      "source": "./",
+      "source": "./plugins/rails-stack",
       "strict": false,
       "skills": [
         "./skills/rails-8",
@@ -140,6 +139,24 @@
         "rails",
         "qa",
         "pipeline"
+      ],
+      "category": "development"
+    },
+    {
+      "name": "nextjs-stack",
+      "description": "Next.js + Supabase + Vercel stack, 0.1.0, an early release: conventions for how the three fit together, and the stack's markers for the stack detector. feature/fix/review still lean on the Rails-flavoured agents. Platform knowledge stays in Vercel's official plugin (vercel-plugin) and Supabase's supabase/agent-skills, which it points to rather than copies.",
+      "source": "./plugins/nextjs-stack",
+      "author": {
+        "name": "Fisayo Animashaun",
+        "url": "https://github.com/fmanimashaun/claude-skills"
+      },
+      "homepage": "https://github.com/fmanimashaun/claude-skills#readme",
+      "repository": "https://github.com/fmanimashaun/claude-skills",
+      "license": "MIT",
+      "keywords": [
+        "nextjs",
+        "supabase",
+        "vercel"
       ],
       "category": "development"
     }

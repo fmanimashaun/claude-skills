@@ -8,7 +8,7 @@ Read in full: `DRAFT-implementation-issue.md` (43 lines) and `research-write-too
 **Verdict: file it after the four MUST-FIX points below. The research is careful and labelled; the problems are in how the epic is split into one-PR children, and in two stale facts.**
 
 ## What I re-measured (all hold unless noted)
-- `skills/rails-8/references/mcp-server.md` is 96 lines; §3's "Write tools are a separate, later decision" is at line 66; `mcp` gem `v1.6.0` at line 17; the §4 proof "No tool writes: run every registered tool and assert that no table's row count changed" at line 88. ✔
+- `plugins/rails-stack/skills/rails-8/references/mcp-server.md` is 96 lines; §3's "Write tools are a separate, later decision" is at line 66; `mcp` gem `v1.6.0` at line 17; the §4 proof "No tool writes: run every registered tool and assert that no table's row count changed" at line 88. ✔
 - `check_mcp_annotations.py` docstring: requires `read_only_hint` and `open_world_hint` explicit, "TWO of them" (lines 2, 16). ✔ (Behaviour on `read_only_hint: false` is from the docstring, not a run; the draft states it as fact. See point 6.)
 - The downstream app's specs pin all four hints. ✔
 - **STALE:** the downstream app's CLI code is now on that app's main development branch. The draft and the research say it is not.

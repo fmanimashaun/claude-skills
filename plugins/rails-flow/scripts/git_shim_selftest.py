@@ -12,6 +12,7 @@ Global and system git config are isolated: a maintainer's own aliases or `core.h
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -621,16 +622,23 @@ def _(base):
 
 ALLOWED_KEYS = ("maintenance.auto", "gc.auto", "user.name", "user.email", "commit.gpgsign", "init.defaultbranch")
 PAIRS_OK = (("core.fsmonitor", "false"), ("core.hooksPath", "/dev/null"), ("core.quotePath", "false"), ("tag.gpgSign", "false"), ("credential.helper", ""),
-            ("credential.helper", "!gh auth git-credential"), ("CORE.FSMONITOR", "false"), ("Core.HooksPath", "/dev/null"), ("TAG.GPGSIGN", "false"))
-PAIRS_REFUSED = (("core.fsmonitor", "true"), ("core.fsmonitor", "/tmp/x"), ("core.fsmonitor", "False"), ("core.fsmonitor", "false "), ("core.fsmonitor", ""), ("core.fsmonitor", "0"),
+            ("credential.helper", "!gh auth git-credential"), ("CORE.FSMONITOR", "false"), ("Core.HooksPath", "/dev/null"), ("TAG.GPGSIGN", "false"),
+            # #2129: the exact pair Claude Code's own marketplace refresh sets (GIT_CONFIG_KEY_0=credential.interactive, VALUE_0=false), and its other boolean spelling
+            ("credential.interactive", "false"), ("Credential.Interactive", "false"), ("core.fsmonitor", ""), ("CORE.FSMONITOR", ""))
+PAIRS_REFUSED = (("core.fsmonitor", "true"), ("core.fsmonitor", "/tmp/x"), ("core.fsmonitor", "False"), ("core.fsmonitor", "false "), ("core.fsmonitor", "0"),
                  ("core.hooksPath", "/dev/null/"), ("core.hooksPath", "/dev/nulL"), ("core.hooksPath", ""), ("core.hooksPath", ".git/hooks"), ("core.hooksPath", "/dev/null "),
                  ("core.quotePath", "true"), ("core.quotePath", "false "), ("core.quotePath", ""), ("tag.gpgSign", "true"), ("tag.gpgSign", ""),
                  ("credential.helper", "x"), ("credential.helper", "!gh auth git-credential --evil"), ("credential.helper", "!gh auth git-credential "),
                  ("credential.helper", "! gh auth git-credential"), ("credential.helper", "!GH auth git-credential"), ("credential.helper", " "),
-                 ("credential.helper", "!gh auth git-credential; touch /tmp/x"), ("core.pager", "cat"), ("core.editor", "true"), ("core.sshCommand", "false"))
+                 ("credential.helper", "!gh auth git-credential; touch /tmp/x"), ("core.pager", "cat"), ("core.editor", "true"), ("core.sshCommand", "false"),
+                 # #2129: credential.interactive takes `false` and nothing else (`true` would switch prompting back on; git itself refuses `never` and `auto` as a boolean)
+                 ("credential.interactive", "true"), ("credential.interactive", "never"), ("credential.interactive", "auto"), ("credential.interactive", "False"), ("credential.interactive", "0"), ("credential.interactive", ""),
+                 ("credential.interactive", " false"), ("credential.interactive", "false "), ("credential.interactive", "!touch /tmp/x"))
 REFUSED_KEYS = ("core.pager", "core.editor", "credential.helper", "gpg.program", "core.fsmonitor", "core.sshCommand", "core.hooksPath", "include.path", "includeIf.gitdir:/x/.path",
                 "diff.external", "core.autocrlf", "alias.p", "filter.evil.clean", "core.askPass", "sequence.editor", "user.name.x", "user.namex", "user.nam", "xuser.name",
-                "gc.autoDetach", "commit.gpgsign.x", "user.email ", " user.email")
+                "gc.autoDetach", "commit.gpgsign.x", "user.email ", " user.email",
+                # #2129: a neighbour of the admitted key is not the key
+                "credential.interactive.x", "credential.interactiv", "credential.interactivex", "credential.useHttpPath", "credential.https://example.com.interactive")
 
 
 @case("shim: the config a command may carry is an ALLOWLIST of exact keys, in all three forms: GIT_CONFIG_KEY_n, -c and --config-env (#1982)")
@@ -692,6 +700,83 @@ def _(base):
     identity = [a.split("=")[0] for a in fixture_git.IDENTITY if "=" in a]
     for k in identity:
         check(label, k.lower() in ALLOWED_KEYS, f"fixture_git.IDENTITY passes {k!r} with -c, which the shim's allowlist does not admit")
+
+
+CLAUDE_CODE_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "claude_code_git_config.json"
+
+
+@case("shim: every pair Claude Code's own git calls carry is admitted exactly, only on a command that runs no hook, and nothing near it is (#2129)")
+def _(base):
+    label = "shim: every pair Claude Code's own git calls carry is admitted exactly, only on a command that runs no hook, and nothing near it is (#2129)"
+    r = Repo(base, "ccfg")
+    calls = json.loads(CLAUDE_CODE_FIXTURE.read_text(encoding="utf-8"))["calls"]
+    check(label, len(calls) == 3 and sorted(len(c["env_pairs"]) for c in calls) == [37, 37, 38], f"the capture is not the three measured calls: {[(len(c['env_pairs']), len(c['c_pairs'])) for c in calls]}")
+
+    def argv(call):
+        return [a.replace("{tmpdir}", str(base)).replace("{remote}", str(r.work)) for a in call["argv_after_config"]]
+
+    def env_of(pairs):
+        env = {"GIT_CONFIG_COUNT": str(len(pairs))}
+        for i, (k, v) in enumerate(pairs):
+            env[f"GIT_CONFIG_KEY_{i}"], env[f"GIT_CONFIG_VALUE_{i}"] = k, v
+        return env
+
+    def c_args(pairs):
+        out = []
+        for k, v in pairs:
+            out += ["-c", f"{k}={v}"]
+        return out
+
+    # THE FULL SET, as measured, on the command it came with: admitted (git may still answer its own way, e.g. an empty --get-regexp), never refused by the shim, in the env form and the -c form
+    for n, call in enumerate(calls):
+        for form, pre, env in (("env", [], env_of(call["env_pairs"])), ("-c", c_args(call["c_pairs"]), {})):
+            p = r.g(*pre, *argv(call), env=env)
+            check(label, "git-shim" not in p.stderr, f"call {n} ({form}) {argv(call)[:3]} was refused: exit {p.returncode}: {p.stderr.strip()[:200]}")
+    # THE HOOK PAIRS SWITCH HOOKS OFF, so the same full set on a command that RUNS hooks is refused for that reason (commit, push, merge, ...)
+    full = calls[0]
+    for sub in ("commit", "push", "merge", "rebase", "checkout", "cherry-pick", "am", "add"):
+        for form, pre, env in (("env", [], env_of(full["env_pairs"])), ("-c", c_args(full["c_pairs"]), {})):
+            p = r.g(*pre, sub, "--dry-run", env=env)
+            check(label, p.returncode != 0 and "git-shim" in p.stderr and "runs no hook" in p.stderr, f"the full set through {form} on `{sub}` was not refused for the hooks reason: exit {p.returncode}: {p.stderr.strip()[:160]}")
+
+    admitted = {(k.lower(), v) for c in calls for k, v in (*c["env_pairs"], *c["c_pairs"])}
+    admitted |= {("core.fsmonitor", "false"), ("core.hookspath", "/dev/null")}
+    distinct = sorted({(k, v) for c in calls for k, v in (*c["env_pairs"], *c["c_pairs"])})
+    check(label, len(distinct) == 44, f"the capture holds {len(distinct)} distinct pairs, not the measured 44")
+
+    def variants(k, v):
+        """What sits next to one admitted pair: another value, a neighbouring key, never the pair itself."""
+        out = [(k, v + " "), (k, " " + v), (k, v + "x"), (k, "x")] if k.lower() not in ALLOWED_KEYS else []   # gc.auto and maintenance.auto take ANY value since #1982: only their neighbouring KEYS are rows here
+        if v and k.lower() not in ALLOWED_KEYS:
+            out += [(k, ""), (k, v.upper() if v.upper() != v else v.capitalize())]
+        if v == "false" and k.lower() not in ALLOWED_KEYS:
+            out += [(k, "true"), (k, "0"), (k, "no")]
+        out += [(k + "x", v), (k[:-1], v), (k + ".x", v), (k.replace(".", "_"), v), ("x" + k, v)]
+        if k.startswith("hook."):
+            name = k[len("hook."):-len(".enabled")]
+            out += [(f"hook.{name}x.enabled", v), (f"hook.{name}.enabledx", v), (f"hook.{name}.command", "true"), (f"hook.{name}.event", "pre-commit"), ("hook..enabled", v), ("hook.enabled", v)]
+        return [(a, b) for a, b in out if (a.lower(), b) not in admitted]
+
+    for k, v in distinct:
+        for vk, vv in variants(k, v):
+            for form, args, env in (("GIT_CONFIG_KEY_0", ("status",), env_of([(vk, vv)])), ("-c", ("-c", f"{vk}={vv}", "status"), {})):
+                p = r.g(*args, env=env)
+                check(label, p.returncode != 0 and "git-shim" in p.stderr, f"{vk}={vv!r} (next to {k}={v!r}) through {form} was not refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
+    # core.sshCommand is the one pair that names a program: ONLY the exact measured value, not `ssh`, not a different program, not the value with anything added
+    ssh = "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes"
+    for bad in ("ssh", "/usr/bin/ssh", ssh + " -o ProxyCommand=x", ssh + ";id", "ssh -o BatchMode=no -o StrictHostKeyChecking=yes", "sh -c id", ""):
+        for form, args, env in (("GIT_CONFIG_KEY_0", ("status",), env_of([("core.sshCommand", bad)])), ("-c", ("-c", f"core.sshCommand={bad}", "status"), {})):
+            p = r.g(*args, env=env)
+            check(label, p.returncode != 0 and "git-shim" in p.stderr, f"core.sshCommand={bad!r} through {form} was not refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
+    # the hook names are an exact list of 28, not a pattern: a hook the list lacks is refused, and each listed one is admitted alone on a hook-free command and refused on a committing one
+    for name in ("pre-commit", "pre-push", "post-index-change", "p4-pre-submit"):
+        ok = r.g("status", env=env_of([(f"hook.{name}.enabled", "false")]))
+        check(label, "git-shim" not in ok.stderr, f"hook.{name}.enabled=false was refused on `status`: {ok.stderr.strip()[:120]}")
+        bad = r.g("commit", "--dry-run", env=env_of([(f"hook.{name}.enabled", "false")]))
+        check(label, bad.returncode != 0 and "runs no hook" in bad.stderr, f"hook.{name}.enabled=false on `commit` was not refused for the hooks reason: {bad.stderr.strip()[:120]}")
+    for name in ("pre-commit-extra", "post-update2", "PRE_COMMIT", "pre-commit ", ""):
+        p = r.g("status", env=env_of([(f"hook.{name}.enabled", "false")]))
+        check(label, p.returncode != 0 and "git-shim" in p.stderr, f"hook.{name!r}.enabled=false was not refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
 
 
 @case("shim: a hermetic fixture may stage its OWN temp repository whole, under every condition of the exemption (#1982, decision (b))")

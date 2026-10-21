@@ -2386,14 +2386,14 @@ def guard_claims_fixtures() -> None:
 
     CREATE = "gh pr create --base dev --body-file BODY"
     check("guard-claims: a skills/** PR naming no change type is blocked",
-          run_in_repo(CREATE, "Tidy the wording.\n", "skills/rails-8/references/x.md") == 2, said())
+          run_in_repo(CREATE, "Tidy the wording.\n", "plugins/rails-stack/skills/rails-8/references/x.md") == 2, said())
     # MUST PASS, both declarations. A rule that accepted neither would block every skill PR.
     check("guard-claims: ...unless it says framework claim",
           run_in_repo(CREATE, "Change type: a framework claim, verified against the docs.\n",
-                      "skills/rails-8/references/x.md") == 0, said())
+                      "plugins/rails-stack/skills/rails-8/references/x.md") == 0, said())
     check("guard-claims: ...or architecture decision",
           run_in_repo(CREATE, "Our own design — an architecture decision.\n",
-                      "skills/rails-8/references/x.md") == 0, said())
+                      "plugins/rails-stack/skills/rails-8/references/x.md") == 0, said())
     # SCOPE: a PR touching no skill is not subject to the rule, whatever its body says.
     check("guard-claims: a PR touching no skill needs no change type",
           run_in_repo(CREATE, "Tidy the wording.\n", "scripts/x.py") == 0, said())

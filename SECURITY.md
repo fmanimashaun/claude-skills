@@ -46,7 +46,7 @@ small project maintained by one person; those are intentions, not an SLA.
 - **`.github/workflows/**` and `plugins/*/hooks/**`** — `release.yml` publishes, and the hooks run
   automatically inside a user's Claude Code session. A workflow that trusts an untrusted input, or
   a hook that executes attacker-controlled content, is in scope.
-- **Shipped skill content (`skills/**`, `plugins/**/*.md`)** where it instructs an agent to run
+- **Shipped skill content (`plugins/rails-stack/skills/**`, `plugins/**/*.md`)** where it instructs an agent to run
   something dangerous — for example a snippet a reader is told to paste that would exfiltrate a
   credential or silence a verification. Doctrine is executable by a model, which is what makes this
   a security surface and not just an editorial one.

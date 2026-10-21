@@ -1,7 +1,7 @@
 # doctrine-verifier verdicts for #2058 (a worktree teardown that drops its databases), 2026-10-14
 
 One read-only verifier run (the `doctrine-verifier` protocol, `WebFetch` of the pages below on 2026-10-14). The edits in
-`skills/parallel-session-lane/SKILL.md` and `references/one-issue-at-a-time.md` state only what a CONFIRMED row supports; the
+`plugins/rails-stack/skills/parallel-session-lane/SKILL.md` and `references/one-issue-at-a-time.md` state only what a CONFIRMED row supports; the
 design of the teardown itself (which processes, which databases, what it refuses) is ours, decided by the owner rule recorded on
 #2058 ("a worktree teardown must drop its databases and stop its processes; we should never have a leftover database",
 relayed by claude-skills-72, 2026-10-14), not an external claim.

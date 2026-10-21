@@ -8,7 +8,7 @@ GUARD = Guard(
     name="derive_tenancy_cop",
     subject="scripts/derive_tenancy_cop.py",
     selftest="scripts/derive_tenancy_cop.py",
-    needs=("skills/rails-8/references/multi-tenancy.md",),
+    needs=("plugins/rails-stack/skills/rails-8/references/multi-tenancy.md",),
     mutations=(
         Mutation(
             "a hollow cop fence (no lookup list) derives as if it were the cop",

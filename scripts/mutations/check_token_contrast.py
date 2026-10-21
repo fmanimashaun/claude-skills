@@ -13,7 +13,7 @@ GUARD = Guard(
     # It reads the doctrine file and every shipped pack, and its parity fixtures import the
     # shipped module. Without these the mutant dies on a missing file and every mutation reads
     # as "caught" by a traceback rather than by the fixture named below.
-    needs=("skills/design-system/references/foundations-tokens.md",
+    needs=("plugins/rails-stack/skills/design-system/references/foundations-tokens.md",
            "plugins/design-flow/brands/fidara/theme.css",
            "plugins/design-flow/brands/_template/theme.css",
            "plugins/design-flow/scripts/palette_candidates.py",

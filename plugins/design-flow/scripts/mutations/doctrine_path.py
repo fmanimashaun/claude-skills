@@ -10,8 +10,8 @@ GUARD = Guard(
         # cached rails-stack -- some other project's doctrine.
         Mutation(
             "the machine-wide newest pick returns: the project's install is ignored",
-            "    if mine is not None:\n        return [base / SKILL_REL, mine / SKILL_REL]",
-            "    if False:\n        return [base / SKILL_REL, mine / SKILL_REL]",
+            "    if mine is not None:\n        return [base / CLONE_REL, mine / SKILL_REL]",
+            "    if False:\n        return [base / CLONE_REL, mine / SKILL_REL]",
             "the older project reads its own install",
         ),
         # A projectPath record applies everywhere, so the newest record wins for every project.
@@ -87,7 +87,7 @@ GUARD = Guard(
         Mutation(
             # #1475
             'the cache-layout check is dropped, so a staged copy globs the whole temp root again',
-            '    if base.parent.name != "cache":\n        return [base / SKILL_REL]\n',
+            '    if base.parent.name != "cache":\n        return [base / CLONE_REL]\n',
             '',
             'does not find a sibling tempdir',
         ),

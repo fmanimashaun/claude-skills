@@ -2,7 +2,7 @@
 
 #1004 shipped the generator and its `--selftest` with no guard, so nothing yet proved that selftest
 can fail. Two arms were paid for by a live defect: the stray arm after a hand-copied
-`skills/code-review/SKILL.md` passed a full green sweep (#1006), and the unstaged arm after `--check`
+`plugins/rails-stack/skills/code-review/SKILL.md` passed a full green sweep (#1006), and the unstaged arm after `--check`
 was found reading the working tree while every sibling gate read HEAD (#1008).
 """
 from mutation_types import Guard, Mutation  # noqa: F401
@@ -15,11 +15,11 @@ GUARD = Guard(
     # shipped skill with no derived directory. `code-review` is that skill; without it staged, the
     # stray arm has nothing to copy and the baseline is inert rather than passing.
     needs=("plugins/rails-flow/scripts/fixture_git.py", 
-        "skills/parallel-session-lane/SKILL.md",
-        "skills/code-review/SKILL.md",
+        "plugins/rails-stack/skills/parallel-session-lane/SKILL.md",
+        "plugins/rails-stack/skills/code-review/SKILL.md",
         ".claude/skills/parallel-session-lane/SKILL.md",
         # #1481: the references are mirrored too, so the builder reads both sides of them.
-        "skills/parallel-session-lane/references",
+        "plugins/rails-stack/skills/parallel-session-lane/references",
         ".claude/skills/parallel-session-lane/references",
     ),
     mutations=(
@@ -62,7 +62,7 @@ GUARD = Guard(
         Mutation(
             # #1481
             'a reference the mirrored SKILL.md links is no longer mirrored',
-            '    Path("skills/parallel-session-lane/references/session-identity.md"):\n        Path(".claude/skills/parallel-session-lane/references/session-identity.md"),\n',
+            '    Path("plugins/rails-stack/skills/parallel-session-lane/references/session-identity.md"):\n        Path(".claude/skills/parallel-session-lane/references/session-identity.md"),\n',
             '',
             'which no MIRRORED entry copies',
         ),

@@ -1,0 +1,4 @@
+{"plugin": "nextjs-stack", "stacks": [
+ {"id": "nextjs", "name": "Next.js", "all": [{"package_dependency": "next"}]},
+ {"id": "supabase", "name": "Supabase", "all": [{"file": "supabase/config.toml"}]},
+ {"id": "vercel", "name": "Vercel", "any": [{"file": "vercel.json"}, {"dir": ".vercel"}]}]}

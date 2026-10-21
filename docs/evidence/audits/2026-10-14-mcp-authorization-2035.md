@@ -1,7 +1,7 @@
 # MCP server authorization: the 2026-07-28 spec points and the rate-limit and sanitize MUSTs (#2035, #2034)
 
 Verified 2026-10-14 by `doctrine-verifier`, against the raw source of the **2026-07-28** revision only (every page HTTP 200; no older revision used). The edit is
-`skills/rails-8/references/mcp-server.md` §2, §3 rule 5 and §4.
+`plugins/rails-stack/skills/rails-8/references/mcp-server.md` §2, §3 rule 5 and §4.
 
 | # | Claim | Verdict | Source and verbatim quote | Version boundary |
 |---|---|---|---|---|

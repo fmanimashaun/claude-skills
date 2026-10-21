@@ -1,4 +1,4 @@
-# Stimulus audit: skills/hotwire/references/stimulus.md (+ SKILL.md:46)
+# Stimulus audit: plugins/rails-stack/skills/hotwire/references/stimulus.md (+ SKILL.md:46)
 
 Verified against: hotwired/stimulus tag v3.2.2 source (gh api contents ?ref=v3.2.2), GitHub release notes v3.0.0–v3.2.2, hotwired/stimulus-rails tag v1.3.4. Target: Stimulus 3.2.2 (SKILL.md:46), stimulus-rails 1.3.4. Auditor: doctrine-verifier, 2026-10-12. Read-only.
 

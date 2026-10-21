@@ -113,7 +113,7 @@ GUARD = Guard(
             "core.hooksPath is not forced off, so a repository's pre-commit hook runs",
             'HARD_CONFIG = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",',
             'HARD_CONFIG = ["-c", "core.fsmonitor=false",',
-            "hostile: a repository-local hook",
+            "hostile: a repository-local hook in the directory git resolves",
         ),
         Mutation(
             "the hook is skipped for nothing: every branch is a lane, so main and dev get WIP commits",

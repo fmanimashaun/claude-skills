@@ -5,7 +5,7 @@ WHY THIS EXISTS. design-flow's scripts read doctrine that ships in a different p
 `design-system` skill, bundled in `rails-stack`. Three of them found it by counting `..` hops from
 their own file, and that arithmetic is calibrated for the **marketplace clone**:
 
-    <clone>/plugins/design-flow/scripts/x.py   ->  ../../..  ->  <clone>/skills/design-system/
+    <clone>/plugins/design-flow/scripts/x.py   ->  ../../..  ->  <clone>/plugins/rails-stack/skills/design-system/
 
 From an **install** — which is what `${CLAUDE_PLUGIN_ROOT}` expands to for everyone who did not
 clone — the cache interposes `<plugin>/<version>/`:
@@ -14,9 +14,9 @@ clone — the cache interposes `<plugin>/<version>/`:
     actual:                                       cache/claude-skills/rails-stack/1.45.0/skills/…
 
 **The two shapes differ in DEPTH, not in offset**, so no amount of parent-counting reconciles them.
-That is substrate fact #4 from `/rails-flow:toolchain-check` wearing different clothes: `rails-stack`
-is a skills bundle with **no plugin directory**, so a code plugin and the skills bundle have
-genuinely disjoint cache shapes. A resolver assuming one shape covers both is the same mistake as
+That is substrate fact #4 from `/rails-flow:toolchain-check` wearing different clothes: an installed
+`rails-stack` holds `skills/` at its root, while in the clone it sits under `plugins/rails-stack/`
+(#2182), so the clone and the cache have genuinely disjoint shapes. A resolver assuming one shape covers both is the same mistake as
 reading one version source and calling it the version.
 
 WHY IT IS SHARED. One question — *where is the doctrine* — answered in three files is three chances
@@ -47,7 +47,9 @@ import os
 import re
 from pathlib import Path
 
-SKILL_REL = Path("skills") / "design-system"
+SKILL_REL = Path("skills") / "design-system"  # inside an installed rails-stack plugin
+# In the marketplace clone rails-stack is its own plugin directory (#2182), so the clone path is deeper.
+CLONE_REL = Path("plugins") / "rails-stack" / SKILL_REL
 
 
 def _version_key(name: str) -> tuple:
@@ -146,16 +148,16 @@ def candidates(script: Path) -> list[Path]:
     # ONLY IN A PLUGIN CACHE (#1475). Anywhere else `base` is whatever sits four levels up: for a copy
     # staged under the system temp directory that is the temp root's parent, and the glob walked
     # every other process's tempdir. Measured: 194k entries, 21 s, and `find()` returned ANOTHER
-    # process's `skills/design-system`. The clone needs no glob; its root is `base / SKILL_REL`.
+    # process's `plugins/rails-stack/skills/design-system`. The clone needs no glob; its root is `base / CLONE_REL`.
     if base.parent.name != "cache":
-        return [base / SKILL_REL]
+        return [base / CLONE_REL]
     mine = project_install(base, _project())
     if mine is not None:
-        return [base / SKILL_REL, mine / SKILL_REL]
+        return [base / CLONE_REL, mine / SKILL_REL]
     installed = sorted(
         (p for p in base.glob(str(Path("*") / "*" / SKILL_REL)) if p.is_dir()),
         key=lambda p: _version_key(p.parent.parent.name), reverse=True)
-    return [base / SKILL_REL, *installed]
+    return [base / CLONE_REL, *installed]
 
 
 def find(script: Path) -> Path | None:
@@ -196,7 +198,7 @@ def selftest() -> int:
         check("a copy staged outside a plugin cache does not find a sibling tempdir's skill",
               find(staged / "x.py") is None)
         check("...and tries only its own clone root",
-              candidates(staged / "x.py") == [(Path(td) / "root" / SKILL_REL).resolve()])
+              candidates(staged / "x.py") == [(Path(td) / "root" / CLONE_REL).resolve()])
 
     # THE INSTALLED LAYOUT — the one no fixture exercised until #617, which is why a bug that broke
     # every user could sit behind a green suite. Built as a real tree, because the defect was in how
@@ -212,7 +214,7 @@ def selftest() -> int:
         check(f"...newest version wins (got {got.parent.parent.name if got else None})",
               got is not None and got.parent.parent.name == "1.45.0")
         check("...and the clone root is tried first",
-              candidates(scripts / "x.py")[0] == (cache / SKILL_REL).resolve())
+              candidates(scripts / "x.py")[0] == (cache / CLONE_REL).resolve())
         check("every root is named for an error message",
               describe(scripts / "x.py").count("- ") >= 2)
 
@@ -354,9 +356,9 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory() as td:
         clone = Path(td) / "clone"
         (clone / "plugins" / "design-flow" / "scripts").mkdir(parents=True)
-        (clone / SKILL_REL / "references").mkdir(parents=True)
+        (clone / CLONE_REL / "references").mkdir(parents=True)
         got = find(clone / "plugins" / "design-flow" / "scripts" / "x.py")
-        check("the clone layout resolves", got == (clone / SKILL_REL).resolve())
+        check("the clone layout resolves", got == (clone / CLONE_REL).resolve())
 
     # NOTHING FOUND is None, never a guess. A caller that got a plausible-looking path would read
     # doctrine that is not there and report zero findings.
