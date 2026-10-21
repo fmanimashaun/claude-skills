@@ -265,11 +265,12 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
 
-        def git(*args: str) -> str:
-            return subprocess.run(["git", "-C", td, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", *args],
-                                  capture_output=True, text=True, check=True).stdout.strip()
+        import fixture_git  # noqa: E402  (hermetic: GIT_DIR bound to this temp repo, no maintenance, no system config)
 
-        git("init", "-q", "-b", "dev")
+        def git(*args: str) -> str:
+            return fixture_git.run(td, *args, capture_output=True, text=True).stdout.strip()
+
+        fixture_git.init(td, "-b", "dev")
         # A made-up language `.x` (=open/=close blocks, <<ID heredocs) proves the mechanism with no real language in this script;
         # each stack proves its own syntax with its descriptor's syntax_cases (below).
         _SYNTAX[str(root)] = [{"extensions": [".x"], "block_comments": [{"open": "=open", "close": "=close"}],
