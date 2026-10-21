@@ -5830,10 +5830,10 @@ def selftest() -> int:
     scenario("identical detect_stack copies are silent", rule="detect-stack-drift", expect_finding=False,
              files={c: DS for c in DETECT_STACK_COPIES}, only=check_detect_stack_drift)
     scenario("a detect_stack copy that differs by one byte is a finding", rule="detect-stack-drift",
-             expect_finding=True, files={DETECT_STACK_COPIES[0]: DS, DETECT_STACK_COPIES[1]: DS + "\n"},
-             only=check_detect_stack_drift)
+             expect_finding=True, says="differs from",   # every copy present, so only the compare branch can fire (a missing one would also be a finding)
+             files={**{c: DS for c in DETECT_STACK_COPIES}, DETECT_STACK_COPIES[1]: DS + "\n"}, only=check_detect_stack_drift)
     scenario("a stale design-flow detect_stack copy is a finding", rule="detect-stack-drift", expect_finding=True, says="differs from",
-             files={DETECT_STACK_COPIES[0]: DS, DETECT_STACK_COPIES[1]: DS, DETECT_STACK_COPIES[2]: DS + "\n"}, only=check_detect_stack_drift)
+             files={**{c: DS for c in DETECT_STACK_COPIES}, DETECT_STACK_COPIES[2]: DS + "\n"}, only=check_detect_stack_drift)
     scenario("a missing pipeline detect_stack is a finding", rule="detect-stack-drift", expect_finding=True,
              files={DETECT_STACK_COPIES[0]: DS}, only=check_detect_stack_drift)
     XP = "cross-plugin-relative-path"

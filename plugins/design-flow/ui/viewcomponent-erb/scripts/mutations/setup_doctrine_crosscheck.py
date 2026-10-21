@@ -9,7 +9,7 @@ GUARD = Guard(
     # without it. This guard had no `needs` at all, which is why adding one by searching for the
     # next `needs=(` landed in a neighbouring guard — a reminder that "the next occurrence" is
     # not the same as "this one's".
-    needs=("scripts/doctrine_path.py",),
+    needs=("scripts/doctrine_path.py", "ui/viewcomponent-erb/setup.md"),   # the selftest reads the adapter procedure the default points at (#2185)
     mutations=(
         Mutation(
             "the error direction is disabled — #104 instance 1 ships again",
@@ -87,6 +87,12 @@ GUARD = Guard(
             '        if stripped[:3] in ("```", "~~~"):',
             "        if False:",
             "a fenced code example does not split a step",
+        ),
+        Mutation(
+            "the default setup procedure is the neutral command again, which no longer carries the scaffold",
+            "DEFAULT_SETUP = adapter_setup_path(__file__)",
+            'DEFAULT_SETUP = os.path.join(_DF, "commands", "setup.md")',
+            "the shipped default exists and generates the brand initializer the doctrine reads",
         ),
     ),
 )
