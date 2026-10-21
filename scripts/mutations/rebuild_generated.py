@@ -29,6 +29,7 @@ GUARD = Guard(
         "scripts/extract_release_notes.py",
         "scripts/rails_assumptions.py",           # registered in BUILDERS by #2164
         "scripts/component_classes.py",           # registered in BUILDERS by #2192
+        "scripts/prove_neutral.py",              # excluded from rebuilding by #2205
         "scripts/changelog_fragments.py",         # registered as not-a-generator by #1825; the selftest asserts it exists (#1893)
         "docs/evidence/coverage.html",
         "docs/wiki/",
