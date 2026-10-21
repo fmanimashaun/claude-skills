@@ -76,7 +76,7 @@ No rule ships as advice. Every rule gets one of three enforcements, defined on #
 | 2 | a list's sort/filter/page state is in the URL and survives reload | 1 | route sweep: load, change state, reload, compare | maintainer decision (C8 not cited) |
 | 2 | each destination declares its parent and level; depth within a recorded cap | 2 | record `Nav:` line; script checks the cap. **The cap is an open number, a maintainer decision** | maintainer decision |
 | 2 | a client-side route change moves focus to the new view | 1 | stack-specific crawl, belongs to #2222; neutral page holds the rule | web.dev (C31', pending re-verify) |
-| 3 templates | the record declares one `Template:` from the fixed set; an unknown value is refused | 2 | #2211 record check. **The set is being revised (see below); layer held** | maintainer decision |
+| 3 templates | the record declares one `Template:` from the fixed set; an unknown value is refused | 2 | #2226 (vocabulary in `plugins/rails-flow/reference/mockup-vocabulary.json`) | maintainer decision |
 | 3 | per-template mechanical parts (data table: count shown, five states) | 1 | existing data-table rules where scripted, else new check | maintainer decision (`page-anatomies.md:383`) |
 | 4 regions | no raw layout CSS | 1 | a design-flow gate if one exists (to be measured in phase 2), else new | maintainer decision |
 | 4 | no card inside a card | 1 | **new** rendered-page check (none exists today: `grep -ci nested` on `design-auditor.md` returns 0) | maintainer decision |
@@ -93,9 +93,11 @@ No rule ships as advice. Every rule gets one of three enforcements, defined on #
 
 A rule that cannot yet be placed is not in this table; it is listed under "Open" below until it fits one of the three kinds.
 
-## Page-template set is being revised
+## Page-template set (final, a2 2026-10-21; our maintainer decision, C9)
 
-a2 reports the owner's question about the industry standard: the six templates (list/index, detail, create/edit, dashboard, settings, first-run) do not fully meet it. Direction: add **multi-step** (question, check answers, confirmation), **search results**, **sign-in** and **system pages** (not found, no permission, error, maintenance); move **empty-first-run into the state contract** (layer 5); treat **list-detail as a layout variant**. Layer 3 is held until a2 confirms the final list; the `Template:` check needs it.
+list; detail (list-detail is a layout variant of it); create/edit; multi-step (question, check answers, confirmation, optional task list); dashboard/home; settings; search results; sign-in; system pages (not found, no permission, error, maintenance). **First-run is a state** (layer 5), not a template. Citations only where fetched: see the C9 table in the claims file (GOV.UK for multi-step, sign-in and three system pages; Material 3 and Lightning for detail and list-detail; Salesforce for home); the rest are ours and labelled so. Nav depth cap: **3 levels from the shell**, a maintainer decision.
+
+**One vocabulary, one home.** The allowed values for `Template:`, `Nav:` and `States:` live in `plugins/rails-flow/reference/mockup-vocabulary.json`, read by the mock-up gate (a stack-neutral script cannot read design-flow's files); this framework page cites that path and a repo lint reads it. The validation is issue #2226, a separate PR stacked on #2211 (32 builds it). Kind-3 rows point at #2225 (reviewer verdict record and its refusing script). Caveats from 32: `Nav:` parent is checkable only for grammar and depth until the shell record carries a nav list; `n/a: <reason>` is a typed bypass (non-empty, not true), so the reviewer verdict reads it.
 
 ## External claims this outline would make
 
@@ -105,11 +107,9 @@ Each goes to `doctrine-verifier` before any skill edit; INCONCLUSIVE stays out. 
 
 Decided by a2 on 2026-10-21 (technical calls, recorded for the owner): the state list lives in the mock-up record as a `States:` line beside #2211's `Shell:` line; performance budgets default to the Core Web Vitals "good" thresholds (C33) with a per-project override; modal-driven CRUD leaves the neutral page for Hotwire (#2223, 7e has it as H25/H26); the six templates are a maintainer decision and the set is being revised (above).
 
-Open:
-1. The final template list (a2 confirming with the owner). Layer 3 and the `Template:` check wait on it.
-2. The navigation depth cap (a number; a maintainer decision) for the `Nav:` check.
-3. Whether the record's `Nav:`, `Template:`, `Shell:` and `States:` lines live in #2211's format or a second record; #2211 (32) owns the format.
-4. Which judgement rules (density, content hierarchy, interaction feedback) get a reviewer verdict, and where the verdict record and its refusing script live (the reviewer agent and `checks.json`); needs #2221's design.
+Settled since: the final template list, the nav depth cap (3), the record location (#2211's record, vocabulary file above, validation #2226), and the home for reviewer verdicts (#2225).
+
+Open: the nav-list format in the shell record (decided in #2226).
 
 ## Coordination
 
