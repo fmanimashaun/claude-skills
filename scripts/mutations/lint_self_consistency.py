@@ -1389,8 +1389,8 @@ GUARD = Guard(
         Mutation(
             # #1680
             "findings-script-drift never compares the copies, so qa-flow's findings.py can drift from rails-flow's",
-            '        if canonical is not None and texts.get(rel, canonical) != canonical:',
-            '        if False:',
+            '        if canonical is not None and texts.get(rel, canonical) != canonical:\n            findings.append(Finding("findings-script-drift"',
+            '        if False:\n            findings.append(Finding("findings-script-drift"',
             'findings-script-drift / a findings.py copy that differs by one byte is a finding',
         ),
         Mutation(

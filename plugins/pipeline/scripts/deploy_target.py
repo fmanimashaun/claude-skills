@@ -169,7 +169,11 @@ def selftest() -> int:
     # deploy target and agent name in a sibling `stacks.json`. (Alone, pipeline sees no sibling and this is a weaker check; the
     # clone, where the gates run, sees them all.)
     named: set[str] = set()
-    for manifest_dir in ds.manifest_dirs(Path(ds.__file__)):
+    # Only in the checkout (`plugins/<name>/scripts`): a staged or installed copy sits among unrelated directories, and discovery
+    # there walks them all (a mutation baseline ran past its 600 s budget that way).
+    plugins_dir = HERE.parents[1]
+    siblings = sorted(plugins_dir.iterdir()) if plugins_dir.name == "plugins" else []
+    for manifest_dir in siblings:
         try:
             declared = json.loads((manifest_dir / "stacks.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -179,7 +183,7 @@ def selftest() -> int:
             named.add(str(st.get("id", "")).lower())
             deploy = (st.get("descriptor") or {}).get("deploy") or {}
             named.update({str(deploy.get("target", "")).lower(), str(deploy.get("agent", "")).lower().rpartition(":")[2]})
-    case(not (HERE.parents[1] / "rails-stack" / "stacks.json").is_file() or "kamal" in named, "the clone's declared stack words were collected")
+    case(not (plugins_dir / "rails-stack" / "stacks.json").is_file() or "kamal" in named, "the clone's declared stack words were collected")
     for word in sorted(named - {""}):
         case(word not in lowered, f"deploy-cloud.md is stack-neutral: it must not name `{word}`, which a stack plugin declares")
     for word in ("exit `1`", "exit `2`", "never fall back"):
