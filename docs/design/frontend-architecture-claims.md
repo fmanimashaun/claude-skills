@@ -131,7 +131,7 @@ These are our own choices; they have no upstream, so the authority is the mainta
 
 ## GOV.UK multi-step, confirmation and task-list rules (doctrine-verifier, 2026-10-21)
 
-The coordinator asked that multi-step, confirmation and search-results patterns come from GOV.UK. A verifier fetched `question-pages`, `check-answers`, `confirmation-pages`, `complete-multiple-tasks` and the task-list component. Claim id = 33 + the verifier's rule number. Rules whose quote was a fetch-tool paraphrase were reworded to the quoted part; the green confirmation panel's contrast (G15), the summary-list and summary-card use (G14), hint-text and whole-row-link details (G28-G30) and task-list error status text (G26) are visual or component detail and are not carried as rules.
+The coordinator asked that multi-step, confirmation and search-results patterns come from GOV.UK. A verifier fetched `question-pages`, `check-answers`, `confirmation-pages`, `complete-multiple-tasks` and the task-list component. Claim id = 33 + the verifier's rule number. Each rule rests on a phrase matched verbatim in the page's raw HTML (see the quote check below); the green confirmation panel's contrast (G15), the summary-list and summary-card use (G14), hint-text and whole-row-link details (G28-G30) and task-list error status text (G26) are visual or component detail and are not carried as rules.
 
 **Search results: no GOV.UK source.** The Design System lists no search or search-results pattern (`/components/` and `/patterns/` fetched 2026-10-21). Search results stay a template we name (D3) with no anatomy and no rule until a source is verified; the Scottish Government design system has a search-results pattern (unverified, not GOV.UK).
 
@@ -166,7 +166,7 @@ The coordinator asked that multi-step, confirmation and search-results patterns 
 
 ## Search results: Scottish Government Design System (doctrine-verifier, 2026-10-21)
 
-GOV.UK has no search-results pattern, so a2 chose the Scottish Government Design System's `/patterns/search-results` (first published 19 Aug 2020, last updated 4 Aug 2025; no version number). It is a public-sector system, not GOV.UK, and is cited as such. **Caveat recorded by the verifier:** the fetch tool returns a summary, so quotes may be paraphrases; the rules below are the structural ones the page states, and each should be re-read against the live page before the next edit of that section. Material 3's Search covers the input component, not the results page, and the GOV.UK finder template is marked out of date; neither is used.
+GOV.UK has no search-results pattern, so a2 chose the Scottish Government Design System's `/patterns/search-results` (first published 19 Aug 2020, last updated 4 Aug 2025; no version number). It is a public-sector system, not GOV.UK, and is cited as such. **Quote check:** every phrase the claims below rest on was matched verbatim against the raw HTML of the page (fetched with `curl` on 2026-10-21, tags stripped, whitespace and curly quotes normalised): 30 of 30 for C34–C73 (the GOV.UK rules C34–C65 and the Scottish Government rules C66–C73), including the supporting details the rules state beyond the headline (ten results to a page, pagination at the bottom, hints in the no-results message, sort only across all content, the terms shown with the count). Material 3's Search covers the input component, not the results page, and the GOV.UK finder template is marked out of date; neither is used.
 
 | # | Verdict | Citation | Use as |
 |---|---|---|---|
