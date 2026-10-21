@@ -63,11 +63,11 @@ second `setup` laid over the first's managed block — two packs' roles in one b
 
 ## Agents
 
-- **ui-composer** — builds views/components by composing primitives + tokens to the doctrine.
+- **rails-ui-composer** — builds views/components by composing primitives + tokens to the doctrine.
 - **design-auditor** — the consistency gate (design-system-specific; complements rails-flow's).
 - **brand-guardian** — enforces token/brand/logo/icon usage and the brand-pack model.
 - **design-critic** — the advisory lens behind `/design-flow:critique`; never blocks.
-- **design-porter** — ports a Claude Design artboard to the Rails stack behind `/design-flow:port`.
+- **rails-ui-porter** — ports a Claude Design artboard to the Rails stack behind `/design-flow:port`.
 
 ## Checks
 

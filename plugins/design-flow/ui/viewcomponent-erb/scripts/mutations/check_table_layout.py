@@ -7,9 +7,9 @@ from mutation_types import Guard, Mutation  # noqa: F401
 # the file reports every index whose row link lives in a partial.
 GUARD = Guard(
     name="check_table_layout",
-    subject="scripts/check_table_layout.py",
-    selftest="scripts/check_table_layout.py",   # --selftest lives in the module
-    deps=("scripts/content_floors.py", "scripts/source_text.py"),
+    subject="ui/viewcomponent-erb/scripts/check_table_layout.py",
+    selftest="ui/viewcomponent-erb/scripts/check_table_layout.py",   # --selftest lives in the module
+    deps=("ui/viewcomponent-erb/scripts/content_floors.py", "ui/viewcomponent-erb/scripts/source_text.py"),
     mutations=(
         Mutation(
             "a table inside a scroller stops being a finding",

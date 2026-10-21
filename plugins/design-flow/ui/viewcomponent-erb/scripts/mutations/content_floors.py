@@ -8,8 +8,8 @@ from mutation_types import Guard, Mutation  # noqa: F401
 
 GUARD = Guard(
     name="content_floors",
-    subject="scripts/content_floors.py",
-    selftest="scripts/content_floors.py",
+    subject="ui/viewcomponent-erb/scripts/content_floors.py",
+    selftest="ui/viewcomponent-erb/scripts/content_floors.py",
     mutations=(
         # #1214. The version a floor was cut with.
         Mutation(
