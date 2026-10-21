@@ -48,10 +48,10 @@ skill targets is a REFUTE for that skill (note the boundary instead).
 were not on the cited page, and one claim was CONFIRMED from a page that serves only a JavaScript shell. So the quote is not yours to type from memory.
 
 1. Copy each phrase from the page's raw text (`curl -s URL`, or the raw source file), not from a summary of it.
-2. Every line of the audit that gives a CONFIRMED verdict (the word, in any case) ends with `[quotes: C1]`, and the audit holds a fenced block of that
-   id, one quote per line, as `url | version or date in scope | exact phrase`, none of the three empty:
+2. Every verdict line of the audit (`Verdict: CONFIRMED`, or a table row with a cell that is exactly CONFIRMED, in any case; prose that says
+   "confirmed" is not a verdict) carries `[quotes: C1]`, and the audit holds a fenced block of that id, one quote per line, as `url | version or date in scope | exact phrase`, none of the three empty:
 
-       | C1 | the claim | CONFIRMED [quotes: C1] |
+       | C1 | the claim | CONFIRMED | [quotes: C1] |
 
        ```quotes C1
        https://example.com/docs/page | page read 2026-10-21 | the exact phrase

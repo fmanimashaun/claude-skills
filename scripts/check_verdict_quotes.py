@@ -11,10 +11,10 @@ fetch, so it could CONFIRM a quote that was a paraphrase, or text from a page it
 on the cited page (a GOV.UK sentence quoted from the wrong page; a Polaris claim CONFIRMED from a page that serves only a JavaScript shell). A gate
 that can confirm a quote the source does not contain cannot fail. This is the check that can.
 
-THE RECORD. Every line of an audit that gives a CONFIRMED verdict (the word, in any case) ends with `[quotes: C1]` and the audit holds a fenced block
-of that id, one quote per line, three fields split by ` | `, none empty:
+THE RECORD. Every verdict line of an audit (`Verdict: CONFIRMED`, or a table row with a cell that is exactly CONFIRMED, in any case) carries `[quotes: C1]`
+and the audit holds a fenced block of that id, one quote per line, three fields split by ` | `, none empty:
 
-    | C1 | the claim | CONFIRMED [quotes: C1] |
+    | C1 | the claim | CONFIRMED | [quotes: C1] |
 
     ```quotes C1
     https://design-system.service.gov.uk/patterns/validation | page read 2026-10-21 | show an error summary component at the top of the page
@@ -276,21 +276,26 @@ def check_quotes(quotes: list[Quote], fetcher=fetch) -> tuple[int, list[str]]:
 # The format check (offline) and the legacy report
 # ---------------------------------------------------------------------------------------------
 
-VERDICT = re.compile(r"\bCONFIRMED\b", re.I)
+# A verdict is a STRUCTURED marker, not a word: a line `Verdict: CONFIRMED` (any case, bold or list marker allowed), or a table cell whose whole text is
+# CONFIRMED (any case). Prose that merely says "the owner confirmed it" is not a verdict: matching bare prose would teach authors to write waivers.
+VERDICT_LINE = re.compile(r"^\s*[-*>]*\s*\**\s*verdict\s*\**\s*:\s*\**\s*confirmed\b", re.I)
 EVIDENCE = re.compile(r"\[quotes:\s*([A-Za-z0-9._-]+)\s*\]")
 WAIVED = re.compile(r"\[waived:\s*([^\]]*)\]")
 MIN_REASON = 20
 
 
 def verdict_lines(text: str) -> list[tuple[int, str]]:
-    """The lines that give a verdict: any line outside a code fence that uses the word CONFIRMED, in any case."""
+    """The lines that give a verdict outside a code fence: a `Verdict: CONFIRMED` line, or a table row with a cell that is exactly CONFIRMED (any case)."""
     out: list[tuple[int, str]] = []
     fenced = False
     for n, line in enumerate(text.splitlines(), 1):
         if re.match(r"^\s*```", line):
             fenced = not fenced
             continue
-        if not fenced and VERDICT.search(line):
+        if fenced:
+            continue
+        cells = [c.strip().strip("*` ").casefold() for c in line.split("|")] if line.lstrip().startswith("|") else []
+        if VERDICT_LINE.search(line) or "confirmed" in cells:
             out.append((n, line))
     return out
 
@@ -504,24 +509,26 @@ def selftest() -> int:
             return format_findings(root)
 
         legacy_name = sorted(LEGACY_AUDITS)[0]
-        check("an audit on the frozen legacy list needs no quotes", findings(legacy_name, "old verdict CONFIRMED, no quotes\n") == [])
-        check("a new audit that says CONFIRMED with no quotes is a finding", len(findings("2026-10-23-new.md", "verdict CONFIRMED\n")) == 1)
-        check("a BACK-DATED name does not make an audit old", len(findings("2026-10-01-x.md", "verdict CONFIRMED\n")) == 1)
-        check("an UNDATED name does not make an audit old", len(findings("foo.md", "verdict CONFIRMED\n")) == 1)
-        check("`Confirmed` in any case is a verdict", len(findings("2026-10-23-new.md", "Verdict: Confirmed\n")) == 1 and len(findings("2026-10-23-new.md", "verdict: confirmed.\n")) == 1)
-        check("`unconfirmed` is not the word", findings("2026-10-23-new.md", "the claim is unconfirmed\n") == [])
-        check("a verdict with [quotes: ID] and its block is clean", findings("2026-10-23-new.md", "verdict CONFIRMED [quotes: C1]\n" + GOOD) == [])
-        check("a verdict whose [quotes: ID] has no block is a finding", len(findings("2026-10-23-new.md", "verdict CONFIRMED [quotes: C9]\n" + GOOD)) == 1)
-        check("a block with no verdict pointing at it does not clear another verdict", len(findings("2026-10-23-new.md", "verdict CONFIRMED\n" + GOOD)) == 1)
-        check("ONE block does not cover a second verdict", len(findings("2026-10-23-new.md", "one CONFIRMED [quotes: C1]\ntwo CONFIRMED\n" + GOOD)) == 1)
-        check("two verdicts with their own blocks are clean", findings("2026-10-23-new.md", "one CONFIRMED [quotes: C1]\ntwo CONFIRMED [quotes: C2]\n" + GOOD + GOOD.replace("C1", "C2")) == [])
-        check("a reasoned waiver clears its own verdict", findings("2026-10-23-new.md", "verdict CONFIRMED [waived: the evidence is source in this repository]\n") == [])
-        check("ONE waiver does not cover a second verdict", len(findings("2026-10-23-new.md", "one CONFIRMED [waived: the evidence is source in this repository]\ntwo CONFIRMED\n")) == 1)
-        check("a waiver reason of `x` is a finding", len(findings("2026-10-23-new.md", "verdict CONFIRMED [waived: x]\n")) == 1)
-        check("a waiver with no reason is a finding", len(findings("2026-10-23-new.md", "verdict CONFIRMED [waived: ]\n")) == 1)
-        check("a REFUTED audit needs no block", findings("2026-10-23-new.md", "verdict REFUTED\n") == [])
+        check("an audit on the frozen legacy list needs no quotes", findings(legacy_name, "Verdict: CONFIRMED, no quotes\n") == [])
+        check("a new audit that says CONFIRMED with no quotes is a finding", len(findings("2026-10-23-new.md", "Verdict: CONFIRMED\n")) == 1)
+        check("a BACK-DATED name does not make an audit old", len(findings("2026-10-01-x.md", "Verdict: CONFIRMED\n")) == 1)
+        check("an UNDATED name does not make an audit old", len(findings("foo.md", "Verdict: CONFIRMED\n")) == 1)
+        check("`Verdict: Confirmed` and `verdict: confirmed` are verdicts in any case", len(findings("2026-10-23-new.md", "Verdict: Confirmed\n")) == 1 and len(findings("2026-10-23-new.md", "- **verdict:** confirmed.\n")) == 1)
+        check("a table cell that is exactly CONFIRMED is a verdict, in any case", len(findings("2026-10-23-new.md", "| C1 | the claim | CONFIRMED |\n")) == 1 and len(findings("2026-10-23-new.md", "| C1 | the claim | **Confirmed** | note |\n")) == 1)
+        check("a table verdict with its tag in the row is clean", findings("2026-10-23-new.md", "| C1 | the claim | CONFIRMED | [quotes: C1] |\n" + GOOD) == [])
+        check("PROSE that says confirmed is not a verdict", findings("2026-10-23-new.md", "The owner confirmed the scope. We CONFIRMED nothing here.\nthe claim is unconfirmed\n| C1 | claim | not confirmed by the page |\n") == [])
+        check("a verdict with [quotes: ID] and its block is clean", findings("2026-10-23-new.md", "Verdict: CONFIRMED [quotes: C1]\n" + GOOD) == [])
+        check("a verdict whose [quotes: ID] has no block is a finding", len(findings("2026-10-23-new.md", "Verdict: CONFIRMED [quotes: C9]\n" + GOOD)) == 1)
+        check("a block with no verdict pointing at it does not clear another verdict", len(findings("2026-10-23-new.md", "Verdict: CONFIRMED\n" + GOOD)) == 1)
+        check("ONE block does not cover a second verdict", len(findings("2026-10-23-new.md", "Verdict: CONFIRMED [quotes: C1]\nVerdict: CONFIRMED\n" + GOOD)) == 1)
+        check("two verdicts with their own blocks are clean", findings("2026-10-23-new.md", "Verdict: CONFIRMED [quotes: C1]\nVerdict: CONFIRMED [quotes: C2]\n" + GOOD + GOOD.replace("C1", "C2")) == [])
+        check("a reasoned waiver clears its own verdict", findings("2026-10-23-new.md", "Verdict: CONFIRMED [waived: the evidence is source in this repository]\n") == [])
+        check("ONE waiver does not cover a second verdict", len(findings("2026-10-23-new.md", "Verdict: CONFIRMED [waived: the evidence is source in this repository]\nVerdict: CONFIRMED\n")) == 1)
+        check("a waiver reason of `x` is a finding", len(findings("2026-10-23-new.md", "Verdict: CONFIRMED [waived: x]\n")) == 1)
+        check("a waiver with no reason is a finding", len(findings("2026-10-23-new.md", "Verdict: CONFIRMED [waived: ]\n")) == 1)
+        check("a REFUTED audit needs no block", findings("2026-10-23-new.md", "Verdict: REFUTED\n") == [])
         check("the word inside a code fence is not a verdict", findings("2026-10-23-new.md", "```\nCONFIRMED\n```\n") == [])
-        check("a malformed record in a new audit is a finding", len(findings("2026-10-23-new.md", "verdict CONFIRMED [quotes: C1]\n```quotes C1\nnot a record\n```\n")) >= 1)
+        check("a malformed record in a new audit is a finding", len(findings("2026-10-23-new.md", "Verdict: CONFIRMED [quotes: C1]\n```quotes C1\nnot a record\n```\n")) >= 1)
         legacy = audits / "2026-10-10-legacy.md"
         legacy.write_text('CONFIRMED. The docs say \u201cshow an error summary component at the top of the page\u201d (https://127.0.0.1:1/x).\n', encoding="utf-8")
         pairs = legacy_pairs(legacy, root)

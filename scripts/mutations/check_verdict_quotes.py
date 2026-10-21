@@ -96,10 +96,22 @@ GUARD = Guard(
             'a BACK-DATED name does not make an audit old',
         ),
         Mutation(
-            'CONFIRMED is matched in capitals only, so `Confirmed` is no verdict',
-            'VERDICT = re.compile(r"\\bCONFIRMED\\b", re.I)',
-            'VERDICT = re.compile(r"\\bCONFIRMED\\b")',
-            '`Confirmed` in any case is a verdict',
+            'the Verdict: line is matched in capitals only, so `verdict: confirmed` is no verdict',
+            'VERDICT_LINE = re.compile(r"^\\s*[-*>]*\\s*\\**\\s*verdict\\s*\\**\\s*:\\s*\\**\\s*confirmed\\b", re.I)',
+            'VERDICT_LINE = re.compile(r"^\\s*[-*>]*\\s*\\**\\s*Verdict\\s*\\**\\s*:\\s*\\**\\s*CONFIRMED\\b")',
+            "`Verdict: Confirmed` and `verdict: confirmed` are verdicts in any case",
+        ),
+        Mutation(
+            "a table cell that is CONFIRMED is no verdict",
+            '        if VERDICT_LINE.search(line) or "confirmed" in cells:',
+            "        if VERDICT_LINE.search(line):",
+            "a table cell that is exactly CONFIRMED is a verdict, in any case",
+        ),
+        Mutation(
+            "any line that uses the word confirmed is a verdict, so prose forces waivers",
+            '        if VERDICT_LINE.search(line) or "confirmed" in cells:',
+            '        if VERDICT_LINE.search(line) or "confirmed" in line.casefold():',
+            "PROSE that says confirmed is not a verdict",
         ),
         Mutation(
             'one quotes block clears every verdict in the file',
