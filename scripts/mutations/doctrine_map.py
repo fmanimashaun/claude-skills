@@ -96,5 +96,30 @@ GUARD = Guard(
             "            elif False:",
             "a decision the row does not cite in refs fires",
         ),
+        Mutation(
+            # #2254 review: the list agreeing with itself is no ratchet; the base's list is the authority.
+            "an entry the base never allowed is accepted, so a new unbased row ships with its own grandfather entry",
+            "            f\"refused, not grandfathered (#2224)\" for e in unbased if tuple(e) not in allowed]",
+            "            f\"refused, not grandfathered (#2224)\" for e in unbased if False]",
+            "a new row plus its own new entry is refused against the base's list",
+        ),
+        Mutation(
+            "an unreadable base passes",
+            "    if allowed is None:\n        return [f\"unbased-advice baseline unchecked",
+            "    if allowed is None:\n        return []\n        return [f\"unbased-advice baseline unchecked",
+            "an unreadable base is a finding, never a pass",
+        ),
+        Mutation(
+            "--check stops comparing against the base",
+            "    return validate() + ratchet_findings(ADVICE_UNBASED, *base_baseline((read or read_base)()))",
+            "    return validate()",
+            "--check compares the list against the base",
+        ),
+        Mutation(
+            "a source basis need not cite what checked it",
+            "            elif m is not None and not m.group(1) and not c.refs:",
+            "            elif False:",
+            "a source the row does not cite in refs fires",
+        ),
     ),
 )

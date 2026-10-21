@@ -67,8 +67,10 @@ Stdlib only.
 from __future__ import annotations
 
 import argparse
+import ast
 import html
 import json
+import os
 import re
 import subprocess
 import sys
@@ -930,6 +932,64 @@ class Resolver:
 # Validation
 # ---------------------------------------------------------------------------------------------
 
+BASE_REF = os.environ.get("DOCTRINE_MAP_BASE", "origin/dev")
+
+
+def base_baseline(source: str | None) -> tuple[set[tuple[str, str]] | None, str]:
+    """What the BASE allows on the unbased list, read from the base's own doctrine_map.py text (#2254 review).
+
+    The list "may only shrink" only means something against a list nobody in this change could edit: the base branch's. If the
+    base already has ADVICE_UNBASED, that is the allowance. If it predates the list, the allowance is its advice rows (an entry
+    may grandfather only a row that already was advice). `None` with a reason when the base cannot be read: never a pass.
+    """
+    if source is None:
+        return None, f"cannot read the base's scripts/doctrine_map.py at {BASE_REF}"
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        return None, f"the base's scripts/doctrine_map.py does not parse ({exc})"
+    for node in tree.body:
+        target = node.target if isinstance(node, ast.AnnAssign) else (node.targets[0] if isinstance(node, ast.Assign) else None)
+        if isinstance(target, ast.Name) and target.id == "ADVICE_UNBASED" and node.value is not None:
+            try:
+                return {tuple(e) for e in ast.literal_eval(node.value)}, ""
+            except ValueError as exc:
+                return None, f"the base's ADVICE_UNBASED is not a literal ({exc})"
+    rows: set[tuple[str, str]] = set()
+    for node in tree.body:
+        target = node.target if isinstance(node, ast.AnnAssign) else (node.targets[0] if isinstance(node, ast.Assign) else None)
+        if not (isinstance(target, ast.Name) and target.id == "CLAIMS" and node.value is not None):
+            continue
+        for call in ast.walk(node.value):
+            if isinstance(call, ast.Call) and getattr(call.func, "id", None) == "Claim":
+                kw = {k.arg: k.value for k in call.keywords}
+                if isinstance(kw.get("kind"), ast.Name) and kw["kind"].id == "ADVICE":
+                    try:
+                        rows.add((ast.literal_eval(kw["stated_in"]), ast.literal_eval(kw["anchor"])))
+                    except (KeyError, ValueError):
+                        return None, "a base advice row's stated_in or anchor is not a literal"
+        return rows, ""
+    return None, "the base's scripts/doctrine_map.py has neither ADVICE_UNBASED nor CLAIMS"
+
+
+def ratchet_findings(unbased: tuple[tuple[str, str], ...], allowed: set[tuple[str, str]] | None, why: str) -> list[str]:
+    """Every unbased-list entry the base did not allow: a row added in the same change as its own grandfather entry."""
+    if allowed is None:
+        return [f"unbased-advice baseline unchecked — {why}; the list 'may only shrink' cannot be shown, so this is a finding (#2254)"]
+    return [f"unbased-advice baseline raised — {e[0]} :: {e[1]!r} is not on the base's list ({BASE_REF}); a new unbased row is "
+            f"refused, not grandfathered (#2224)" for e in unbased if tuple(e) not in allowed]
+
+
+def read_base(ref: str = BASE_REF) -> str | None:
+    done = subprocess.run(["git", "-C", str(REPO), "show", f"{ref}:scripts/doctrine_map.py"], capture_output=True, text=True)
+    return done.stdout if done.returncode == 0 else None
+
+
+def check_findings(read=None) -> list[str]:
+    """What `--check` refuses: the registry's own findings plus the ratchet against the base."""
+    return validate() + ratchet_findings(ADVICE_UNBASED, *base_baseline((read or read_base)()))
+
+
 def validate(claims: tuple[Claim, ...] = CLAIMS,
              sources: tuple[str, ...] = DOCTRINE_SOURCES,
              resolver: Resolver | None = None,
@@ -986,6 +1046,8 @@ def validate(claims: tuple[Claim, ...] = CLAIMS,
             m = BASIS.fullmatch(c.basis) if c.basis else None
             if c.basis and m is None:
                 findings.append(f"malformed basis — {c.basis!r} is neither `source: <checked> @ <version>` nor `decision: #<n>` — {where}")
+            elif m is not None and not m.group(1) and not c.refs:
+                findings.append(f"source not cited — a `source:` basis must cite the verdict or issue that checked it in `refs` — {where}")
             elif m is not None and m.group(1) and int(m.group(1)) not in c.refs:
                 findings.append(f"decision not cited — basis names #{m.group(1)} but `refs` does not, so nothing links the row to it — {where}")
             elif not c.basis and (c.stated_in, c.anchor) not in unbased:
@@ -1271,7 +1333,7 @@ def _selftest() -> int:
         # #2224: advice is correct with a basis and nothing enforcing it (the negative test for the unenforced-guarantee rule); without
         # a basis it is refused unless it is on the shrinking baseline, and the baseline cannot hold a row that has since gained one.
         check("advice with a verified source and no enforcement stays silent",
-              _v((Claim("c", "doc.md", "the claim", ADVICE, basis="source: the spec's section 3 @ v2.1"),), srcs, fake, root) == [])
+              _v((Claim("c", "doc.md", "the claim", ADVICE, refs=(9,), basis="source: the spec's section 3 @ v2.1"),), srcs, fake, root) == [])
         check("advice with a recorded decision it cites stays silent",
               _v((Claim("c", "doc.md", "the claim", ADVICE, refs=(7,), basis="decision: #7"),), srcs, fake, root) == [])
         check("unbased advice fires",
@@ -1285,6 +1347,21 @@ def _selftest() -> int:
               any("stale unbased-advice baseline" in x for x in _v((), srcs, fake, root, unbased=(("doc.md", "added later"),))))
         check("a source with no version is malformed",
               any("malformed basis" in x for x in _v((Claim("c", "doc.md", "the claim", ADVICE, basis="source: the docs"),), srcs, fake, root)))
+        check("a source the row does not cite in refs fires",
+              any("source not cited" in x for x in _v((Claim("c", "doc.md", "the claim", ADVICE, basis="source: x @ 1"),), srcs, fake, root)))
+        # THE BASE IS THE AUTHORITY (#2254 review): a row added together with its own grandfather entry agrees with itself.
+        base_with = 'ADVICE_UNBASED: tuple = (("doc.md", "old row"),)\n'
+        base_before = 'CLAIMS = (\n    Claim(claim="c", stated_in="doc.md", anchor="old row", kind=ADVICE),\n    Claim(claim="g", stated_in="doc.md", anchor="kept", kind=GUARANTEE, enforced_by=("x",)),\n)\n'
+        check("an entry on the base's list passes",
+              ratchet_findings((("doc.md", "old row"),), *base_baseline(base_with)) == [])
+        check("a new row plus its own new entry is refused against the base's list",
+              any("baseline raised" in x for x in ratchet_findings((("doc.md", "old row"), ("doc.md", "new row")), *base_baseline(base_with))))
+        check("before the list existed, an entry may grandfather only a base advice row",
+              ratchet_findings((("doc.md", "old row"),), *base_baseline(base_before)) == []
+              and any("baseline raised" in x for x in ratchet_findings((("doc.md", "kept"),), *base_baseline(base_before))))
+        check("an unreadable base is a finding, never a pass",
+              any("baseline unchecked" in x for x in ratchet_findings((), *base_baseline(None)))
+              and any("baseline unchecked" in x for x in ratchet_findings((), *base_baseline("def (:\n"))))
         check("a decision the row does not cite in refs fires",
               any("decision not cited" in x for x in _v((Claim("c", "doc.md", "the claim", ADVICE, basis="decision: #7"),), srcs, fake, root)))
 
@@ -1300,6 +1377,10 @@ def _selftest() -> int:
     # Against the REAL repo, not a fixture: a selftest that only ever sees fixtures is the bug
     # `maintainer_doctor` was written about.
     check("the real registry validates clean", validate() == [])
+    check("--check compares the list against the base (an unreadable base is refused)",
+          any("baseline unchecked" in x for x in check_findings(read=lambda: None)))
+    check("the real ADVICE_UNBASED names exactly the real unbased advice rows",
+          set(ADVICE_UNBASED) == {(c.stated_in, c.anchor) for c in CLAIMS if c.kind == ADVICE and not c.basis})
     rf, _ = audit_coverage()
     check("the real declared sources all have rows", rf == [])
     check("render is a pure function of the data", render(collect()) == render(collect()))
@@ -1363,7 +1444,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.selftest:
         return _selftest()
 
-    findings = validate()
+    findings = check_findings()
     if a.audit_coverage:
         cf, lines = audit_coverage()
         print("rows per declared doctrine source:")
