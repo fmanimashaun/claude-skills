@@ -16,7 +16,7 @@ Nothing here is advice you may ignore. **Every rule below names its basis**, and
 | `claim: C#` | an external standard or published pattern, confirmed against the source by `doctrine-verifier`; the rule is worded as the source words it |
 | `decision: D#` | our own choice, with no upstream; reported as a house rule, **never** as a WCAG or NN/g failure |
 
-**Today the design-flow checks (A11–A13) read a Rails project's `app/views` and `app/components`;** the same rules for another stack arrive with that stack's adapter (#2185, #2222), and until then they are enforced there by the reviewer, not by a script. A rule whose check is not built yet is not in the table. It is listed under *Arrives with its
+**Today the design-flow checks (A11–A13) are the `viewcomponent-erb` adapter's and read a Rails project's `app/views` and `app/components`;** the same rules for another stack arrive with that stack's adapter (#2185, #2222), and until then they are enforced there by the reviewer, not by a script. A rule whose check is not built yet is not in the table. It is listed under *Arrives with its
 enforcement* and joins the table in the change that builds the check.
 
 ## The shape: four structural layers, two contracts, one index
@@ -106,9 +106,9 @@ plugin, since escaping, content-security policy and action authorization are sta
 | A8 | navigation | A list's sort, filter and page are URL state. | decision: D7 | ours (`page-anatomies.md`) |
 | A9 | navigation | After a client-side route change, focus moves to a heading in the new content. | claim: C31' | Chrome Lighthouse *managed-focus* |
 | A10 | template | A screen is one of the nine templates in layer 3. | decision: D3 | ours |
-| A11 | template | A table is master-detail and does not scroll sideways. | check: plugins/design-flow/scripts/check_table_layout.py | ours |
-| A12 | regions | Layout is composed from the declared primitives, not hand-rolled. | check: plugins/design-flow/scripts/check_layout_composition.py | ours |
-| A13 | regions | A surface does not impose layout on the content it is handed. | check: plugins/design-flow/scripts/check_surface_layout.py | ours |
+| A11 | template | A table is master-detail and does not scroll sideways. | check: plugins/design-flow/ui/viewcomponent-erb/scripts/check_table_layout.py | ours |
+| A12 | regions | Layout is composed from the declared primitives, not hand-rolled. | check: plugins/design-flow/ui/viewcomponent-erb/scripts/check_layout_composition.py | ours |
+| A13 | regions | A surface does not impose layout on the content it is handed. | check: plugins/design-flow/ui/viewcomponent-erb/scripts/check_surface_layout.py | ours |
 | A14 | state | Every catalogue component declares its states or says which do not apply. | check: scripts/check_component_states.py | ours |
 | A15 | state | An error is identified in text, with a suggestion where one is known. | claim: C14 | WCAG 2.2 SC 3.3.1, 3.3.3 |
 | A16 | state | A status message reaches assistive technology without taking focus. | claim: C15 | WCAG 2.2 SC 4.1.3 (technique ARIA22, `role=status`) |
