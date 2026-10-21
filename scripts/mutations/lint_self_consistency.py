@@ -1701,5 +1701,24 @@ GUARD = Guard(
             'data.get("hooks", {}).get("Stop", []) + data.get("hooks", {}).get("PreToolUse", [])',
             "a named gate on a Stop hook is out of scope (the field has no effect there): silent",
         ),
+        Mutation(
+            # #2208: a hook planted in .git/hooks under a machine whose system config sets core.hooksPath never runs.
+            "a selftest planting a hook under the machine's git config stops being a finding",
+            "        if not any(marker in text for marker in _HOOK_DIR_RESOLVED):\n",
+            "        if False:\n",
+            "a selftest planting a hook in .git/hooks under the machine's config",
+        ),
+        Mutation(
+            "fixture_git dropping GIT_CONFIG_NOSYSTEM stops being a finding",
+            "        if path.is_file() and '\"GIT_CONFIG_NOSYSTEM\"' not in read(path):\n",
+            "        if False:\n",
+            "fixture_git that stopped isolating the system config",
+        ),
+        Mutation(
+            "a .git/hooks path written as one string is not seen",
+            """_PLANTED_HOOKS = re.compile(r\"\"\"["']\\.git["']\\s*\\)?\\s*/\\s*["']hooks["']|["'][^"'\\n]*\\.git/hooks\"\"\")""",
+            """_PLANTED_HOOKS = re.compile(r\"\"\"["']\\.git["']\\s*\\)?\\s*/\\s*["']hooks["']\"\"\")""",
+            "a .git/hooks path written as one string is planted too",
+        ),
     ),
 )

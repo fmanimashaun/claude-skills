@@ -2854,6 +2854,45 @@ def emit_claude_md(setup_text: str, has_database: bool) -> str:
     return _EMIT_IF.sub(lambda m: m.group(1) if has_database else "", setup_text)
 
 
+_PLANTED_HOOKS = re.compile(r"""["']\.git["']\s*\)?\s*/\s*["']hooks["']|["'][^"'\n]*\.git/hooks""")
+_HOOK_DIR_RESOLVED = ("--git-path", "GIT_CONFIG_NOSYSTEM", "import fixture_git", "from fixture_git", "fixture_git.", "hermetic_git")
+_HERMETIC_ENVS = ("plugins/rails-flow/scripts/fixture_git.py", "scripts/hermetic_git.py")
+
+
+def check_planted_hooks_hermetic() -> tuple[list[Finding], int]:
+    """A selftest that plants a hook in `.git/hooks` must run its git where that is where git looks (#2208).
+
+    A machine's system git config can set `core.hooksPath` (Homebrew's sets `.githooks`). Then git never runs a hook from
+    `.git/hooks`, and a selftest asserting "the hook did not run" passes whatever the code does: #2206's `wip_commit` mutant
+    survived exactly so. A Python file that builds a `.git/hooks` path must therefore resolve the directory (`rev-parse
+    --git-path hooks`), isolate the system config (`GIT_CONFIG_NOSYSTEM`), or run its git through `fixture_git`/`hermetic_git`,
+    which set it; and those two must keep setting it.
+    """
+    found: list[Finding] = []
+    examined = 0
+    for rel in _HERMETIC_ENVS:
+        path = ROOT / rel
+        if path.is_file() and '"GIT_CONFIG_NOSYSTEM"' not in read(path):
+            found.append(Finding("planted-hooks-not-hermetic", rel, 0,
+                                 "no longer sets GIT_CONFIG_NOSYSTEM, so every fixture that plants a hook in .git/hooks reads the machine's "
+                                 "core.hooksPath again (#2208)"))
+    for path in sorted(ROOT.glob("scripts/*.py")) + sorted(ROOT.glob("plugins/*/scripts/*.py")):
+        rel = path.relative_to(ROOT).as_posix()
+        if "/mutations/" in rel or rel == "scripts/lint_self_consistency.py" or rel == "scripts/self_consistency_selftest.py":
+            continue
+        text = read(path)
+        if not _PLANTED_HOOKS.search(text):
+            continue
+        examined += 1
+        if not any(marker in text for marker in _HOOK_DIR_RESOLVED):
+            line = text[: _PLANTED_HOOKS.search(text).start()].count("\n") + 1
+            found.append(Finding("planted-hooks-not-hermetic", rel, line,
+                                 "builds a .git/hooks path but runs git with the machine's system config, where core.hooksPath can point "
+                                 "elsewhere (Homebrew: .githooks) and the hook never runs: resolve it with `git rev-parse --git-path hooks`, "
+                                 "set GIT_CONFIG_NOSYSTEM=1, or run git through fixture_git (#2208)"))
+    return found, examined
+
+
 def check_setup_flow_preflight() -> tuple[list[Finding], int]:
     """The setup-flow template's test-run preflight, the two git-hygiene rules and the handoff pointer (#1561).
 
@@ -4370,6 +4409,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     cl_sections, cl_sections_examined = check_changelog_section_missing()
     hook_cnt, hook_cnt_examined = check_hook_script_count()
     setup_pre, setup_pre_examined = check_setup_flow_preflight()
+    planted, planted_examined = check_planted_hooks_hermetic()
     dangling, dangling_examined = check_dangling_conditional_floor()
     flat_role, flat_role_examined = check_flattened_conditional_role()
     unowned, unowned_examined = check_adopts_an_unowned_server()
@@ -4434,6 +4474,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "plugins_with_a_changelog_section": cl_sections_examined,
         "hook_scripts_counted": hook_cnt_examined,
         "setup_flow_templates_checked_for_the_preflight": setup_pre_examined,
+        "selftests_planting_git_hooks": planted_examined,
         "rails_flow_files_checked_for_docs_paths_outside_layout": docs_paths_examined,
         "conditional_floor_claims": dangling_examined,
         "plugin_paragraphs_naming_a_role": flat_role_examined,
@@ -4448,7 +4489,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     return (dead + unenforced + undocumented + undoc_cmds + docs_paths + growth + hook_lib + hook_start + gate_onfail + fixture_git + schema_drift + fixture_bypass + submod + bare + misdesc + unbounded + author_me + components + call_sites + invisible
             + markers + uncontained + nonhermetic + pointers + clone_paths + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
-            + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + dangling + flat_role
+            + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + planted + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
             + findings_copy + rel_xplugin
             + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
@@ -4992,6 +5033,20 @@ def selftest() -> int:
              files=fourteen)
 
     # -- setup-flow-preflight ---------------------------------------------
+    # -- planted-hooks-not-hermetic (#2208) ---------------------------------
+    PH = "planted-hooks-not-hermetic"
+    _ENVS = {"plugins/rails-flow/scripts/fixture_git.py": 'out["GIT_CONFIG_NOSYSTEM"] = "1"\n', "scripts/hermetic_git.py": 'out["GIT_CONFIG_NOSYSTEM"] = "1"\n'}
+    php = lambda label, files, expect: scenario(label, rule=PH, expect_finding=expect, files={**_ENVS, **files}, only=check_planted_hooks_hermetic)
+    php("CONTROL: a selftest planting a hook through fixture_git is silent",
+        {"plugins/x/scripts/a_selftest.py": 'import fixture_git\nhooks = repo / ".git" / "hooks"\n'}, False)
+    php("CONTROL: a selftest resolving the hook directory is silent",
+        {"plugins/x/scripts/a_selftest.py": 'd = run("rev-parse", "--git-path", "hooks")\n(repo / ".git" / "hooks").mkdir()\n'}, False)
+    php("a selftest planting a hook in .git/hooks under the machine's config",
+        {"plugins/x/scripts/a_selftest.py": 'subprocess.run(["git", "commit"])\n(repo / ".git" / "hooks" / "pre-commit").write_text("x")\n'}, True)
+    php("a .git/hooks path written as one string is planted too",
+        {"scripts/b.py": 'open(f"{repo}/.git/hooks/pre-commit", "w")\n'}, True)
+    php("fixture_git that stopped isolating the system config",
+        {"plugins/rails-flow/scripts/fixture_git.py": "out = {}\n"}, True)
     SP = "setup-flow-preflight"
     _RAILS_SECTION = "# Rails\n## CLAUDE.md facts\n### Test-run preflight\n`pg_isready`; no held `bundler.lock`.\n## Next\n"
 
