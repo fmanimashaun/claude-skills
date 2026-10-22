@@ -1283,8 +1283,19 @@ class Doctor:
         import glob as _glob
         import time as _time
 
-        root = tmp_root or tempfile.gettempdir()
+        # BOTH temp dirs (#2306): a session's TMPDIR can point elsewhere than the user's own temp dir, where the leaks live (measured
+        # 2026-10-22: 236 entries in one session's gettempdir(), 163,364 in DARWIN_USER_TEMP_DIR). Deduplicated by real path.
+        if tmp_root:
+            roots = [tmp_root]
+        else:
+            code, darwin = self.run("getconf", "DARWIN_USER_TEMP_DIR", cwd=REPO)
+            roots = list(dict.fromkeys(os.path.realpath(p) for p in [tempfile.gettempdir()] + ([darwin.strip()] if code == 0 and darwin.strip() else [])))
         now = now or _time.time()
+        for root in roots:
+            self._check_temp_root(root, scratch_glob, now)
+
+    def _check_temp_root(self, root: str, scratch_glob: str, now: float) -> None:
+        import glob as _glob
 
         def size_kb(path: str) -> int:
             code, out = self.run("du", "-sk", path, cwd=REPO)

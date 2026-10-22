@@ -4811,6 +4811,9 @@ def selftest() -> int:
             findings, _ = only() if only else run()
         finally:
             ROOT = previous
+            # Removed NOW, not at exit (#2306): the mutation harness SIGKILLs a mutant's whole tree, which no handler survives, so
+            # a dir per scenario kept to the end leaked by the hundred per run (141,672 `selfconsist-` dirs measured 2026-10-22).
+            __import__("shutil").rmtree(root, ignore_errors=True)
         got = [f for f in findings if f.rule == rule]
         if line is not None and got and got[0].line != line:
             failures.append(f"{rule} / {label}: expected the finding on line {line}, got {got[0].line}")
