@@ -1304,11 +1304,12 @@ class Doctor:
         sys.path.insert(0, str(REPO / "plugins" / "rails-flow" / "scripts"))
         import rf_tmp  # noqa: E402  -- the one reader of the owner marker
 
-        def held(path: str, owner: int) -> bool:
+        def held(path: str, owner: int | None) -> bool:
             """A live owner (#2316 review: a process with nothing open this moment still owns its dir), or anything open under it."""
             try:
-                os.kill(owner, 0)
-                return True
+                if owner is not None:
+                    os.kill(owner, 0)
+                    return True
             except ProcessLookupError:
                 pass
             except PermissionError:

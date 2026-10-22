@@ -374,8 +374,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a live owner no longer holds its dir",
-            "            try:\n                os.kill(owner, 0)\n                return True",
-            "            try:\n                os.kill(owner, 0)\n                return False",
+            "                if owner is not None:\n                    os.kill(owner, 0)\n                    return True",
+            "                if owner is not None:\n                    os.kill(owner, 0)\n                    return False",
             "#2316: --fix keeps a dir whose owner pid is alive",
         ),
         Mutation(
