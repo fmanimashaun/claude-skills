@@ -118,3 +118,59 @@ Where the MCP spec gives a mechanism, the item cites it (`doctrine-verifier` CON
 **Enforced by:** `check_toolchain_selftests.py --selftest` (16 assertions) and mutation guard `check_toolchain_selftests` (9 mutations, caught on macOS and Linux). Refs #2111, #2112.
 
 **Reversal condition:** the SessionStart hook exports the variable in every session, so the runner's fallback is never used. Other selftests that Retask's `bin/ci` runs outside `project_gates` share the exposure; that is noted on #2112 and is a separate issue.
+
+## D-012 — Every claim or rule is enforced by a check; an unenforced one is not kept as doctrine (2026-10-21) `[decided]`
+**Choice:** a rule or claim the repo states must be backed by a check that can fail. Where no check exists yet, the entry says so.
+**Decided by:** owner ruling, 2026-10-21, verbatim: "everything must be enforced, a claim or rule not enforced is useless" ([#2225](https://github.com/fmanimashaun/claude-skills/issues/2225)).
+**Alternatives:** none recorded in the ruling.
+**Rationale:** the owner's words above.
+**Enforced by:** not yet enforced, tracked in #2225 (open). This memo is itself prose, not a check.
+**Reversal condition:** the owner withdraws the rule.
+
+## D-013 — The full sweep runs on GitHub, because the repository is public; a local proof is for private repositories only (2026-10-21) `[decided]`
+**Choice:** `.github/workflows/release.yml` runs the full gate sweep (including `mutation coverage`) on GitHub for a push to `main`. A local `maintainer_doctor.py --gates-only --require-slow --record-proof` is optional and meant for private repositories; it posts a `full-sweep` status that `release.yml` reuses for an identical tree.
+**Decided by:** owner rule, 2026-10-21, verbatim: "public repo, so the full sweep runs on GitHub (release.yml); a local proof is for private repos only" ([PR #2234](https://github.com/fmanimashaun/claude-skills/pull/2234), merged 2026-10-21 19:51 UTC).
+**Alternatives:** a local proof of 1 to 2 hours before every promotion (rejected for this repository by the ruling).
+**Rationale:** the owner's words above; the repository is public, so GitHub runs the sweep at no cost.
+**Enforced by:** the full sweep on GitHub is enforced by `release.yml` (the `proof` and `gates` jobs). Not yet enforced: refusing a local proof on this public repository. Nothing checks it, and no issue tracks that gap.
+**Reversal condition:** the repository goes private, or GitHub stops running the sweep for free.
+
+## D-014 — Design is neutral: rails-stack does not own design, and a UI change starts as a mock-up in the app's own shell (2026-10-21) `[decided]`
+**Choice:** design belongs to the design flow, not to the Rails stack. Every UI change starts as a mock-up in the app's own shell; a new project first mocks its core shell and foundation screens.
+**Decided by:** owner ruling, 2026-10-21, verbatim: "design is neutral and rails-stack does not own design; UI starts as a mock-up in the app's own shell" ([#2211](https://github.com/fmanimashaun/claude-skills/issues/2211), closed; [#2280](https://github.com/fmanimashaun/claude-skills/issues/2280)).
+**Alternatives:** keep the design-system skill in rails-stack (the state until #2280 lands).
+**Rationale:** the owner's words above.
+**Enforced by:** not yet enforced, tracked in #2280 (the design-system move from rails-stack to design-flow, open). No gate for the mock-up-first rule was found: `grep -rln -i "mock-up\|mockup" plugins/design-flow/scripts` matches only `audit_findings.py` and `detect_stack.py`.
+**Reversal condition:** the owner moves design back into rails-stack.
+
+## D-015 — External catalogues are inspiration only; we build from our own design system (2026-10-21) `[decided]`
+**Choice:** external UI catalogues (Shadcn Space and others) inform ideas. Their code is never pasted or installed; components are built from our own design system.
+**Decided by:** owner ruling, 2026-10-21, verbatim: "external catalogues (Shadcn Space and others) are inspiration only; build from our own design system".
+**Alternatives:** none recorded in the ruling.
+**Rationale:** the owner's words above.
+**Enforced by:** nothing. Not yet enforced, and no open or closed issue tracks it (`gh issue list --state all --limit 30 --search "Shadcn catalogue in:title,body"` finds only #1069, which is a component-gap issue).
+**Reversal condition:** the owner names a catalogue as a permitted source.
+
+## D-016 — Flows run unattended: a shipped step acts instead of printing guidance; a human is needed only for credentials, permission prompts and product calls (2026-10-21) `[decided]`
+**Choice:** a step a flow ships installs and configures what it can. It prints guidance only where a human must act: credentials, a permission prompt, or a product decision.
+**Decided by:** owner ruling, 2026-10-21, verbatim: "flows run unattended: a shipped step acts (installs, configures) rather than printing guidance; a human is needed only for credentials, permission prompts and product calls" ([#2288](https://github.com/fmanimashaun/claude-skills/issues/2288)).
+**Alternatives:** none recorded in the ruling.
+**Rationale:** the owner's words above.
+**Enforced by:** not yet enforced, tracked in #2288 (toolchain-check installs and logs in autonomously, open).
+**Reversal condition:** the owner withdraws the rule.
+
+## D-017 — Vendor plugins (Vercel, Supabase) own their doctrine; we detect and hand off, and carry no copy (2026-10-21) `[decided]`
+**Choice:** the Vercel and Supabase plugins own their own commands and doctrine. Our shipped docs detect the stack and hand off to the vendor plugin; they never carry a copy of a vendor CLI step.
+**Decided by:** owner ruling, 2026-10-21, verbatim: "vendor plugins (vercel, supabase) own their doctrine; we detect and hand off" ([#2168](https://github.com/fmanimashaun/claude-skills/issues/2168) / [PR #2291](https://github.com/fmanimashaun/claude-skills/pull/2291), open; [#2289](https://github.com/fmanimashaun/claude-skills/issues/2289) / [PR #2290](https://github.com/fmanimashaun/claude-skills/pull/2290), merged).
+**Alternatives:** none recorded in the ruling.
+**Rationale:** the owner's words above. The vendor plugins are the authority on their own CLIs; a copy in our docs would go stale.
+**Enforced by:** `scripts/check_vendor_handoff.py` (from #2290, merged) refuses a shipped `.md` line that tells the reader to run a vendor CLI step. It is wired into `scripts/maintainer_doctor.py`. The detect-and-hand-off part (#2168, PR #2291) is not yet merged.
+**Reversal condition:** a vendor plugin is withdrawn, or the owner moves a vendor's doctrine back into our docs.
+
+## D-018 — A worktree teardown leaves no file or folder behind, deletes the merged branch, and the temp dir is monitored and cleared (2026-10-22) `[decided]`
+**Choice:** a teardown removes every file and folder the session created, deletes the branch once it is merged, and the temp directory is monitored and cleared.
+**Decided by:** owner ruling, 2026-10-22, verbatim: "a teardown leaves no file or folder behind, deletes the merged branch, and the temp dir is monitored and cleared" ([#2296](https://github.com/fmanimashaun/claude-skills/issues/2296)).
+**Alternatives:** none recorded in the ruling.
+**Rationale:** the owner's words above. #2296 records the defect: teardown leaves files and folders behind.
+**Enforced by:** not yet enforced, tracked in #2296 (open).
+**Reversal condition:** the owner withdraws the rule.
