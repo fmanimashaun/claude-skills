@@ -532,13 +532,6 @@
   "declared": [
    {
     "match": [
-     "plugins/rails-flow/checks.json#owner-rulings"
-    ],
-    "class": "neutral",
-    "why": "a gate with no script of its own to classify: it runs check_owner_rulings.py, which reads a PR's closing issues through gh and docs/brain/DECISIONS.md; it names no framework (#2297)"
-   },
-   {
-    "match": [
      "plugins/design-flow/agents/*"
     ],
     "class": "neutral",
