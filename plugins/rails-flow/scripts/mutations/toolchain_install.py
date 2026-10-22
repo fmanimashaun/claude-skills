@@ -29,7 +29,7 @@ GUARD = Guard(
         ),
         Mutation(
             'the marketplace is never registered',
-            '    run([claude, "plugin", "marketplace", "add", MARKETPLACES.get(marketplace, marketplace)], env)',
+            '    run([claude, "plugin", "marketplace", "add", MARKETPLACES.get(marketplace, marketplace)], env, cwd=here)',
             '    pass',
             'the marketplace is registered before the install',
         ),
@@ -65,13 +65,13 @@ GUARD = Guard(
         ),
         Mutation(
             'a tracked briefing file is read',
-            '    if tracked.returncode == 0:\n        return {}, f"the briefing file',
+            '    if tracked == 0:\n        return {}, f"the briefing file',
             '    if False:\n        return {}, f"the briefing file',
             'a tracked briefing file is not read',
         ),
         Mutation(
             'an unignored briefing file is read',
-            '    if ignored.returncode != 0:',
+            '    if ignored != 0:',
             '    if False:',
             'a briefing file git would commit is not read',
         ),
@@ -83,9 +83,9 @@ GUARD = Guard(
         ),
         Mutation(
             'the installer may come from the project',
-            '    return None if found is None or stack_toolchain.inside(found, project) else str(found)',
-            '    return None if found is None else str(found)',
-            'a claude CLI inside the project is never run as the installer',
+            '            if not stack_toolchain.inside(real, project):\n                return str(real)',
+            '            if True:\n                return str(real)',
+            'a global symlink into the project is not taken as the tool',
         ),
         Mutation(
             '--confirm clears the marker without checking',
@@ -122,6 +122,36 @@ GUARD = Guard(
             '        if here.is_symlink():\n            raise UnsafeMarker',
             '        if False:\n            raise UnsafeMarker',
             'a symlinked docs/brain is not written through',
+        ),
+        Mutation(
+            'repo_of searches for github.com instead of parsing the host',
+            ' or (parts.hostname or "").lower() != "github.com"',
+            ' or False',
+            "repo_of('https://github.com.evil.com/vendor/vcli')",
+        ),
+        Mutation(
+            'a URL fragment or query is accepted',
+            '                or parts.query or parts.fragment:',
+            '                or False:',
+            "repo_of('https://github.com/attacker/evil#github.com/vendor/vcli')",
+        ),
+        Mutation(
+            'the plugin install runs from /, not the project',
+            '    rc, out = run([claude, "plugin", "install", plugin_id, "--scope", "local", "--json"], env, cwd=here)',
+            '    rc, out = run([claude, "plugin", "install", plugin_id, "--scope", "local", "--json"], env)',
+            'a pretty-printed listing reads and the install runs in the project',
+        ),
+        Mutation(
+            'only the last line of the listing is parsed',
+            '        listed = json.loads(out[out.index("["):]) if rc == 0 and "[" in out else []',
+            '        listed = json.loads(out.strip().splitlines()[-1]) if rc == 0 and out.strip() else []',
+            'a pretty-printed listing reads and the install runs in the project',
+        ),
+        Mutation(
+            "a marker's ids are trusted whatever they are",
+            '    if bad or not isinstance(ids, list):',
+            '    if False:',
+            'a crafted marker id is not trusted or echoed',
         ),
     ),
 )
