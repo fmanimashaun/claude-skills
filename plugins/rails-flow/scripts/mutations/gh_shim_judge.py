@@ -6,7 +6,9 @@ GUARD = Guard(
     name='gh_shim_judge',
     subject='hooks/scripts/lib/pr_ready_guard.py',
     selftest="scripts/gh_shim_selftest.py",
-    needs=("scripts/fixture_git.py", "git-shim/gh", "hooks/scripts/guard-pr-ready.sh", "hooks/scripts/lib"),
+    needs=("scripts/fixture_git.py", "git-shim/gh", "hooks/scripts/guard-pr-ready.sh", "hooks/scripts/lib",
+           # #2268: the same selftest runs its cases under contained(), and its "claim bodies" case runs the shim through guard-claims.sh, which reads extract_claims.py
+           "scripts/process_containment.py", "hooks/scripts/guard-claims.sh", "scripts/extract_claims.py"),
     narrow_with="--match",
     mutations=(
         Mutation('--undo is no longer allowed', '        if "--undo" in after[:cut_at] and all(plain_word(w) for w in after if w not in ("--undo", "--")):', '        if False:', 'no record'),

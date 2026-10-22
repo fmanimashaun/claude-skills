@@ -357,7 +357,7 @@ CLAIMS: tuple[Claim, ...] = (
         enforced_by=("script:scripts/maintainer_doctor.py", "mutation:maintainer_doctor"),
         note="Asserted by the doctor's `the last promotion carried dev's ancestry` check, which asks "
              "both halves -- is main's tip a merge, AND does it have a parent on dev. It is a "
-             "DIAGNOSTIC, so --gates-only skips it; run the full doctor before a promotion.",
+             "DIAGNOSTIC, so --gates-only skips it, and so does the sweep release.yml runs; run the plain doctor (no flags) before promoting.",
     ),
     Claim(
         claim="A version number is never assigned on a merge into `dev`, because on `dev` the claim "

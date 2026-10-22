@@ -1990,6 +1990,31 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: ...and the same comment passes once it shows it was verified",
           run("gh issue comment 1141 --body-file BODY", CHECKED) == 0, said())
 
+    # #2258: THE TRIPWIRE'S SHAPES, AND THE STRICT MODE THE GH SHIM RUNS IT IN. The hook judges the command's TEXT: a heredoc or a `cd` chain
+    # hides the directory, and an inline --body or a `--body-file "$F"` names no file it can read, so it says NOT checked and allows (the
+    # guarantee for those shapes is the gh shim, `gh_shim_selftest.py` "claim bodies"). Under RAILS_FLOW_CLAIMS_STRICT=1, which only the shim
+    # sets, every one of those "could not read" outcomes is a refusal.
+    TPL2258 = "## Summary\n\n## Notes\n"
+    rc, out = run("gh pr create --body-file BODY", PROSE, template=TPL2258, with_output=True)
+    check("guard-claims (#2258): a plain --body-file missing a template section is blocked", rc == 2, out[-200:])
+    rc, out = run("cat > BODYDIR/h.md <<'E'\nx\nE\ngh pr create --body-file BODY", PROSE, template=TPL2258, with_output=True)
+    check("guard-claims (#2258): a heredoc before gh leaves the directory unknown, and the hook SAYS the template was not checked",
+          rc == 0 and "NOT checked" in out, out[-200:])
+    rc, out = run('gh pr create --body "Tidy up the wording."', None, template=TPL2258, with_output=True)
+    check("guard-claims (#2258): an inline --body is not read by the tripwire, and it says so", rc == 0 and "could not read" in out, out[-200:])
+    rc, out = run('F=BODY; gh pr create --body-file "$F"', PROSE, template=TPL2258, with_output=True)
+    check("guard-claims (#2258): a --body-file named through a VAR is not read by the tripwire, and it says so",
+          rc == 0 and "could not read" in out, out[-200:])
+    rc, out = run("gh pr create -R other/repo --body-file BODY", PROSE, template=TPL2258, with_output=True)
+    check("guard-claims (#2258): -R names another repository, so its template is NOT checked, said", rc == 0 and "NOT checked" in out, out[-200:])
+    rc, out = run("gh pr create --body-file /nonexistent/body.md", None, env_extra={"RAILS_FLOW_CLAIMS_STRICT": "1"}, with_output=True)
+    check("guard-claims (#2258): strict (the gh shim): a body that cannot be read is BLOCKED, never allowed unchecked", rc == 2, out[-200:])
+    check("guard-claims (#2258): ...and without strict the tripwire still allows it, loudly (its contract is unchanged)",
+          run("gh pr create --body-file /nonexistent/body.md", None) == 0, said())
+    check("guard-claims (#2258) control: strict passes a readable body that meets the template and makes no claim",
+          run("gh pr create --body-file BODY", "## Summary\n\nA fix.\n\n## Notes\n\nnone\n", template=TPL2258,
+              env_extra={"RAILS_FLOW_CLAIMS_STRICT": "1"}) == 0, said())
+
     # WHERE THE `gh` IS (#1877). The match used to be a substring of the whole command, so `gh issue create` was blocked
     # whenever its title or a trailing comment merely NAMED `gh pr create`. Words are not a command; a command is.
     check("guard-claims (#1877): `gh issue create -R ... --body-file` is not a claim-carrying command and passes",

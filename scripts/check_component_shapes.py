@@ -42,7 +42,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CATALOGUE_FILES = tuple(ROOT / "plugins" / "rails-stack" / "skills" / "design-system" / "references" / n
                         for n in ("components.md", "components-commerce.md"))
 CATALOGUE = CATALOGUE_FILES[0]  # kept for messages that name the primary file
-SHAPES = ROOT / "plugins" / "rails-stack" / "skills" / "design-system" / "references" / "component-shapes.json"
+SHAPES = ROOT / "plugins" / "design-flow" / "catalog" / "component-shapes.json"   # the neutral design home (#2272); it sat in rails-stack's skill
 THEME = ROOT / "plugins" / "design-flow" / "brands" / "fidara" / "theme.css"
 
 # The declared vocabulary for a shape entry. These began as the kinds `pen_library.part_node` could
@@ -51,6 +51,65 @@ THEME = ROOT / "plugins" / "design-flow" / "brands" / "fidara" / "theme.css"
 # reconcile against, so the selftest no longer asserts one — see the note where that check was.
 PART_KINDS = {"box", "pill", "text", "field", "line", "avatar", "icon-slot", "column"}
 SHAPE_KINDS = {"control", "pill", "banner", "surface", "panel", "bar", "bare"}
+
+
+AXES_MARK = "<!-- axes -->"
+AXES = ("variants", "sizes")
+
+
+def axes_line(entry: dict) -> str | None:
+    """The `Catalog axes` line a components.md section carries for `entry`, or None when it states no list. Generated, never hand-edited (#2272)."""
+    parts = [f"{axis} " + " · ".join(f"`{n}`" for n in entry[axis]) for axis in AXES if isinstance(entry.get(axis), list)]
+    if not parts:
+        return None
+    return f"- **Catalog axes** (generated from the catalog's `component-shapes.json`, do not edit): {'; '.join(parts)}. {AXES_MARK}"
+
+
+def sections(md: str) -> dict[str, str]:
+    """Each `## ` section's text, keyed by its heading (the row name)."""
+    return {block.split("\n", 1)[0].strip(): block for block in re.split(r"^## ", md, flags=re.M)[1:]}
+
+
+def hidden_component(name: str, section: str | None) -> list[str]:
+    """A section that names a `Ui::` component, or states a Variants or Sizes line, is a component: an entry cannot exempt it from the variant and size
+    declaration by calling itself `drawable: false` (#2272). The rules and doctrine sections that really are not components name neither."""
+    if section is None:
+        return []
+    named = sorted(set(re.findall(r"Ui::\w+", section)))
+    states = re.search(r"\*\*(?:variants?|sizes?)\b", section, re.I)
+    if not named and not states:
+        return []
+    why = f"names the component `{named[0]}`" if named else "carries a Variants or Sizes line"
+    return [f"`{name}` is marked `drawable: false`, but its components.md section {why}: it is a component hiding behind the exemption. Declare its `variants` "
+            f"and `sizes` and draw it, or move the component out of that section"]
+
+
+def axis_problems(name: str, entry: dict, section: str | None) -> list[str]:
+    """What is wrong with one drawable entry's `variants` and `sizes`, and with its generated line in the prose (#2272)."""
+    found: list[str] = []
+    for axis in AXES:
+        value = entry.get(axis)
+        if axis not in entry:
+            found.append(f"`{name}` declares no `{axis}`: a list of names, or {{\"none\": \"reason\"}}. Silence is not an answer, because it is indistinguishable from an oversight.")
+        elif isinstance(value, list):
+            if not value or not all(isinstance(n, str) and n.strip() for n in value) or len(set(value)) != len(value):
+                found.append(f"`{name}` `{axis}` must be a non-empty list of distinct non-empty names, got {value!r}")
+        elif not (isinstance(value, dict) and set(value) == {"none"} and isinstance(value["none"], str) and value["none"].strip()):
+            found.append(f"`{name}` `{axis}` must be a list of names or {{\"none\": \"reason\"}}, got {value!r}")
+    if found or section is None:
+        return found
+    marked = [line for line in section.split("\n") if line.rstrip().endswith(AXES_MARK)]
+    want = axes_line(entry)
+    if want is None and marked:
+        found.append(f"`{name}` states no list but its components.md section carries a generated `Catalog axes` line: regenerate (`python3 scripts/build_component_axes.py`)")
+    elif want is not None and marked != [want]:
+        found.append(f"`{name}`'s generated `Catalog axes` line in components.md is missing, duplicated or differs from the catalog: regenerate (`python3 scripts/build_component_axes.py`), never edit it by hand")
+    prose = "\n".join(line for line in section.split("\n") if not line.rstrip().endswith(AXES_MARK))
+    for axis in AXES:
+        for word in entry.get(axis) if isinstance(entry.get(axis), list) else []:
+            if not re.search(rf"(?<![\w-]){re.escape(word)}(?![\w-])", prose, re.I):
+                found.append(f"`{name}` declares {axis[:-1]} `{word}`, which its components.md section never mentions: a name in the catalog the prose cannot explain")
+    return found
 
 
 def catalogue_rows(md: str) -> list[str]:
@@ -101,12 +160,15 @@ def check(md: str, shapes: dict, roles: set[str]) -> list[str]:
                 f"`{name}` has a shape but is not a components.md row. A component offered in pen "
                 f"that `rails-ui-composer` cannot build is the drift this mirror exists to prevent.")
 
+    by_heading = sections(md)
     for name, entry in entries.items():
         if entry.get("drawable") is False:
             if not str(entry.get("why", "")).strip():
                 problems.append(f"`{name}` is marked non-drawable with no `why`. The reason is the "
                                 f"whole value: without it nobody can tell a decision from a gap.")
+            problems += hidden_component(name, by_heading.get(name))
             continue
+        problems += axis_problems(name, entry, by_heading.get(name))
         shape = entry.get("shape")
         if shape not in SHAPE_KINDS:
             problems.append(f"`{name}` declares shape {shape!r}, which is not one of "
@@ -167,8 +229,9 @@ def selftest() -> int:
 
     ROLES = {"--primary", "--foreground", "--card", "--border"}
     MD = "## Button\n- stuff\n\n## Card\n- stuff\n\n## The focus ring\n- doctrine\n"
-    OK = {"Button": {"shape": "control", "parts": [{"kind": "text", "color": "foreground"}]},
-          "Card": {"shape": "surface", "parts": [{"kind": "box", "fill": "card"}]}}
+    NONE = {"none": "a slot layout, not a variant enum"}
+    OK = {"Button": {"variants": NONE, "sizes": NONE, "shape": "control", "parts": [{"kind": "text", "color": "foreground"}]},
+          "Card": {"variants": NONE, "sizes": NONE, "shape": "surface", "parts": [{"kind": "box", "fill": "card"}]}}
     expect("a reconciled pair has no findings", check(MD, OK, ROLES) == [])
     expect("...and doctrine sections are not treated as components",
            "The focus ring" not in str(check(MD, OK, ROLES)))
@@ -202,24 +265,24 @@ def selftest() -> int:
            check(MD, {**OK, "Card": {"drawable": False, "why": "a chapter"}}, ROLES) == [])
     expect("an unknown shape kind is reported",
            any("not one of" in p
-               for p in check(MD, {**OK, "Card": {"shape": "blob", "parts": [{"kind": "box"}]}},
+               for p in check(MD, {**OK, "Card": {"variants": NONE, "sizes": NONE, "shape": "blob", "parts": [{"kind": "box"}]}},
                               ROLES)))
     expect("an unknown part kind is reported",
            any("does not draw" in p
-               for p in check(MD, {**OK, "Card": {"shape": "surface",
+               for p in check(MD, {**OK, "Card": {"variants": NONE, "sizes": NONE, "shape": "surface",
                                                   "parts": [{"kind": "hologram"}]}}, ROLES)))
     # A role the pack does not declare would be silently dropped at generation time.
     expect("an undeclared role is reported",
            any("does not declare" in p
-               for p in check(MD, {**OK, "Card": {"shape": "surface",
+               for p in check(MD, {**OK, "Card": {"variants": NONE, "sizes": NONE, "shape": "surface",
                                                   "parts": [{"kind": "box", "fill": "nope"}]}},
                               ROLES)))
     expect("a drawable entry with no parts is reported",
-           any("no parts" in p for p in check(MD, {**OK, "Card": {"shape": "surface"}}, ROLES)))
+           any("no parts" in p for p in check(MD, {**OK, "Card": {"variants": NONE, "sizes": NONE, "shape": "surface"}}, ROLES)))
     # Nested parts are checked too — a column's children are as capable of naming a bad role.
     expect("a nested part is checked",
            any("does not declare" in p
-               for p in check(MD, {**OK, "Card": {"shape": "surface", "parts": [
+               for p in check(MD, {**OK, "Card": {"variants": NONE, "sizes": NONE, "shape": "surface", "parts": [
                    {"kind": "column", "of": [{"kind": "box", "fill": "nope"}]}]}}, ROLES)))
 
     # THE DUPLICATED KIND LISTS used to be reconciled against `pen_library.py`, the generator that
@@ -227,6 +290,38 @@ def selftest() -> int:
     # this file -- so there is nothing left to disagree with. Deleted rather than pointed at a new
     # file: a reconciliation with one side is not a check, and leaving it would be a gate that
     # cannot fail. The kinds are still enforced against the sidecar itself, above.
+
+    # VARIANTS AND SIZES (#2272): one structured source, declared for every drawable entry, and the prose line derived from it.
+    BTN = {**OK["Button"], "variants": ["primary", "ghost"], "sizes": ["sm", "md"]}
+    LINE = axes_line(BTN)
+    AMD = "## Button\n" + LINE + "\n- Variants are `primary` and `ghost`; sizes sm and md.\n\n## Card\n- stuff\n"
+    expect("a list-bearing entry with its generated line and its names in the prose is clean", check(AMD, {"Button": BTN, "Card": OK["Card"]}, ROLES) == [])
+    def axes_findings(entry, md=AMD):
+        return " ".join(check(md, {"Button": entry, "Card": OK["Card"]}, ROLES))
+    expect("an entry with no `variants` is reported", "declares no `variants`" in axes_findings({k: v for k, v in BTN.items() if k != "variants"}))
+    expect("an entry with no `sizes` is reported", "declares no `sizes`" in axes_findings({k: v for k, v in BTN.items() if k != "sizes"}))
+    expect("the old `\"enum\"` placeholder is reported", "must be a list of names or" in axes_findings({**BTN, "variants": "enum"}))
+    expect("an empty list is reported", "non-empty list" in axes_findings({**BTN, "variants": []}))
+    expect("a duplicated name is reported", "distinct" in axes_findings({**BTN, "sizes": ["sm", "sm"]}))
+    expect("a `none` with no reason is reported", "must be a list of names or" in axes_findings({**BTN, "sizes": {"none": " "}}))
+    expect("a `none` with another key is reported", "must be a list of names or" in axes_findings({**BTN, "sizes": {"none": "r", "extra": 1}}))
+    expect("a non-drawable entry needs no variants or sizes", check(MD, {**OK, "Card": {"drawable": False, "why": "a rule"}}, ROLES) == [])
+    HID = {**OK, "Card": {"drawable": False, "why": "a rule"}}
+    expect("a non-drawable entry whose section names a `Ui::` component is refused",
+           "hiding behind the exemption" in " ".join(check("## Button\n- stuff\n\n## Card\n- built as `Ui::Card`\n", HID, ROLES)))
+    expect("a non-drawable entry whose section carries a Variants line is refused",
+           "carries a Variants or Sizes line" in " ".join(check("## Button\n- stuff\n\n## Card\n- **Variants:** `a` · `b`\n", HID, ROLES)))
+    expect("a non-drawable entry whose section carries a Sizes line is refused",
+           "carries a Variants or Sizes line" in " ".join(check("## Button\n- stuff\n\n## Card\n- **Sizes** `sm/md`\n", HID, ROLES)))
+    expect("a non-drawable entry whose section names neither is accepted",
+           check("## Button\n- stuff\n\n## Card\n- a rule, in prose; sizes of type are discussed, not stated\n", HID, ROLES) == [])
+    expect("a missing generated line is reported", "missing, duplicated or differs" in axes_findings(BTN, AMD.replace(LINE + "\n", "")))
+    expect("a hand-edited generated line is reported", "missing, duplicated or differs" in axes_findings(BTN, AMD.replace("`ghost`", "`GHOST`")))
+    expect("a duplicated generated line is reported", "missing, duplicated or differs" in axes_findings(BTN, AMD.replace(LINE + "\n", LINE + "\n" + LINE + "\n")))
+    expect("a generated line for an entry that states no list is reported", "carries a generated" in axes_findings(OK["Button"]))
+    expect("a name the prose never mentions is reported (the generated line does not count)", "never mentions" in axes_findings({**BTN, "variants": ["primary", "ghost", "outline"], "sizes": ["sm", "md"]},
+                                                                                                                              AMD.replace(LINE, axes_line({**BTN, "variants": ["primary", "ghost", "outline"]}))))
+    expect("`axes_line` states lists only", axes_line(OK["Button"]) is None and "sizes `sm` · `md`" in LINE)
 
     for f in failures:
         print(f"FAIL {f}")

@@ -233,6 +233,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | checks.json paths selftest | `repo` | `python3 scripts/check_manifest_paths.py --selftest` | selftest |
 | claude plugin validate --strict | `repo` | `python3 scripts/check_plugin_validate.py` | live check |
 | close-on-dev-merge selftest | `repo` | `python3 scripts/close_on_dev_merge.py --selftest` | selftest |
+| component axes drift | `repo` | `python3 scripts/build_component_axes.py --check` | live check |
+| component axes selftest | `repo` | `python3 scripts/build_component_axes.py --selftest` | selftest |
 | component classes drift | `repo` | `python3 scripts/component_classes.py --check` | live check |
 | component classes selftest | `repo` | `python3 scripts/component_classes.py --selftest` | selftest |
 | component passthrough | `repo` | `python3 scripts/check_component_passthrough.py` | live check |
@@ -328,6 +330,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | token contrast selftest | `repo` | `python3 scripts/check_token_contrast.py --selftest` | selftest |
 | upstream check selftest | `repo` | `python3 scripts/check_upstream_docs.py --selftest` | selftest |
 | upstream citation coverage | `repo` | `python3 scripts/check_upstream_docs.py --coverage` | live check |
+| vendor hand-off | `repo` | `python3 scripts/check_vendor_handoff.py` | live check |
+| vendor hand-off selftest | `repo` | `python3 scripts/check_vendor_handoff.py --selftest` | selftest |
 | vendored alone | `repo` | `python3 scripts/check_vendored_alone.py` | live check |
 | vendored alone selftest | `repo` | `python3 scripts/check_vendored_alone.py --selftest` | selftest |
 | verdict quotes format | `repo` | `python3 scripts/check_verdict_quotes.py --format-check` | live check |

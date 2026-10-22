@@ -4,7 +4,7 @@ description: json.load/dump on component-shapes.json produced a 1,032-line diff 
 type: feedback
 ---
 
-Adding three entries to `plugins/rails-stack/skills/design-system/references/component-shapes.json` via `json.load` → `json.dump(indent=2)` reformatted every entry (its native layout packs `"shape"` and `"width"` on one line and `parts` arrays across wrapped lines). `check_component_shapes.py` was green over the rewrite, so only the diff stat showed it: 1,032 insertions, 198 deletions for 23 lines of intent.
+Adding three entries to `plugins/design-flow/catalog/component-shapes.json` (it was under rails-stack's design-system skill until #2272) via `json.load` → `json.dump(indent=2)` reformatted every entry (its native layout packs `"shape"` and `"width"` on one line and `parts` arrays across wrapped lines). `check_component_shapes.py` was green over the rewrite, so only the diff stat showed it: 1,032 insertions, 198 deletions for 23 lines of intent.
 
 **Why:** a parser round-trip preserves semantics, not layout, and the gates here check semantics. A reviewer then cannot see the three additions inside a thousand-line reflow, which is the same class as [[edit-python-structurally-with-ast]] in the other direction: there the text edit ate code; here the structural edit ate the layout.
 

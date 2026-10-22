@@ -105,7 +105,16 @@ fi
 # No readable body file (inline --body, a heredoc, a path we cannot resolve): say so and allow.
 # FAILING OPEN HERE IS DELIBERATE -- this guard's job is to make the check happen when it can, not
 # to become an obstacle to opening a PR. It is loud about what it could not read.
+# STRICT, for the gh shim only (#2258): it hands this hook a body file it wrote itself, so a body it cannot read, or a judge that cannot run, is a defect,
+# never "unchecked, allowed". The shim sets RAILS_FLOW_CLAIMS_STRICT=1; the PreToolUse tripwire never does, so its fail-open above and below is unchanged.
+strict_refuse() {
+  if [ "${RAILS_FLOW_CLAIMS_STRICT:-0}" = 1 ]; then
+    echo "BLOCKED by rails-flow claim guard: $1, so the body was not judged (strict: the gh shim judges every body it sees)." >&2
+    exit 2
+  fi
+}
 if [ -z "$body" ] || [ ! -r "$body" ]; then
+  strict_refuse "the body file could not be read"
   echo "rails-flow: could not read a --body-file to check claims; verify any numbers by hand." >&2
   exit 0
 fi
@@ -188,6 +197,7 @@ fi
 
 extract="${CLAUDE_PLUGIN_ROOT:-}/scripts/extract_claims.py"
 if [ ! -f "$extract" ] || ! command -v python3 >/dev/null 2>&1; then
+  strict_refuse "extract_claims.py or python3 is unavailable"
   echo "rails-flow: extract_claims.py or python3 unavailable — claims NOT checked." >&2
   exit 0
 fi
@@ -244,7 +254,7 @@ elif skills_in_diff; then
   fi
 fi
 
-claims="$(python3 "$extract" "$body" 2>/dev/null)" || exit 0
+claims="$(python3 "$extract" "$body" 2>/dev/null)" || { strict_refuse "extract_claims.py failed on the body"; exit 0; }
 n="$(printf '%s' "$claims" | sed -nE 's/^([0-9]+) load-bearing claim.*/\1/p' | head -1)"
 [ -n "${n:-}" ] && [ "$n" -gt 0 ] 2>/dev/null || exit 0
 

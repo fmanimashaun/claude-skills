@@ -71,6 +71,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from classify_door import Unusable, diff  # noqa: E402  -- one diff reader, never a second
@@ -104,9 +105,85 @@ MOCK_FILE = re.compile(r"\.(html?|png|jpe?g|webp|pdf|svg)$", re.I)
 OPT_OUT = re.compile(r"^[ \t]*(?:[-*+][ \t]*)?`?mockup-gate:[ \t]*off`?[ \t]*$", re.M | re.I)
 
 
-def ui_paths(paths: list[str]) -> list[str]:
-    return sorted(p for p in paths if any(r.match(p) for r in UI_PATHS)
-                  and (SEEN_ANYWAY.match(p) or not NOT_UI.search(p)))
+class Scope(NamedTuple):
+    """One stack's answer to "which paths does a person see": regexes matched with `re.search`."""
+    paths: tuple
+    not_paths: tuple
+    seen_anyway: tuple
+    label: str
+
+
+# THE FALLBACK (#2219, removal tracked by #2274): the Rails-shaped list above, used ONLY when no installed stack declares `ui_scope` (a Rails
+# project on flow-suite without rails-stack). It is the one Rails assumption left in this neutral gate, and every use of it says so.
+FALLBACK_SCOPE = Scope(UI_PATHS, (NOT_UI,), (SEEN_ANYWAY,), "the built-in Rails-shaped list")
+FALLBACK_NOTE = "no installed stack declares ui_scope: used the built-in Rails-shaped list; install rails-stack or nextjs-stack"
+SCOPE_DIRS: list[Path] | None = None        # the selftest points the detector at fixture plugins; None means the plugins installed beside this one
+
+
+def scope_says(scope: Scope, path: str) -> bool:
+    return (any(r.search(path) for r in scope.paths)
+            and (any(r.search(path) for r in scope.seen_anyway) or not any(r.search(path) for r in scope.not_paths)))
+
+
+def ui_paths(paths: list[str], scopes: list[Scope] | None = None) -> list[str]:
+    """The user-visible files among `paths`: a file is one when SOME stack's scope says so (a stack's `not_paths` bind only its own)."""
+    scopes = scopes or [FALLBACK_SCOPE]
+    return sorted(p for p in paths if any(scope_says(s, p) for s in scopes))
+
+
+def stack_scopes(root: Path, dirs: list[Path] | None = None) -> tuple[list[Scope], list[str]]:
+    """The `ui_scope` of every stack detected in `root`, and the note to print when the built-in fallback is used instead.
+
+    The detector is rails-flow's own `detect_stack.py`, imported only here (a guard that stages this gate alone never reaches it). A
+    detector that cannot judge (broken manifests) falls back too, and says why: the fallback is what the gate always did, never less."""
+    here = Path(__file__).resolve()
+    if str(here.parent) not in sys.path:
+        sys.path.insert(0, str(here.parent))
+    import detect_stack
+    dirs = dirs if dirs is not None else SCOPE_DIRS
+    code, report = detect_stack.run(root, dirs if dirs is not None else detect_stack.manifest_dirs(here))
+    if code == 2:
+        return [FALLBACK_SCOPE], [f"stack not judged ({'; '.join(report.get('problems') or [])}): used the built-in Rails-shaped list"]
+    scopes = []
+    for entry in report.get("ui_scope") or []:
+        scopes.append(Scope(tuple(re.compile(x) for x in entry.get("paths") or []), tuple(re.compile(x) for x in entry.get("not_paths") or []),
+                            tuple(re.compile(x) for x in entry.get("seen_anyway") or []), f"{entry.get('plugin')}:{entry.get('stack')}"))
+    return (scopes, []) if scopes else ([FALLBACK_SCOPE], [FALLBACK_NOTE])
+
+
+def ui_scope_case_failures(dirs: list[Path]) -> tuple[list[str], int]:
+    """Every installed stack's `cases` file run through its own scope: (failures, rows checked). The proof that a stack's patterns say
+    what its author meant, with the near misses (an API route, a JSON template) beside the hits."""
+    here = Path(__file__).resolve()
+    if str(here.parent) not in sys.path:
+        sys.path.insert(0, str(here.parent))
+    import detect_stack
+    manifests, _ = detect_stack.load_manifests(dirs)
+    failures: list[str] = []
+    rows = 0
+    for manifest in manifests:
+        for stack in manifest.get("stacks") or []:
+            scope = ((stack.get("descriptor") or {}).get("ui_scope") if isinstance(stack, dict) else None)
+            if not isinstance(scope, dict):
+                continue
+            label = f"{manifest['plugin']}:{stack.get('id')}"
+            mine = Scope(tuple(re.compile(x) for x in scope.get("paths") or []), tuple(re.compile(x) for x in scope.get("not_paths") or []),
+                         tuple(re.compile(x) for x in scope.get("seen_anyway") or []), label)
+            try:
+                cases = json.loads((detect_stack.plugin_root(manifest) / scope["cases"]).read_text(encoding="utf-8"))
+            except (OSError, ValueError, KeyError) as exc:
+                failures.append(f"{label}: ui_scope cases unreadable ({exc})")
+                continue
+            if not (isinstance(cases, list) and cases and all(isinstance(c, dict) and isinstance(c.get("path"), str) and isinstance(c.get("ui"), bool) for c in cases)):
+                failures.append(f"{label}: ui_scope cases must be a non-empty list of {{\"path\": str, \"ui\": bool}}")
+                continue
+            if not (any(c["ui"] for c in cases) and any(not c["ui"] for c in cases)):
+                failures.append(f"{label}: ui_scope cases need at least one hit AND one near miss, or they prove nothing")
+            for c in cases:
+                rows += 1
+                if scope_says(mine, c["path"]) != c["ui"]:
+                    failures.append(f"{label}: {c['path']} should be {'user-visible' if c['ui'] else 'not user-visible'}")
+    return failures, rows
 
 
 def declared_off(root: Path) -> bool:
@@ -712,7 +789,7 @@ def screen_nav_problems(root: Path, rel: str, fields: dict[str, str], vocab: dic
     return out
 
 
-def story_problems(root: Path, rel: str, fields: dict[str, str]) -> list[str]:
+def story_problems(root: Path, rel: str, fields: dict[str, str], scopes: list[Scope] | None = None) -> list[str]:
     """Pre-merge only: the built screen's `Story:`, a repo path to a story file or a user-visible file. A route cannot be checked here: the stack's
     route list comes with the stack descriptor (#2219), so a project with no Storybook and no view path cannot satisfy this until then."""
     story = fields.get("Story", "")
@@ -723,12 +800,12 @@ def story_problems(root: Path, rel: str, fields: dict[str, str]) -> list[str]:
     target = root / story
     if not target.is_file():
         return [f"{rel}: Story {story!r} is not a file in the repo"]
-    if not (STORY_FILE.search(story) or ui_paths([story])):
+    if not (STORY_FILE.search(story) or ui_paths([story], scopes if scopes is not None else stack_scopes(root)[0])):
         return [f"{rel}: Story {story!r} is neither a story file (*.stories.*) nor a user-visible file the stack's UI paths name"]
     return []
 
 
-def record_problems(root: Path, rel: str, require_story: bool = False) -> list[str]:
+def record_problems(root: Path, rel: str, require_story: bool = False, scopes: list[Scope] | None = None) -> list[str]:
     path = root / rel
     if not path.is_file():
         return [f"{rel}: no such mock-up record"]
@@ -777,7 +854,7 @@ def record_problems(root: Path, rel: str, require_story: bool = False) -> list[s
             out += states_problems(rel, fields, vocab)
             out += screen_nav_problems(root, rel, fields, vocab)
         if require_story:
-            out += story_problems(root, rel, fields)
+            out += story_problems(root, rel, fields, scopes)
         out += shell_reference_problems(root, rel, fields)
     return out
 
@@ -789,12 +866,20 @@ def shell_on_base(root: Path, base: str) -> bool:
 
 
 def run(root: Path, changed: list[str], record: str | None, base_has_shell: bool = False,
-        require_story: bool = False) -> tuple[int, list[str]]:
+        require_story: bool = False, dirs: list[Path] | None = None) -> tuple[int, list[str]]:
+    """The decision, with the stacks' own idea of what a user sees. Whenever the built-in fallback classified, the output says so."""
+    scopes, notes = stack_scopes(root, dirs)
+    code, lines = _run(root, changed, record, base_has_shell, require_story, scopes)
+    return code, lines + notes
+
+
+def _run(root: Path, changed: list[str], record: str | None, base_has_shell: bool, require_story: bool,
+         scopes: list[Scope]) -> tuple[int, list[str]]:
     """The whole decision. main() and the selftest both come through here.
 
     `base_has_shell`: the shell record already exists on the base. Then a change that touches only the shell record covers none of its
     user-visible files: each screen needs a record of its own (#2211 review). Without a shell on the base, the shell record IS the change."""
-    ui = ui_paths(changed)
+    ui = ui_paths(changed, scopes)
     if not ui and SHELL_RECORD not in changed:
         return 0, ["no user-visible change: no mock-up needed"]
     if declared_off(root):
@@ -805,7 +890,7 @@ def run(root: Path, changed: list[str], record: str | None, base_has_shell: bool
         return 1, [f"{len(ui)} user-visible file(s) ({', '.join(ui[:5])}{' …' if len(ui) > 5 else ''}) and no "
                    f"approved mock-up: publish one, stop for the owner's approval, then record it in "
                    f"{RECORD_DIR}<slug>.md"]
-    problems = [p for r in records for p in record_problems(root, r, require_story)]
+    problems = [p for r in records for p in record_problems(root, r, require_story, scopes)]
     if problems:
         return 1, problems
     if ui and base_has_shell and all(r == SHELL_RECORD for r in records):
@@ -1453,6 +1538,132 @@ def selftest() -> int:
             check_that("an unresolvable base is unusable", False)
         except Unusable:
             pass
+
+    # #2219: the stacks' own idea of what a person sees. Fixture plugins, so no Rails or Next.js path decides these.
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        here = Path(__file__).resolve()
+        sys.path.insert(0, str(here.parent))
+        import detect_stack as _ds
+
+        def stackplug(name: str, stacks: list, cases: object = None) -> Path:
+            d = base / "plugins" / name
+            (d / ".claude-plugin").mkdir(parents=True)
+            (d / ".claude-plugin/plugin.json").write_text("{}")
+            (d / "stacks.json").write_text(json.dumps({"plugin": name, "stacks": stacks}))
+            (d / "c.json").write_text(json.dumps(cases if cases is not None else [{"path": "web/a.vue", "ui": True}, {"path": "web/api/x.ts", "ui": False}]))
+            return d
+
+        web = stackplug("fxa", [{"id": "web", "all": [{"file": "web.marker"}], "descriptor": {"ui_scope": {
+            "paths": ["^web/"], "not_paths": ["\\.json$", "^web/api/"], "seen_anyway": ["^web/manifest\\.json$"], "cases": "c.json"}}}])
+        oth = stackplug("fxb", [{"id": "other", "all": [{"file": "other.marker"}], "descriptor": {"ui_scope": {"paths": ["^other/"], "cases": "c.json"}}}])
+        bare = stackplug("fxc", [{"id": "bare", "all": [{"file": "bare.marker"}]}])
+        broken = stackplug("fxd", [{"id": "broken", "all": [{"file": "broken.marker"}], "descriptor": {"ui_scope": {"paths": ["("], "cases": "c.json"}}}])
+
+        def proj(name: str, *markers: str) -> Path:
+            d = base / "projects" / name
+            d.mkdir(parents=True)
+            for m in markers:
+                (d / m).write_text("")
+            return d
+
+        p_web, p_both, p_none, p_bare, p_broken = (proj("web", "web.marker"), proj("both", "web.marker", "other.marker"), proj("none"),
+                                                   proj("bare", "bare.marker"), proj("broken", "broken.marker"))
+        sample = ["web/a.vue", "web/api/x.ts", "web/data.json", "web/manifest.json", "app/views/a.html.erb", "other/b.vue", "other/data.json"]
+        scopes, notes = stack_scopes(p_web, [web, oth])
+        check_that("#2219: a detected stack's ui_scope is the scope, with no note", [s_.label for s_ in scopes] == ["fxa:web"] and notes == [], (scopes, notes))
+        check_that("#2219: its paths, not_paths and seen_anyway decide, and the Rails list is NOT consulted once a stack declares",
+                   ui_paths(sample, scopes) == ["web/a.vue", "web/manifest.json"], ui_paths(sample, scopes))
+        scopes, notes = stack_scopes(p_both, [web, oth])
+        check_that("#2219: two detected stacks are a union, and one stack's not_paths bind only its own paths",
+                   ui_paths(sample, scopes) == ["other/b.vue", "other/data.json", "web/a.vue", "web/manifest.json"], ui_paths(sample, scopes))
+        scopes, notes = stack_scopes(p_none, [web, oth])
+        check_that("#2219: no detected stack: the built-in fallback, with the exact loud line",
+                   scopes == [FALLBACK_SCOPE] and notes == ["no installed stack declares ui_scope: used the built-in Rails-shaped list; install rails-stack or nextjs-stack"], (scopes, notes))
+        scopes, notes = stack_scopes(p_bare, [bare])
+        check_that("#2219: a detected stack that declares no ui_scope falls back too, with the loud line", scopes == [FALLBACK_SCOPE] and notes == [FALLBACK_NOTE], (scopes, notes))
+        try:
+            scopes, notes = stack_scopes(p_broken, [broken])
+        except Exception as exc:                  # a crash is a failed check here, not the end of the selftest
+            scopes, notes = [], [f"crashed: {exc!r}"]
+        check_that("#2219: a detector that cannot judge falls back and says why",
+                   scopes == [FALLBACK_SCOPE] and len(notes) == 1 and notes[0].startswith("stack not judged") and "does not compile" in notes[0], (scopes, notes))
+        code, msg = run(p_web, ["web/a.vue"], None, dirs=[web])
+        check_that("#2219: through run(), a file the stack calls user-visible holds the change, with no fallback note",
+                   code == 1 and not any("built-in" in m for m in msg), msg)
+        code, msg = run(p_web, ["app/views/x.html.erb"], None, dirs=[web])
+        check_that("#2219: a Rails view is not user-visible to a project whose stack declares otherwise", code == 0 and "no user-visible change" in msg[0], msg)
+        code, msg = run(p_none, ["app/views/x.html.erb"], None, dirs=[web])
+        check_that("#2219: with no stack declaring, the fallback still holds a Rails view and the output says it was used",
+                   code == 1 and FALLBACK_NOTE in msg, msg)
+        code, msg = run(p_none, ["README.md"], None, dirs=[web])
+        check_that("#2219: the fallback note is printed even when nothing user-visible changed", code == 0 and FALLBACK_NOTE in msg, msg)
+        # Story: the stack's scope decides what counts as a user-visible file.
+        (p_web / "web").mkdir()
+        (p_web / "web/Bell.vue").write_text("<template/>")
+        (p_web / "README.md").write_text("x")
+        global SCOPE_DIRS
+        saved_dirs = SCOPE_DIRS
+        try:
+            SCOPE_DIRS = [web]
+            check_that("#2219: a Story naming a file the stack calls user-visible is accepted (the Next.js limit lifts)",
+                       story_problems(p_web, "r.md", {"Story": "web/Bell.vue"}) == [])
+            check_that("#2219: a Story naming a file the stack does not call user-visible is refused",
+                       story_problems(p_web, "r.md", {"Story": "README.md"}) != [])
+            SCOPE_DIRS = [oth]
+            check_that("#2219 CONTROL: the same web file is no Story where the stack does not declare it (fallback list)",
+                       story_problems(p_web, "r.md", {"Story": "web/Bell.vue"}) != [])
+        finally:
+            SCOPE_DIRS = saved_dirs
+        # Story and the change's own classification use the SAME stacks: the ones run() was given, not whatever is installed.
+        for name, text in (("shell-a.html", SHELL_A), ("shell-b.html", SHELL_B)):
+            (p_web / "docs/product/mockups").mkdir(parents=True, exist_ok=True)
+            (p_web / "docs/product/mockups" / name).write_text(text)
+        code, msg = adopt_shell(p_web, ["docs/product/mockups/shell-a.html", "docs/product/mockups/shell-b.html"], APPROVAL, "@owner", "#1", "1280, 390", "default")
+        check_that("#2219 CONTROL: the shell is adopted in the fixture project", code == 0, msg)
+        for story, want in (("web/Bell.vue", 0), ("README.md", 1)):
+            (p_web / "docs/product/mockups/x.md").write_text(as_screen(GOOD, "x screen") + f"Story: {story}\n")
+            code, msg = run(p_web, ["web/a.vue", "docs/product/mockups/x.md"], None, require_story=True, dirs=[web])
+            check_that(f"#2219: through run(dirs=...), Story {story} is judged by the same stacks as the change itself (exit {want})", code == want, msg)
+        check_that("#2219: story_problems takes the scopes it is given, not the installed stacks",
+                   story_problems(p_web, "r.md", {"Story": "web/Bell.vue"}, stack_scopes(p_web, [web])[0]) == [])
+        # The REAL Rails and Next.js stacks, detected together (staged alone there are none, so this reads nothing).
+        real_pair = [d for d in _ds.manifest_dirs(here) if d.name in ("rails-stack", "nextjs-stack")]
+        if len(real_pair) == 2:
+            both = proj("real-both", "Gemfile", "package.json")
+            (both / "config").mkdir()
+            (both / "config/application.rb").write_text("")
+            (both / "package.json").write_text('{"dependencies": {"next": "14.0.0"}}')
+            scopes, notes = stack_scopes(both, real_pair)
+            check_that("#2219: a project with a Gemfile and next in package.json detects BOTH real stacks", sorted(s_.label for s_ in scopes) == ["nextjs-stack:nextjs", "rails-stack:rails"] and notes == [], ([s_.label for s_ in scopes], notes))
+            mixed = ["messages/en.json", "app/views/pwa/manifest.json.erb", "app/views/api/x.json.jbuilder", "app/page.tsx", "app/views/a.html.erb",
+                     "app/api/users/route.ts", "components/Nav.test.tsx", "config/routes.rb"]
+            check_that("#2219: with both real stacks, Rails' not_paths do not drop a Next.js messages file, and Next.js' do not drop a Rails .json.erb",
+                       ui_paths(mixed, scopes) == ["app/page.tsx", "app/views/a.html.erb", "app/views/pwa/manifest.json.erb", "messages/en.json"], ui_paths(mixed, scopes))
+
+        # The cases file proves the patterns.
+        case_bad, case_rows = ui_scope_case_failures([web])
+        check_that("#2219: a stack whose cases agree with its patterns has no failure", case_bad == [] and case_rows == 2, (case_bad, case_rows))
+        wrong = stackplug("fxe", [{"id": "web", "all": [{"file": "web.marker"}], "descriptor": {"ui_scope": {"paths": ["^web/"], "cases": "c.json"}}}],
+                          cases=[{"path": "web/a.vue", "ui": True}, {"path": "web/api/x.ts", "ui": False}])
+        case_bad, _ = ui_scope_case_failures([wrong])
+        check_that("#2219: a case the patterns get wrong is a failure naming the path", len(case_bad) == 1 and "web/api/x.ts" in case_bad[0], case_bad)
+        only_hits = stackplug("fxf", [{"id": "web", "all": [{"file": "web.marker"}], "descriptor": {"ui_scope": {"paths": ["^web/"], "cases": "c.json"}}}],
+                              cases=[{"path": "web/a.vue", "ui": True}])
+        case_bad, _ = ui_scope_case_failures([only_hits])
+        check_that("#2219: cases with no near miss prove nothing and are refused", any("near miss" in f for f in case_bad), case_bad)
+        bad_shape = stackplug("fxg", [{"id": "web", "all": [{"file": "web.marker"}], "descriptor": {"ui_scope": {"paths": ["^web/"], "cases": "c.json"}}}], cases=[{"path": "x"}])
+        try:
+            case_bad, _ = ui_scope_case_failures([bad_shape])
+        except Exception as exc:
+            case_bad = [f"crashed: {exc!r}"]
+        check_that("#2219: a case row without a boolean `ui` is refused", any("must be a non-empty list" in f for f in case_bad), case_bad)
+        # The REAL stacks' cases, when the stack plugins sit beside this one (a guard that stages this gate alone has none, and says so).
+        real = _ds.manifest_dirs(here)
+        case_bad, case_rows = ui_scope_case_failures(real)
+        check_that("#2219: every installed stack's own cases agree with its patterns", case_bad == [], case_bad)
+        if case_rows:
+            check_that("#2219: the real stacks' cases were actually read", case_rows >= 20, case_rows)
 
     # #2226: an invalid record already on the base is left alone when the branch changes a different record (history is never re-judged).
     with tempfile.TemporaryDirectory() as tmp:

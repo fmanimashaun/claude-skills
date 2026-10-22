@@ -102,8 +102,8 @@ externally verifiable claim, read for omissions, decide a no-upstream claim as o
 `gh pr merge <n> --merge`. A squash keeps dev's content and drops its ancestry, so the merge base falls
 back and the next promotion cannot merge at all (v1.83.0 → v1.84.0: six phantom conflicts). Repair, if
 it happens: merge `origin/main` into `dev`, resolve every conflict to dev's side, and assert
-`git diff --cached <dev-before> --stat` is **empty**. The full doctor's *the last promotion carried dev's
-ancestry* check asserts both halves; `--gates-only` skips it, so run the full doctor before promoting.
+`git diff --cached <dev-before> --stat` is **empty**. The plain doctor's *the last promotion carried dev's
+ancestry* check asserts both halves; `--gates-only` skips it, so run the plain doctor (no flags) for that check before promoting.
 
 ### A promotion is two steps, and only the second publishes
 
@@ -123,9 +123,9 @@ a promotion must carry no `Unreleased`, and a second arm would leave the first h
 
 - **It runs `--gates-only`, not `--gates`**: content gates only; the machine diagnostics are about a
   maintainer's clone and would teach people to ignore a red build.
-- **A pull request and a push to `dev` run `--fast`; the full sweep runs before a promotion, on your
-  machine.** `--fast` skips exactly `PR_SKIPPED_GATES` (`mutation coverage`, `guard-bash cases (full)`), reported as `skip` (#866).
-  Before promoting run `maintainer_doctor.py --gates-only --require-slow --record-proof`: it posts a
+- **A pull request and a push to `dev` run `--fast`; the full sweep runs on GitHub at the promotion.** This repo is
+  public, so `release.yml` runs it free; never tie up the shared machine for it (owner rule, 2026-10-21). `--fast` skips exactly `PR_SKIPPED_GATES` (`mutation coverage`, `guard-bash cases (full)`), reported as `skip` (#866).
+  A local `maintainer_doctor.py --gates-only --require-slow --record-proof` is for PRIVATE repos only: it posts a
   `full-sweep` status for the tree; `release.yml` reuses it for an identical tree, else runs all (#1635).
 - **A gate over its budget is FAIL by name**, its group killed. Guards live one per file, from **two
   roots**: `scripts/mutations/` (maintainer-only) and `plugins/<name>/scripts/mutations/` (ships, #1109). Before pushing a change to a guard, run it on Linux: `scripts/linux_check.sh <guard>` (docker; fails closed without it, #1738).
@@ -255,7 +255,7 @@ open.** Of the twenty-three hook scripts, sixteen are advisory and fail open —
 missing dependency gets disabled. Seven **gates fail closed**, each scoped to what it guards:
 `plugins/rails-flow/hooks/scripts/guard-bash.sh` (a tripwire for the common spellings, not a boundary: the stated-limit guarantee is the `git` shim and the `pre-commit` hook, #1789/#1790, #1793; falls back to the raw payload;
 the literal `git add -A` is blocked either way.), `plugins/qa-flow/hooks/scripts/release-gate.sh` (only for commands targeting `main`),
-`plugins/rails-flow/hooks/scripts/guard-lane.sh` (only when a lane is assigned), `plugins/rails-flow/hooks/scripts/guard-claims.sh` (only `gh pr create/edit` and `gh issue comment` carrying a body, in a repo it can resolve; #1141, #1877),
+`plugins/rails-flow/hooks/scripts/guard-lane.sh` (only when a lane is assigned), `plugins/rails-flow/hooks/scripts/guard-claims.sh` (a tripwire, not a boundary: the guarantee is `git-shim/gh`, which judges the body of `gh pr create/edit` and `gh issue comment` from the expanded argv in the directory gh runs in, #2258; NOT checked, said on stderr: a body from stdin, `/dev/stdin`, `/dev/fd/N` or a fifo; another repository's template (`-R` or `GH_REPO`); and a body gh composes (`--fill*`, `--template`, `--editor`, `--web`). Out of scope: `gh pr comment`, `gh issue create` and a `gh api` body; #1141, #1877),
 `plugins/rails-stack/hooks/scripts/guard-migrate.sh` (only a `Write` creating a new `db/migrate/` file), `plugins/rails-flow/hooks/scripts/guard-worktree.sh` (only a `git worktree add`; guards against accident, not impersonation), `plugins/rails-flow/hooks/scripts/guard-pr-ready.sh` (a tripwire, not a boundary: the guarantee is `git-shim/gh`, #1839; only `gh pr ready` (or a `gh api` marking a PR ready), in a repo that runs project_gates, a named repository from a directory that does not run it is not checked; needs a green sweep record for HEAD, #1565). Classify a new hook
 with `docs/doctrine/harness-doctrine.md`'s test before writing it: advisory → fail open; guarantee → fail closed,
 scoped. Every hook is driven end to end by `plugins/rails-flow/scripts/check_hook_gates.py`, under the

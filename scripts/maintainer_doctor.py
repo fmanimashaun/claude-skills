@@ -218,6 +218,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #2233. A CONFIRMED verdict quotes only what the cited page says: the checker fetches and matches (a verifier's tool, networked), and these two run offline.
     ("verdict quotes selftest", ("python3", "scripts/check_verdict_quotes.py", "--selftest")),
     ("verdict quotes format", ("python3", "scripts/check_verdict_quotes.py", "--format-check")),
+    # #2289. Vercel and Supabase teach their own platforms: a vendor CLI step in a shipped doc must be a hand-off line to the vendor's skill or command.
+    ("vendor hand-off", ("python3", "scripts/check_vendor_handoff.py")),
+    ("vendor hand-off selftest", ("python3", "scripts/check_vendor_handoff.py", "--selftest")),
     ("frontmatter selftest", ("python3", "scripts/check_frontmatter.py", "--selftest")),
     # #1334. Every plugin hook command must survive an install path containing a space: the four
     # fail-closed guards stop guarding when their command splits. Local and deterministic, so it
@@ -268,6 +271,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/check_component_shapes.py")),
     ("component shapes selftest",
      ("python3", "scripts/check_component_shapes.py", "--selftest")),
+    # #2272. Each component's `Catalog axes` line in components.md is DERIVED from the catalog's variants and sizes; the generator's selftest, and the committed
+    # files against a clean build (the blob at HEAD).
+    ("component axes selftest",
+     ("python3", "scripts/build_component_axes.py", "--selftest")),
+    ("component axes drift",
+     ("python3", "scripts/build_component_axes.py", "--check")),
     # #360, and the same argument one skill along: the quality-pass worked example states how many
     # files carry each duplicated shape, and an extraction decision rests on those numbers. NOT a
     # duplication gate — nothing here refuses a copy. It refuses a number in shipped doctrine
@@ -709,9 +718,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
 CORPORA_GATES = frozenset({"coverage matrix drift"})
 # Gates a PULL-REQUEST or dev-push run skips -- reported as SKIP with the reason, never omitted (#866,
 # #1635). `mutation coverage` is most of the sweep's cost (over 30 min of 41 locally at load, #1635), on every PR, for a check whose subjects
-# each PR's own selftest gates already run once. It runs on the maintainer's machine before a promotion
-# (`--require-slow --record-proof`, recorded against the tree by sweep_proof.py), and release.yml runs it
-# itself unless that record matches the tree it is publishing, so nothing reaches `main` without it.
+# each PR's own selftest gates already run once. release.yml runs it on GitHub for this public repo (owner rule 2026-10-21), unless a
+# recorded proof matches the tree it is publishing (a local `--require-slow --record-proof`, recorded against the tree by sweep_proof.py,
+# is for private repos), so nothing reaches `main` without it.
 # An exact set, pinned by the selftest in both directions like CORPORA_GATES: widening it is how a
 # "fast" mode becomes the only mode.
 PR_SKIPPED_GATES = frozenset({"mutation coverage", "guard-bash cases (full)"})
@@ -1436,7 +1445,7 @@ class Doctor:
             if fast and name in PR_SKIPPED_GATES:
                 self.add(
                     SKIP, f"gate: {name}",
-                    "not run in --fast mode — it runs locally before a promotion (--record-proof), and in the release when no proof matches the tree",
+                    "not run in --fast mode — it runs in the release on GitHub (release.yml), unless a recorded proof matches the tree; a local --record-proof is for private repos only",
                     " ".join(cmd),
                 )
                 continue

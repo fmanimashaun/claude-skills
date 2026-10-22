@@ -79,8 +79,9 @@ context cost in the toolchain and bought nothing a routed read does not.)
 | [references/art-direction.md](references/art-direction.md) | **"Is this considered, or mechanically assembled?"** — one focal point per surface, a different aesthetic brief per surface class (marketing = emotion, dense app = clarity), the one sanctioned way to break the grid. Advisory: `design-auditor` is the gate, `design-critic` the lens. |
 | [references/marketing-copy.md](references/marketing-copy.md) | **Any marketing surface** — what each section *says*: per-section copy contract, length caps derived from the shipped measures, placeholder checks. Layout without copy doctrine is a well-composed page of lorem-grade words. |
 
-`references/component-shapes.json` is **machine-read** — the sidecar `design_prompt.py` draws
-components from, reconciled against the catalog by a gate. It is not doctrine; do not load it.
+The catalog's structured source, `component-shapes.json` (each component's variant and size names, and its drawable skeleton), is **machine-read** and
+lives in the design-flow plugin's `catalog/`, not in this skill (#2272: the catalog is stack-neutral design). The `Catalog axes` line under a component below is
+**generated** from it; edit the catalog, never that line. It is not doctrine; do not load it.
 
 ## Authoring mechanism (what to reach for)
 
