@@ -338,7 +338,10 @@ def selftest() -> int:
         pidfiles.append(path)
         return path
 
-    def wait_for(path: str, n: int = 2, timeout: float = 10.0) -> list[int]:
+    # 60 s, not 10 (#2294): the wait ends as soon as the file holds the pids, so the ceiling costs nothing on a quiet machine. At load ~12 a process
+    # took over 10 s to start (measured: `mktemp` alone 10 s), the fixture had recorded nothing when the signal was sent, and the guard read the
+    # unmutated selftest as failing (INERT).
+    def wait_for(path: str, n: int = 2, timeout: float = 60.0) -> list[int]:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline and len(_recorded(path)) < n:
             time.sleep(0.05)
