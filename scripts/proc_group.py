@@ -29,6 +29,7 @@ import contextlib
 import os
 import shutil
 import signal
+import time
 import subprocess
 import sys
 import threading
@@ -65,14 +66,60 @@ def _signal(pid: int, sig: int, group: bool = False) -> None:
         pass
 
 
-def kill_tree(root: int) -> None:
-    """SIGKILL `root`, every process descending from it, and every process group one of them leads.
+GRACE_S = 0.5      # #2319: how long the tree gets, after SIGTERM, to run its own cleanup (rf_tmp removes its dirs) before the freeze
 
-    Each process found is SIGSTOPped before the next look, so a parent cannot fork past the walk or
-    die and hand its children to init; the walk repeats until it finds nothing new.
+
+def _descendants(seeds: set[int]) -> tuple[set[int], set[int]] | None:
+    """Every process below `seeds` and every group one of them leads, from one `ps`; None when ps fails."""
+    rows = _ps_rows()
+    if rows is None:
+        return None
+    children: dict[int, list[tuple[int, int]]] = {}
+    for pid, ppid, pgid in rows:
+        children.setdefault(ppid, []).append((pid, pgid))
+    found, groups, stack = set(), set(), list(seeds)
+    while stack:
+        for pid, pgid in children.get(stack.pop(), ()):
+            if pid not in found:
+                found.add(pid)
+                groups.add(pgid)
+                stack.append(pid)
+    return found, groups
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def kill_tree(root: int, grace: float | None = None) -> None:
+    """SIGTERM the tree and give it `grace` seconds to clean up after itself, then SIGKILL `root`, every process descending from it,
+    and every process group one of them leads.
+
+    THE GRACE (#2319): SIGKILL runs no handler, so a selftest's temp dirs outlived a killed run (5,155 `rf-` dirs from one guard run). So
+    the tree is walked once, every process and group in it gets SIGTERM, and the walk waits until they are gone or `grace` runs out.
+    THEN the #1548 kill, unchanged: each process found is SIGSTOPped before the next look, so a parent cannot fork past the walk or die
+    and hand its children to init; the walk repeats until it finds nothing new. It starts from everything the first walk found, so a
+    process orphaned during the grace is still frozen, and every group the first walk saw is SIGKILLed whole.
     """
     own = os.getpgrp()
-    frozen, groups = {root}, {root}
+    grace = GRACE_S if grace is None else grace
+    seen = _descendants({root}) if grace > 0 else None
+    early, early_groups = seen if seen is not None else (set(), set())
+    if grace > 0:
+        for pgid in (early_groups | {root}) - {own}:
+            _signal(pgid, signal.SIGTERM, group=True)
+        for pid in early | {root}:
+            _signal(pid, signal.SIGTERM)
+        deadline = time.monotonic() + grace
+        while time.monotonic() < deadline and any(_alive(p) for p in early | {root}):
+            time.sleep(0.02)
+    frozen, groups = {root} | {p for p in early if _alive(p)}, {root} | early_groups
     # THE KILL IS IN `finally` (#1548). Every process the walk finds is SIGSTOPped, so an exception
     # between the freeze and the kill -- Ctrl-C, a `ps` that fails -- used to leave the whole tree
     # stopped for good, still holding the caller's pipe. Freezing is only safe if killing is certain.

@@ -119,5 +119,18 @@ GUARD = Guard(
             '    executor = ThreadPoolExecutor(max_workers=max_workers)',
             '#1548: a pool started after an interrupted one refused every child',
         ),
+        Mutation(
+            # #2319: no grace, so a killed run's rf_tmp dirs leak.
+            "the tree gets no grace before the kill",
+            "GRACE_S = 0.5",
+            "GRACE_S = 0",
+            "#2319: a run killed on its timeout must remove its rf_tmp dir in the grace",
+        ),
+        Mutation(
+            "the freeze no longer starts from what the first walk saw, so an orphan made during the grace escapes",
+            "    frozen, groups = {root} | {p for p in early if _alive(p)}, {root} | early_groups",
+            "    frozen, groups = {root}, {root}",
+            "#2319: an orphan made during the grace escaped the kill",
+        ),
     ),
 )
