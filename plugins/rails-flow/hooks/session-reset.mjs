@@ -353,9 +353,18 @@ export function parseWorktreeRemove(cmd) {
 // bare `git worktree remove` (which leaves the databases, the branch and the scratch behind) no longer marks the job removed, and
 // a teardown that printed LEFT BEHIND or REFUSED does not either.
 export function passedTeardown(cmd, text) {
-  const m = /worktree_teardown\.py((?:\s+--?[\w-]+(?:=\S+)?)*)\s+(?!--)([^\s;&|]+)/.exec(String(cmd))
-  if (!m || /--(?:dry-run|audit|selftest|check-wording)\b/.test(m[1])) return null
-  return /worktree_teardown: done, nothing left/.test(String(text ?? '')) ? m[2] : null
+  // TOKENISED, not one regex (#2305 review, CodeQL: a nested quantifier backtracked exponentially on `worktree_teardown.py - -- - ...`).
+  // Linear: the words after the script up to the first shell separator; flags start with `-`, the first other word is the path.
+  const s = String(cmd)
+  const at = s.indexOf('worktree_teardown.py')
+  if (at < 0) return null
+  const rest = s.slice(at + 'worktree_teardown.py'.length).split(/[;&|\n]/, 1)[0]
+  const words = rest.split(/\s+/).filter(Boolean)
+  const flags = words.filter((w) => w.startsWith('-'))
+  if (flags.some((f) => ['--dry-run', '--audit', '--selftest', '--check-wording'].includes(f.split('=')[0]))) return null
+  const path = words.find((w) => !w.startsWith('-'))
+  if (path === undefined) return null
+  return String(text ?? '').includes('worktree_teardown: done, nothing left') ? path : null
 }
 
 // The URL of the pull request `gh pr create` printed: the LAST full github.com PR URL, never a bare number,

@@ -242,6 +242,15 @@ await check('passedTeardown reads the path only from a teardown that says it lef
   assert.equal(reset.passedTeardown('python3 worktree_teardown.py /tmp/wt-a', 'worktree_teardown: LEFT BEHIND: x'), null)
   assert.equal(reset.passedTeardown('python3 worktree_teardown.py --audit', 'every worktrees parent holds only worktrees'), null)
   assert.equal(reset.passedTeardown('git worktree remove /tmp/wt-a', TEARDOWN_DONE), null)
+  assert.equal(reset.passedTeardown('python3 worktree_teardown.py /tmp/wt-a && echo ok', TEARDOWN_DONE), '/tmp/wt-a')
+})
+
+await check('passedTeardown is linear: a long hostile command finishes in under 50 ms (#2305 review, CodeQL)', () => {
+  const hostile = 'worktree_teardown.py ' + '- -- '.repeat(20000) + '-'
+  const t0 = performance.now()
+  reset.passedTeardown(hostile, TEARDOWN_DONE)
+  const ms = performance.now() - t0
+  assert.ok(ms < 50, `took ${ms.toFixed(1)} ms`)
 })
 
 await check('the clear is queued synchronously from turn.complete, ahead of any later prompt or tool call', async () => {

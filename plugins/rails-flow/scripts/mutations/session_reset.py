@@ -381,14 +381,14 @@ GUARD = Guard(
         Mutation(
             # #2296: the context clears only after the teardown PASSED.
             "a teardown that left something behind counts as done",
-            "  return /worktree_teardown: done, nothing left/.test(String(text ?? '')) ? m[2] : null",
-            "  return m[2]",
+            "  return String(text ?? '').includes('worktree_teardown: done, nothing left') ? path : null",
+            "  return path",
             "no clear after a teardown that left something behind",
         ),
         Mutation(
             "a dry run counts as a teardown",
-            "if (!m || /--(?:dry-run|audit|selftest|check-wording)\\b/.test(m[1])) return null",
-            "if (!m || /--(?:audit|selftest|check-wording)\\b/.test(m[1])) return null",
+            "['--dry-run', '--audit', '--selftest', '--check-wording']",
+            "['--audit', '--selftest', '--check-wording']",
             "no clear after a dry run",
         ),
         Mutation(
