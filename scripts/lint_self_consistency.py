@@ -2255,7 +2255,7 @@ def check_flattened_conditional_role() -> tuple[list[Finding], int]:
     findings: list[Finding] = []
     branches: list[tuple[str, str]] = []
     for path in walk(".md"):
-        if not rel(path).startswith("plugins/rails-stack/skills/"):  # #2182
+        if not rel(path).startswith(("plugins/rails-stack/skills/", "plugins/core-skills/skills/")):  # #2182, #2186
             continue
         for match in _CONDITIONAL_ROLE.finditer(read(path)):
             branches.append((match.group("a"), match.group("b")))
@@ -2271,7 +2271,7 @@ def check_flattened_conditional_role() -> tuple[list[Finding], int]:
     for path in walk(".md"):
         # The doctrine itself (plugins/rails-stack/skills/, under plugins/ since #2182) is where the
         # conditional is learned, not a place that can flatten it: the check covers the flows only.
-        if not rel(path).startswith("plugins/") or rel(path).startswith("plugins/rails-stack/skills/"):
+        if not rel(path).startswith("plugins/") or rel(path).startswith(("plugins/rails-stack/skills/", "plugins/core-skills/skills/")):
             continue
         # Paragraphs, because that is the unit a reader takes the instruction from. Splitting on
         # lines would fire on any prose that wraps between the two branch names.
@@ -3557,7 +3557,7 @@ def check_undocumented_skill() -> tuple[list[Finding], int]:
     body = read(doc)
     findings: list[Finding] = []
     examined = 0
-    for parent in ("plugins/rails-stack/skills", ".claude/skills"):
+    for parent in ("plugins/rails-stack/skills", "plugins/core-skills/skills", ".claude/skills"):  # core-skills since #2186
         base = ROOT / parent
         if not base.is_dir():
             continue
@@ -4876,7 +4876,7 @@ def selftest() -> int:
     # Files the fixtures cite. A path must EXIST to count as evidence, so they have to be here.
     _TREE = {".claude-plugin/marketplace.json": _M2,
              "plugins/rails-flow/hooks/scripts/guard-lane.sh": "#!/bin/sh\n",
-             "plugins/core-skills/skills/parallel-session-lane/SKILL.md": "---\nname: x\n---\n",
+             "plugins/rails-stack/skills/rails-8/SKILL.md": "---\nname: x\n---\n",
              "scripts/doctrine_map.py": "print(1)\n"}
 
     scenario("a bullet placed in the section that owns its code", rule=CBS, expect_finding=False,
@@ -4894,7 +4894,7 @@ def selftest() -> int:
     # entries on first input, which is #476's lesson.
     _BOTH = ("- **Advice became a guarantee.** (#660) "
              "`plugins/rails-flow/hooks/scripts/guard-lane.sh` refuses the write, and "
-             "`plugins/core-skills/skills/parallel-session-lane/SKILL.md` §1 says so.")
+             "`plugins/rails-stack/skills/rails-8/SKILL.md` §1 says so.")  # a skill that stays in rails-stack, so its heading is rails-stack
     scenario("...a two-component bullet is accepted under the plugin heading", rule=CBS,
              expect_finding=False,
              files={**_TREE, "CHANGELOG.md": _cl("rails-flow (agentic flow plugin)", _BOTH)})
