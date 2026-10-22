@@ -151,29 +151,29 @@ by neither a variant nor the wordmark is still reported** — the check was narr
 **A single-value feedback role cannot serve both grounds** (#775). `--success`, `--warning`,
 `--info`, `--signal` and `--destructive` are declared once and inherited by `.dark` unless
 re-pointed — and a value tuned dark enough to read on a light ground is too dark to read on a dark
-one. Both shipped packs prove it from opposite sides: fidara's bright hues clear dark and fail
-light; reliance's, darkened for 1.4.3 in light, clear light and fail dark. **Neither is a defect in
-the pack** — it is what one value for two grounds means.
+one. The two shipped packs showed it from opposite sides: fidara's bright hues clear dark and fail
+light; reliance's, darkened for 1.4.3 in light, cleared light and failed dark (2.41–2.87:1 on its
+dark card). That was a defect **on the ground it failed**, and #2324 re-pointed reliance's tones for
+dark; fidara's already clear, so they stay one value. What one value for two grounds means is that
+the pack has to say, for each ground, a value that reads there.
 
 So the contract is: **re-point a feedback role in `.dark` whenever it must be legible there**, the
-same way surfaces already are. Two roles are enforced, at the two thresholds WCAG actually states:
+same way surfaces already are. These roles are enforced, at the thresholds WCAG actually states:
 
 | role | clause | floor | why |
 |---|---|---|---|
 | `--ring` | **1.4.11** non-text | **3:1** | a focus indicator is a UI component state |
 | `--*-ink` | **1.4.3** text | **4.5:1** | an `-ink` role exists to *be* text — that is why `--success-ink` was added beside `--success` |
+| `--info` `--success` `--warning` `--destructive`, **dark ground only**, on the dark card and page | **1.4.11** non-text | **3:1** | a tone is a fill, border or icon; the token file cannot see the usage, so 3:1 is the floor it can state (#2324) |
+| `--*-hover` and `--*-active`, both modes | **1.4.3** text | **4.5:1** | the label the resting state carries is still on the hover fill; the role must also be re-pointed under `.dark` (#2324) |
 
-The **base** feedback tones (`--info`, `--success`, `--warning`, `--destructive`) are enumerated on
-the **dark** ground only, at 1.4.11's **3:1** against the dark card and page (#2324, the coordinator's
-decision on that issue, from flo-it-ui's measurements of reliance). They serve as fills, borders or icons depending on the component, so 3:1 is
-the floor a token file can state without seeing a usage; a tone used as *text* needs an `-ink` role
-at 4.5:1, as `--success-ink` does. The light ground is not enumerated: it is the open contract
-question above, and it would fail fidara's bright hues for a rule no clause states. `--signal` is
-emphasis, not feedback, and is not enumerated. The same pass holds the interactive roles:
-`--primary-hover` (and any `*-hover` or `*-active` role the light block sets) is re-pointed under
-`.dark` too, and its label is 4.5:1 on it — a hover left at its light value was a dark fill under a
-dark label, 1.98–3.02:1 across the three shipped pack files. Judge the rest on the rendered component,
-where `/design-flow:audit` pass 3 already looks.
+The tones are dark-only: the decision on #2324 was the coordinator's (claude-skills-c2), made on
+flo-it-ui's measurements of reliance. A tone used as *text* needs an `-ink` role at 4.5:1, as
+`--success-ink` does. The light ground is not enumerated: it is the open contract question above, and
+it would fail fidara's bright hues for a rule no clause states. `--signal` is emphasis, not feedback,
+and is not enumerated. A hover left at its light value was a dark fill under a dark label,
+1.98–3.02:1 across the three shipped pack files. Judge the rest on the rendered component, where
+`/design-flow:audit` pass 3 already looks.
 
 - `variants` — each carries only what re-labelling needs: display `name`, the `endorsement`
   string (or `null`), and which `mark` asset to use. **No variant carries values**, which is

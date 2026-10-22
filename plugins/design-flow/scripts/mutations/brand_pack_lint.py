@@ -140,6 +140,18 @@ GUARD = Guard(
             "a dark hover whose label is under 4.5:1 is an ERROR",
         ),
         Mutation(
+            "only a hover the light block sets has its label measured",
+            '    for role in sorted(r for r in {*light, *dark} if re.search(r"-(hover|active)$", r)):\n',
+            '    for role in sorted(r for r in light if re.search(r"-(hover)$", r)):\n',
+            "a hover only `.dark` sets is measured too",
+        ),
+        Mutation(
+            "an -active role's label is never measured",
+            '        label = re.sub(r"-(hover|active)$", "-foreground", role)\n',
+            '        label = re.sub(r"-(hover)$", "-foreground", role) if role.endswith("-hover") else "--none"\n',
+            "an -active role's label is measured, not only its presence",
+        ),
+        Mutation(
             "the non-text floor drops below the measured light value",
             "NON_TEXT_FLOOR = 3.0   # WCAG 1.4.11",
             "NON_TEXT_FLOOR = 2.0   # WCAG 1.4.11",

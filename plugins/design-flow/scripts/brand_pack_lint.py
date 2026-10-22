@@ -580,8 +580,9 @@ def lint_dark_states(path: str, report: Report) -> None:
         if ratio < floor:
             report.error(f"dark {what}: {fg} {a} on {bg} {b} is {ratio:.2f}:1, under {floor}:1")
 
-    for role in sorted(r for r in light if r.endswith("-hover")):
-        label = role[: -len("-hover")] + "-foreground"
+    # Every hover and active role EITHER block sets: a role only `.dark` sets is as real as one `:root` sets.
+    for role in sorted(r for r in {*light, *dark} if re.search(r"-(hover|active)$", r)):
+        label = re.sub(r"-(hover|active)$", "-foreground", role)
         if label in scope:
             pair(label, role, TEXT_FLOOR, f"{role} under its label (1.4.3)")
     for tone in TONES:
@@ -884,6 +885,14 @@ def selftest() -> int:
     r = states_report("  --primary-active: #0D5889;\n" + GOOD_TONES, "")
     check("any `*-active` role is held to the same rule, not only --primary-hover",
           any("--primary-active is set in `:root` but not re-pointed" in e for e in r.errors), f"{r.errors}")
+    r = states_report("", "  --primary-hover: #0D5889;\n")
+    check("a hover only `.dark` sets is measured too",
+          any("--primary-hover under its label" in e and "2.2" in e for e in r.errors), f"{r.errors}")
+    r = states_report("  --primary-active: #0D5889;\n", "  --primary-active: #0D5889;\n")
+    check("an -active role's label is measured, not only its presence",
+          any("--primary-active under its label" in e for e in r.errors), f"{r.errors}")
+    r = states_report("  --primary-active: #0D5889;\n", "  --primary-active: var(--color-lite);\n")
+    check("an -active role with a readable label passes", r.errors == [], f"{r.errors}")
     r = states_report("  --info: #1171B0;\n", "")
     check("a tone left at its light value is an ERROR when it is under 3:1 on the dark card",
           any("--info on --card" in e and "2.87" in e for e in r.errors), f"{r.errors}")
