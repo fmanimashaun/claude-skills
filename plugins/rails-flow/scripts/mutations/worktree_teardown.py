@@ -37,7 +37,7 @@ GUARD = Guard(
         Mutation("an unreachable PostgreSQL no longer fails closed", "listed = existing_databases(psql) if psql and dropdb else None",
                  "listed = existing_databases(psql) if psql and dropdb else []", "fails closed"),
         Mutation("--dry-run acts", "    if dry_run:", "    if False:", "--dry-run changes nothing"),
-        Mutation("--assume-merged is ignored", "    if not assume_merged:", "    if True:", "--assume-merged ends a branch"),
+        Mutation("--assume-merged is ignored", "    if not assume_merged:", "    if True:", "--assume-merged ends a worktree"),
         Mutation("a path that is not a worktree of this repository is no longer refused", "    if row is None:", "    if False:",
                  "a subdirectory of a worktree is refused"),
         Mutation("an unreadable database config no longer fails closed", "    if config is None or any(c is None for c in shared_cfgs.values()):", "    if False:",
@@ -98,6 +98,19 @@ GUARD = Guard(
             "| {main + \"-wt\"} |",
             "|",
             "--audit scans the conventional <main>-wt parent even when no worktree is registered there",
+        ),
+        Mutation(
+            # #2305 review: --assume-merged deleted an unmerged branch.
+            "an unproven branch is deleted under --assume-merged",
+            "    if integ is None or git(main, \"merge-base\", \"--is-ancestor\", tip, integ)[0] != 0:",
+            "    if False:",
+            "...but never deletes its unproven branch",
+        ),
+        Mutation(
+            "a branch checked out in another worktree is no longer protected",
+            "    names |= {r[\"branch\"] for r in worktrees(main) if r.get(\"branch\")}",
+            "    names |= set()",
+            "a branch checked out in another worktree is protected",
         ),
     ),
 )

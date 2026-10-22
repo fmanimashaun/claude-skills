@@ -297,14 +297,13 @@ PR_BASES = open_prs_on     # the selftest swaps in a stub, so it never calls the
 
 
 def protected(main: str, branch: str) -> bool:
-    """Never deleted (commit security review): an integration branch, the remote's default branch, or the main checkout's branch."""
+    """Never deleted (commit security review; #2305 review): an integration branch, the remote's default branch, or a branch checked out in
+    ANY registered worktree, the main checkout included (the one being torn down is already gone when this is asked)."""
     names = {i.removeprefix("origin/") for i in INTEGRATION}
     rc, default = git(main, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD")
     if rc == 0 and default.strip():
         names.add(default.strip().removeprefix("origin/"))
-    rc, current = git(main, "symbolic-ref", "-q", "--short", "HEAD")
-    if rc == 0 and current.strip():
-        names.add(current.strip())
+    names |= {r["branch"] for r in worktrees(main) if r.get("branch")}
     return branch in names
 
 
@@ -320,6 +319,12 @@ def delete_branch(main: str, branch: str, tip: str) -> list[str]:
     left = []
     if not branch or protected(main, branch):
         return left
+    # PROVEN MERGED, OR KEPT (#2305 review). `--assume-merged` lets a squash-merged worktree be torn down, but it proves nothing about the
+    # branch: an unmerged branch would be deleted, locally and on origin. So the branch goes only when its tip is an ancestor of the
+    # integration branch; otherwise it is kept and named, and a squash-merged one is deleted by hand once its PR shows merged.
+    integ = integration_ref(main)
+    if integ is None or git(main, "merge-base", "--is-ancestor", tip, integ)[0] != 0:
+        return [f"branch {branch} (not proven merged into {integ or 'an integration branch'}: kept; delete it by hand once its PR shows merged)"]
     if git(main, "update-ref", "-d", f"refs/heads/{branch}", tip)[0] != 0 and git(main, "rev-parse", "-q", "--verify", f"refs/heads/{branch}")[0] == 0:
         left.append(f"branch {branch} (it moved since the merge check)")
     if git(main, "remote", "get-url", "origin")[0] != 0 or not git(main, "ls-remote", "--heads", "origin", branch)[1].strip():
@@ -619,8 +624,11 @@ def selftest() -> int:
             # 6. a squash-merged branch needs the flag, and only the flag
             wq = add("squashed", merged=False)
             universe("app_dev_squashed")
-            check("--assume-merged ends a branch whose head is not an ancestor", teardown(wq, assume_merged=True, pg_bin=binpath, say=quiet) == 0
-                  and dropped() == ["app_dev_squashed"] and not listed(wq))
+            said_q: list[str] = []
+            code_q = teardown(wq, assume_merged=True, pg_bin=binpath, say=said_q.append)
+            check("--assume-merged ends a worktree whose head is not an ancestor", dropped() == ["app_dev_squashed"] and not listed(wq))
+            check("...but never deletes its unproven branch: it is kept and named (#2305 review)",
+                  code_q == 1 and g("branch", "--list", "b-squashed-r").strip() != "" and any("not proven merged" in ln for ln in said_q), str(said_q[-2:]))
 
             # 7. nothing left beside it (#2296): scratch goes with the worktree; an export in the worktrees' parent fails by name;
             #    the KEEP entries stay; the merged branch goes, locally and on origin unless a PR stacks on it.
@@ -677,6 +685,8 @@ def selftest() -> int:
             check("a remote branch whose tip moved since the merge check is kept and named",
                   code == 1 and bool(g("ls-remote", "--heads", "origin", "b-moved-repo-wt").strip()) and any("moved" in ln for ln in said), str(said[-2:]))
             check("an integration branch is protected from deletion", protected(main, "dev") and protected(main, "main") and not protected(main, "b-x"))
+            wo = add("other", parent="repo-wt")
+            check("a branch checked out in another worktree is protected (#2305 review)", protected(main, "b-other-repo-wt"))
             PR_BASES = open_prs_on
 
             def td(path, **kw):      # a raise inside the teardown is a failed fixture with a label, not a crashed selftest
