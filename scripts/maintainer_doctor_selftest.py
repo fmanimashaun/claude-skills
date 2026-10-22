@@ -236,14 +236,19 @@ def ruleset_fixtures() -> None:
             md.RULESET_ARGS = saved
 
 
-def hostile_environment_fixtures() -> None:
+def hostile_environment_fixtures(project: Path | None = None, gitconfig: bool = True) -> None:
     """#2312: the fixture repositories build on a maintainer's machine as they do on a CI runner. 21 checks failed on the maintainer's Mac and passed in CI because the
     Mac has rails-flow's git shim first on PATH (it refuses `git add -A` in a repository that is not marked as a fixture, #1994) and a system gitconfig of its own
     (Homebrew's `core.hooksPath`, Xcode's `init.defaultBranch`). The fixture is built here in a subprocess under each, in turn (the shim refuses a hostile
     GIT_CONFIG_GLOBAL itself, so the two cannot be combined): (A) the shipped shim first on PATH, (B) a hostile global AND system gitconfig. Each has a CONTROL that proves
-    the environment is hostile, so the check cannot pass by the environment having gone benign."""
+    the environment is hostile, so the check cannot pass by the environment having gone benign.
+
+    `project` is where the tree sits for the shim's purposes (CLAUDE_SESSION_PROJECT_TOP, and where the shim is taken from); `gitconfig=False` runs only (A). The check is run
+    again for a project INSIDE the machine's temp root (#2332): that is where the mutation harness stages this tree, and the first version passed in the real tree and was INERT in
+    the staged copy, on macOS and on Linux, because it set TMPDIR to the temp root that then contained the project."""
     import tempfile
-    shim = REAL_REPO / "plugins" / "rails-flow" / "git-shim"
+    project = project or REAL_REPO
+    shim = project / "plugins" / "rails-flow" / "git-shim"
     base = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     off_shim = os.pathsep.join(d for d in base["PATH"].split(os.pathsep) if "git-shim" not in d)
     probe = (f"import sys; sys.path.insert(0, {str(Path(__file__).resolve().parent)!r}); import maintainer_doctor_selftest as t; "
@@ -272,10 +277,15 @@ def hostile_environment_fixtures() -> None:
         # (A) the shim first on PATH, with what a Claude session gives it: the shim accepts a marked fixture only when TMPDIR and CLAUDE_SESSION_PROJECT_TOP are set
         # (`temp_root_ok`), and a bare CI runner sets neither, so there it refuses every fixture, marked or not (found on the runner, #2312). The Mac passed because the
         # selftest ran from a session whose shell had both.
-        shim_env = {**base, "PATH": f"{shim}{os.pathsep}{base['PATH']}", "TMPDIR": tempfile.gettempdir(), "CLAUDE_SESSION_PROJECT_TOP": str(REAL_REPO)}
+        # TMPDIR is a FRESH directory of its own, never the machine's temp root (#2332): the shim refuses a temp root that CONTAINS the session's project, and the harness stages this
+        # tree under the machine's temp root (`mutbase-<guard>-*`), so a check that set TMPDIR to it passed in the real tree and failed, on macOS and on Linux, in the staged copy
+        # the mutation guard runs. A fresh subdirectory cannot contain the tree wherever the tree sits, and every fixture the probe builds lands inside it.
+        session_tmp = Path(td) / "session-tmp"
+        session_tmp.mkdir()
+        shim_env = {**base, "PATH": f"{shim}{os.pathsep}{base['PATH']}", "TMPDIR": str(session_tmp), "CLAUDE_SESSION_PROJECT_TOP": str(project)}
         # CONTROLS. The environment lets a MARKED fixture stage with `git add -A` (so the check is about the fixture, not about a shim that refuses everything), and refuses the
         # old way: a plain clone of an empty remote, staged with `git add -A`.
-        marked = fixture_git.init(Path(td) / "marked", "-b", "main")
+        marked = fixture_git.init(session_tmp / "marked", "-b", "main")
         (marked / "m.txt").write_text("x\n", encoding="utf-8")
         _tick()
         staged = subprocess.run(["git", "add", "-A"], cwd=marked, env=fixture_git.env(marked, shim_env), capture_output=True, text=True)
@@ -292,6 +302,8 @@ def hostile_environment_fixtures() -> None:
             if subprocess.run(["git", "-C", str(old), "add", "-A"], env=shim_env, capture_output=True, text=True).returncode == 0:
                 FAILURES.append("#2312: CONTROL is vacuous: `git add -A` in a plain clone was NOT refused with the shipped shim first on PATH")
         build("the shipped git shim first on PATH", shim_env)
+        if not gitconfig:
+            return
         # (B) a hostile global and system gitconfig, the shim off PATH. CONTROL: the config applies (a plain `git init` names the default branch it sets).
         cfg = Path(td) / "hostile-gitconfig"
         cfg.write_text("[init]\n\tdefaultBranch = master\n[core]\n\thooksPath = .githooks\n", encoding="utf-8")
@@ -302,6 +314,22 @@ def hostile_environment_fixtures() -> None:
         if head != "refs/heads/master":
             FAILURES.append(f"#2312: CONTROL is vacuous: the hostile gitconfig did not apply (a plain init named {head!r})")
         build("a hostile global and system gitconfig", cfg_env)
+
+
+def _staged_hostile_environment_fixture() -> None:
+    """#2332: check A again, for a project that sits INSIDE the machine's temp root, as the mutation harness stages this tree (`mutbase-<guard>-*` under it). The shim refuses a
+    temp root that contains the session's project, so a check that takes the machine's temp root for TMPDIR passes in the real tree and is INERT in the staged copy. The project
+    here is a directory under the temp root whose `plugins` is the real one (the shim and the fixtures are read from it)."""
+    import tempfile
+    staged = Path(tempfile.mkdtemp(prefix="doctor-staged-"))
+    try:
+        (staged / "plugins").symlink_to(REAL_REPO / "plugins")
+        _tick()
+        if not str(staged.resolve()).startswith(str(Path(tempfile.gettempdir()).resolve())):
+            FAILURES.append(f"#2332: the staged project {staged} is not inside the temp root, so this fixture does not stage what the harness stages")
+        hostile_environment_fixtures(staged, gitconfig=False)
+    finally:
+        shutil.rmtree(staged, ignore_errors=True)
 
 
 def repo_untouched_fixtures() -> None:
@@ -635,6 +663,7 @@ def run() -> int:
     gate_time_fixtures()
     starved_gate_fixtures()
     hostile_environment_fixtures()
+    _staged_hostile_environment_fixture()
     repo_untouched_fixtures()
     ruleset_fixtures()
     # ---- healthy machine: nothing may FAIL ---------------------------------------------
