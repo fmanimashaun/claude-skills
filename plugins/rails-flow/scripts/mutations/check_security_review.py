@@ -6,7 +6,7 @@ GUARD = Guard(
     subject="scripts/check_security_review.py",
     selftest="scripts/check_security_review.py",
     selftest_args=("--selftest",),
-    needs=("scripts/check_threat_model.py", "scripts/classify_door.py", "scripts/risky_diff.py", "scripts/advisory_scope.py", "scripts/detect_stack.py", "scripts/fixture_git.py"),  # risky_diff imports advisory_scope (#2264)  # detect_stack: the stack code_syntax (#2119)
+    needs=("scripts/rf_tmp.py", "scripts/check_threat_model.py", "scripts/classify_door.py", "scripts/risky_diff.py", "scripts/advisory_scope.py", "scripts/detect_stack.py", "scripts/fixture_git.py"),  # risky_diff imports advisory_scope (#2264)  # detect_stack: the stack code_syntax (#2119)
     mutations=(
         Mutation(
             "a record for an earlier commit stops being refused",
