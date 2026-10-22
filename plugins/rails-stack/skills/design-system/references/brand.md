@@ -164,8 +164,8 @@ same way surfaces already are. Two roles are enforced, at the two thresholds WCA
 | `--*-ink` | **1.4.3** text | **4.5:1** | an `-ink` role exists to *be* text — that is why `--success-ink` was added beside `--success` |
 
 The **base** feedback tones (`--info`, `--success`, `--warning`, `--destructive`) are enumerated on
-the **dark** ground only, at 1.4.11's **3:1** against the dark card and page (#2324, the owner's
-ruling on that issue). They serve as fills, borders or icons depending on the component, so 3:1 is
+the **dark** ground only, at 1.4.11's **3:1** against the dark card and page (#2324, the coordinator's
+decision on that issue, from flo-it-ui's measurements of reliance). They serve as fills, borders or icons depending on the component, so 3:1 is
 the floor a token file can state without seeing a usage; a tone used as *text* needs an `-ink` role
 at 4.5:1, as `--success-ink` does. The light ground is not enumerated: it is the open contract
 question above, and it would fail fidara's bright hues for a rule no clause states. `--signal` is

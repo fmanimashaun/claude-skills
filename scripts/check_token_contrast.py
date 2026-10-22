@@ -84,7 +84,7 @@ SRGB_LINEAR_BREAKPOINT = 0.04045
 #   `--*-ink` roles exist to BE text (that is why `--success-ink` was added alongside `--success`),
 #     so 1.4.3, 4.5:1.
 #   The base feedback tones (`--info`, `--success`, `--warning`, `--destructive`) are enumerated on
-#     the DARK ground only, at 3:1 (#2324, the owner's ruling on that issue): they are fills, borders
+#     the DARK ground only, at 3:1 (#2324, the coordinator's decision on that issue, from flo-it-ui's measurements): they are fills, borders
 #     and icons, so 1.4.11 is the floor this file can state without seeing a usage, and an `-ink`
 #     role carries them as text. Light is NOT enumerated: #775 measured that fidara's bright hues
 #     clear dark and fail light while reliance's darkened ones clear light and fail dark, so one
