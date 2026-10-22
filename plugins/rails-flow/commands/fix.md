@@ -160,9 +160,10 @@ hypothesis that turned out to be the cause, so the next reader learns it.
 7. MERGE:     on CLEAN, run check_mockup_gate.py --base <base> (#1376) and
               classify_door.py --base <base> (#1338); exit 1 or 2 from either stops
               for the user with its reasons. Then risky_diff.py --base <base> --record
-              docs/evidence/reviews/prs/<branch-slug>/adversary.md (#1819): exit 1 means run the
+              docs/evidence/reviews/prs/<branch-slug>/adversary.md (#1819; `<branch-slug>` is defined in feature.md Phase 6): exit 1 means run the
               `adversary` agent (Fable), save its answer verbatim to that path, and check again;
-              exit 3 (it recorded BLOCKED) or 2 stops for the user with the findings.
+              BLOCKED also exits 1: stop for the user with the findings (only a recorded
+              `Override: <who> | <reason> | #<issue>` lets it through, #2264); exit 2 stops too.
               Otherwise merge to dev (squash);
               default-branch bases stop for the user
 8. DOCS:      doc-updater; mark the phase done in the review report
