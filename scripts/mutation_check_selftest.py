@@ -334,6 +334,47 @@ def _proc_group_fixtures() -> None:
         if len(recorded) != 1 or left:
             FAILURES.append(f"#1459: a timed-out run left an orphan in its group running (recorded "
                             f"{len(recorded)} of 1 pid; survivors {left})")
+        # (7) #2319: a timed-out run gets SIGTERM and a grace before the kill, so its rf_tmp dirs are removed, not leaked.
+        made = work / "rf-made.txt"
+        rf_dir = str(Path(__file__).resolve().parents[1] / "plugins" / "rails-flow" / "scripts")
+        child = (f"import sys, time; sys.path.insert(0, {rf_dir!r}); import rf_tmp\n"
+                 "d = rf_tmp.mkdtemp('killed')\n"
+                 f"open({str(made)!r}, 'w').write(d)\n"
+                 "time.sleep(60)\n")
+        _tick()
+        try:
+            pg.run([sys.executable, "-c", child], timeout=2)
+        except _sp.TimeoutExpired:
+            pass
+        leaked = made.read_text().strip() if made.exists() else ""
+        if not leaked or os.path.exists(leaked):
+            FAILURES.append(f"#2319: a run killed on its timeout must remove its rf_tmp dir in the grace (made {leaked!r}, "
+                            f"still there: {bool(leaked) and os.path.exists(leaked)})")
+        # (8) #2319 keeps #1548: a grandchild in a group of its own that ignores SIGTERM, whose parent dies on the SIGTERM during
+        # the grace, is an orphan no walk from the root can find afterwards. The kill must still reach it: the freeze starts from
+        # everything the first walk saw.
+        stray = work / "stray.pid"
+        child = ("import os, signal, sys, time\n"
+                 "if os.fork() == 0:\n"
+                 "    os.setpgid(0, 0)\n"
+                 "    signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+                 "    null = os.open(os.devnull, os.O_WRONLY)\n"
+                 "    os.dup2(null, 1)\n"
+                 "    os.dup2(null, 2)\n"
+                 f"    open({str(stray)!r} + '.tmp', 'w').write(str(os.getpid()))\n"
+                 f"    os.replace({str(stray)!r} + '.tmp', {str(stray)!r})\n"
+                 "    time.sleep(60)\n"
+                 "    os._exit(0)\n"
+                 "time.sleep(120)\n")
+        _tick()
+        try:
+            pg.run([sys.executable, "-c", child], timeout=2)
+        except _sp.TimeoutExpired:
+            pass
+        recorded = _pids(stray, wait=0)
+        left = _survivors(recorded)
+        if len(recorded) != 1 or left:
+            FAILURES.append(f"#2319: an orphan made during the grace escaped the kill (recorded {len(recorded)} of 1 pid; survivors {left})")
         # (5) #1548: an exception MID-WALK must not leave the tree SIGSTOPped. The first `ps` pass freezes
         # the grandchild; the second raises, as a Ctrl-C or a failing `ps` would. Both must end up dead,
         # not stopped, and the exception must still reach the caller.
@@ -351,7 +392,9 @@ def _proc_group_fixtures() -> None:
         pg._ps_rows = rows_then_raise
         reraised = False
         try:
-            pg.kill_tree(root.pid)
+            # grace=0: this is the FREEZE's property (#1548). With the #2319 grace the SIGTERM would end the sleepers first, and the
+            # injected failure would land before the freeze it tests.
+            pg.kill_tree(root.pid, grace=0)
         except KeyboardInterrupt:
             reraised = True
         finally:
