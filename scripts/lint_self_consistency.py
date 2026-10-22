@@ -90,6 +90,8 @@ Stdlib only. Run:
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parents[1] / 'plugins' / 'rails-flow' / 'scripts'))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import argparse
 import ast
 import io
@@ -4719,7 +4721,7 @@ def selftest() -> int:
         nonlocal checks
         global ROOT
         checks += 1
-        root = Path(tempfile.mkdtemp(prefix="selfconsist-"))
+        root = Path(rf_tmp.mkdtemp("selfconsist-"))
         for relpath, content in files.items():
             target = root / relpath
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -6578,7 +6580,7 @@ def selftest() -> int:
         ("no agent shipped means nothing to wire", False, "Open the promotion PR.\n", None),
     ):
         checks += 1
-        root = Path(_t2.mkdtemp(prefix="unwired-"))
+        root = Path(rf_tmp.mkdtemp("unwired-"))
         (root / ".claude/agents").mkdir(parents=True)
         (root / ".claude/commands").mkdir(parents=True)
         if agent_exists:
@@ -6618,7 +6620,7 @@ def selftest() -> int:
         ("a key outside the yaml fence is not config", "", "x = 1\n", False),
     ):
         checks += 1
-        root = Path(_t3.mkdtemp(prefix="toggle-"))
+        root = Path(rf_tmp.mkdtemp("toggle-"))
         (root / "plugins/qa/commands").mkdir(parents=True)
         (root / "plugins/qa/scripts").mkdir(parents=True)
         fence = f"```yaml\nlinks:\n{yaml_line}```\n" if yaml_line else "check_external: false\n"
@@ -6642,7 +6644,7 @@ def selftest() -> int:
          "```yaml\nlinks:\n  check_external: false\n", True),
     ):
         checks += 1
-        root = Path(_t3.mkdtemp(prefix="toggle-"))
+        root = Path(rf_tmp.mkdtemp("toggle-"))
         (root / "plugins/qa/commands").mkdir(parents=True)
         (root / "plugins/qa/scripts").mkdir(parents=True)
         (root / "plugins/qa/commands/setup-qa.md").write_text(text, encoding="utf-8")
@@ -6670,7 +6672,7 @@ def selftest() -> int:
         ("qa-reporter documenting nothing at all", "No schema here.\n", True),
     ):
         checks += 1
-        root = Path(_tf.mkdtemp(prefix="schemadrift-"))
+        root = Path(rf_tmp.mkdtemp("schemadrift-"))
         (root / "plugins/rails-flow/scripts").mkdir(parents=True)
         (root / "plugins/qa-flow/agents").mkdir(parents=True)
         (root / "plugins/rails-flow/scripts/findings.py").write_text(
@@ -6685,7 +6687,7 @@ def selftest() -> int:
     # A renamed tuple must be a FINDING, never a silent pass. This is the `gate-that-cannot-fail`
     # shape: the comparison would simply stop happening and the run would still say "no findings".
     checks += 1
-    root = Path(_tf.mkdtemp(prefix="schemadrift-"))
+    root = Path(rf_tmp.mkdtemp("schemadrift-"))
     (root / "plugins/rails-flow/scripts").mkdir(parents=True)
     (root / "plugins/qa-flow/agents").mkdir(parents=True)
     (root / "plugins/rails-flow/scripts/findings.py").write_text(
@@ -6772,7 +6774,7 @@ def selftest() -> int:
     # mention; only this proves the rule can still SEE it. Without a number that moves, a
     # narrowing that had gone completely blind would pass every fixture above.
     checks += 1
-    _mention_root = Path(_tf.mkdtemp(prefix="topology-mention-"))
+    _mention_root = Path(rf_tmp.mkdtemp("topology-mention-"))
     for _rel, _content in {**TWO, "plugins/x/commands/c.md":
                            "---\nd: x\n---\nEvery defect `alpha` files is triaged before "
                            "`beta` sees it.\n"}.items():

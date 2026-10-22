@@ -41,6 +41,8 @@ Stdlib only, no network of its own.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import argparse
 import hashlib
 import json
@@ -1430,7 +1432,7 @@ def selftest() -> int:
     def project(rows: list[dict], **cfg_overrides) -> Path:
         # mkdtemp rather than the context manager, because these outlive one `with` block; they are
         # removed at the end of the run so a suite that passes does not leave a trail in /tmp.
-        root = Path(tempfile.mkdtemp())
+        root = Path(rf_tmp.mkdtemp())
         made_dirs.append(str(root))
         (root / "PRD.md").write_text("brief", encoding="utf-8")
         scaffold(root, "PRD.md")

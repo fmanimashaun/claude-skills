@@ -26,6 +26,8 @@ AMBER FROM 80%: a window or the context fill at or past 80 is drawn in amber (AN
 """
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import json
 import math
 import os
@@ -210,7 +212,7 @@ def selftest() -> int:
     check("without NO_COLOR the entry point colours an amber figure", AMBER in done.stdout, repr(done.stdout))
     # hostile payloads (found in review of #1869): none may crash, print a traceback, or take the rest of the line with it
     plain = {**os.environ, "NO_COLOR": "1"}
-    empty = tempfile.mkdtemp(prefix="statusline-")       # a directory that is no repository, so no branch is appended to the expected lines
+    empty = rf_tmp.mkdtemp("statusline-")       # a directory that is no repository, so no branch is appended to the expected lines
 
     def run(payload: str):
         return subprocess.run([sys.executable, os.path.abspath(__file__)], input=payload, capture_output=True, text=True, env=plain, cwd=empty)

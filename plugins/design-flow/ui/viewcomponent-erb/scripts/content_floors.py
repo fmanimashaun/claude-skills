@@ -33,6 +33,8 @@ Stdlib only, no network.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parents[3] / 'scripts'))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import json
 import re
 import subprocess
@@ -226,7 +228,7 @@ def _selftest() -> int:
     expect("the tally splits by rule", tally([RAW, DROP, RAW]) == {"raw-element": 2, "component-drops-attributes": 1},
            str(tally([RAW, DROP, RAW])))
 
-    root = Path(tempfile.mkdtemp(prefix="content-floors-"))
+    root = Path(rf_tmp.mkdtemp("content-floors-"))
 
     # NO FLOOR FILE IS ZERO TOLERANCE, unchanged. This is the property that must not regress: the
     # whole change is worthless if it quietly relaxes a greenfield project.
@@ -279,7 +281,7 @@ def _selftest() -> int:
     import json as _json
     global PLUGIN_JSON
     real_plugin_json = PLUGIN_JSON
-    vroot = Path(tempfile.mkdtemp(prefix="content-floors-ver-"))
+    vroot = Path(rf_tmp.mkdtemp("content-floors-ver-"))
 
     def as_version(v: str) -> None:
         f = vroot / f"plugin-{v}.json"
@@ -295,7 +297,7 @@ def _selftest() -> int:
     globals()["PLUGIN_JSON"] = vroot / "absent.json"
     expect("an unreadable plugin.json is `unknown`, not a crash", toolchain_version() == "unknown")
 
-    vr = Path(tempfile.mkdtemp(prefix="content-floors-mm-"))
+    vr = Path(rf_tmp.mkdtemp("content-floors-mm-"))
     as_version("1.40.0")
     with contextlib.redirect_stdout(io.StringIO()):
         set_floor(vr, "g", [RAW])                       # cut at A

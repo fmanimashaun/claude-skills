@@ -29,6 +29,8 @@ Costs nothing: no network, no Rails, no bundler.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import contextlib
 import io
 import sys
@@ -146,7 +148,7 @@ def _tick() -> None:
 
 def _project(body: str, *, prd: str = PRD, decisions: str | None = None) -> tuple[Path, Path]:
     """A throwaway project root holding the brief and the source it cites."""
-    root = Path(tempfile.mkdtemp(prefix="railsflow-brief-"))
+    root = Path(rf_tmp.mkdtemp("railsflow-brief-"))
     (root / "docs").mkdir()
     (root / "docs" / "prd.md").write_text(prd, encoding="utf-8")
     brief = root / "docs" / "BRIEF.md"
@@ -234,7 +236,7 @@ def run() -> int:  # noqa: PLR0915 -- a flat list of fixtures reads better than 
     )
     _tick()
     try:
-        cb.parse(Path(tempfile.mkdtemp(prefix="railsflow-brief-")) / "absent.md")
+        cb.parse(Path(rf_tmp.mkdtemp("railsflow-brief-")) / "absent.md")
         FAILURES.append("missing file: expected UNUSABLE")
     except cb.Unusable as exc:
         if "no such file" not in str(exc):

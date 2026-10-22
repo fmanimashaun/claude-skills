@@ -18,6 +18,8 @@ Costs nothing: no network, stdlib + git only.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parents[1] / 'plugins' / 'rails-flow' / 'scripts'))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import contextlib
 import io
 import shutil
@@ -73,7 +75,7 @@ def fixture(*, on_branch: str = "dev", stale_main: bool = False, dirty: bool = F
     initial commit so the fixture's tree stays clean -- an uncommitted `.gitignore` would make
     every dirty-tree assertion below lie.
     """
-    root = Path(tempfile.mkdtemp(prefix="doctor-fx-"))
+    root = Path(rf_tmp.mkdtemp("doctor-fx-"))
     remote, work = root / "remote.git", root / "work"
     _git(root, "init", "--bare", "-b", "main", str(remote))
     _git(root, "clone", str(remote), str(work))

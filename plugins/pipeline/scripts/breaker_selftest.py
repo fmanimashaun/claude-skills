@@ -25,6 +25,8 @@ Costs nothing: no network, no Docker, no Kamal.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import contextlib
 import io
 import json
@@ -266,7 +268,7 @@ def run() -> int:  # noqa: PLR0915 -- a fixture list; splitting it would hide th
                    now="2026-08-02T09:00:00+00:00")
 
     # ---- the ledger reader refuses rather than guesses ----------------------------------
-    root = Path(tempfile.mkdtemp(prefix="breaker-selftest-"))
+    root = Path(rf_tmp.mkdtemp("breaker-selftest-"))
     expect_unusable("no ledger at all", lambda: br.read_ledger(root / "missing.jsonl"))
     empty = root / "empty.jsonl"
     empty.write_text("", encoding="utf-8")
