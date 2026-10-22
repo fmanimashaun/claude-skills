@@ -19,7 +19,7 @@ THE SEVEN MEASUREMENTS. Each is a number in the report; the ones with a finding 
   context switches   a change of top-level navigation section, or a modal or tab opened. A finding only when the budget declares `switches`.
   waits              the time from an action to the page settling, and whether a spinner showed. A finding for each over the declared `wait`.
   dead ends          a page that is not the journey's declared end and offers no forward action. A finding for each.
-  back-tracks        a landing on a URL the journey already visited (a landing the app caused, a redirect or a reload, is not one). A finding for each.
+  back-tracks        a landing on a URL the journey already visited (a landing the app caused, a redirect or a reload, is not one, but a `back` action always is). A finding for each.
   forms re-entered   a form (its URL and field names) submitted again after it came back. A finding for each.
   late walls         a permission wall at step 2 or later: the person has already spent the steps before it. A finding for each.
 
@@ -353,7 +353,7 @@ def judge_journey(journey: dict, budget: Budget) -> tuple[list[Finding], dict, l
     backs: list[int] = []
     for row in rows:
         key = _norm(row["url"])
-        if key in visited and row["then"] is None:
+        if key in visited and (row["then"] is None or row["action"] == "back"):
             backs.append(row["step"])
             add("back-track", row, f"returns to {key}, first visited at step {visited[key]}", first_step=visited[key])
         visited.setdefault(key, row["step"])
@@ -550,6 +550,11 @@ def selftest() -> int:
     check("a landing on an earlier URL is a back-track naming the first visit",
           kinds(bt) == ["back-track"] and judge_journey(bt, BUDGET)[0][0].evidence["first_step"] == 1, kinds(bt))
     check("a reload the app caused is not a back-track", kinds(journey([row(1, "/a"), row(2, "/a", action="submit", then="reload")])) == [], "")
+    check("a `back` action is a back-track whatever the app did next (a reload does not hide it)",
+          kinds(journey([row(1, "/a"), row(2, "/b"), row(3, "/a", action="back", then="reload")])) == ["back-track"],
+          kinds(journey([row(1, "/a"), row(2, "/b"), row(3, "/a", action="back", then="reload")])))
+    check("a `back` action followed by a redirect is still a back-track",
+          kinds(journey([row(1, "/a"), row(2, "/b"), row(3, "/a", action="back", then="redirect")])) == ["back-track"], "")
     check("a redirect the app caused is not a back-track", kinds(journey([row(1, "/a"), row(2, "/b", action="submit", then="redirect")])) == [], "")
     check("a redirect that lands on an EARLIER page is still the app's doing, not a back-track",
           kinds(journey([row(1, "/list"), row(2, "/new"), row(3, "/list", action="submit", then="redirect")])) == [], "")

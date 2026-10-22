@@ -67,7 +67,7 @@ GUARD = Guard(
         ),
         Mutation(
             'a reload counts as a back-track',
-            '        if key in visited and row["then"] is None:',
+            '        if key in visited and (row["then"] is None or row["action"] == "back"):',
             '        if key in visited:',
             'a reload the app caused is not a back-track',
         ),
@@ -250,6 +250,12 @@ GUARD = Guard(
             '    steps = len(rows)',
             '    steps = len(rows) + sum(1 for r in rows if r["then"])',
             'a submit followed by a redirect counts as 1 step',
+        ),
+        Mutation(
+            "a `back` action that the app also reloaded is not counted as a back-track",
+            '        if key in visited and (row["then"] is None or row["action"] == "back"):',
+            '        if key in visited and row["then"] is None:',
+            "a `back` action is a back-track whatever the app did next",
         ),
     ),
 )
