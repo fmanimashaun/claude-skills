@@ -37,7 +37,7 @@ There are three, and a stream that relies on none of them is public:
    expired one (`reject_unauthorized_connection`). It decides who may connect at all, not who may subscribe to what.
 3. **A custom channel that checks the subscription.** turbo-rails documents it in the header of `streams_channel.rb`: a channel on
    `ActionCable::Channel::Base` that extends `Turbo::Streams::Broadcasts, Turbo::Streams::StreamName`, includes `Turbo::Streams::StreamName::ClassMethods`,
-   and whose **own `subscribed`** calls `subscription_allowed?` before `stream_from` (else `reject`); pass `channel: CustomChannel` to `turbo_stream_from`.
+   and whose **own `subscribed`** opens with the guard: `if (stream_name = verified_stream_name_from_params).present? && subscription_allowed?` then `stream_from stream_name`, `else reject` (a guard clause, `reject unless subscription_allowed?`, is the same check); pass `channel: CustomChannel` to `turbo_stream_from`.
    **Defining `subscription_allowed?` in a subclass of `Turbo::StreamsChannel` checks nothing**: its `subscribed` (lines 38-44) only verifies the signed
    name and never calls the method, so such a channel is as open as the default. Use a custom channel when two viewers can hold the same signed name but
    only one may listen.
@@ -62,11 +62,11 @@ renders unauthenticated output into a stream that many subscribers receive.
 |---|---|
 | a `turbo_stream_from` whose **only stream argument** is a literal name (a string without interpolation, or a symbol; `turbo_stream_from "x", current_user` is scoped to a viewer, so it is not one) | a shared public stream, unless the name is declared in `.rails-flow/public-streams.json` with a reason |
 | a declared public stream nothing uses, or one with no reason | stale or unexplained declaration |
-| `turbo_stream_from ... channel: Name` | `app/channels/name.rb` must exist and its **own `subscribed` must call `subscription_allowed?`**; a subclass that only defines the method (or inherits `subscribed`) is a finding |
+| `turbo_stream_from ... channel: Name` | `app/channels/name.rb` must exist and its **own `subscribed` must open with the guard** (`reject unless subscription_allowed?`, or turbo-rails' own `if ... && subscription_allowed? ... else reject`); a subclass that only defines the method or inherits `subscribed`, a `super` inside `subscribed` on a `Turbo::StreamsChannel` subclass, a `stream_from` before the check, or the name only in a comment, is a finding |
 | a partial reached by a broadcast (`partial:` of a `broadcast_*` call, or the default partial of `broadcasts_to`) that mentions `current_user`, `current_*`, `session`, `cookies` or `Current.` | the line, with the partial's path |
 
 The declaration is JSON: `{"public": [{"stream": "announcements", "reason": "release notes every signed-in and signed-out visitor may read"}]}`.
 
 **Limits, stated plainly:** this is a static read of names and partials. A broadcast partial is read as **one file**: a helper it calls, or a partial it
-renders, is not followed, so `current_user` hidden one level down is not found. And it cannot tell whether the controller that renders a page with
+renders, is not followed, so `current_user` hidden one level down is not found. **The channel check enforces the shape of the guard, not its logic**: `subscription_allowed? || true`, or a `subscription_allowed?` that returns `true`, passes, and whether the boolean is right is a review judgement. And it cannot tell whether the controller that renders a page with
 `turbo_stream_from @project` authorized `@project` (rule 1 of §2): that stays a review judgement, covered by the code-review skill, not by this check.

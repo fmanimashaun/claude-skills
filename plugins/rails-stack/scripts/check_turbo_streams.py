@@ -12,9 +12,11 @@ renders with no request and no viewer. Four findings, all from reading the sourc
   1. `turbo_stream_from` with a LITERAL name (a string without interpolation, or a symbol) is one stream every viewer shares: a public stream by
      construction. It is a finding unless `.rails-flow/public-streams.json` declares the name with a reason.
   2. A declaration with no reason, or for a name no view uses, is itself a finding (a declaration is a decision, and a stale one hides a change).
-  3. `turbo_stream_from ... channel: Name`: `app/channels/<name>.rb` must exist and its OWN `subscribed` must call `subscription_allowed?` before
-     `stream_from`, as turbo-rails' documented custom channel does (it subclasses `ActionCable::Channel::Base`). Defining `subscription_allowed?` is not
-     enough: `Turbo::StreamsChannel#subscribed` never calls it, so a subclass that only defines the method is still open.
+  3. `turbo_stream_from ... channel: Name`: `app/channels/<name>.rb` must exist and its OWN `subscribed` must OPEN with the guard, in one of two shapes: the
+     guard clause `reject unless subscription_allowed?` (also `return reject unless ...`), or turbo-rails' own `if ... && subscription_allowed? ... else reject`
+     (it subclasses `ActionCable::Channel::Base`). Defining `subscription_allowed?` is not enough: `Turbo::StreamsChannel#subscribed` never calls it, so a
+     subclass that only defines the method is still open; a `super` inside `subscribed` has already streamed; comments are stripped, so the name in a comment
+     proves nothing. A strict shape beats chasing every bypass: anything else is a finding.
   4. A partial that a broadcast renders (the `partial:` of a `broadcast_*` call, or the default partial of `broadcasts_to` / `broadcasts`) must not mention
      `current_user`, `current_*`, `session`, `cookies` or `Current.`: there is no request there, so it raises or renders one viewer's data to everyone.
 
@@ -24,6 +26,8 @@ WHAT IT IS HONESTLY NOT. It reads names and partials. It cannot tell whether the
 `@project`; that stays a review judgement. A name built at run time from a variable, a record or an array is not judged, and the default partial of
 `broadcasts_to` is located by the model's file name pluralised with a plain `s`, so an irregular plural is reported as "not located", never as clean. A
 broadcast partial is read as one file: **a helper it calls, or a partial it renders, is not followed**, so `current_user` hidden one level down is not found.
+**The channel check enforces the SHAPE of the guard, not its logic**: `subscription_allowed? || true` in the condition, or a `subscription_allowed?` that just returns
+`true`, passes; whether the boolean is right stays a review judgement (pinned by two selftest rows).
 Every run prints how many calls, channels and partials it read, so a project with none shows a count of 0 and not a bare pass.
 
 Exit codes: 0 clean, 1 findings, 2 the declaration file cannot be read. Stdlib only.
@@ -96,16 +100,72 @@ def split_arguments(args: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
-def channel_problem(text: str, name: str) -> str | None:
-    """Why a channel file does not check its subscriptions, or None. Its OWN `subscribed` must call `subscription_allowed?`: turbo-rails'
-    `Turbo::StreamsChannel#subscribed` never does, so defining the method in a subclass of it checks nothing."""
-    m = re.search(r"^[ \t]*def subscribed\b(.*?)(?=^[ \t]*def |\Z)", text, re.S | re.M)
+def strip_comments(text: str) -> str:
+    """The text with Ruby `#` comments removed (a `#` inside a quoted string is kept), so a comment can never satisfy a check."""
+    out = []
+    for line in text.splitlines():
+        quote, cut = None, len(line)
+        for k, ch in enumerate(line):
+            if quote:
+                quote = None if ch == quote else quote
+            elif ch in "\"'":
+                quote = ch
+            elif ch == "#":
+                cut = k
+                break
+        out.append(line[:cut])
+    return "\n".join(out)
+
+
+GUARD_UNLESS = re.compile(r"^(?:return\s+)?reject(?:\s+and\s+return)?\s+unless\s+subscription_allowed\?(?:\(\))?$")
+
+
+def subscribed_body(code: str) -> str | None:
+    """The body of `def subscribed`, from the line after it to the `end` at the same indent (comments already stripped), or None."""
+    m = re.search(r"^([ \t]*)def subscribed\b[^\n]*\n", code, re.M)
     if m is None:
+        return None
+    rest = code[m.end():]
+    end = re.search(rf"^{re.escape(m.group(1))}end\b", rest, re.M)
+    return rest[: end.start()] if end else rest
+
+
+def opens_with_guard(body: str) -> bool:
+    """True when the FIRST statement of `subscribed` is the guard, in one of the two shapes turbo-rails' own channel and a guard clause give:
+
+        reject unless subscription_allowed?            (also `return reject unless ...`, `reject and return unless ...`)
+        if (stream_name = verified_stream_name_from_params).present? && subscription_allowed?   ...  else  reject  end
+
+    Anything else (a `stream_from` before the check, a `super` first) is not the guard. The boolean logic inside the condition is NOT judged."""
+    lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    if GUARD_UNLESS.match(lines[0]):
+        return True
+    if not lines[0].startswith("if "):
+        return False
+    condition = [lines[0]]
+    for ln in lines[1:]:
+        if not condition[-1].endswith(("&&", "||", "(", ",", "\\", "and", "or")):
+            break
+        condition.append(ln)
+    return "subscription_allowed?" in " ".join(condition) and any(re.fullmatch(r"reject(?:\(\))?", ln) for ln in lines)
+
+
+def channel_problem(text: str, name: str) -> str | None:
+    """Why a channel file does not check its subscriptions, or None. Its OWN `subscribed` must OPEN with the guard (`opens_with_guard`): turbo-rails'
+    `Turbo::StreamsChannel#subscribed` never calls `subscription_allowed?`, so defining the method in a subclass of it checks nothing, and a `super` inside
+    `subscribed` has already streamed. Comments are stripped first, so the name in a comment proves nothing."""
+    code = strip_comments(text)
+    body = subscribed_body(code)
+    if body is None:
         return (f"channel {name} has no `subscribed` of its own, so it inherits one that never calls subscription_allowed? "
                 f"(Turbo::StreamsChannel#subscribed only verifies the signed name): write the channel on ActionCable::Channel::Base with its own `subscribed`")
-    if "subscription_allowed?" not in m.group(1):
-        return (f"channel {name}: its `subscribed` never calls subscription_allowed?"
-                + (", which is defined but never called, so the subscription is not checked" if "def subscription_allowed?" in text else ""))
+    if re.search(r"<\s*Turbo::StreamsChannel\b", code) and re.search(r"\bsuper\b", body):
+        return f"channel {name}: `subscribed` calls super, and Turbo::StreamsChannel#subscribed has already streamed before any check can run"
+    if not opens_with_guard(body):
+        return (f"channel {name}: its `subscribed` must OPEN with the guard (`reject unless subscription_allowed?`, or turbo-rails' `if ... && subscription_allowed? ... "
+                f"else reject`); a check after another statement, or only in a comment, does not protect the stream")
     return None
 
 
@@ -270,12 +330,33 @@ def _selftest() -> int:
     defined_not_called = {"app/channels/audit_channel.rb": "class AuditChannel < ActionCable::Channel::Base\n  def subscribed\n    stream_from verified_stream_name_from_params\n  end\n\n"
                           "  def subscription_allowed?\n    true\n  end\nend\n"}
     code, out = project({**view("<%= turbo_stream_from @room, channel: AuditChannel %>\n"), **defined_not_called})
-    check("a channel whose subscribed never calls subscription_allowed? is a finding", code == 1 and any("defined but never called" in ln for ln in out))
+    check("a channel whose subscribed never calls subscription_allowed? is a finding", code == 1 and any("must OPEN with the guard" in ln for ln in out))
     good = {"app/channels/audit_channel.rb": "class AuditChannel < ActionCable::Channel::Base\n  extend Turbo::Streams::Broadcasts, Turbo::Streams::StreamName\n"
             "  include Turbo::Streams::StreamName::ClassMethods\n\n  def subscribed\n    if (stream_name = verified_stream_name_from_params).present? && subscription_allowed?\n"
             "      stream_from stream_name\n    else\n      reject\n    end\n  end\n\n  def subscription_allowed?\n    current_user.admin?\n  end\nend\n"}
     code, out = project({**view("<%= turbo_stream_from @room, channel: AuditChannel %>\n"), **good})
     check("the documented custom channel (its own subscribed calls subscription_allowed?) is clean", code == 0)
+    def channel(subscribed_body: str, parent: str = "ActionCable::Channel::Base", extra: str = "") -> dict[str, str]:
+        return {"app/channels/audit_channel.rb": f"class AuditChannel < {parent}\n  def subscribed\n{subscribed_body}  end\n\n  def subscription_allowed?\n{extra or '    current_user.admin?' + chr(10)}  end\nend\n"}
+
+    page = view("<%= turbo_stream_from @room, channel: AuditChannel %>\n")
+    code, out = project({**page, **channel("    # subscription_allowed? goes here\n    stream_from verified_stream_name_from_params\n")})
+    check("the name only in a comment is not the guard: a finding", code == 1 and any("must OPEN with the guard" in ln for ln in out))
+    code, out = project({**page, **channel("    return stream_from(verified_stream_name_from_params)\n    reject unless subscription_allowed?\n")})
+    check("a stream_from before the check (return stream_from(x)) is a finding", code == 1 and any("must OPEN with the guard" in ln for ln in out))
+    code, out = project({**page, **channel("    super\n    reject unless subscription_allowed?\n", parent="Turbo::StreamsChannel")})
+    check("super inside subscribed on a Turbo::StreamsChannel subclass is a finding (it has already streamed)", code == 1 and any("calls super" in ln for ln in out))
+    code, out = project({**page, **channel("    reject unless subscription_allowed?\n    stream_from verified_stream_name_from_params\n")})
+    check("the guard clause `reject unless subscription_allowed?` is clean", code == 0)
+    code, out = project({**page, **channel("    # only a signed-in admin may listen\n    reject unless subscription_allowed? # the guard\n    stream_from verified_stream_name_from_params\n")})
+    check("a comment before, or after, the guard does not hide it: clean", code == 0)
+    code, out = project({**page, **channel("    return reject unless subscription_allowed?\n    stream_from verified_stream_name_from_params\n")})
+    check("`return reject unless subscription_allowed?` is clean", code == 0)
+    # STATED LIMITS, pinned: the check enforces the shape of the guard, not the boolean logic inside it
+    code, out = project({**page, **channel("    if (stream_name = verified_stream_name_from_params).present? && subscription_allowed? || true\n      stream_from stream_name\n    else\n      reject\n    end\n")})
+    check("LIMIT: `subscription_allowed? || true` in the upstream shape passes (the boolean logic is a review judgement)", code == 0)
+    code, out = project({**page, **channel("    reject unless subscription_allowed?\n    stream_from verified_stream_name_from_params\n", extra="    true\n")})
+    check("LIMIT: a subscription_allowed? that just returns true passes (the boolean logic is a review judgement)", code == 0)
     code, out = project({**view('<%= turbo_stream_from "room", channel: AuditChannel %>\n'), **good})
     check("a literal stream name with a channel that checks the subscription still reads as public (a name is not access)", code == 1 and any("'room'" in ln for ln in out))
     code, out = project(view('<%= turbo_stream_from "x", current_user %>\n'))
