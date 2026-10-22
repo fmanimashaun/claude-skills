@@ -78,7 +78,7 @@ Tally: **18 CONFIRMED** (H1-3, H6-10, H13-18, H20, H21, H23, H24; H24 with one s
 | H19 | INCONCLUSIVE | Rails guide `active_record_querying.md:1757` (generic `strict_loading`) | nothing in turbo-rails ties N+1 to broadcasts; reword as generic N+1 (already `performance-caching.md:173,251`). `_later` moves the render to a job (`broadcasts.rb:46-95`) but does not remove the queries | no / no |
 | H20 | CONFIRMED | Rails Security guide `security.md:972,993,982-986` | the guide does not name `raw` or `html_safe` in that section | **Brakeman yes**: `CheckCrossSiteScripting`, `CheckSanitizeMethods`, `CheckStripTags`; erb_lint partly (`ErbSafety`; `Rubocop` linter with `Rails/OutputSafety` if enabled) [quotes: H20] |
 | H21 | CONFIRMED | turbo-site `handbook/04_frames.md:256`; Rails guide `security.md:508-514`; rails `exception_wrapper.rb:21` | rejection is 422 via `rescue_responses` | Brakeman partly (`CheckForgerySetting`, not a missing header); erb_lint no [quotes: H21] |
-| H22 | **REFUTED as worded** | turbo-rails v2.0.23 `app/channels/turbo/streams/stream_name.rb`, `streams_channel.rb` (`subscribed`), `streams_helper.rb`, `lib/turbo.rb:15` (no `expires_in`) | the premise "the signature is the access control" is wrong. **Restated, CONFIRMED by the same sources:** the signature protects the **integrity** of a stream name (a client cannot forge or alter one); it is not authorization. `Turbo::StreamsChannel#subscribed` does not check `current_user`, anyone holding a valid signed name can subscribe, and the name does not expire. Access control is (a) which pages embed the name, (b) Action Cable connection auth, (c) a custom `channel:` with `subscription_allowed?` (documented in `streams_channel.rb`). Per-user stream names stand as name hygiene only | Brakeman no; erb_lint no |
+| H22 | **REFUTED as worded** | turbo-rails v2.0.23 `app/channels/turbo/streams/stream_name.rb`, `streams_channel.rb` (`subscribed`), `streams_helper.rb`, `lib/turbo-rails.rb:15` (no `expires_in`) | the premise "the signature is the access control" is wrong. **Restated, CONFIRMED by the same sources:** the signature protects the **integrity** of a stream name (a client cannot forge or alter one); it is not authorization. `Turbo::StreamsChannel#subscribed` does not check `current_user`, anyone holding a valid signed name can subscribe, and the name does not expire. Access control is (a) which pages embed the name, (b) Action Cable connection auth, (c) a custom `channel:` with `subscription_allowed?` (documented in `streams_channel.rb`). Per-user stream names stand as name hygiene only | Brakeman no; erb_lint no |
 | H22r | CONFIRMED | turbo-rails v2.0.23 `app/channels/turbo/streams_channel.rb` (the `subscribed` method rejects only when the signed name does not verify) | the restated claim: the signature protects the **integrity** of a stream name (it cannot be forged or altered); it is not authorization, anyone holding a valid signed name can subscribe, and the name does not expire | Brakeman no; erb_lint no [quotes: H22r] |
 | H23 | CONFIRMED | turbo-rails `broadcasts.rb:112-113` (`ApplicationController.render`), `:46-95`; `README.md:222-229` | no request, session or cookies in a broadcast render, so `current_user` is undefined or nil; pass data as locals | no / no [quotes: H23] |
 | H24 | CONFIRMED | turbo `progress_bar.js:108-115`, `util.js:179-185`; Rails guide `security.md:1450,1471-1473,1492-1498` | the importmap-tag nonce behaviour is not in the guide section read: unverified, keep it out of skill text until it is | Brakeman no; erb_lint partly (`RequireScriptNonce`, not the progress-bar style) [quotes: H24] |
@@ -221,3 +221,25 @@ https://raw.githubusercontent.com/hotwired/turbo-site/main/_source/handbook/04_f
 https://raw.githubusercontent.com/hotwired/turbo/v8.0.23/src/core/drive/form_submission.js | turbo v8.0.23 | Form responses must redirect to another location
 ```
 
+## I. Correction found in review of #2300 (2026-10-22): which channel checks a subscription
+
+The first draft of the H22 reference said to *subclass `Turbo::StreamsChannel` and define `subscription_allowed?`*. That is wrong, and the review caught it:
+`Turbo::StreamsChannel#subscribed` (streams_channel.rb, lines 38-44 at v2.0.23) never calls `subscription_allowed?`; the documented example subclasses
+`ActionCable::Channel::Base` and calls it from its **own** `subscribed`. A subclass that only defines the method is as open as the default. Also, the
+verifier that signs stream names is in `lib/turbo-rails.rb`, not `lib/turbo.rb` (a mis-cite in the H22 row above, now fixed). Re-verified by
+`doctrine-verifier` against turbo-rails v2.0.23; the three claims were CONFIRMED.
+
+| id | claim | verdict | source | wording note | Brakeman / erb_lint |
+|---|---|---|---|---|---|
+| H22c | `Turbo::StreamsChannel#subscribed` never calls `subscription_allowed?`, so a subclass that only defines it checks nothing; the documented way to check a subscription is a channel on `ActionCable::Channel::Base` (extending `Turbo::Streams::Broadcasts, Turbo::Streams::StreamName`, including `Turbo::Streams::StreamName::ClassMethods`) whose own `subscribed` calls `subscription_allowed?` before `stream_from`, attached with the `channel:` option of `turbo_stream_from` | CONFIRMED | turbo-rails v2.0.23 `app/channels/turbo/streams_channel.rb` lines 38-44 (`subscribed`, no call) and the header example, lines 11-27; `app/helpers/turbo/streams_helper.rb:58` (the `channel:` option) | the absence of the call is read from these two places in one file | no / no | [quotes: H22c]
+| H22e | the signed stream verifier is `ActiveSupport::MessageVerifier.new(signed_stream_verifier_key, digest: "SHA256", serializer: JSON)` in `lib/turbo-rails.rb` and is built with no `expires_in`, so a signed stream name does not expire | CONFIRMED | turbo-rails v2.0.23 `lib/turbo-rails.rb:15`; signing in `app/channels/turbo/streams/stream_name.rb:13` (`Turbo.signed_stream_verifier.generate ...`, no expiry) | an absence claim, checked only in these two files | no / no | [quotes: H22e]
+
+```quotes H22c
+https://raw.githubusercontent.com/hotwired/turbo-rails/v2.0.23/app/channels/turbo/streams_channel.rb | turbo-rails v2.0.23 | if stream_name = verified_stream_name_from_params
+https://raw.githubusercontent.com/hotwired/turbo-rails/v2.0.23/app/channels/turbo/streams_channel.rb | turbo-rails v2.0.23 | class CustomChannel < ActionCable::Channel::Base
+https://raw.githubusercontent.com/hotwired/turbo-rails/v2.0.23/app/channels/turbo/streams_channel.rb | turbo-rails v2.0.23 | extend Turbo::Streams::Broadcasts, Turbo::Streams::StreamName
+```
+
+```quotes H22e
+https://raw.githubusercontent.com/hotwired/turbo-rails/v2.0.23/lib/turbo-rails.rb | turbo-rails v2.0.23 | ActiveSupport::MessageVerifier.new(signed_stream_verifier_key, digest: "SHA256", serializer: JSON)
+```

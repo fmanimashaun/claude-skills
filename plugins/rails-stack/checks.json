@@ -230,6 +230,20 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "turbo-streams",
+      "why": "The signature on a Turbo Stream name protects its integrity, not access: Turbo::StreamsChannel#subscribed never checks current_user, anyone holding a valid signed name can subscribe, and the name does not expire (turbo-rails v2.0.23, verified by doctrine-verifier, hotwire/references/stream-security.md). So this reads the source for the four things a script can see: a turbo_stream_from with a literal (shared) name that is not declared public in .rails-flow/public-streams.json with a reason; a declaration nothing uses; a custom channel whose own subscribed does not call subscription_allowed? (Turbo::StreamsChannel#subscribed never does, so a subclass that only defines it is still open); and a broadcast partial that mentions current_user, current_*, session, cookies or Current. (a broadcast renders with no request). It prints how many calls, channels and partials it read, so a project with none shows 0, not a bare pass. Whether the controller authorized the record behind turbo_stream_from @record stays a review judgement (#2277).",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_turbo_streams.py"
+      ],
+      "applies_when": [
+        "config/application.rb"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }

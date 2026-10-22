@@ -21,7 +21,7 @@ Playbook for building full-stack Ruby on Rails 8.1 applications "the Rails way" 
 
 Hotwire reference: Turbo (Drive, Frames, Streams, morphing page refreshes, broadcasts), Stimulus (controllers, actions, targets, values, outlets) and Hotwire Native (iOS/Android shells, bridge components, path configuration).
 
-4 reference file(s): `native`, `production`, `stimulus`, `turbo`
+5 reference file(s): `native`, `production`, `stimulus`, `stream-security`, `turbo`
 
 
 ## `design-system`
