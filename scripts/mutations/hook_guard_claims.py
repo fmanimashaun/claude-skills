@@ -19,7 +19,8 @@ GUARD = Guard(
     # The harness resolves every hook from the selftest's own location, so the whole directory is
     # staged; `extract_claims.py` is what this hook shells out to, and without it every mutation
     # reads as caught against an unrun check (#1109).
-    needs=("plugins/rails-flow/scripts/fixture_git.py", 
+    needs=("plugins/rails-flow/scripts/advisory_scope.py", "plugins/rails-flow/scripts/security_scope.py", "plugins/rails-flow/scripts/check_threat_model.py", "plugins/rails-flow/scripts/detect_stack.py",  # stop-gate.sh runs advisory_scope.py (#2262)
+           "plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # session-start.sh runs all three (#1581, #1828: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
@@ -206,6 +207,19 @@ GUARD = Guard(
             '    echo "rails-flow: the body, the PR template and the change type NOT checked (the directory gh runs in could not be resolved, so the relative --body-file cannot be located)." >&2\n',
             '',
             'an unlocatable relative body still says NOT checked, and why',
+        ),
+        Mutation(
+            # #2258: strict mode, which the gh shim sets, turns "could not read" into a refusal.
+            "strict mode is ignored, so the gh shim's unreadable body passes unchecked",
+            '  if [ "${RAILS_FLOW_CLAIMS_STRICT:-0}" = 1 ]; then\n',
+            "  if false; then\n",
+            "strict (the gh shim): a body that cannot be read is BLOCKED",
+        ),
+        Mutation(
+            "strict mode is always on, so the tripwire blocks every body it cannot read",
+            '  if [ "${RAILS_FLOW_CLAIMS_STRICT:-0}" = 1 ]; then\n',
+            "  if true; then\n",
+            "without strict the tripwire still allows it",
         ),
     ),
 )

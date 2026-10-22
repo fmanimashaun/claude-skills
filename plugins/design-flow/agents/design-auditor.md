@@ -70,7 +70,7 @@ facets are never recolored/stretched/rotated (brand.md don'ts).
 
 Prioritized: **breaks-consistency > a11y > polish**. Each finding: `file:line`, the rule
 violated, the exact replacement, and (optional) a one-line diff. List confirmed-clean areas so
-the audit is evidence, not just a bug list. Offer to fix via ui-composer / `/design-flow:component`.
+the audit is evidence, not just a bug list. Offer to fix via rails-ui-composer / `/design-flow:component`.
 Do not auto-fix in place.
 
 ## Output
@@ -80,8 +80,8 @@ there for the rest of the session** — it is charged on every later request, no
 `reference/agent-output-contract.md`.
 
 ```
-DRIFT  app/views/admin/show.html.erb:31 — hand-rolled cluster; compose `cluster`
-DRIFT  app/components/ui/modal_component.html.erb:4 — off-catalog variant `ghost-sm`
+DRIFT  src/views/admin/show.html:31 — hand-rolled cluster; compose `cluster`
+DRIFT  src/components/ui/modal.html:4 — off-catalog variant `ghost-sm`
 2 drift findings across 12 views; 0 a11y.
 ```
 

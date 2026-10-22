@@ -9,6 +9,8 @@ argument-hint: <feature description> [--pack small|standard]
 
 # /rails-flow:feature — $ARGUMENTS
 
+Agents are named by **role** (`developer`, `migrations`, `test_runner`, `reviewer`, `security`, `design_auditor`), resolved from the project's stack: see `reference/stack-roles.md`. When the stack names no agent for a role, STOP and ask; never use a Rails agent by default.
+
 Build the requested feature end-to-end using the orchestrated flow below. You are the
 orchestrator: delegate to the rails-flow subagents, keep your own context lean, and never
 skip a gate. Hooks enforce the guardrails mechanically — do not fight them.
@@ -23,10 +25,10 @@ one-line guard, a rename.
 |---|---|---|
 | plan, criteria, spec-first loop | yes | yes |
 | **Phase 4 quality gates** | **all of them** | **all of them** |
-| `code-reviewer` | yes | yes |
+| the `reviewer` role | yes | yes |
 | `spec-reviewer` | yes | yes |
-| `security-auditor`, `design-auditor` | only if their trigger fires | only if their trigger fires |
-| substantial units delegated to `rails-developer` | you may do them directly | delegated |
+| the `security` role, the `design_auditor` role | only if their trigger fires | only if their trigger fires |
+| substantial units delegated to the `developer` role | you may do them directly | delegated |
 
 **Three things this is not.** It does not skip a gate — Phase 4 is identical at every size, because
 pack size is about *how many specialists review*, not *whether the work is proven*. It is not three
@@ -35,7 +37,7 @@ choose its own size**: scope is the human's call, and an agent that downgraded i
 *looked* small would be judging exactly the thing it is worst at.
 
 **A smaller pack must say what it did not run.** The final report names the specialists that were
-skipped — *"reviewed by code-reviewer only; security-auditor not run (no auth/API/data change)"*. A
+skipped — *"reviewed by the `reviewer` role only; the `security` role not run (no auth/API/data change)"*. A
 run that quietly did less is the failure mode; a run that says so is a decision the reviewer can see.
 
 **The default is unchanged**, deliberately. A flag you must opt *out* of to get rigour is the wrong
@@ -54,7 +56,7 @@ way round.
 **If the issue is a slice** (its body opens `Slice S<n> of <spec>`, or `Slice S<n>.` when the plan
 named no source; filed by `/rails-flow:slice`,
 #1369), **its `AC-n` lines are this unit's criteria**, copied verbatim into
-`docs/product/acceptance/<branch-slug>.md`. They are the criteria the owner approved for this slice
+`docs/product/acceptance/<unit-slug>.md`. They are the criteria the owner approved for this slice
 alone. The spec then supplies only the `Seam:`, the Out of scope and the decisions, never more
 criteria; turning every story in the spec into criteria would build other slices' work on this
 branch and break the order `/slice` filed.
@@ -70,12 +72,13 @@ which models/controllers/views/jobs the feature touches, existing patterns to re
 schema impact. Then produce a short plan:
 
 - Units of work, ordered — each unit is one spec + its implementation
-- Migrations needed (these go to `migration-writer`)
+- Migrations needed (these go to the `migrations` role)
 - Risks / invariants in play (tenancy scoping, authorization, module gates)
+- **Security scope** — run `${CLAUDE_PLUGIN_ROOT}/scripts/security_scope.py` over the plan text and the planned paths (#2117). Exit 0: record `Security: no new boundary`. Exit 1 (a public or token route, upload, webhook, MCP tool, outbound fetch, auth or role change, personal column): run `/rails-flow:secure-design` NOW, before the criteria below; its Security requirements become criteria. Exit 2 is "could not classify", not "none".
 
 ### Acceptance criteria — write them BEFORE any code
 
-Every unit gets criteria, recorded in `docs/product/acceptance/<branch-slug>.md` (the layout's home for WHAT we are building; a pre-layout `docs/product/acceptance/` is still recognised by the gate, #910) — the slug is the
+Every unit gets criteria, recorded in `docs/product/acceptance/<unit-slug>.md` (the layout's home for WHAT we are building; a pre-layout `docs/product/acceptance/` is still recognised by the gate, #910) — the slug is the
 branch name after `feature/`, with any remaining `/` flattened to `-` (so `feature/team/foo`
 → `docs/product/acceptance/team-foo.md`). One `##` section per unit:
 
@@ -103,6 +106,10 @@ rubber-stamped:
 **At least one error-path criterion per unit** — tag it `[error]` or state a failure case.
 Happy-path-only criteria are rejected: most real defects live on the error path, and every
 security finding this flow has produced downstream was an error or edge path.
+
+**Security criteria (#2118).** When the unit has a threat model (`/rails-flow:secure-design`,
+`docs/security/threat-models/<slug>.md`), every row it marks `mitigate` needs a criterion tagged `[security]` that cites the row's `ID` as `(TM-n)` or `covers: TM-n` at the end of the criterion. `check_criteria.py` finds the model beside the acceptance file and refuses a `mitigate` row no
+`[security]` criterion cites, and a `[security]` criterion that cites no row or an `accept`, `transfer` or `eliminate` row.
 
 Validate before implementing, and again once specs exist:
 
@@ -141,6 +148,33 @@ unblock this one, editing outside the declared scope, disabling a guardrail or h
 below, and an executor cannot honour a bound nobody wrote down. See `/rails-flow:handoff` for the
 defaults and the reasoning.
 
+### The plan advisory — before Phase 2 (#2262)
+
+Once the criteria (and the work order, spec or threat model, when they exist) are written, ask whether the plan owes a Fable
+design review before anything is built:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/advisory_scope.py" --slug <slug>
+```
+
+Exit `0`: optional, or already recorded. Exit `1`: REQUIRED. The plan crosses a security boundary, changes structure (a
+plugin, agent, command, skill, hook, gate or descriptor key), the data model or a dependency, or spans six or more components.
+Then:
+
+1. `advisory_scope.py --begin --slug <slug>` writes the record header and a snapshot of the plan as reviewed.
+2. Run the `plan-advisor` agent (model `fable`) on the plan files; append its answer **verbatim** to
+   `docs/evidence/reviews/plans/<slug>/plan-advisor.md`.
+3. Answer every finding on its own line: `Disposition A-n: accepted | <what changed in the plan>`, `rejected | <why>`, or
+   `deferred | #<issue>`. Never drop one.
+4. Revise the plan for what you accepted, then `advisory_scope.py --stamp --slug <slug>`. It refuses when a finding is
+   undisposed, the revised plan triggers a category the review did not see, or more than 30% of it changed: run a new pass.
+5. `VERDICT: RETHINK` blocks until a fresh pass on the revised plan says PROCEED, or an
+   `Override: <who> | <reason, 20+ characters> | #<issue>` line records who decided.
+
+The Stop gate runs this check once criteria exist, and `project_gates.py` runs it in the sweep `gh pr ready` requires, so a
+required advisory cannot be skipped. Exit `2` means no plan files for the slug: write the criteria first.
+
+
 Post the plan **and the criteria** to the user, then proceed — the gates below are the control
 points, not a plan-approval pause. **The one exception is a change a user can see**; see the mock-up
 gate below. If the plan reveals genuine ambiguity about intent, ask first: criteria are the place
@@ -160,17 +194,26 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --paths <each file 
   Proceed.
 - **Exit 1**: user-visible scope. If the issue already links an approved mock-up, record it and
   proceed. Otherwise:
-  1. **Build a clickable mock-up**, with `/design-flow:canvas` or `/design-flow:variants` where the
-     project uses design-flow, or else a single HTML page. Use realistic example data and the
-     project's own tokens, at a phone width and a desktop width, with the empty and error states
-     the criteria name.
+  1. **Build a clickable mock-up inside the app's own shell**: its layout and navigation, not a
+     free-standing screen (the owner's rule, #2211). Draw it as one HTML page, with realistic
+     example data and the project's own tokens, at a phone width and a desktop width, with the
+     empty and error states the criteria name. Claude Design import
+     (`/design-flow:canvas`, `/design-flow:port`) is an optional way to draw it, not the way a
+     screen enters the project. **No recorded shell yet?** (`docs/product/mockups/shell.md`
+     missing, which the gate reports.) The first change is the shell: mock up the core layout,
+     navigation and foundation screens, following the design system, get them approved, then
+     record them with `check_mockup_gate.py --adopt-shell`. Format and rules:
+     `${CLAUDE_PLUGIN_ROOT}/reference/mockup-record.md`.
   2. **Publish it, post its link on the issue, and STOP for the owner's approval.** This is a hold
      like the one-way door's, not advice: approval is a human decision. Change requests mean
      iterate and ask again.
   3. **Record the approval** in `docs/product/mockups/<slug>.md` (committed on the branch once Phase 2
      creates it), one line each:
      `Mock-up:` (link or committed file), `Issue:`, `Approved-by:`, `Approval:` (the link to the
-     comment where the owner approved), `Widths:`, `States:`. Then proceed. The plan and the PR
+     comment where the owner approved), `Widths:`, `States:` (`;`-separated, every state designed
+     or `n/a: <reason>`), `Shell:` (always `docs/product/mockups/shell.md`), `Template:`, `Screen:`
+     and `Nav:`. Then proceed. **Once the screen is built** (before Phase 6) add `Story:`, the story
+     file or view that implements it; the gate on the real diff refuses a record without one. The plan and the PR
      cite the record.
 
 The same check runs again on the branch's real diff before merge (Phase 6), so a view the plan did
@@ -204,8 +247,8 @@ as complete is worse than a stop, because it spends the reviewer's trust as well
    A criterion no spec cites is an unproven criterion, and the Stop gate says so.
    **A project with a QA catalogue (`qa/test-cases.csv`) also gets the manual case** that proves the new behaviour, in this same PR: add or update the case, and put the issue
    in its `Source` (`defect:#n`). No feature is built without a way to test it in QA (owner rule, #1853); see `reference/case-per-change.md`.
-2. Implement — delegate substantial units to `rails-developer`; schema changes to
-   `migration-writer` (round-trip proven). Small edits you may do directly.
+2. Implement — delegate substantial units to the `developer` role; schema changes to
+   the `migrations` role (round-trip proven). Small edits you may do directly.
 3. Run the unit's specs to green, then `git add <specific files>` and commit with an
    imperative message. One unit per commit.
 
@@ -213,20 +256,20 @@ as complete is worse than a stop, because it spends the reviewer's trust as well
 
 Run in order; loop fixes back through Phase 3 until every gate passes:
 
-1. `code-reviewer` on the branch diff → must end `VERDICT: CLEAN`
+1. the `reviewer` role on the branch diff → must end `VERDICT: CLEAN`
 1b. `spec-reviewer` with `docs/product/acceptance/<slug>.md`, the base, and its own file
    `docs/evidence/reviews/prs/<branch-slug>/spec-reviewer-findings.jsonl` → must end `VERDICT: CLEAN`, with
    `check_spec_review.py` exit 0 (#1370). It asks only whether the diff does what the criteria
    *say*: criteria missing, partial or misread, and behaviour nobody asked for. Report it under its
-   own **Spec** heading beside `code-reviewer`'s **Standards**, and never merge or re-rank the two.
+   own **Spec** heading beside the `reviewer` role's **Standards**, and never merge or re-rank the two.
    A change can pass one and fail the other, and a merged list lets one hide the other.
-2. `test-runner` → FULL suite, 0 failures
-3. `security-auditor` → only if auth, authorization, APIs, or data handling changed
-4. `design-auditor` → only if views/partials/Stimulus changed
+2. the `test_runner` role → FULL suite, 0 failures
+3. the `security` role → only if auth, authorization, APIs, or data handling changed
+4. the `design_auditor` role → only if views/partials/Stimulus changed
 
 ### 4b. Would the specs have caught it? — advisory, and it does not block
 
-`test-runner` proves the suite is **green**. Green says nothing about whether the specs would catch a
+the `test_runner` role proves the suite is **green**. Green says nothing about whether the specs would catch a
 regression: `expect(invoice).to be_present` passes forever and proves nothing. Phase 3 already makes
 the mapping from criterion to proof mechanical — the spec cites `AC-2` — and the **citation is
 enforced while the proof is not.** A spec can cite `AC-2` and assert something trivially true.
@@ -274,6 +317,10 @@ gh pr create --base <base> --title "feat: <summary>" --body "<the PR Documentati
 
 ## Phase 6 — Merge gate (non-skippable)
 
+**`<branch-slug>`**, used for every review record below (`docs/evidence/reviews/prs/<branch-slug>/…`), is the branch name with each `/` replaced by
+`-`, the prefix kept: `feature/team/foo` is `feature-team-foo`. It is NOT the `<unit-slug>` of the criteria files (the name after `feature/`).
+`risky_diff.py` derives it the same way, so a record written at that path is the one the gate looks for (#2264).
+
 - If the code-review-graph CLI is present with a built graph
   (`command -v code-review-graph && [ -d .code-review-graph ]`): run its `review-pr`
   skill with the PR number (installed per-project by `code-review-graph install`;
@@ -305,10 +352,19 @@ gh pr create --base <base> --title "feat: <summary>" --body "<the PR Documentati
   A diff that touches authentication, sessions, access rules, input parsing or a privacy filter needs one **adversarial pass** before
   the PR is marked ready: exit 1 means run the `adversary` agent (it runs on Fable, the owner's model for attack passes) with the
   printed reasons and the base, **save its answer verbatim** to that path (its first line is `Head: <sha>`, its last is
-  `VERDICT: CLEAN` or `VERDICT: BLOCKED`), and run the check again. Exit 0 continues. Exit 3 means the pass recorded BLOCKED: that is
-  a finding for the user, so stop, quote the findings and hand the merge over; it is not an automatic stop of the work, and you do
-  not decide its disposition. Exit 2 means it could not classify: stop. Mark the PR ready with `risky_diff.py ... && gh pr ready`,
+  `VERDICT: CLEAN` or `VERDICT: BLOCKED`), and run the check again. Exit 0 continues. A BLOCKED record also exits 1 (never 3: the project
+  gates read 3 as not applicable, #1873): that is a finding for the user, so stop, quote the findings and hand the merge over; you do not decide
+  its disposition. Only the user's line `Override: <who> | <reason, 20+ characters> | #<issue>` in that record lets it through. Exit 2 means it
+  could not classify: stop. The check is registered as `adversary-review` (`checks.json`), so the sweep `gh pr ready` requires fails without it
+  (#2264); `risky_diff.py` with no `--record` finds the record from the branch name. Mark the PR ready with `risky_diff.py ... && gh pr ready`,
   never `;`. A record is tied to the commit it names, so a push after the pass needs a new one.
+- On CLEAN, **verify the threat model** when the change adds or edits one (`docs/security/threat-models/<slug>.md`, #2119):
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_security_review.py"`. `security-auditor` is MANDATORY then, not "if auth changed": give it the model and the
+  base, and save its answer verbatim to `docs/evidence/reviews/prs/<slug>/security-audit.md`: first line `Head: <sha>`, one line per `mitigate` and `accept` row
+  (`TM-n: implemented <file:line>`, `TM-n: not implemented`, `TM-n: holds <why>`, `TM-n: stale <what changed>`), last line `VERDICT: CLEAN` or `VERDICT: BLOCKED`.
+  Exit 1: run the pass on this HEAD (the record is missing, stale or leaves a row out). Exit 3: a `mitigate` row is not implemented, an `accept` row has gone stale
+  or the verdict is BLOCKED; that is a finding for the user, so stop and quote it. Exit 2: it could not read the model or the base. The check is also a `project_gates.py` gate,
+  so a missing or stale record turns the sweep red and `gh pr ready` is refused without a green sweep for HEAD; a push after the pass needs a new one.
 - On CLEAN and a two-way door: if the base is `dev`, merge (`gh pr merge --squash`), then post a summary
   comment citing the gate's findings. If the base is the default branch (no `dev`), stop
   after CLEAN and hand the merge decision to the user — and offer them a PR babysitter:

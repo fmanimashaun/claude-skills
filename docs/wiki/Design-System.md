@@ -53,7 +53,7 @@ files, so buying the loop alone is worse than buying neither.
 ## Claude Design — composing before the code exists
 
 Pre-code composition is Claude Design's job. `/design-flow:canvas` writes the prompt — carrying this
-project's **own** `@theme` role tokens, the real component catalog from `component-shapes.json`, and
+project's **own** `@theme` role tokens, the real component catalog from `component-shapes.json` (in design-flow's `catalog/`), and
 the band sequence for the surface — and `/design-flow:port` brings the chosen artboard back as ERB
 that uses the components the codebase actually has.
 

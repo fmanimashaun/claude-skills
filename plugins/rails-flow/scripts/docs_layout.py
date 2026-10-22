@@ -46,9 +46,18 @@ LAYOUT: dict[str, tuple[str, str]] = {
     "runbooks":     ("HOW do I operate it?", "setup guides, deploy, on-call, integrations (SSO, mail, payments). Authored. Dated where a step depends on a version."),
     "evidence":     ("WHAT did we measure?", "spikes, screenshots, coverage reports, validation results. Dated, immutable: add a new file, never edit an old one."),
     "wiki":         ("WHERE is the reference?", "GENERATED reference pages from the codebase plus hand-written pages the generator leaves alone. Rebuilt at ship."),
+    "security":     ("WHAT can go wrong, and what did we decide?", "threat models under `threat-models/<slug>.md`, written by `/rails-flow:secure-design` before the criteria. Authored; edited in the PR that changes the boundary."),
     "brain":        ("WHAT did we learn and decide?", "`STATUS.md`, `DECISIONS.md`, `HYPOTHESES.md`, `PROGRESS-LOG.md`, `MEMORY.md`, memos under `memos/<type>/`, `history/`. Not: product specs (product/)."),
 }
 GENERATED_DIRS = {"architecture", "wiki"}
+# REQUIRED DIRECTORIES (#2298). A layout nobody has to follow is a suggestion: a repo with no brain/ passed this gate.
+# These four exist in every project. `design/` and `runbooks/` are required only where the project has what they
+# describe, read from the markers below. A directory may be WAIVED, with a reason, in docs/README.md `## Waivers`.
+REQUIRED = ("brain", "product", "architecture", "evidence")
+REQUIRED_IF = {
+    "design": ("UI", ("app/views", "app/components", "app/javascript", "app/frontend", "src/components", "src/app", "components", "pages")),
+    "runbooks": ("deployed", ("config/deploy.yml", "Dockerfile", "fly.toml", "vercel.json", "render.yaml", ".kamal")),
+}
 BRAIN_ROOT_ALLOWED = {"README.md", "STATUS.md", "DECISIONS.md", "HYPOTHESES.md", "PROGRESS-LOG.md", "MEMORY.md", "FEDERATION.md", "BRIEF.md", ".last-review"}
 BRAIN_SUBDIRS = {"memos", "history"}
 CODE_EXT = {".py", ".rb", ".sh", ".js", ".ts", ".mjs", ".bash", ".zsh"}
@@ -239,6 +248,33 @@ def declared_dirs(root: Path) -> set[str]:
     return {m for m in MAP_ROW.findall(readme.read_text(encoding="utf-8", errors="replace"))} - set(LAYOUT)
 
 
+WAIVER_ROW = re.compile(r"^\|\s*`([A-Za-z0-9_-]+)/`\s*\|\s*(.*?)\s*\|\s*$", re.M)
+
+
+def waivers(root: Path) -> dict[str, str]:
+    """`## Waivers` rows in docs/README.md: `{directory: reason}`. A waiver with no reason is kept, with an empty
+    reason, so the finding can name it; the map is the one source, as for the declared directories."""
+    readme = root / DOCS / "README.md"
+    if not readme.is_file():
+        return {}
+    parts = readme.read_text(encoding="utf-8", errors="replace").split("## Waivers", 1)
+    if len(parts) != 2:
+        return {}
+    section = re.split(r"^## ", parts[1], maxsplit=1, flags=re.M)[0]
+    return {d: reason for d, reason in WAIVER_ROW.findall(section) if d != "directory" and not set(reason) <= {"-", " "}} | \
+        {d: "" for d, reason in WAIVER_ROW.findall(section) if d != "directory" and reason.strip() == ""}
+
+
+def required_dirs(root: Path) -> dict[str, str]:
+    """`{directory: why it is required here}`: the four every project has, and design/runbooks where the project has UI or a deploy."""
+    out = {d: "every project has one" for d in REQUIRED}
+    for d, (what, markers) in REQUIRED_IF.items():
+        hit = next((m for m in markers if (root / m).exists()), None)
+        if hit:
+            out[d] = f"this project has {what} ({hit} exists)"
+    return out
+
+
 def classify(root: Path) -> list[dict]:
     docs = root / DOCS
     extra = declared_dirs(root)
@@ -259,6 +295,17 @@ def findings(root: Path, rows: list[dict]) -> list[str]:
     docs = root / DOCS
     if not (docs / "README.md").is_file():
         out.append("docs/README.md is missing -- the map agents read before creating a file (--scaffold writes it)")
+    waived = waivers(root)
+    for d, why in required_dirs(root).items():
+        present = (docs / d).is_dir()
+        if d in waived and not waived[d]:
+            out.append(f"docs/README.md waives `{d}/` with no reason -- say why this project does without it")
+        elif d in waived and present:
+            out.append(f"docs/README.md waives `{d}/` but docs/{d}/ exists -- delete the waiver")
+        elif d not in waived and not present:
+            out.append(f"docs/{d}/ is required ({why}) and missing -- `--scaffold --write` creates it, or waive it in docs/README.md `## Waivers` with a reason")
+    for d in sorted(set(waived) - set(LAYOUT)):
+        out.append(f"docs/README.md waives `{d}/`, which is not a layout directory -- only {', '.join(sorted(LAYOUT))} can be waived")
     for d in GENERATED_DIRS:
         if (docs / d).is_dir() and not (docs / d / ".generated").exists():
             out.append(f"docs/{d}/ is a generated directory with no `.generated` marker (--scaffold writes it)")
@@ -557,6 +604,11 @@ def scaffold_files(root: Path) -> dict[str, str]:
             lines.append(f"| `{d}/` | {q} | {what} |")
         lines += ["", "Check: `python3 <rails-flow>/scripts/docs_layout.py --report` · rework an existing tree: `--propose`, then `--write`.", ""]
         out["docs/README.md"] = "\n".join(lines)
+    waived = waivers(root)
+    for d in required_dirs(root):          # a required directory that is missing is created with its README (#2298)
+        if d not in waived and not (docs / d).is_dir():
+            q, what = LAYOUT[d]
+            out[f"docs/{d}/README.md"] = f"# {d}/ — {q}\n\n{what}\n" + ("\nGenerated: do not hand-edit; the command named above rebuilds it.\n" if d in GENERATED_DIRS else "")
     for d, (q, what) in LAYOUT.items():
         if (docs / d).is_dir() and not (docs / d / "README.md").is_file() and d != "brain":
             out[f"docs/{d}/README.md"] = f"# {d}/ — {q}\n\n{what}\n" + ("\nGenerated: do not hand-edit; the command named above rebuilds it.\n" if d in GENERATED_DIRS else "")
@@ -872,6 +924,68 @@ def selftest() -> int:
         p2 = plan(root, classify(root))
         check("a move referenced from a binary is refused and named",
               any(m["path"] == "docs/ROADMAP2.md" for m, _ in p2["refused"]) and not any(m["path"] == "docs/ROADMAP2.md" for m in p2["moves"]), str(p2["refused"]))
+
+    # ---- REQUIRED DIRECTORIES, WAIVERS AND THE SWEEP (#2298) ---------------------------------------------------------
+    def tree(files: dict[str, str], marks: tuple[str, ...] = ()) -> Path:
+        r = Path(tempfile.mkdtemp(prefix="docs-layout-"))
+        for rel, text in files.items():
+            (r / rel).parent.mkdir(parents=True, exist_ok=True)
+            (r / rel).write_text(text, encoding="utf-8")
+        for m in marks:
+            (r / m).mkdir(parents=True, exist_ok=True)
+        return r
+
+    full = {f"docs/{d}/README.md": f"# {d}\n" for d in ("brain", "product", "architecture", "evidence")}
+    full["docs/architecture/.generated"] = "g\n"
+
+    def msgs(root: Path) -> list[str]:
+        return findings(root, classify(root))
+
+    ok_root = tree({**full, "docs/README.md": "# docs/ — the map\n"})
+    check("all four required directories present: no required-directory finding", not [m for m in msgs(ok_root) if "is required" in m], str(msgs(ok_root)))
+    bare = tree({"docs/product/README.md": "# p\n", "docs/README.md": "# map\n"})
+    miss = [m for m in msgs(bare) if "is required" in m]
+    check("a repo with no brain/, architecture/ or evidence/ is refused, each named",
+          any("docs/brain/" in m for m in miss) and any("docs/architecture/" in m for m in miss) and any("docs/evidence/" in m for m in miss), str(miss))
+    check("...and the one it has is not named", not any("docs/product/" in m for m in miss), str(miss))
+
+    waive = tree({**{k: v for k, v in full.items() if "evidence" not in k},
+                  "docs/README.md": "# map\n\n## Waivers\n\n| directory | reason |\n|---|---|\n| `evidence/` | nothing is measured here |\n"})
+    check("a waiver with a reason excuses the missing directory", not [m for m in msgs(waive) if "evidence" in m], str(msgs(waive)))
+    noreason = tree({**{k: v for k, v in full.items() if "evidence" not in k},
+                     "docs/README.md": "# map\n\n## Waivers\n\n| directory | reason |\n|---|---|\n| `evidence/` |  |\n"})
+    check("a waiver with no reason is a finding, not an excuse", any("no reason" in m for m in msgs(noreason)), str(msgs(noreason)))
+    stale = tree({**full, "docs/README.md": "# map\n\n## Waivers\n\n| directory | reason |\n|---|---|\n| `evidence/` | we thought we would not need it |\n"})
+    check("a waiver for a directory that exists is a finding (delete the waiver)", any("delete the waiver" in m for m in msgs(stale)), str(msgs(stale)))
+    unknown = tree({**full, "docs/README.md": "# map\n\n## Waivers\n\n| directory | reason |\n|---|---|\n| `scratch/` | because |\n"})
+    check("a waiver for a name that is not a layout directory is a finding", any("not a layout directory" in m for m in msgs(unknown)), str(msgs(unknown)))
+
+    ui = tree({**full, "docs/README.md": "# map\n"}, marks=("app/views",))
+    check("a project with UI and no design/ is refused", any("docs/design/" in m and "is required" in m for m in msgs(ui)), str(msgs(ui)))
+    noui = tree({**full, "docs/README.md": "# map\n"})
+    check("a project with no UI markers owes no design/", not any("docs/design/" in m for m in msgs(noui)), str(msgs(noui)))
+    dep = tree({**full, "docs/README.md": "# map\n"}, marks=(".kamal",))
+    check("a project with a deploy marker and no runbooks/ is refused", any("docs/runbooks/" in m and "is required" in m for m in msgs(dep)), str(msgs(dep)))
+    ui_ok = tree({**full, "docs/design/README.md": "# d\n", "docs/README.md": "# map\n"}, marks=("app/views",))
+    check("...and silent once design/ exists", not any("docs/design/" in m for m in msgs(ui_ok)), str(msgs(ui_ok)))
+
+    scaf = scaffold_files(bare)
+    check("--scaffold creates the missing required directories' READMEs", all(f"docs/{d}/README.md" in scaf for d in ("brain", "architecture", "evidence")), str(sorted(scaf)))
+    check("...and not the waived one's", "docs/evidence/README.md" not in scaffold_files(waive), str(sorted(scaffold_files(waive))))
+
+    # THE SWEEP: a misplaced folder must FAIL project_gates, not merely be reported. The registered command, run as
+    # the sweep runs it, exits 1 on a misplaced folder and 0 on a conforming tree.
+    manifest = json.loads((Path(__file__).resolve().parents[1] / "checks.json").read_text(encoding="utf-8"))
+    entry = next((c for c in manifest["checks"] if c["id"] == "docs-layout"), None)
+    check("docs-layout is registered in checks.json, applies when docs/ exists, and runs --report",
+          entry is not None and entry["applies_when"] == ["docs"] and entry["command"][-1] == "--report", str(entry))
+    if entry is not None:
+        argv = [sys.executable if c == "python3" else c.replace("{plugin}", str(Path(__file__).resolve().parents[1])) for c in entry["command"]]
+        misplaced = tree({**full, "docs/README.md": "# map\n", "docs/decisions/0001-x.md": "# D\n"})
+        bad = subprocess.run(argv, cwd=misplaced, capture_output=True, text=True)
+        good = subprocess.run(argv, cwd=ok_root, capture_output=True, text=True)
+        check("the registered command FAILS (exit 1) on a project with a folder outside the layout", bad.returncode == 1 and "decisions" in bad.stdout, f"{bad.returncode} {bad.stdout[:200]}")
+        check("...and passes (exit 0) on a conforming project", good.returncode == 0, f"{good.returncode} {good.stdout[:200]}")
 
     for f in failures:
         print(f"FAIL {f}")

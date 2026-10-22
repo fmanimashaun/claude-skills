@@ -2,11 +2,11 @@
 """Compose the system-carrying half of a Claude Design prompt, from this project's own sources.
 
 Run:  python3 design_prompt.py --surface dashboard
-      python3 design_prompt.py --surface dashboard --theme app/assets/tailwind/application.css
+      python3 design_prompt.py --surface dashboard --theme <the project's token file>
       python3 design_prompt.py --selftest
 
 WHY THIS EXISTS (#745). The inbound half of the loop shipped first: `design-handoff.md` and the
-`design-porter` agent turn a Claude Design canvas into Rails + Hotwire. But the cost of that port is
+porter agent turn a Claude Design canvas into the project's UI implementation. But the cost of that port is
 decided BEFORE it starts, by the prompt.
 
 Measured on a real artboard: `Ledger auth.dc.html` declares **50 of its own `:root` tokens** and makes
@@ -30,8 +30,9 @@ THREE SOURCES, ALL REUSED RATHER THAN RE-PARSED:
   * the project's `@theme` block, via `palette_candidates` -- which already carries the
     `(?!\\s+inline)` carve-out that stops Tailwind's `--color-*` alias re-export shadowing the role it
     aliases. A second parser here would drift from that.
-  * `component-shapes.json` -- the catalog, 52 entries. Derived so that adding a component changes the
-    prompt with no edit; a hand-written list is stale the day one lands.
+  * `component-shapes.json` -- the catalog, 65 entries, read from THIS plugin's `catalog/` (#2272: the catalog is
+    stack-neutral design, so it lives with design-flow, not in a stack's skill). Derived so that adding a component
+    changes the prompt with no edit; a hand-written list is stale the day one lands.
   * the marked band block in `page-anatomies.md`, via `compose_brief.read_bands`, for the same reason
     `check_page_pacing` imports it rather than keeping its own.
 
@@ -60,7 +61,6 @@ import doctrine_path  # noqa: E402  -- sibling module, reachable via the line ab
 
 CATALOG = "component-shapes.json"
 ANATOMY = "page-anatomies.md"
-DEFAULT_THEME = Path("app/assets/tailwind/application.css")
 
 # Roles a canvas must be told about by name. Anything else in `:root` is a primitive the design system
 # keeps private, and naming it in a prompt would invite the canvas to bind to it.
@@ -87,9 +87,9 @@ def project_roles(theme_css: Path) -> tuple[dict[str, str], str | None]:
     return kept, None
 
 
-def catalog(refs: Path) -> tuple[list[str], str | None]:
-    """The component names a canvas may compose from. Derived from the shapes file."""
-    doc = refs / CATALOG
+def catalog(catalog_dir: Path) -> tuple[list[str], str | None]:
+    """The component names a canvas may compose from. Derived from the shapes file in `catalog_dir` (this plugin's `catalog/`)."""
+    doc = catalog_dir / CATALOG
     if not doc.is_file():
         return [], f"no {doc} — without the catalog the canvas will invent components"
     try:
@@ -227,7 +227,7 @@ def _selftest() -> int:
         check("a theme with only primitives is reported",
               problem is not None and "no role tokens" in problem)
 
-        refs = root / "references"; refs.mkdir()
+        refs = root / "catalog"; refs.mkdir()
         (refs / CATALOG).write_text(json.dumps({"_comment": "x", "Button": {}, "Card": {}}),
                                     encoding="utf-8")
         names, problem = catalog(refs)
@@ -316,10 +316,13 @@ def _selftest() -> int:
         _found = doctrine_path.find(Path(__file__).resolve())
         real_refs = (_found / "references") if _found else Path("/nonexistent")
         if (scripts / "design_prompt.py").is_file() and real_refs.is_dir():
-            for f in (CATALOG, ANATOMY):
+            for f in (ANATOMY,):
                 if (real_refs / f).is_file():
                     (refs_installed / f).write_text((real_refs / f).read_text(encoding="utf-8"),
                                                     encoding="utf-8")
+            # The catalog is design-flow's own (#2272): it sits beside the installed scripts, not in the stack's references.
+            (scripts.parent / "catalog").mkdir()
+            (scripts.parent / "catalog" / CATALOG).write_text((HERE.parent / "catalog" / CATALOG).read_text(encoding="utf-8"), encoding="utf-8")
             proc = subprocess.run([sys.executable, str(scripts / "design_prompt.py"),
                                    "--surface", "pricing"],
                                   capture_output=True, text=True, timeout=90, cwd=td)
@@ -342,9 +345,12 @@ def _selftest() -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--surface", default="surface")
-    ap.add_argument("--theme", type=Path, default=DEFAULT_THEME)
+    ap.add_argument("--theme", type=Path, default=None,
+                    help="the project's token file (default: the UI adapter's `tokens_file`, from the stack descriptor)")
     ap.add_argument("--refs", type=Path,
-                    help="design-system references dir (default: resolve from the plugin root)")
+                    help="design-system references dir, for the band sequence (default: resolve from the plugin root)")
+    ap.add_argument("--catalog-dir", type=Path, default=HERE.parent / "catalog",
+                    help="the directory holding component-shapes.json (default: this plugin's own catalog/)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
     if a.selftest:
@@ -369,10 +375,25 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         refs = found / "references"
     problems: list[str] = []
-    roles, p = project_roles(a.theme)
+    theme, theme_problem = a.theme, None
+    if theme is None:
+        # the token file is the stack's, so ask its adapter (#2185). No answer is a PROBLEM named in the prompt, never a stack default
+        try:
+            import ui_adapter
+            named = ui_adapter.resolve_project(Path.cwd())["tokens_file"]
+            if named:
+                theme = Path(named)
+            else:
+                theme, theme_problem = None, "the UI adapter names no token file for this stack; pass --theme"
+        except (ImportError, KeyError, OSError, getattr(sys.modules.get("ui_adapter"), "Unresolved", RuntimeError)) as exc:
+            theme, theme_problem = None, f"cannot find the project's token file ({exc}); pass --theme"
+    if theme is None:
+        roles, p = [], theme_problem
+    else:
+        roles, p = project_roles(theme)
     if p:
         problems.append(p)
-    components, p = catalog(refs)
+    components, p = catalog(a.catalog_dir)
     if p:
         problems.append(p)
     bands, band_section, p = bands_for(refs, a.surface)

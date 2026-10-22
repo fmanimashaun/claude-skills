@@ -110,6 +110,11 @@ unless all of these hold:
   or hub), the controls present, required-field markers, and navigation behaviour must match.
   Copy and example data may differ. A deviation is BLOCKING unless the PR says why and links the
   owner's re-approval of it.
+- **the record names the built screen** (#2226). On the real diff the script refuses a record with no `Story:`, or one naming a path that is not a story file or a user-visible file. You open that story (or view) and compare it with the mock-up, not only the screenshots. `n/a: <reason>` in `States:` is a typed line: you read whether the reason is true.
+- **the mock-up is drawn inside the app's shell** (#2211). The script checks that the record names
+  `docs/product/mockups/shell.md` and that an HTML mock-up holds the shell's elements. For an image
+  or link mock-up it checks only the reference and says so in its output: you confirm that the
+  layout and navigation around the screen are the shell's, and that the build keeps them.
 
 Name every deviation as a finding with the screenshot and the mock-up region side by side:
 *"mock-up shows the bell as a dropdown; the build links to /notifications"*.

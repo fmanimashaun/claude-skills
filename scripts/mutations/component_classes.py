@@ -9,6 +9,18 @@ GUARD = Guard(
     needs=("scripts/rails_assumptions.py", "scripts/hermetic_git.py", "plugins/rails-flow/scripts/fixture_git.py"),   # rails_assumptions imports both at load
     mutations=(
         Mutation(
+            "a proof entry for a component that is not neutral passes",
+            "        if match is None or not match[\"proven\"]:",
+            "        if False:",
+            "a proof entry for a component that is not there is a finding",
+        ),
+        Mutation(
+            "a component not recorded in the proof file is shown proven",
+            '        comp["proven"] = comp["path"] in proven and bool(comp["info"]) and comp["info"]["class"] == "neutral"',
+            '        comp["proven"] = bool(comp["info"]) and comp["info"]["class"] == "neutral"',
+            "a component not in the proof file is not shown proven",
+        ),
+        Mutation(
             "a committed page that differs from a clean build passes --check",
             "            elif blob != built:",
             "            elif False:",
@@ -61,6 +73,30 @@ GUARD = Guard(
             '    next_hits = ra.scan(root, files, NEXT_PATTERNS)',
             "    next_hits = {}",
             "a neutral component naming Next.js is a finding",
+        ),
+        Mutation(
+            "#2247: the aggregate summary is committed in the JSON again, so every PR that adds a component conflicts with every other",
+            '"generated_by": "scripts/component_classes.py", "components": rows',
+            '"generated_by": "scripts/component_classes.py", "summary": summarise(comps), "components": rows',
+            "the committed JSON holds no aggregate",
+        ),
+        Mutation(
+            "#2247: a total is written into the HTML as a number instead of being counted in the page",
+            "<h2>Totals (<span data-total></span> components)</h2>",
+            "<h2>Totals (3 components)</h2>",
+            "the HTML counts its own rows in the page instead of storing totals",
+        ),
+        Mutation(
+            "#2247: the page's own script counts a row twice, so its totals disagree with the data",
+            "x.total++;",
+            "x.total += 2;",
+            "the page's script reports every per-plugin and per-plugin-and-kind count as the rows give them",
+        ),
+        Mutation(
+            "#2247: the page's per-plugin-and-kind cell shows a wrong per-class number, which a one-plugin total never sees",
+            'return x[c] + " " + c;',
+            'return (x[c] + 1) + " " + c;',
+            "the page's script reports every per-plugin and per-plugin-and-kind count as the rows give them",
         ),
     ),
 )

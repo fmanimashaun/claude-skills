@@ -17,6 +17,7 @@ import pwd
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 SWEEP_DIR = "rails-flow/sweep"
@@ -26,16 +27,60 @@ EXPLICIT = ("an explicit repository target (-R/--repo/GH_REPO/URL) cannot be mat
 SWEEP_CMD = 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/project_gates.py"'
 
 
-def git(where: str, *args: str) -> str | None:
+def _knob(name: str, default: float) -> float:
+    """A positive number from the environment, else `default`. The fixtures shrink these; nothing else needs to."""
     try:
-        done = subprocess.run(["git", "-C", where, *args], capture_output=True, text=True, timeout=10)
+        value = float(os.environ.get(name, default))
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+GIT_TIMEOUT = _knob("RAILS_FLOW_GIT_TIMEOUT", 10.0)            # one git call; well under the hook's 15 s deadline (a deadline is a DENY since #1968)
+HINT_MAX_WORKTREES = int(_knob("RAILS_FLOW_HINT_MAX_WORKTREES", 20))   # the worktrees the "green elsewhere" hint reads (#2143)
+HINT_BUDGET = _knob("RAILS_FLOW_HINT_BUDGET", 4.0)             # seconds for the whole hint, so it can never be what runs the hook out of time
+HOOK_BUDGET = _knob("RAILS_FLOW_HOOK_BUDGET", 10.0)            # seconds for EVERY git call and helper of one run together: three 10 s calls would overrun the hook's 15 s deadline, an unnamed DENY (#1968)
+DEADLINE = time.monotonic() + HOOK_BUDGET
+
+
+class GitUnanswered(Exception):
+    """git gave no answer to a question the verdict depends on: it did not run, did not finish, or failed with something other than "not a git repository". NOT the same as "not a
+    repository", which is an answer and is allowed: a gate that cannot tell does not allow (#2295, the review of faef5db8)."""
+
+
+class GitTimeout(GitUnanswered):
+    """git did not answer in time (a call's own limit, or the budget of the whole run)."""
+
+
+def budget_left() -> float:
+    """Seconds of the run's budget that remain; GitTimeout when it is spent."""
+    remaining = DEADLINE - time.monotonic()
+    if remaining <= 0:
+        raise GitTimeout(f"the {HOOK_BUDGET:g} s budget of this check is spent")
+    return remaining
+
+
+def limit_for(timeout: float | None) -> float:
+    """One call's limit: its own (or GIT_TIMEOUT), never more than what is left of the run's budget."""
+    return max(0.05, min(GIT_TIMEOUT if timeout is None else timeout, budget_left()))
+
+
+def git(where: str, *args: str, timeout: float | None = None) -> str | None:
+    """git's stdout when it succeeds, None when it fails or cannot run. A TIMEOUT raises GitTimeout: under load it used to read as `not a repository`, which is allowed (#2295).
+    No caller turns None into an allow: judge_record refuses on it (HEAD, or the sweep directory, unreadable), in_force counts an unreadable sweep directory as in force, and the
+    "green elsewhere" hint, whose refusal is already certain, only names nothing. Whether a directory is a repository is asked through `toplevel_or_raise`, never through here."""
+    limit = limit_for(timeout)
+    try:
+        done = subprocess.run(["git", "-C", where, *args], capture_output=True, text=True, timeout=limit)
+    except subprocess.TimeoutExpired as exc:
+        raise GitTimeout(f"`git {' '.join(args[:3])}` in {where} did not answer within {limit:g} s") from exc
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout.strip() if done.returncode == 0 else None
 
 
-def sweep_dir(root: str) -> Path | None:
-    where = git(root, "rev-parse", "--git-path", SWEEP_DIR)
+def sweep_dir(root: str, timeout: float | None = None) -> Path | None:
+    where = git(root, "rev-parse", "--git-path", SWEEP_DIR, timeout=timeout)
     if not where:
         return None
     return Path(where) if os.path.isabs(where) else Path(root) / where
@@ -57,7 +102,9 @@ def in_force(root: str) -> bool:
     except OSError:
         pass
     d = sweep_dir(root)
-    return bool(d and d.is_dir())
+    if d is None:
+        return True       # git cannot say where the sweep records live, so whether any exist cannot be told: judged, and refused by name where the record cannot be found (judge_record)
+    return d.is_dir()
 
 
 def refuse(reason: str, args: str) -> int:
@@ -76,7 +123,7 @@ def resolve_dir(payload: dict, start: str) -> tuple[str | None, str]:
     helper = Path(__file__).with_name("command_cwd.py")
     try:
         done = subprocess.run([sys.executable, str(helper), "--pr-ready", start], input=cmd,
-                              capture_output=True, text=True, timeout=10)
+                              capture_output=True, text=True, timeout=min(10, budget_left()))
     except (OSError, subprocess.SubprocessError) as exc:
         return None, f"lib/command_cwd.py could not run ({exc})"
     if done.returncode == 0 and done.stdout.strip():
@@ -156,6 +203,15 @@ def dynamic_target(raw: str) -> bool:
 
 
 def main() -> int:
+    """The hook's judgement. A git that gives no answer (it did not run, did not finish in time, or failed with something other than "not a git repository") is a NAMED REFUSAL, not an allow (#2295)."""
+    try:
+        return _main()
+    except GitUnanswered as exc:
+        return refuse(f"{exc}, so whether this repository runs the sweep guard, and which HEAD it is on, cannot be told; a gate that cannot tell does not allow. "
+                      "Run the same command again (the machine is probably under load).", sys.argv[1] if len(sys.argv) > 1 else "")
+
+
+def _main() -> int:
     args = sys.argv[1] if len(sys.argv) > 1 else ""
     segment = sys.argv[2] if len(sys.argv) > 2 else ""
     try:
@@ -170,18 +226,18 @@ def main() -> int:
     where, why = resolve_dir(payload, start)
     raw = str(payload.get("tool_input", {}).get("command", ""))
     if dynamic_target(raw):
-        roots = {git(d, "rev-parse", "--show-toplevel") for d in (where, start) if d}
+        roots = {toplevel_or_raise(d) for d in (where, start) if d}
         if any(r and in_force(r) for r in roots):
             return refuse(DYNAMIC + ".", args)
         return 0
     if explicit_target(segment, str(payload.get("tool_input", {}).get("command", ""))):
-        roots = {git(d, "rev-parse", "--show-toplevel") for d in (where, start) if d}
+        roots = {toplevel_or_raise(d) for d in (where, start) if d}
         if any(r and in_force(r) for r in roots):
             return refuse(EXPLICIT + ".", args)
         return 0
     word = bad_word(segment)
     if word is not None:
-        roots = {git(d, "rev-parse", "--show-toplevel") for d in (where, start) if d}
+        roots = {toplevel_or_raise(d) for d in (where, start) if d}
         if any(r and in_force(r) for r in roots):
             return refuse(f"argument {word} is not a plain PR number or branch; run `gh pr ready <number>` from the PR's "
                           "own checkout, after its sweep.", args)
@@ -191,15 +247,99 @@ def main() -> int:
         # before gh, a `cd` it cannot follow). A guarantee FAILS CLOSED: no guessing the session's directory, because an earlier
         # segment (`gh repo set-default`, `git remote set-url`, a url.insteadOf) can retarget gh (#1565, the coordinator's call
         # after the review of 7315b31e). Refused where the session's repository is in force; left alone where it is not.
-        root = git(start, "rev-parse", "--show-toplevel")
+        root = toplevel_or_raise(start)
         if root and in_force(root):
             return refuse(f"which repository this `gh pr ready` targets cannot be told ({why}). Run `gh pr ready <number>` "
                           "as its own command, from the PR's checkout, after its sweep.", args)
         return 0
-    root = git(where, "rev-parse", "--show-toplevel")
+    root = toplevel_or_raise(where)
     if not root or not in_force(root):
         return 0
     return judge_record(root, args)
+
+
+# The word shape guard-pr-ready.sh's `cd <dir> && gh pr ready <n>` exception accepts (#2132): a plain literal path.
+CD_WORD = re.compile(r"\A[A-Za-z0-9_./~+-]+\Z")
+
+
+def worktrees(root: str, timeout: float) -> list[dict[str, str]]:
+    """Every worktree of `root`'s repository as {worktree, HEAD, ...}, from `git worktree list --porcelain -z`: a NUL ends every field and an empty field ends a
+    worktree, so a path holding a newline is one path, not two lines (#2293 review)."""
+    try:
+        done = subprocess.run(["git", "-C", root, "worktree", "list", "--porcelain", "-z"], capture_output=True, text=True, timeout=limit_for(timeout))
+    except subprocess.TimeoutExpired as exc:
+        raise GitTimeout(f"`git worktree list` in {root} did not answer within {timeout:g} s") from exc
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if done.returncode != 0:
+        return []
+    found: list[dict[str, str]] = []
+    block: dict[str, str] = {}
+    for field in done.stdout.split("\0"):
+        if field == "":
+            if block:
+                found.append(block)
+            block = {}
+            continue
+        key, _, value = field.partition(" ")
+        block[key] = value
+    if block:
+        found.append(block)
+    return found
+
+
+def green_elsewhere(root: str) -> tuple[list[tuple[str, str]], str]:
+    """((path, HEAD) of every OTHER worktree of `root`'s repository whose own HEAD has a green, zero-skip record, why the search stopped early or "") (#2143).
+
+    Only a hint for a refusal: nothing here allows anything. A session whose Bash tool resets its directory to the main checkout is judged on that
+    checkout's HEAD, and the released way out (`cd <worktree> && gh pr ready <n>`) was invisible in the refusal. BOUNDED (#2293 review): at most
+    HINT_MAX_WORKTREES worktrees and HINT_BUDGET seconds in all, each git call inside what is left, and a refusal that is already certain never waits on this."""
+    deadline = min(time.monotonic() + HINT_BUDGET, DEADLINE)
+    try:
+        listed = worktrees(root, min(GIT_TIMEOUT, HINT_BUDGET))
+    except GitTimeout:
+        return [], f"the search for other worktrees did not finish in {HINT_BUDGET:g} s"
+    here = os.path.realpath(root)
+    found: list[tuple[str, str]] = []
+    scanned = 0
+    for entry in listed:
+        path, head = entry.get("worktree", ""), entry.get("HEAD", "")
+        if not path or not head or os.path.realpath(path) == here:
+            continue
+        if scanned >= HINT_MAX_WORKTREES:
+            return sorted(found)[:3], f"the search stopped after {HINT_MAX_WORKTREES} worktrees"
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return sorted(found)[:3], f"the search stopped after {HINT_BUDGET:g} s"
+        scanned += 1
+        try:
+            d = sweep_dir(path, timeout=max(0.05, min(GIT_TIMEOUT, left)))
+        except GitTimeout:
+            return sorted(found)[:3], f"the search stopped after {HINT_BUDGET:g} s"
+        try:
+            data = json.loads((d / f"{head}.json").read_text(encoding="utf-8")) if d else None
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and data.get("head") == head and data.get("verdict") == "green" and type(data.get("skips")) is int and data["skips"] == 0:
+            found.append((path, head))
+    return sorted(found)[:3], ""
+
+
+def elsewhere_hint(root: str, args: str) -> str:
+    """The sentence a refusal appends when another worktree of the repository holds a green record for its own HEAD, or ''."""
+    ready = f"gh pr ready{(' ' + args.strip()) if args.strip() else ''}"
+    found, stopped = green_elsewhere(root)
+    parts = []
+    for path, head in found:
+        plain = CD_WORD.match(path) is not None
+        shown = path if plain else repr(path)         # a path with a newline or a quote is shown escaped, never as raw text in the message
+        how = (f"run `cd {path} && {ready}` as ONE command (the Bash tool does not carry a bare `cd` to the next call)" if plain
+               else f"run `{ready}` from a session started in {shown}")
+        parts.append(f"a green record with zero skips exists for HEAD {head[:12]} in the worktree {shown}: {how}")
+    text = "; ".join(parts) + "." if parts else ""
+    if stopped:
+        text = (text + " " if text else "") + f"({stopped}, so another worktree may hold one.)"
+    return (" " + text) if text else ""
 
 
 def judge_record(root: str, args: str) -> int:
@@ -212,7 +352,7 @@ def judge_record(root: str, args: str) -> int:
         return refuse(f"the git directory of {root} could not be read.", args)
     record = d / f"{head}.json"
     if not record.is_file():
-        return refuse(f"no sweep record for HEAD {head[:12]} (looked for {record}).", args)
+        return refuse(f"no sweep record for HEAD {head[:12]} (looked for {record}).{elsewhere_hint(root, args)}", args)
     try:
         data = json.loads(record.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
@@ -282,13 +422,26 @@ def _toplevel(cwd: str) -> tuple[str | None, str]:
     if not os.path.isdir(cwd):
         return None, "none"
     clean = {k: v for k, v in os.environ.items() if not k.startswith("GIT_") or k in HARMLESS_ENV or k.startswith(("GIT_AUTHOR_", "GIT_COMMITTER_"))}
+    clean["LC_ALL"] = "C"          # "not a git repository" is matched below, so git must say it in English
+    limit = limit_for(None)
     try:
-        done = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=10, env=clean)
+        done = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=limit, env=clean)
+    except subprocess.TimeoutExpired as exc:
+        raise GitTimeout(f"`git rev-parse --show-toplevel` in {cwd} did not answer within {limit:g} s") from exc
     except (OSError, subprocess.SubprocessError):
         return None, "error"
     if done.returncode == 0 and done.stdout.strip():
         return done.stdout.strip(), "ok"
     return None, "none" if "not a git repository" in done.stderr else "error"
+
+
+def toplevel_or_raise(cwd: str) -> str | None:
+    """The top level of the repository `cwd` is in, None when git ANSWERED that it is not in one. Anything else (git missing, a timeout, "dubious ownership", a corrupt repository)
+    is no answer, and raises GitUnanswered: the hook used to read it as "not a repository" and allow (the review of faef5db8). The shim asks `_toplevel` the same question."""
+    root, status = _toplevel(cwd)
+    if status == "error":
+        raise GitUnanswered(f"git could not say whether {cwd} is a repository")
+    return root
 
 
 def shim_judge(argv: list[str], cwd: str, gh_repo: str = "") -> int:
@@ -363,8 +516,17 @@ def shim_unreadable_alias(expansion: str, cwd: str) -> int:
 
 
 if __name__ == "__main__":
+    def _timed_out(exc: GitTimeout, shown: str) -> int:
+        return refuse(f"{exc}, so this `gh pr ready` cannot be judged; a gate that cannot tell does not allow. Run the same command again (the machine is probably under load).", shown)
+
     if len(sys.argv) > 2 and sys.argv[1] == "--shim-unreadable":
-        sys.exit(shim_unreadable_alias(sys.argv[2], os.getcwd()))
+        try:
+            sys.exit(shim_unreadable_alias(sys.argv[2], os.getcwd()))
+        except GitTimeout as exc:
+            sys.exit(_timed_out(exc, sys.argv[2]))
     if len(sys.argv) > 1 and sys.argv[1] == "--shim":
-        sys.exit(shim_judge(sys.argv[2:], os.getcwd(), os.environ.get("RF_INHERITED_GH_REPO") or os.environ.get("GH_REPO", "")))
+        try:
+            sys.exit(shim_judge(sys.argv[2:], os.getcwd(), os.environ.get("RF_INHERITED_GH_REPO") or os.environ.get("GH_REPO", "")))
+        except GitTimeout as exc:
+            sys.exit(_timed_out(exc, " ".join(sys.argv[2:])))
     sys.exit(main())

@@ -5,8 +5,19 @@ argument-hint: "<component name or screen>  [e.g. pricing-card | settings form |
 
 # /design-flow:component — $ARGUMENTS
 
-Build (or fix) `$ARGUMENTS` to the **design-system** doctrine. Delegate to the
-**ui-composer** agent. Never freehand CSS — compose.
+Build (or fix) `$ARGUMENTS` to the **design-system** doctrine. Never freehand CSS — compose.
+
+## Which stack renders this
+
+Resolve the project's UI adapter from its stack descriptor:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ui_adapter.py"
+```
+
+It prints JSON: `dir` (the adapter directory) and `agents.composer`. **Exit 2 means it cannot say** (no recognised stack, a stack with
+no UI adapter yet): quote its message and stop; never fall back to another stack. Read **`<dir>/component.md`**, follow its steps where
+this command says "the adapter", and delegate to the **`design-flow:<agents.composer>`** agent it names.
 
 ## Preconditions
 
@@ -38,7 +49,7 @@ changes how many outputs there are, never what the doctrine is. Without the flag
    cards and inconsistent heading ramps come from. That file also carries the
    primitive-instead-of-breakpoint substitution table and the chrome-vs-content type
    assignments, so apply both before writing markup. For the
-   concrete code, reference `reference-implementation.md` (Button/Card + Stimulus mixins) and
+   concrete code, reference `reference-implementation.md` (the Button/Card reference) and
    `component-implementations.md` (the full worked catalog) — mirror those exact shapes.
 
    **If the surface is MARKETING** — a landing page, pricing, a feature section, a hero: anything a
@@ -55,9 +66,8 @@ changes how many outputs there are, never what the doctrine is. Without the flag
      Never mix illustration styles on one surface.
    - rails-stack's `skills/design-system/references/motion.md` (#136) — named patterns only, tokenised durations, a defined static end-state.
      Motion never carries information, and every pattern has a reduced-motion fallback.
-   **If it's a CRUD screen** (list + create/edit/delete), follow `crud-modal-pattern.md`:
-   mutations open in the shared `turbo-frame` modal and update the list via Turbo Stream —
-   never build a full-page new/edit form. **If it's a chart / KPI / dashboard**, follow
+   **If it's a CRUD screen** (list + create/edit/delete), follow `crud-modal-pattern.md` and the adapter's
+   CRUD rule (below). **If it's a chart / KPI / dashboard**, follow
    `data-viz.md`: pick the form by the data's job, use the `--color-chart-*` tokens (never ad-hoc
    hex), one axis, legend + direct labels; re-run the palette validator if you change a hue.
 2. **Pick semantic role tokens** (foundations-tokens.md) — `bg-primary text-primary-foreground`,
@@ -65,10 +75,10 @@ changes how many outputs there are, never what the doctrine is. Without the flag
    or stock `blue-700`/`gray-*` in component code.
 3. **Compose layout primitives** (layout-primitives.md) — `box > stack`, `grid-auto`, `cluster`,
    `Layout::Sidebar`/`Switcher`, etc. Spacing via parent `gap`, from the `--space-*` scale.
-4. **Express variants server-side** — a Ruby base+variants+sizes+defaults map on the
-   ViewComponent (the cva pattern, no JS dep). Reuse the shared size vocabulary (`sm/md/lg`).
-5. **Interaction** (interaction-stimulus.md) — if interactive, wire the right Stimulus
-   controller/mixins; style state off `data-[state=…]`/`aria-*`; full keyboard + ARIA.
+4. **Express variants** the way the stack's adapter prescribes (below): one place defines base + variants + sizes +
+   defaults, and the shared size vocabulary (`sm/md/lg`) is reused.
+5. **Interaction** (interaction-stimulus.md) — if interactive, wire what the adapter names; style state off
+   `data-[state=…]`/`aria-*`; full keyboard + ARIA.
 6. **Responsive** (responsive.md) — fluid + intrinsic first; a breakpoint only for a structural
    swap; `min-h-touch` on tap targets.
 7. **a11y checklist** — focus-visible ring, roles/ARIA, `sr-only` for icon-only, no color-only
@@ -76,7 +86,6 @@ changes how many outputs there are, never what the doctrine is. Without the flag
 
 ## Output
 
-The ViewComponent (`.rb` + `.html.erb`) and/or refactored partial, using role tokens only,
-plus a one-line note of the variants/sizes/states exposed and the responsive behavior. If a
-needed token/recipe is missing from the system, flag it (propose a system addition) rather than
-inventing an ad-hoc value.
+What the adapter's `component.md` says the stack produces, plus a one-line note of the variants/sizes/states exposed and the
+responsive behavior, using role tokens only. If a needed token/recipe is missing from the system, flag it (propose a system
+addition) rather than inventing an ad-hoc value.

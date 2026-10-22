@@ -16,6 +16,12 @@ place a version number is allowed to change, and it changes in ONE artefact: the
 
 **Preconditions — refuse and report if any fails:**
 - The work is on `dev` and `dev` is ahead of `main`.
+- **The brain is current** (#2297): `python3 plugins/rails-flow/scripts/check_brain_fresh.py` exits 0. It refuses
+  while `docs/brain/STATUS.md`'s `_Updated: <date> · sha` commit is older than the newest `v*` tag (the last
+  promotion), and it refuses, never passes, when it cannot tell (no STATUS, an unreadable `_Updated:` line, a sha this
+  clone lacks, a shallow clone). A nudge printed for 18 days and nothing acted on it. Do not arm or promote past
+  a refusal: refresh STATUS and record the decisions made since (a `D-NNN` for each owner ruling), then run it again.
+  The same check runs as the doctor gates `brain fresh at arm` and `brain fresh at promotion`.
 - No version was bumped on `dev` (`git diff main dev -- '*.json'` shows no version change).
   If one was, that is the #143 defect: the promotion would publish a tag nobody chose.
   Revert the stray bump first, then promote.

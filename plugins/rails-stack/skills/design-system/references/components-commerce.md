@@ -10,6 +10,7 @@ Modal, Drawer, Stacked list, Stepper — is documented in [components.md](compon
 each entry. `coverage.md` counts both files as the catalogue.
 
 ## Product card
+- **Catalog axes** (generated from the catalog's `component-shapes.json`, do not edit): variants `plain` · `bordered` · `compact`. <!-- axes -->
 - **No new mechanism: the grid is the documented [Grid list](components.md#grid-list) and the card is the documented
   [Card](components.md#card).** What this entry owns is the four decisions a catalog card gets wrong — how many links
   it has, where the add-to-basket control may live, how a reduced price is marked, and how stock reads

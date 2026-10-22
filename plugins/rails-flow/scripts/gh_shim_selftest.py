@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -21,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fixture_git  # noqa: E402  (#1588: a fixture's git touches only its own temp repo)
+from process_containment import contained  # noqa: E402  (#1582: nothing a case starts outlives the run)
 
 for _k, _v in (("GIT_AUTHOR_NAME", "t"), ("GIT_AUTHOR_EMAIL", "t@t"), ("GIT_COMMITTER_NAME", "t"), ("GIT_COMMITTER_EMAIL", "t@t")):  # fixture-git: exempt (an identity for fixture_git.run's own commit; it names no repository)
     os.environ[_k] = _v
@@ -36,7 +38,8 @@ CASES: list[tuple[str, object]] = []
 STUB = """#!/bin/sh
 # the real gh, as far as the shim is concerned: records its argv, and answers `alias list`
 if [ "$1" = alias ] && [ "$2" = list ]; then printf '%s\\n' "${STUB_ALIASES:-}"; exit 0; fi
-printf '%s\\n' "$*" >> "$STUB_LOG"
+line="$*"; nl='
+'; printf '%s\\n' "${line%%"$nl"*}" >> "$STUB_LOG"   # one line per run (the first line of a multi-line inline body), with no external command
 echo "stub gh ran"
 exit 0
 """
@@ -110,6 +113,222 @@ def allowed(fx: Fixture, command: str, env: dict[str, str] | None = None, cwd: P
     fx.reset()
     r = fx.sh(command, env, cwd)
     return (r.returncode == 0 and len(fx.ran()) == 1), f"rc {r.returncode}, stub ran {fx.ran()}, {(r.stdout + r.stderr).strip()[-200:]!r}"
+
+
+@case("claim bodies")
+def _claim_bodies(base: Path) -> None:
+    # #2258: the body of `gh pr create` / `pr edit` / `issue comment` is judged here, with the argv the shell expanded and in the real directory, by guard-claims.sh. The hook alone
+    # could not tell the directory for a heredoc, a VAR or a `cd` chain (88% of 3,211 real calls), and read nothing of an inline --body or a `--body-file "$F"`. Each shape is run
+    # with a body the repository's PR template refuses AND with one it accepts, so a shim that refuses every body fails here too.
+    fx = Fixture(base, in_force=False)
+    # The shim's judged copies go to THIS case's own TMPDIR: a shared temp directory races with parallel runs (a guard's mutant jobs created and removed
+    # their own copies under the leftover check, which then stat'ed a vanished file), and another run's live copy is not a leftover of this one.
+    own_tmp = base / "tmp"
+    own_tmp.mkdir()
+    fx.env["TMPDIR"] = str(own_tmp)
+    (fx.repo / ".github").mkdir(exist_ok=True)
+    (fx.repo / ".github" / "pull_request_template.md").write_text("## Summary\n\n## Notes\n")
+    bad, good = base / "bad.md", base / "good.md"
+    bad.write_text("A free-form body with no template sections.\n")
+    good.write_text("## Summary\n\nA fix.\n\n## Notes\n\nSee the log.\n")
+    for which, body, judge in (("refused", bad, refused), ("allowed", good, allowed)):
+        text = body.read_text()
+        shapes = {
+            "a plain --body-file": f"gh pr create --title t --body-file {body}",
+            "a heredoc before gh": f"cat > {body}.h <<'E'\n{text}E\ngh pr create --title t --body-file {body}.h",
+            "a cd and a heredoc (pr edit)": f"cd {fx.repo} && cat > {body}.h <<'E'\n{text}E\ngh pr edit 1 --body-file {body}.h",
+            "a VAR named as \"$F\"": f'F={body}; gh pr create --title t --body-file "$F"',
+            "an inline --body": f'gh pr create --title t --body "$(cat {body})"',
+            "an inline --body= (issue comment, no template)": f'gh issue comment 5 --body="$(cat {body})"',
+            "a relative --body-file": f"gh pr create --title t --body-file ../{body.name}",
+            "a short flag joined to its value (-FPATH)": f"gh pr create --title t -F{body}",
+            "a short inline flag (-b=TEXT)": f'gh pr create --title t "-b=$(cat {body})"',
+            "a body path with a space and a semicolon": f"cp {body} '{base}/a b;c.md' && gh pr create --title t --body-file '{base}/a b;c.md'",
+        }
+        for shape, command in shapes.items():
+            if which == "refused" and "issue comment" in shape:
+                continue      # a comment has no template; its claims are judged below
+            ok, why = judge(fx, command)
+            check(f"{shape}: a body the template {which.replace('ed', 's')} is {which}", ok, why)
+    claim = base / "claim.md"
+    claim.write_text("## Summary\n\nIt passed 12 checks.\n\n## Notes\n\nnone\n")
+    ok, why = refused(fx, f'gh issue comment 5 --body "$(cat {claim})"')
+    check("an inline issue comment making an unchecked number claim is refused", ok, why)
+    fx.reset()
+    r = fx.sh(f"gh pr create -R someone/else --title t --body-file {bad}")
+    check("-R: another repository's template is NOT checked, said on stderr, and the command runs",
+          r.returncode == 0 and len(fx.ran()) == 1 and "NOT checked" in r.stderr, f"rc {r.returncode}, {r.stderr.strip()[-160:]!r}")
+    ok, why = refused(fx, f"gh pr create -R someone/else --title t --body-file {claim}")
+    check("-R: the claims in the body are still judged", ok, why)
+    fx.reset()
+    r = fx.sh(f"cat {bad} | gh pr create --title t -F -")
+    check("a body on stdin is NOT checked, said on stderr, and the command runs",
+          r.returncode == 0 and len(fx.ran()) == 1 and "stdin" in r.stderr and "NOT checked" in r.stderr, f"rc {r.returncode}, {r.stderr.strip()[-160:]!r}")
+    ok, why = allowed(fx, "gh pr list")
+    check("a gh command that carries no body is untouched", ok, why)
+    # #2268 review: what the shim does not judge is passed through and SAID, never silent; what it judges is what gh posts.
+    for flag in ("--fill", "--fill-first", "--template x.md", "--editor"):
+        fx.reset()
+        r = fx.sh(f"gh pr create --title t {flag}")
+        check(f"`pr create {flag}`: gh composes the body, so it is NOT checked, said, and runs",
+              r.returncode == 0 and len(fx.ran()) == 1 and "NOT checked" in r.stderr, f"rc {r.returncode}, {r.stderr.strip()[-160:]!r}")
+    for stream in ("/dev/stdin",):
+        fx.reset()
+        r = fx.sh(f"cat {bad} | gh pr create --title t --body-file {stream}")
+        check(f"a body read from {stream} is gh's: NOT checked, said, and gh gets the stream (not an empty copy)",
+              r.returncode == 0 and len(fx.ran()) == 1 and "NOT checked" in r.stderr and stream in fx.ran()[0], f"rc {r.returncode}, ran {fx.ran()}, {r.stderr.strip()[-160:]!r}")
+    fifo = base / "body.fifo"
+    os.mkfifo(fifo)
+    fx.reset()
+    try:      # no writer: a shim that reads it HANGS, which must be this check failing by name, not the selftest crashing on a timeout
+        proc = subprocess.Popen(["bash", "-c", f"gh pr create --title t --body-file {fifo}"], cwd=fx.repo, env=fx.env, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True)
+        out, err = proc.communicate(timeout=15)
+        ok, why = proc.returncode == 0 and len(fx.ran()) == 1 and "NOT checked" in err, f"rc {proc.returncode}, {err.strip()[-160:]!r}"
+    except subprocess.TimeoutExpired:
+        # RELEASE THE READER, whatever binary it is: open the fifo for writing and close it, so a `cat` blocked on it reads end-of-file and exits. The containment
+        # cannot sweep it on macOS, where a system binary's environment (and so its token) cannot be read (filed as its own issue).
+        try:
+            os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
+        except OSError:
+            pass
+        proc.kill()
+        proc.communicate()
+        ok, why = False, "the shim hung reading the fifo (15 s)"
+    check("a fifo body is not read by the shim (no hang): NOT checked, said, and it runs", ok, why)
+    fx.reset()
+    r = fx.sh(f"gh pr create --title t --body-file {bad}", env={"GH_REPO": "someone/else"})
+    check("GH_REPO names another repository as -R does: its template is NOT checked, said", r.returncode == 0 and "NOT checked" in r.stderr and "-R" in r.stderr,
+          f"rc {r.returncode}, {r.stderr.strip()[-200:]!r}")
+    fx.reset()
+    r = fx.sh(f'gh pr create --title t --body "$(cat {good})"')
+    posted = fx.ran()[0] if fx.ran() else ""
+    check("gh is handed the judged copy (--body-file <temp>), not the original flag", r.returncode == 0 and "--body-file" in posted and "--body ##" not in posted,
+          f"ran {fx.ran()}")
+    leftovers = sorted(own_tmp.glob("rf-gh-body.*"))
+    check("the judged copy is removed after gh runs", leftovers == [], f"{leftovers[-3:]}")
+    # --web opens gh's browser form: a body given beside it is still judged, and gh gets the judged copy (#2268 review: pin it).
+    ok, why = refused(fx, f"gh pr create --title t --body-file {bad} --web")
+    check("`--body X --web`: the body is judged (a template miss is refused)", ok, why)
+    fx.reset()
+    r = fx.sh(f'gh pr create --title t --body "$(cat {good})" --web')
+    posted = fx.ran()[0] if fx.ran() else ""
+    check("`--body X --web`: a good body runs, with --web kept and the judged copy as --body-file",
+          r.returncode == 0 and "--web" in posted and "--body-file" in posted, f"ran {fx.ran()}")
+    # A SIGNAL MID-JUDGE ENDS THE SHIM (#2268 review): the trap removed the copy, so carrying on would run gh with a missing --body-file. Timing is not
+    # deterministic, so short delays are tried until one lands while the judge runs (the shim exits 143); in that run gh must not have run and no copy may be left.
+    landed = None
+    for delay in (0.15, 0.3, 0.05, 0.5, 0.1, 0.7, 0.02, 1.0):
+        fx.reset()
+        for leftover in own_tmp.glob("rf-gh-body.*"):
+            leftover.unlink()
+        proc = subprocess.Popen(["bash", "-c", f'exec gh pr create --title t --body "$(cat {good})"'], cwd=fx.repo, env=fx.env,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        time.sleep(delay)
+        try:
+            os.kill(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            proc.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()          # anything it left is swept by the containment
+            proc.communicate()
+        if proc.returncode == 143:
+            landed = (delay, fx.ran(), sorted(own_tmp.glob("rf-gh-body.*")))
+            break
+    check("a SIGTERM while the body is judged ends the shim (143): gh never runs and the copy is removed",
+          landed is not None and landed[1] == [] and landed[2] == [], f"landed {landed}")
+    ok, why = refused(fx, f"gh pc --title t --body-file {bad}", env={"STUB_ALIASES": "pc: pr create"})
+    check("an alias that expands to pr create has its body judged", ok, why)
+    ok, why = allowed(fx, f"gh pc --title t --body-file {good}", env={"STUB_ALIASES": "pc: pr create"})
+    check("an alias that expands to pr create with a good body runs", ok, why)
+    ok, why = refused(fx, "gh pr create --title t --body-file /nonexistent/body.md")
+    check("a --body-file that cannot be read is refused, not passed unchecked", ok, why)
+    # STRICT reaches the hook: a body the claim extractor cannot decode (not UTF-8) is "claims not judged", which the tripwire alone allows and the shim refuses.
+    garbled = base / "garbled.md"
+    garbled.write_bytes(b"A comment\n\n\xff\xfe not text\n")
+    ok, why = refused(fx, f"gh issue comment 5 --body-file {garbled}")
+    check("a body the claim extractor cannot read (not UTF-8) is refused: the shim runs the hook strict", ok, why)
+
+
+@case("a git that does not answer in time is a named refusal, and gh never runs")
+def _git_timeout(base: Path) -> None:
+    """#2295: the shim is the guarantee, so a git that stalls must refuse by name. The stub answers `rev-parse --show-toplevel` and every other call at once and sleeps past the limit only
+    on `rev-parse HEAD`, which `judge_record` asks: that reaches the `GitTimeout` handler in the shim's entry, not the earlier "git could not say" refusal."""
+    fx = Fixture(base)
+    fx.record()
+    stubs = base / "stubgit"
+    stubs.mkdir()
+    real_git = shutil.which("git", path=os.pathsep.join(d for d in fx.env["PATH"].split(os.pathsep) if "git-shim" not in d)) or "git"   # not a shim: the stub would call itself
+    (stubs / "git").write_text(f'#!/bin/sh\ncase "$*" in *"rev-parse HEAD"*) [ -n "$RF_STUB_SLOW" ] && sleep 4;; esac\nexec {real_git} "$@"\n')
+    (stubs / "git").chmod(0o755)
+    path = f"{stubs}{os.pathsep}{fx.env['PATH']}"
+    ok, why = allowed(fx, "gh pr ready 5", {"PATH": path, "RAILS_FLOW_GIT_TIMEOUT": "60"})
+    check("shim: CONTROL: with the same stub answering at once, the green record is allowed", ok, why)
+    fx.reset()
+    r = fx.sh("gh pr ready 5", {"PATH": path, "RF_STUB_SLOW": "1", "RAILS_FLOW_GIT_TIMEOUT": "1"})
+    text = r.stdout + r.stderr
+    check("shim: a git that does not answer in time is a NAMED refusal, exits non-zero and never runs gh",
+          r.returncode != 0 and fx.ran() == [] and "did not answer within 1 s" in text and "cannot be judged" in text, f"rc {r.returncode}, stub ran {fx.ran()}, {text[-300:]!r}")
+
+
+@case("an unreadable alias with a git that does not answer in time is a named refusal, and gh never runs")
+def _git_timeout_alias(base: Path) -> None:
+    """#2295: the `--shim-unreadable` entry (a gh alias whose expansion holds a quote) catches GitTimeout too. The stub sleeps past the limit only on `rev-parse --show-toplevel`, which that entry's
+    judge asks first; the alias is `pr "rea"dy 5`, which the shim cannot read and hands to the judge."""
+    fx = Fixture(base)
+    stubs = base / "stubgit"
+    stubs.mkdir()
+    real_git = shutil.which("git", path=os.pathsep.join(d for d in fx.env["PATH"].split(os.pathsep) if "git-shim" not in d)) or "git"   # not a shim: the stub would call itself
+    (stubs / "git").write_text(f'#!/bin/sh\ncase "$*" in *"--show-toplevel"*) [ -n "$RF_STUB_SLOW" ] && sleep 4;; esac\nexec {real_git} "$@"\n')
+    (stubs / "git").chmod(0o755)
+    env = {"PATH": f"{stubs}{os.pathsep}{fx.env['PATH']}", "STUB_ALIASES": 'weird: pr "rea"dy 5', "RAILS_FLOW_GIT_TIMEOUT": "60"}
+    fx.reset()
+    r = fx.sh("gh weird", env)
+    text = r.stdout + r.stderr
+    check("shim: CONTROL: with the same stub answering at once, the unreadable alias is refused as unreadable (not as a stall)",
+          r.returncode != 0 and fx.ran() == [] and "did not answer" not in text, f"rc {r.returncode}, stub ran {fx.ran()}, {text[-300:]!r}")
+    fx.reset()
+    r = fx.sh("gh weird", {**env, "RF_STUB_SLOW": "1", "RAILS_FLOW_GIT_TIMEOUT": "1"})
+    text = r.stdout + r.stderr
+    check("shim: an unreadable alias with a git that does not answer in time is a NAMED refusal, exits non-zero and never runs gh",
+          r.returncode != 0 and fx.ran() == [] and "did not answer within 1 s" in text, f"rc {r.returncode}, stub ran {fx.ran()}, {text[-300:]!r}")
+
+
+@case("a worktree with a green record is named in the refusal")
+def _elsewhere(base: Path) -> None:
+    """#2143: the shim judges the checkout it runs in; when another worktree holds a green, zero-skip record the refusal names it and the cd form."""
+    fx = Fixture(base)
+    wt = base / "wt"
+    fixture_git.run(fx.repo, "worktree", "add", "-q", "-b", "feature/x", str(wt))
+    wt = wt.resolve()
+    # fixture_git refuses a linked worktree as its path and pins GIT_DIR, so the worktree's private sweep directory is built, not asked for: git keeps
+    # it at <git dir>/worktrees/<name>/. The worktree starts at the main checkout's commit, so both HEADs are the same sha: only the DIRECTORY differs.
+    head = fx.head
+    d = fx.repo.resolve() / ".git" / "worktrees" / "wt" / "rails-flow" / "sweep"
+    d.mkdir(parents=True, exist_ok=True)
+
+    def write(**over) -> None:
+        (d / f"{head}.json").write_text(json.dumps({"head": head, "verdict": "green", "skips": 0, "failed": 0, "errored": 0, **over}))
+
+    def said(command: str) -> tuple[bool, str]:
+        fx.reset()
+        r = fx.sh(command)
+        return (r.returncode != 0 and fx.ran() == []), (r.stdout + r.stderr)
+
+    ok, text = said("gh pr ready 5")
+    check("shim: with no green record anywhere the refusal names no worktree", ok and "exists for HEAD" not in text, text[-200:])
+    write()
+    ok, text = said("gh pr ready 5")
+    check("shim: a worktree with a green zero-skip record is named, with the one-command cd form, and the shim still refuses",
+          ok and f"exists for HEAD {head[:12]} in the worktree {wt}" in text and f"cd {wt} && gh pr ready 5" in text, text[-300:])
+    ok, why = allowed(fx, f"cd {wt} && gh pr ready 5")
+    check("shim: ...and the form it names is allowed", ok, why)
+    for label, over in (("RED", {"verdict": "red"}), ("with a skip", {"skips": 1}), ("for another head", {"head": "e" * 40})):
+        write(**over)
+        ok, text = said("gh pr ready 5")
+        check(f"shim: a record {label} elsewhere is not offered as a way out", ok and str(wt) not in text, text[-200:])
 
 
 @case("no record")
@@ -423,13 +642,18 @@ def main(argv: list[str]) -> int:
         print(f"SELFTEST FAILED -- no case's label contains {match!r}", file=sys.stderr)
         return 1
     global CURRENT
-    for label, fn in chosen:
-        CURRENT = label
-        td = tempfile.mkdtemp(prefix="ghshim-")
-        try:
-            fn(Path(td))
-        finally:
-            shutil.rmtree(td, ignore_errors=True)
+    # CONTAINED (#1582): every process a case starts carries the box's token, and the box sweeps them all when it closes. The fifo case's `cat`, blocked on a fifo
+    # with no writer when a mutant reads it, would otherwise outlive the run.
+    with contained() as box:
+        for label, fn in chosen:
+            CURRENT = label
+            td = tempfile.mkdtemp(prefix="ghshim-")
+            try:
+                fn(Path(td))
+            finally:
+                shutil.rmtree(td, ignore_errors=True)
+    if box.killed:
+        print(f"gh-shim selftest: the containment swept {len(box.killed)} leftover process(es): {box.killed}", file=sys.stderr)
     if FAILURES:
         print(f"gh-shim selftest FAILED -- {len(FAILURES)} of {CHECKS}:", file=sys.stderr)
         for f in FAILURES:

@@ -60,7 +60,7 @@ Mock-up: docs/design/remember-device.png
   other slice says `no visible change`.
 - **Criteria** are stubs in `check_criteria.py`'s shape: Given / when / then, with at least one
   `[error]` path per slice. `/rails-flow:feature` copies them verbatim into
-  `docs/product/acceptance/<branch-slug>.md` when it picks the slice up (its Phase 1 says so): they,
+  `docs/product/acceptance/<unit-slug>.md` when it picks the slice up (its Phase 1 says so): they,
   not the spec's stories, are that branch's criteria.
 - **No `###` headings inside a slice.** A heading starts a new criteria unit and detaches the
   criteria below it.
@@ -109,6 +109,10 @@ gh api "repos/{owner}/{repo}/issues/102/dependencies/blocked_by" -F issue_id="$b
 child_id="$(gh api "repos/{owner}/{repo}/issues/102" --jq .id)"
 gh api "repos/{owner}/{repo}/issues/100/sub_issues" -F sub_issue_id="$child_id"
 ```
+
+**Before filing, the plan advisory (#2262).** `advisory_scope.py --slug <slug>` reads the slice plan; exit 1 means a
+Fable `plan-advisor` pass is owed before any issue is filed, run as in `/rails-flow:feature` Phase 1 (`--begin`, the agent, a
+disposition per finding, `--stamp`). Filing is a command, not a hook, so this step is the check: run it and act on its exit.
 
 **6. Commit the plan** (`docs/product/slices/<slug>.md`) by name, with the filed number next to each
 slice heading. Never `git add -A`. Delete `.issue-body.md`.

@@ -192,7 +192,8 @@ def subject_of(path: str) -> str | None:
     kind = kind_of(path)
     plugin, rest = path.split("/")[1], path.split("/", 2)[2]
     if kind == "mutation":
-        return f"plugins/{plugin}/scripts/{Path(rest).name}"
+        # the guard sits in `mutations/` beside its script, wherever that is: `scripts/` or a UI adapter's `ui/<implementation>/scripts/` (#2178)
+        return f"{path.rsplit('/mutations/', 1)[0]}/{Path(rest).name}"
     if kind == "selftest" and rest.startswith("scripts/") and rest.endswith("_selftest.py"):
         return f"plugins/{plugin}/scripts/{Path(rest).name[: -len('_selftest.py')]}.py"
     return None
@@ -314,7 +315,7 @@ def summarise(decided: dict[str, dict]) -> dict:
 
 
 def build_json(decided: dict[str, dict], policy: dict) -> str:
-    payload = {"generated_by": "scripts/rails_assumptions.py", "policy": POLICY, "summary": summarise(decided),
+    payload = {"generated_by": "scripts/rails_assumptions.py", "policy": POLICY,
                "moves": policy.get("moves", {}), "files": {p: {k: v for k, v in r.items() if k != "followed" or v} for p, r in decided.items()}}
     return json.dumps(payload, indent=1, sort_keys=True) + "\n"
 
@@ -326,7 +327,6 @@ def _lines_cell(lines: list[int], path: str) -> str:
 
 
 def build_md(decided: dict[str, dict], policy: dict) -> str:
-    s = summarise(decided)
     moves: dict = policy.get("moves", {})
     out: list[str] = []
     w = out.append
@@ -336,31 +336,30 @@ def build_md(decided: dict[str, dict], policy: dict) -> str:
     w("Slice 2 of the `nextjs-stack` epic (#2162, #2164). `plugin-boundaries` rule 1: the flows stay one stack-neutral core, so every place they assume "
       "Rails gets one decision. The scan finds the lines that **name** a Rails thing (a CLI, a gem, a Rails path, the framework); the decision per file is "
       "a person's, made by reading it, with the reason in the policy. A flow that assumes Rails without naming it is not found here.\n")
+    # NO COUNT IS WRITTEN HERE (#2247). A total is an aggregate of every row, so every PR that touched any flow's files changed the same
+    # lines and conflicted with every other one. The numbers are computed on demand from the rows below: `--status` prints them.
     w("## Decisions\n")
-    w("| decision | what it means | files | lines |\n|---|---|---:|---:|")
+    w("| decision | what it means |\n|---|---|")
     meaning = {"rails-stack": "exists only for Rails projects; moves to `rails-stack` and registers through its manifest",
                "detector": "flow logic that hardwires a Rails command or path; stays and asks the stack detector (#2163)",
                "reword": "prose or metadata that says Rails and drives no behaviour; reworded where the file is next touched",
                "neutral": "incidental hits (an example, a fixture, a fragment of another word); nothing to change"}
     for d in DECISIONS:
-        w(f"| `{d}` | {meaning[d]} | {s['by_decision'][d]['files']} | {s['by_decision'][d]['lines']} |")
-    w(f"| **all** | | **{s['files']}** | **{s['lines']}** |\n")
-    w("## By flow\n")
-    w("| flow | files | lines | " + " | ".join(f"`{d}`" for d in DECISIONS) + " |\n|---|---:|---:|" + "---:|" * len(DECISIONS))
-    for flow, c in s["by_flow"].items():
-        w(f"| `{flow}` | {c['files']} | {c['lines']} | " + " | ".join(str(c[d]) for d in DECISIONS) + " |")
-    w("\n## By what is named\n")
-    w("| category | lines naming it |\n|---|---:|")
-    for cat in CATEGORIES:
-        w(f"| {cat} | {s['by_category'][cat]} |")
-    w("\nA line that names two things counts once per category it names in this table and once overall in the totals above.\n")
+        w(f"| `{d}` | {meaning[d]} |")
+    w("\nThe counts (files and lines per decision, per flow, per thing named) are not stored in this page or in `rails-assumptions.json`: a stored total "
+      "is a line every pull request rewrites. `python3 scripts/rails_assumptions.py --status` computes them from the inventory below. "
+      "A line that names two things counts once per category it names there and once overall.\n")
     w("## The moves (each is an issue under #2162)\n")
     for name, move in moves.items():
         files = [p for p, r in decided.items() if r["move"] == name]
         issue = f"#{move['issue']}" if isinstance(move.get("issue"), int) else "(no issue yet)"
         w(f"### {name}: {move['title']} ({issue})\n")
         w(f"{move['summary']}\n")
-        w("Files: " + ", ".join(f"`{p.split('/', 2)[2]}` ({p.split('/')[1]})" for p in files) + "\n")
+        # One file per line (#2247): a long single line is rewritten whole by every PR that joins the move, and so conflicts with every other.
+        w("Files:\n")
+        for p in files:
+            w(f"- `{p.split('/', 2)[2]}` ({p.split('/')[1]})")
+        w("")
     sf = policy.get("setup_flow")
     if sf and sf["file"] in decided:
         row = decided[sf["file"]]
@@ -468,6 +467,7 @@ def _selftest() -> int:
         check("the plugin's own name is not a hit", "plugins/pipeline/scripts/note.py" not in hits)
         check("a binary file is skipped", "plugins/pipeline/scripts/blob.bin" not in hits)
         check("a mutation guard follows its script", subject_of("plugins/rails-flow/scripts/mutations/gate.py") == "plugins/rails-flow/scripts/gate.py")
+        check("an adapter's guard follows the script beside it", subject_of("plugins/design-flow/ui/viewcomponent-erb/scripts/mutations/gate.py") == "plugins/design-flow/ui/viewcomponent-erb/scripts/gate.py")
         check("a selftest follows its script", subject_of("plugins/rails-flow/scripts/gate_selftest.py") == "plugins/rails-flow/scripts/gate.py")
         check("a plain script follows nothing", subject_of("plugins/rails-flow/scripts/gate.py") is None)
         policy = {"moves": {"M1": {"title": "t", "summary": "s", "issue": 1}},
@@ -506,6 +506,13 @@ def _selftest() -> int:
         check("the summary splits by decision", s["by_decision"]["rails-stack"]["files"] == 3 and s["by_decision"]["neutral"]["files"] == 0)
         check("the page renders the same text twice", build_md(decided, policy) == build_md(decided, policy))
         check("the page names the file and its decision", "gate.py:1" in build_md(decided, policy) and "`rails-stack` (M1)" in build_md(decided, policy))
+        # #2247: a committed page holds no aggregate, so a PR that touches one file changes that file's lines and nothing else.
+        check("the committed JSON holds no aggregate", "summary" not in json.loads(build_json(decided, policy)))
+        more = {**decided, "plugins/rails-flow/scripts/zz_new.py": {**decided["plugins/rails-flow/scripts/gate.py"], "lines": [1]}}
+        for label, build in (("JSON", build_json), ("page", build_md)):
+            before, after = build(decided, policy).splitlines(), build(more, policy).splitlines()
+            extra = [x for x in after if x not in before]
+            check(f"adding one file changes only its own lines in the {label}", bool(extra) and all("zz_new.py" in x for x in extra) and all(x in after for x in before))
         check("the JSON carries every line number", json.loads(build_json(decided, policy))["files"]["plugins/rails-flow/scripts/gate.py"]["lines"] == [1, 3])
     # the patterns match a tool or gem named in any case (a lowercase-only pattern let "Run RuboCop and Brakeman and Capybara" pass clean)
     check("RuboCop in any case is a tool hit", "rubocop" in ids("Run RuboCop on changed files") and "rubocop" in ids("run rubocop"))
@@ -601,6 +608,8 @@ def main(argv: list[str] | None = None, root: Path = REPO) -> int:
         print(f"{summary['files']} files, {summary['lines']} lines name Rails in {', '.join(FLOWS)}")
         for d in DECISIONS:
             print(f"  {d:12} {summary['by_decision'][d]['files']:4} files {summary['by_decision'][d]['lines']:5} lines")
+        for flow, c in summary["by_flow"].items():
+            print(f"  {flow:12} {c['files']:4} files {c['lines']:5} lines  " + "  ".join(f"{d} {c[d]}" for d in DECISIONS))
         for cat, n in summary["by_category"].items():
             print(f"  names {cat:8} {n:5} lines")
     built_md, built_json = build_md(decided, policy), build_json(decided, policy)

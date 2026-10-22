@@ -1,0 +1,179 @@
+"""Mutation guard: advisory_scope (#2262). Declared here, run by scripts/mutation_check.py."""
+from mutation_types import Guard, Mutation  # noqa: F401
+
+GUARD = Guard(
+    name="advisory_scope",
+    subject="scripts/advisory_scope.py",
+    selftest="scripts/advisory_scope.py",
+    selftest_args=("--selftest",),
+    # It reuses security_scope (the security category), check_threat_model (the filler test) and detect_stack; the selftest
+    # builds a scratch repo through fixture_git.
+    needs=("scripts/check_threat_model.py", "scripts/detect_stack.py", "scripts/fixture_git.py"),
+    mutations=(
+        Mutation(
+            "the security category stops firing",
+            "        if section.startswith(\"docs/security/threat-models/\") and (rows := threat_rows(section.split(\"\\n\", 1)[-1])):",
+            "        if False and (rows := threat_rows(section.split(\"\\n\", 1)[-1])):",
+            "a threat model with a threat row is security",
+        ),
+        Mutation(
+            "a structure path stops firing",
+            "        if STRUCTURE_PATHS.search(p):",
+            "        if False:",
+            "a new agent path is structure",
+        ),
+        Mutation(
+            "a migration path stops being data-model",
+            "        if (migrations and p.startswith(migrations.rstrip(\"/\") + \"/\")) or (schema and p == schema):",
+            "        if False:",
+            "a migration path is data-model",
+        ),
+        Mutation(
+            "a dependency manifest stops firing",
+            "        if p in manifests or LOCKFILE.search(p):",
+            "        if False:",
+            "a lockfile is dependency",
+        ),
+        Mutation(
+            "the breadth threshold drops to five",
+            "BREADTH = 6",
+            "BREADTH = 5",
+            "five components is not breadth",
+        ),
+        Mutation(
+            "bookkeeping paths count toward breadth again",
+            "    components = sorted({\"/\".join(p.split(\"/\")[:2]) for p in paths if not BOOKKEEPING.match(p)})",
+            "    components = sorted({\"/\".join(p.split(\"/\")[:2]) for p in paths})",
+            "bookkeeping paths do not count toward breadth",
+        ),
+        Mutation(
+            "an undisposed finding passes",
+            "        if count == 0:",
+            "        if False:",
+            "an undisposed finding is refused",
+        ),
+        Mutation(
+            "a finding disposed twice passes",
+            "        elif count > 1:",
+            "        elif False:",
+            "a finding disposed twice is refused",
+        ),
+        Mutation(
+            "a filler disposition reason passes",
+            "        if _filler(reason):",
+            "        if False:",
+            "a filler reason is refused",
+        ),
+        Mutation(
+            "a deferral without an issue passes",
+            "        if kind == \"deferred\" and not re.search(r\"#\\d+\", reason):",
+            "        if False:",
+            "a deferral without an issue is refused",
+        ),
+        Mutation(
+            "a changed plan passes without a stamp",
+            "    if current_hash != reviewed and (not disposed or disposed[-1] != current_hash):",
+            "    if False:",
+            "a changed plan with no stamp is refused",
+        ),
+        Mutation(
+            "a new category passes without a new review",
+            "    if new := sorted(current_cats - reviewed_cats):",
+            "    if new := []:",
+            "a new category is refused",
+        ),
+        Mutation(
+            "RETHINK passes with no override",
+            "    if verdicts and verdicts[-1] == \"RETHINK\":",
+            "    if False:",
+            "RETHINK with no override is refused",
+        ),
+        Mutation(
+            "a short override reason is accepted",
+            "        good = [m for m in overrides if m and len(m.group(2)) >= REASON_MIN and not _filler(m.group(2)) and ISSUE_CHECK(m.group(3))]",
+            "        good = [m for m in overrides if m]",
+            "RETHINK with a short override is refused",
+        ),
+        Mutation(
+            "a rewrite over the threshold can be stamped",
+            "        if share > RESTAMP_MAX:",
+            "        if False:",
+            "a rewrite over 30% cannot be stamped",
+        ),
+        Mutation(
+            "a required advisory with no record passes",
+            "    if not record.is_file():\n        print(f\"advisory REQUIRED",
+            "    if False:\n        print(f\"advisory REQUIRED",
+            "a required advisory with no record is exit 1",
+        ),
+        Mutation(
+            "the word `check` counts as structure again, so an app's ordinary check owes an advisory",
+            "|descriptor key|schema key)s?\\b\", re.I)",
+            "|descriptor key|schema key|check)s?\\b\", re.I)",
+            "an app's ordinary check is not structure",
+        ),
+        Mutation(
+            # #2267 review: an override's #n was only pattern-matched.
+            "an override's issue is not checked",
+            " and not _filler(m.group(2)) and ISSUE_CHECK(m.group(3))]",
+            " and not _filler(m.group(2))]",
+            "an override citing an issue that cannot be read is refused",
+        ),
+        Mutation(
+            "an answer with no findings passes",
+            "    if not findings and not any(",
+            "    if False and not any(",
+            "an answer reduced to a bare verdict is refused",
+        ),
+        Mutation(
+            "more than seven findings pass",
+            "    if len(findings) > MAX_FINDINGS:",
+            "    if False:",
+            "more than seven findings are refused",
+        ),
+        Mutation(
+            "a rewritten snapshot passes",
+            "    if snapshot is not None and plan_hash(snapshot) != reviewed:",
+            "    if False:",
+            "a snapshot rewritten after the review is refused",
+        ),
+        Mutation(
+            "a missing snapshot passes",
+            "    if snapshot is None:\n        problems.append",
+            "    if False:\n        problems.append",
+            "a missing snapshot is refused",
+        ),
+        Mutation(
+            "a branch with no prefix has no slug again",
+            '    return out.split("/", 1)[1].replace("/", "-") if "/" in out else out',
+            '    return out.split("/", 1)[1].replace("/", "-") if "/" in out else ""',
+            "a branch with no prefix is its own slug",
+        ),
+        Mutation(
+            # plan-advisor A-2: the word scan alone fired on 27 of 53 real plans.
+            "a plan's nouns fire security again without a threat model",
+            "        if section.startswith(\"docs/security/threat-models/\") and (rows := threat_rows(section.split(\"\\n\", 1)[-1])):",
+            "        if (rows := [1]) and \"webhook\" in section:",
+            "a webhook named in a plan, with no threat model, is not security",
+        ),
+        Mutation(
+            # plan-advisor A-5: --begin overwrote the record, so a RETHINK could be erased.
+            "--begin overwrites an existing record again",
+            "        if record.exists() and not a.again:",
+            "        if False:",
+            "a second --begin refuses to overwrite the record",
+        ),
+        Mutation(
+            "--again drops the old record instead of keeping it numbered",
+            '            record.rename(record.parent / f"plan-advisor.{n}.md")',
+            "            record.unlink()",
+            "--begin --again keeps the old record and snapshot numbered",
+        ),
+        Mutation(
+            "an override that names nobody (`Override:  | reason | #9`) is accepted",
+            '([^|\\s][^|]*?)\\s*\\|\\s*(.+?)',
+            '([^|]+?)\\s*\\|\\s*(.+?)',
+            "RETHINK with an override that names nobody is refused",
+        ),
+    ),
+)

@@ -104,15 +104,22 @@ def manifest_dirs(start: Path) -> list[Path]:
                 take(child)
 
     take(own)
+    # ONLY IN A RECOGNISED LAYOUT (#2117, the #1475 lesson): anywhere else -- a copy staged under the system temp directory -- the
+    # parent is the temp root, and scanning it walked every other process's tempdir (measured: one selftest over ten minutes).
+    in_checkout = own.parent.name == "plugins"                    # <repo>/plugins/<plugin>
+    in_cache = own.parent.parent.parent.name == "cache"           # <plugins>/cache/<marketplace>/<plugin>/<version>
+    if not (in_checkout or in_cache):
+        return sorted(found)
     scan(own.parent)                          # sibling plugins (checkout) or sibling versions (cache)
-    grandparent = own.parent.parent           # the repo root is NOT taken (#2182): rails-stack is a plugin dir now
-    try:
-        peers = sorted(grandparent.iterdir())
-    except OSError:
-        peers = []
-    for peer in peers:
-        if peer.is_dir() and peer != own.parent:
-            scan(peer)                        # every plugin's every version in the cache
+    if in_cache:
+        grandparent = own.parent.parent       # the marketplace directory; a checkout's repo root is NOT taken (#2182)
+        try:
+            peers = sorted(grandparent.iterdir())
+        except OSError:
+            peers = []
+        for peer in peers:
+            if peer.is_dir() and peer != own.parent:
+                scan(peer)                    # every plugin's every version in the cache
     return sorted(found)
 
 
@@ -228,7 +235,7 @@ def detect(project: Path, manifests: list[dict]) -> tuple[list[dict], list[str]]
     return matched, problems
 
 
-STR, INT, STRS = "str", "int", "list[str]"
+STR, INT, STRS, BOOL = "str", "int", "list[str]", "bool"
 # EVERY KEY A FLOW MAY READ, and its shape (#2181). A dict is a block whose keys are the only ones allowed; `{"*": STR}` is a
 # block of free names (scripts) each holding a string. Adding a key a flow needs is an edit HERE, reviewed once, never a key a
 # manifest invents.
@@ -243,6 +250,35 @@ DESCRIPTOR_SCHEMA: dict = {
     "ui": {"implementation": STR, "tokens_file": STR, "porter": STR, "composer": STR},
     "dangerous_commands": [{"pattern": STR, "allowed": STR}],
     "setup_section": STR,
+    # THE STACK'S SECURITY SURFACE (#2117). The secure-design PROCESS is neutral (when to threat-model, the template, TM-n
+    # ids, the audit before ready); what to look for is per stack: its checklist, its scanners, and the spellings in a plan
+    # or a planned path that mean a boundary in that stack (security_scope.py reads both).
+    # code_syntax (#2119): what in this stack's files is not code (a block comment, a heredoc), so a security-review citation
+    # `file:line` can be refused when it points inside one; scoped by extension. syntax_cases proves it.
+    "security": {"checklist": STR, "scanners": STRS, "cases": STR, "syntax_cases": STR,
+                 # A key ending in `?` is optional in its record (#2260): a language with no heredoc declares none. `line_comments` are markers that
+                 # make a line that STARTS with them a comment; `refuse_when` names a pattern which, on any line of the file, means a reader that
+                 # goes line by line cannot be sure what is code (a template literal spanning lines), so the whole file is refused, with `why`.
+                 "code_syntax": [{"extensions": STRS, "block_comments": [{"open": STR, "close": STR, "column0": BOOL}], "heredoc?": STR,
+                                  "line_comments?": STRS, "refuse_when?": [{"pattern": STR, "why": STR}]}],
+                 "boundary_text": [{"boundary": STR, "pattern": STR}],
+                 "boundary_paths": [{"boundary": STR, "pattern": STR}],
+                 # data_markers (#2214): a line that is exactly the marker (an end-of-code line such as `__END__`) ends code for the rest of the file.
+                 "data_markers": [{"extensions": STRS, "marker": STR}]},
+    # WHICH PATHS A USER SEES (#2219). The mock-up gate holds a user-visible change until a mock-up is approved, and which files are
+    # user-visible is per stack: Rails views, Next.js pages. Each stack declares its own (never merged: a Rails app with a Next.js front
+    # end has both); regexes matched with `re.search`. `not_paths` are files under them a person does not see (a JSON template, an API
+    # route handler); `seen_anyway` wins over `not_paths` (the PWA manifest is JSON a person installs). `cases` is a JSON list of
+    # `{"path", "ui"}` rows that proves the patterns, run by check_mockup_gate's selftest.
+    "ui_scope": {"paths": STRS, "not_paths?": STRS, "seen_anyway?": STRS, "cases": STR},
+    # THE STACK'S TOOLCHAIN (#2168): what a project of this stack needs installed for the flows to work, so the toolchain audit
+    # names each missing piece with the steps to fix it (advisory). `plugins`: a Claude Code plugin id (`name@marketplace`) and
+    # the line that installs it. `clis`: a binary on PATH, the line that installs it, and optionally `ready`, a command that exits
+    # 0 only when the tool is usable (logged in, its daemon running), with `ready_hint` saying how to get there.
+    "toolchain": {"plugins": [{"id": STR, "install": STR}],
+                  # `project_paths`: where inside the project the binary may live instead of PATH (a dev-dependency CLI in
+                  # `node_modules/.bin/`); `version`: the arguments that print its version, reported beside it.
+                  "clis": [{"bin": STR, "install": STR, "ready?": STRS, "ready_hint?": STR, "project_paths?": STRS, "version?": STRS}]},
     "scripts": {"*": STR},
     "review_checklist": STRS,
 }
@@ -263,6 +299,8 @@ def shape_problems(value: object, shape: object, where: str) -> list[str]:
         if not isinstance(value, int) or isinstance(value, bool):
             return [f"{where} must be a whole number"]
         return [] if not where.endswith(".port") or value in PORTS else [f"{where} must be a port, 1-65535 (got {value})"]
+    if shape == BOOL:
+        return [] if isinstance(value, bool) else [f"{where} must be true or false"]
     if shape == STRS:
         ok = isinstance(value, list) and value and all(isinstance(v, str) and v for v in value)
         return [] if ok else [f"{where} must be a non-empty list of strings"]
@@ -273,13 +311,13 @@ def shape_problems(value: object, shape: object, where: str) -> list[str]:
         if isinstance(shape[0], dict):
             # A LIST ITEM IS A RECORD (#2189 review): a reader takes every key of it (`.allowed`), so each one is required.
             found += [f"{where}[{i}] needs `{key}`" for i, item in enumerate(value) if isinstance(item, dict)
-                      for key in shape[0] if key != "*" and key not in item]
+                      for key in shape[0] if key != "*" and not key.endswith("?") and key not in item]
         return found
     if not isinstance(value, dict) or not value:
         return [f"{where} must be a non-empty block"]
     found = []
     for key, item in value.items():
-        sub = shape.get(key, shape.get("*"))
+        sub = shape.get(key, shape.get(key + "?", shape.get("*")))
         if sub is None:
             found.append(f"{where}.{key} is not a declared descriptor key (descriptor-key-undeclared)")
         else:
@@ -289,7 +327,7 @@ def shape_problems(value: object, shape: object, where: str) -> list[str]:
 
 # KEYS THAT BELONG TO ONE STACK, NOT TO THE PROJECT (#2180). A Rails app with a Next.js front end runs BOTH stacks' setup
 # sections, so a setup section is never merged (two plugins declaring it is no conflict); each detected stack's is listed.
-PER_STACK_KEYS = ("setup_section",)
+PER_STACK_KEYS = ("setup_section", "security", "ui_scope", "toolchain")  # security: #2117, ui_scope: #2219, toolchain: #2168; each stack reports its own
 
 
 def plugin_root(manifest: dict) -> Path:
@@ -306,6 +344,246 @@ def setup_section_problems(manifest: dict, stack: dict, where: str) -> list[str]
     if not (plugin_root(manifest) / value).is_file():
         return [f"{where}.setup_section {value!r} names no file in {plugin_root(manifest)}"]
     return []
+
+
+# A CHECKLIST IN ONE STRICT SHAPE (#2210, the coordinator's rule from #2213): it is read as text, never interpreted as Markdown, so
+# anything a renderer would hide or reshape is refused rather than read around. A claim id (`C-n`, a row of the stack's audit) is a
+# citation only in the slot at the END of its line, and only for a row its audit marks CONFIRMED (#2210 adversary).
+# The alphabet is a whitelist (printable ASCII plus the two marks the checklists use), so a look-alike citation (a zero-width
+# character, a Cyrillic C, a non-ASCII dash) or a line break only Python sees (U+0085, U+001C) is refused, not normalised.
+CHECKLIST_EXTRA_CHARS = "—§"
+CITATION_SLOT = re.compile(r"\((C-\d+(?:, C-\d+)*)\)$")
+CLAIM_LIKE = re.compile(r"c\s*[-\u2014]\s*\d", re.I)   # the em dash is in the alphabet, so it is a citation dash too
+AUDIT_PATH = re.compile(r"`(docs/evidence/audits/[\w.-]+\.md)`")
+
+
+def checklist_format_problems(text: str) -> list[str]:
+    """`<line>: <why>` for each line of a security checklist outside its strict shape; empty when it holds."""
+    found = []
+    prev_blank = True
+    for n, raw in enumerate(text.split("\n"), 1):
+        line = raw.rstrip(" ")
+        odd = sorted({c for c in line if not (" " <= c <= "~" or c in CHECKLIST_EXTRA_CHARS)})
+        if odd:
+            found.append(f"{n}: characters outside the checklist alphabet {[hex(ord(c)) for c in odd]} (a tab, CR, look-alike or hidden character)")
+        if "<!--" in line or "-->" in line:
+            found.append(f"{n}: an HTML comment hides text from the reader; delete it, don't hide it")
+        elif re.search(r"<[A-Za-z/!?]", line):
+            found.append(f"{n}: raw HTML; a renderer can hide or reshape it (`<details>`, `hidden`), so a checklist holds none")
+        if re.search(r"&(?:#\d+|#x[0-9a-f]+|[a-z][a-z0-9]*);", line, re.I):
+            found.append(f"{n}: an HTML entity; it renders as a character the check never sees (`&#67;` is C)")
+        if "![" in line or re.search(r"\]\([^)]*\s[\"'(]", line):
+            found.append(f"{n}: an image or a link title; a rendered page hides its text")
+        if re.match(r"\s*(?:`{3,}|~{3,})", line):
+            found.append(f"{n}: a code fence; a checklist asks questions in prose and holds no fenced block")
+        if prev_blank and re.match(r" {4,}\S", line):
+            found.append(f"{n}: an indented code block (four spaces after a blank line)")
+        if re.match(r" {0,3}\[[^\]]+\]:", line):
+            found.append(f"{n}: a link reference definition; a renderer shows none of it")
+        if line.lstrip().startswith("|") and not line.startswith("|"):
+            found.append(f"{n}: an indented table row; every row starts with `|` in the first column")
+        if not line.startswith("|") and "|" in line and re.fullmatch(r"[\s|:-]*-{3,}[\s|:-]*", line):
+            found.append(f"{n}: a table delimiter row that does not start with `|`; every row starts with `|`")
+        slot = CITATION_SLOT.search(line)
+        outside = line[:slot.start()] if slot else line
+        if CLAIM_LIKE.search(outside):
+            found.append(f"{n}: a claim id outside its end-of-line slot `(C-n)` (or a malformed one)")
+        prev_blank = not line.strip()
+    return found
+
+
+def checklist_citations(text: str) -> set[str]:
+    """Every `C-n` a checklist cites, read from the end-of-line slots only."""
+    out: set[str] = set()
+    for line in text.split("\n"):
+        slot = CITATION_SLOT.search(line.rstrip(" "))
+        if slot:
+            out.update(slot.group(1).split(", "))
+    return out
+
+
+def confirmed_claims(audit: str) -> set[str]:
+    """The `C-n` rows of an audit whose own section (`## C-n — ...` up to the next heading) has `Verdict: CONFIRMED` as its first verdict line."""
+    out: set[str] = set()
+    unfenced = re.sub(r"(?ms)^(`{3,}|~{3,}).*?^\1[ \t]*$", "", audit)   # a quotes block holds no verdict
+    heads = re.findall(r"(?m)^## (C-\d+) ", unfenced)
+    twice = {h for h in heads if heads.count(h) > 1}                # a row given twice has no one verdict: neither counts
+    for section in re.split(r"(?m)^(?=#+ )", unfenced):            # any heading ends a section, so a nested one cannot lend its verdict
+        head = re.match(r"## (C-\d+) ", section)
+        if head and head.group(1) in twice:
+            continue
+        verdict = re.search(r"(?m)^Verdict:(.*)$", section)       # the section's FIRST verdict line is its verdict
+        if head and verdict and re.fullmatch(r" CONFIRMED(?: \[(?:quotes|waived):[^\]]*\])?", verdict.group(1)):
+            out.add(head.group(1))
+    return out
+
+
+def citation_problems(text: str, plugin: Path) -> list[str]:
+    """A cited `C-n` is a CONFIRMED row of the one audit the checklist names. The audit is maintainer evidence, so it is read only
+    in a marketplace checkout (where the gate runs); an installed copy has no audit beside it and was proved before it shipped."""
+    cited = checklist_citations(text)
+    if not cited:
+        return []
+    audits = sorted(set(AUDIT_PATH.findall(text)))
+    if len(audits) != 1:
+        return [f" cites {sorted(cited)} but names {len(audits)} audits; name exactly one `docs/evidence/audits/<file>.md`"]
+    repo = plugin.parent.parent
+    if not (repo / ".claude-plugin" / "marketplace.json").is_file():
+        return []
+    try:
+        confirmed = confirmed_claims((repo / audits[0]).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as err:
+        return [f" names the audit {audits[0]}, which cannot be read: {err}"]
+    missing = sorted(cited - confirmed, key=lambda c: int(c[2:]))
+    return [f" cites {', '.join(missing)}, not a CONFIRMED row of {audits[0]}"] if missing else []
+
+
+def security_problems(manifest: dict, stack: dict, where: str) -> list[str]:
+    """A security checklist is a file inside its own plugin, and every boundary pattern compiles (#2117)."""
+    value = (stack.get("descriptor") or {}).get("security") if isinstance(stack.get("descriptor"), dict) else None
+    if not isinstance(value, dict):
+        return []                               # absent, or a shape problem shape_problems already reports
+    found = []
+    for key in ("checklist", "cases", "syntax_cases"):
+        named = value.get(key)
+        if isinstance(named, str) and named:
+            if escapes(named):
+                found.append(f"{where}.security.{key} {named!r} must stay inside its plugin (no absolute path, no `..`)")
+            elif not (plugin_root(manifest) / named).is_file():
+                found.append(f"{where}.security.{key} {named!r} names no file in {plugin_root(manifest)}")
+            elif key == "checklist":
+                try:
+                    text = (plugin_root(manifest) / named).read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError) as err:
+                    found.append(f"{where}.security.checklist {named!r} cannot be read: {err}")
+                else:
+                    found.extend(f"{where}.security.checklist {named}:{p}" for p in checklist_format_problems(text))
+                    found.extend(f"{where}.security.checklist {named}{p}" for p in citation_problems(text, plugin_root(manifest)))
+    for key in ("boundary_text", "boundary_paths"):
+        for i, row in enumerate(value.get(key) or []):
+            if isinstance(row, dict) and isinstance(row.get("pattern"), str):
+                try:
+                    re.compile(row["pattern"])
+                except re.error as err:
+                    found.append(f"{where}.security.{key}[{i}].pattern does not compile: {err}")
+    for i, row in enumerate(value.get("code_syntax") or []):
+        for j, refusal in enumerate(row.get("refuse_when") or [] if isinstance(row, dict) and isinstance(row.get("refuse_when"), list) else []):
+            if isinstance(refusal, dict) and isinstance(refusal.get("pattern"), str):
+                try:
+                    re.compile(refusal["pattern"])
+                except re.error as err:
+                    found.append(f"{where}.security.code_syntax[{i}].refuse_when[{j}].pattern does not compile: {err}")
+        if isinstance(row, dict) and isinstance(row.get("heredoc"), str):
+            try:
+                groups = re.compile(row["heredoc"]).groupindex
+            except re.error as err:
+                found.append(f"{where}.security.code_syntax[{i}].heredoc does not compile: {err}")
+            else:
+                # check_security_review reads the terminator from the `id` group (#2214 review): without it the reader would crash, not judge.
+                if "id" not in groups:
+                    found.append(f"{where}.security.code_syntax[{i}].heredoc needs a named group `(?P<id>...)` holding the terminator")
+    return found
+
+
+PLUGIN_ID = re.compile(r"[a-z0-9][a-z0-9._-]*@[a-z0-9][a-z0-9._-]*")
+
+
+def toolchain_problems(stack: dict, where: str) -> list[str]:
+    """A toolchain block names each plugin as `name@marketplace`, and every install line, binary and ready command is non-empty
+    (#2168): a blank one would print an empty fix, and an id without its marketplace cannot be looked up in installed_plugins.json."""
+    value = (stack.get("descriptor") or {}).get("toolchain") if isinstance(stack.get("descriptor"), dict) else None
+    if not isinstance(value, dict):
+        return []
+    found = []
+    for i, row in enumerate(value.get("plugins") or []):
+        if isinstance(row, dict):
+            if isinstance(row.get("id"), str) and not PLUGIN_ID.fullmatch(row["id"]):
+                found.append(f"{where}.toolchain.plugins[{i}].id {row['id']!r} must be `name@marketplace`")
+            if isinstance(row.get("install"), str) and not row["install"].strip():
+                found.append(f"{where}.toolchain.plugins[{i}].install is empty")
+    for i, row in enumerate(value.get("clis") or []):
+        if isinstance(row, dict):
+            for key in ("bin", "install"):
+                if isinstance(row.get(key), str) and not row[key].strip():
+                    found.append(f"{where}.toolchain.clis[{i}].{key} is empty")
+            if isinstance(row.get("bin"), str) and ("/" in row["bin"] or " " in row["bin"].strip()):
+                found.append(f"{where}.toolchain.clis[{i}].bin {row['bin']!r} must be a bare command name, looked up on PATH")
+            ready = row.get("ready")
+            if isinstance(ready, list) and (not ready or not all(isinstance(a, str) and a.strip() for a in ready)):
+                found.append(f"{where}.toolchain.clis[{i}].ready must be a non-empty command (a list of arguments)")
+            for path in row.get("project_paths") or []:
+                if isinstance(path, str) and escapes(path):
+                    found.append(f"{where}.toolchain.clis[{i}].project_paths {path!r} must stay inside the project (no absolute path, no `..`)")
+            if isinstance(ready, list) and ready and isinstance(ready[0], str) and ("/" in ready[0] or " " in ready[0].strip()):
+                found.append(f"{where}.toolchain.clis[{i}].ready[0] {ready[0]!r} must be a bare command name, looked up on PATH")
+            if "ready" in row and not row.get("ready_hint"):
+                found.append(f"{where}.toolchain.clis[{i}] has a `ready` check but no `ready_hint` saying how to pass it")
+    return found
+
+
+def toolchains(manifests: list[dict], matched: list[dict]) -> list[dict]:
+    """Each matched stack's toolchain block, in detection order (#2168): the plugins and CLIs a project of that stack needs."""
+    by_plugin = {m["plugin"]: m for m in manifests}
+    out = []
+    for found in matched:
+        stack = next(s for s in by_plugin[found["plugin"]]["stacks"] if isinstance(s, dict) and s.get("id") == found["id"])
+        value = (stack.get("descriptor") or {}).get("toolchain")
+        if isinstance(value, dict):
+            out.append({"stack": found["id"], "plugin": found["plugin"], **json.loads(json.dumps(value))})
+    return out
+
+
+def ui_scope_problems(manifest: dict, stack: dict, where: str) -> list[str]:
+    value = (stack.get("descriptor") or {}).get("ui_scope") if isinstance(stack.get("descriptor"), dict) else None
+    if not isinstance(value, dict):
+        return []                               # absent, or a shape problem shape_problems already reports
+    found = [f"{where}.ui_scope needs `{key}`" for key in ("paths", "cases") if key not in value]
+    for key in ("paths", "not_paths", "seen_anyway"):
+        for i, pattern in enumerate(value.get(key) or [] if isinstance(value.get(key), list) else []):
+            if isinstance(pattern, str):
+                try:
+                    re.compile(pattern)
+                except re.error as err:
+                    found.append(f"{where}.ui_scope.{key}[{i}] does not compile: {err}")
+    named = value.get("cases")
+    if isinstance(named, str) and named:
+        if escapes(named):
+            found.append(f"{where}.ui_scope.cases {named!r} must stay inside its plugin (no absolute path, no `..`)")
+        elif not (plugin_root(manifest) / named).is_file():
+            found.append(f"{where}.ui_scope.cases {named!r} names no file in {plugin_root(manifest)}")
+    return found
+
+
+def ui_scopes(manifests: list[dict], matched: list[dict]) -> list[dict]:
+    """Each matched stack's `ui_scope`, its cases as a readable path, in detection order (#2219)."""
+    by_plugin = {m["plugin"]: m for m in manifests}
+    out = []
+    for found in matched:
+        manifest = by_plugin[found["plugin"]]
+        stack = next(s for s in manifest["stacks"] if isinstance(s, dict) and s.get("id") == found["id"])
+        value = (stack.get("descriptor") or {}).get("ui_scope")
+        if isinstance(value, dict):
+            entry = {"stack": found["id"], "plugin": found["plugin"], **json.loads(json.dumps(value))}
+            if isinstance(value.get("cases"), str):
+                entry["cases"] = str(plugin_root(manifest) / value["cases"])
+            out.append(entry)
+    return out
+
+
+def security_surfaces(manifests: list[dict], matched: list[dict]) -> list[dict]:
+    """Each matched stack's security block, its checklist as a readable path, in detection order (#2117)."""
+    by_plugin = {m["plugin"]: m for m in manifests}
+    out = []
+    for found in matched:
+        manifest = by_plugin[found["plugin"]]
+        stack = next(s for s in manifest["stacks"] if isinstance(s, dict) and s.get("id") == found["id"])
+        value = (stack.get("descriptor") or {}).get("security")
+        if isinstance(value, dict):
+            entry = {"stack": found["id"], "plugin": found["plugin"], **json.loads(json.dumps(value))}
+            if isinstance(value.get("checklist"), str):
+                entry["checklist"] = str(plugin_root(manifest) / value["checklist"])
+            out.append(entry)
+    return out
 
 
 def leaves(value: object, path: str = "") -> dict[str, object]:
@@ -353,9 +631,13 @@ def descriptor_problems(manifest: dict, roots: list[Path] | None = None) -> list
             where = f"{manifest['_path']}: stack {stack.get('id')!r} descriptor"
             found.extend(shape_problems(stack["descriptor"], DESCRIPTOR_SCHEMA, where))
             found.extend(setup_section_problems(manifest, stack, where))
+            found.extend(security_problems(manifest, stack, where))
+            found.extend(ui_scope_problems(manifest, stack, where))
+            found.extend(toolchain_problems(stack, where))
             values = leaves(stack["descriptor"]) if isinstance(stack["descriptor"], dict) else {}
             found.extend(agent_problems(values, where, roots))
-            declared |= set(values) - set(PER_STACK_KEYS)   # a setup section alone is no flow-facing descriptor
+            # a setup section or a security block alone is no flow-facing descriptor; leaves are dotted (`security.checklist`)
+            declared |= {k for k in values if k.split(".")[0] not in PER_STACK_KEYS}
     if declared:
         missing = [key for key in REQUIRED if key not in declared]
         if missing:
@@ -467,6 +749,8 @@ def run(project: Path, dirs: list[Path], stacks: list[str] | None = None, roots:
     problems += conflicts
     report = {"project": str(project), "stacks": matched, "manifests": [m["_path"] for m in manifests], "problems": problems,
               "descriptor": descriptor, "descriptor_sources": sources, "setup_sections": setup_sections(manifests, matched),
+              "security": security_surfaces(manifests, matched), "ui_scope": ui_scopes(manifests, matched),
+              "toolchain": toolchains(manifests, matched),
               "available": available(manifests), "fresh": fresh(project)}
     if problems:
         return 2, report
@@ -617,12 +901,22 @@ def selftest() -> int:
         case(seen == {"rails-stack", "nextjs-stack"}, f"discovery reads plugin roots only (siblings, not the repo root or a stray stacks.json): {sorted(seen)}")
 
         # AND IN THE CACHE SHAPE: <plugin>/<version>/ under one marketplace directory.
-        cache = root / "installed" / "claude-skills"
+        cache = root / "installed" / "cache" / "claude-skills"   # Claude Code's shape: <plugins>/cache/<marketplace>/<plugin>/<version>
         (cache / "rails-flow" / "1.64.0" / "scripts").mkdir(parents=True)
         plugin_dir(cache / "rails-stack" / "1.76.0")
         (cache / "rails-stack" / "1.76.0" / MANIFEST).write_text(json.dumps({"plugin": "rails-stack", "stacks": []}), encoding="utf-8")
         seen_cache = [p.parent.name for p in manifest_dirs(cache / "rails-flow" / "1.64.0" / "scripts" / "detect_stack.py")]
         case(seen_cache == ["rails-stack"], f"discovery finds a stack plugin in the installed cache: {seen_cache}")
+
+        # A COPY STAGED OUTSIDE BOTH LAYOUTS (#2117, the #1475 lesson): only its own plugin is read, never its parent directory,
+        # so a sibling tempdir's stacks.json is not found (and the system temp root is never walked).
+        staged = root / "tmp" / "stage-a"
+        (staged / "scripts").mkdir(parents=True)
+        stranger = root / "tmp" / "stage-b"
+        plugin_dir(stranger)
+        (stranger / MANIFEST).write_text(json.dumps({"plugin": "stranger", "stacks": []}), encoding="utf-8")
+        seen_staged = manifest_dirs(staged / "scripts" / "detect_stack.py")
+        case(seen_staged == [], f"a staged copy reads no sibling directory's stacks.json: {seen_staged}")
 
         # THE COMMAND LINE: --json is the report, and the exit code is the run's.
         out = io.StringIO()
@@ -794,9 +1088,54 @@ def selftest() -> int:
             ("an empty string is a problem", {"tests": {"command": ["go"], "glob": ""}}, "tests.glob must be a non-empty string"),
             ("a nested list item of the wrong shape is a problem", {"dangerous_commands": [{"pattern": "x", "allowd": "y"}]}, "dangerous_commands[0].allowd is not a declared"),
             ("a list item missing a key a reader takes is a problem", {"dangerous_commands": [{"pattern": "x"}]}, "dangerous_commands[0] needs `allowed`"),
+            ("a heredoc pattern with no `id` group is a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": [{"open": "<", "close": ">", "column0": False}], "heredoc": "<<~(\\w+)"}]}}, "needs a named group `(?P<id>...)`"),
+            ("extensions that are not a list are a problem", {"security": {"code_syntax": [{"extensions": ".x", "block_comments": [{"open": "<", "close": ">", "column0": False}], "heredoc": "(?P<id>X)"}]}}, "extensions must be a non-empty list of strings"),
+            ("block comments that are not a list are a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": {"open": "<"}, "heredoc": "(?P<id>X)"}]}}, "block_comments must be a non-empty list"),
+            ("a column0 that is not true or false is a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": [{"open": "<", "close": ">", "column0": "yes"}], "heredoc": "(?P<id>X)"}]}}, "column0 must be true or false"),
+            ("a refuse_when pattern that does not compile is a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": [{"open": "<", "close": ">", "column0": False}], "refuse_when": [{"pattern": "(", "why": "w"}]}]}}, "refuse_when[0].pattern does not compile"),
+            ("a refuse_when with no why is a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": [{"open": "<", "close": ">", "column0": False}], "refuse_when": [{"pattern": "x"}]}]}}, "refuse_when[0] needs `why`"),
+            ("line_comments that are not a list are a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": [{"open": "<", "close": ">", "column0": False}], "line_comments": "<!--"}]}}, "line_comments must be a non-empty list of strings"),
+            ("an unknown key in a code_syntax row is a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": [{"open": "<", "close": ">", "column0": False}], "line_comment": ["x"]}]}}, "line_comment is not a declared descriptor key"),
+            ("a block comment with no column0 is a problem", {"security": {"code_syntax": [{"extensions": [".x"], "block_comments": [{"open": "<", "close": ">"}], "heredoc": "(?P<id>X)"}]}}, "needs `column0`"),
         )):
             descriptor = {"tests": {"command": ["go"], "glob": "*_test.go"}, "agents": AGENTS, **extra}
             code, report = run(go_app, [plug(f"value-{n}", [{"id": "go", "all": [{"file": "go.mod"}], "descriptor": descriptor}])])
+            case(code == 2 and any(needle in p for p in report["problems"]), f"{label}: {code} {report['problems']}")
+        # #2260: a code_syntax row for a language with no heredoc (only `extensions` and `block_comments` are required) is valid, and so are its optional keys.
+        js_row = {"extensions": [".js"], "block_comments": [{"open": "/*", "close": "*/", "column0": False}], "line_comments": ["<!--"],
+                  "refuse_when": [{"pattern": "`", "why": "a template literal"}]}
+        code, report = run(go_app, [plug("js-row", [{"id": "go", "all": [{"file": "go.mod"}], "descriptor": {"tests": {"command": ["go"], "glob": "*_test.go"}, "agents": AGENTS,
+                                                                                                         "security": {"code_syntax": [js_row]}}}])])
+        case(code == 0 and not report["problems"], f"a code_syntax row with no heredoc, and with line_comments and refuse_when, is valid: {code} {report['problems']}")
+        # #2219: a stack's `ui_scope`, per stack, never merged; its patterns must compile and its cases file must exist inside the plugin.
+        def ui_stack(name: str, marker: str, scope: dict, with_cases: bool = True, alone: bool = False) -> Path:
+            """`alone`: an add-on stack whose descriptor holds only its ui_scope (it owns no test runner, so two such plugins cannot conflict)."""
+            descriptor = {"ui_scope": scope} if alone else {"tests": {"command": ["go"], "glob": "*_test.go"}, "agents": AGENTS, "ui_scope": scope}
+            d = plug(name, [{"id": name, "all": [{"file": marker}], "descriptor": descriptor}])
+            if with_cases:
+                (d / "ui-cases.json").write_text("[]", encoding="utf-8")
+            return d
+
+        ui_app = project("ui-app", {"a.txt": "", "b.txt": ""})
+        good_scope = {"paths": ["^views/"], "not_paths": ["\\.json$"], "seen_anyway": ["^views/pwa/"], "cases": "ui-cases.json"}
+        code, report = run(ui_app, [ui_stack("ui-one", "a.txt", good_scope)])
+        case(code == 0 and not report["problems"] and len(report["ui_scope"]) == 1 and report["ui_scope"][0]["paths"] == ["^views/"]
+             and report["ui_scope"][0]["cases"].endswith("ui-one/ui-cases.json"),
+             f"a valid ui_scope is reported with its cases as a path: {code} {report['problems']} {report['ui_scope']}")
+        code, report = run(ui_app, [ui_stack("ui-a", "a.txt", good_scope), ui_stack("ui-b", "b.txt", {**good_scope, "paths": ["^pages/"]}, alone=True)])
+        case(code == 0 and [e["plugin"] for e in report["ui_scope"]] == ["ui-a", "ui-b"] and "ui_scope" not in report["descriptor"],
+             f"two stacks of two plugins each declare their own ui_scope, with no conflict and no merge: {code} {report['problems']}")
+        for n, (label, scope, with_cases, needle) in enumerate((
+                ("a ui_scope pattern that does not compile is a problem", {**good_scope, "paths": ["("]}, True, "does not compile"),
+                ("a not_paths pattern that does not compile is a problem", {**good_scope, "not_paths": ["["]}, True, "does not compile"),
+                ("a seen_anyway pattern that does not compile is a problem", {**good_scope, "seen_anyway": ["*"]}, True, "does not compile"),
+                ("ui_scope cases naming no file is a problem", good_scope, False, "names no file"),
+                ("ui_scope cases that escape the plugin are a problem", {**good_scope, "cases": "../x.json"}, True, "stay inside its plugin"),
+                ("an empty paths list is a problem", {**good_scope, "paths": []}, True, "non-empty list"),
+                ("a ui_scope with no cases is a problem", {"paths": ["^views/"]}, True, "needs `cases`"),
+                ("a ui_scope with no paths is a problem", {"cases": "ui-cases.json"}, True, "needs `paths`"),
+                ("an unknown ui_scope key is a problem", {**good_scope, "globs": ["x"]}, True, "descriptor-key-undeclared"))):
+            code, report = run(ui_app, [ui_stack(f"ui-bad-{n}", "a.txt", scope, with_cases)])
             case(code == 2 and any(needle in p for p in report["problems"]), f"{label}: {code} {report['problems']}")
         held = {"plugin": "p", "_path": "p/stacks.json", "stacks": [{"id": "s", "descriptor": {"tests": {"command": ["go", "test"]}}}]}
         merged, _, _ = merged_descriptor([held], [{"id": "s", "plugin": "p"}])
@@ -810,6 +1149,122 @@ def selftest() -> int:
             with contextlib.redirect_stdout(out):
                 rc = main(["--check"], dirs=plugs, roots=[agents_root])
             case(rc == want_rc and want_text in out.getvalue(), f"{label}: rc={rc} {out.getvalue()[:160]!r}")
+        tc_ok = {"plugins": [{"id": "x-stack@m", "install": "/plugin install x-stack@m"}],
+                 "clis": [{"bin": "xcli", "install": "npm i -g xcli", "ready": ["xcli", "whoami"], "ready_hint": "xcli login"}]}
+        for label, tc, want in (
+                ("a toolchain-only descriptor owes no REQUIRED keys", tc_ok, ""),
+                ("a plugin id without its marketplace is a problem", {"plugins": [{"id": "x-stack", "install": "i"}]}, "must be `name@marketplace`"),
+                ("an empty plugin install line is a problem", {"plugins": [{"id": "x@m", "install": " "}]}, "plugins[0].install is empty"),
+                ("an empty CLI install line is a problem", {"clis": [{"bin": "x", "install": ""}]}, "clis[0].install is empty"),
+                ("a CLI given as a path is a problem", {"clis": [{"bin": "/usr/bin/x", "install": "i"}]}, "must be a bare command name"),
+                ("an empty ready command is a problem", {"clis": [{"bin": "x", "install": "i", "ready": [], "ready_hint": "h"}]}, "ready must be a non-empty command"),
+                ("a ready check with no hint is a problem", {"clis": [{"bin": "x", "install": "i", "ready": ["x", "ok"]}]}, "no `ready_hint`"),
+                ("a ready command given as a path is a problem", {"clis": [{"bin": "x", "install": "i", "ready": ["/opt/x", "ok"], "ready_hint": "h"}]}, "ready[0] '/opt/x' must be a bare command name"),
+                ("a version given as a string is a problem", {"clis": [{"bin": "x", "install": "i", "version": "--version"}]}, "version"),
+                ("an empty version list is a problem", {"clis": [{"bin": "x", "install": "i", "version": []}]}, "version"),
+                ("an unknown toolchain key is a problem", {"clis": [{"bin": "x", "install": "i", "login": ["x"]}]}, "login is not a declared descriptor key")):
+            tdir = plug(f"tc-{abs(hash(label)) % 10**8}", [{"id": "tc", "all": [{"file": "tc.txt"}], "descriptor": {"toolchain": tc}}])
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = main(["--check"], dirs=[tdir], roots=[agents_root])
+            case((rc == 0) if not want else (rc == 2 and want in out.getvalue()), f"{label}: rc={rc} {out.getvalue()[:240]!r}")
+        tc_proj = root / "tc-proj"
+        tc_proj.mkdir()
+        (tc_proj / "tc.txt").write_text("x", encoding="utf-8")
+        tc_dir = plug("tc-report", [{"id": "tc", "all": [{"file": "tc.txt"}], "descriptor": {"toolchain": tc_ok}}])
+        _, tc_report = run(tc_proj, [tc_dir])
+        case(tc_report.get("toolchain") == [{"stack": "tc", "plugin": "tc-report", **tc_ok}],
+             f"the report lists each matched stack's toolchain: {tc_report.get('toolchain')}")
+        # A checklist in its strict shape (#2210): checked through security_problems, so a stack's real file is what is judged.
+        sec_dir = plug("sec-stack", [{"id": "sx", "all": [{"file": "sx.txt"}],
+                                      "descriptor": {"security": {"checklist": "sec.md", "scanners": ["x"]}}}])
+        sec_manifest = {"_path": str(sec_dir / MANIFEST), "plugin": "sec-stack",
+                        "stacks": json.loads((sec_dir / MANIFEST).read_text(encoding="utf-8"))["stacks"]}
+        for label, body, want in (
+                ("a checklist in its strict shape passes", "# C\n\nRows of `docs/evidence/audits/a.md`.\n\n- Is RLS on? (C-1)\n- Both? (C-1, C-2)\n\n| a | b |\n|---|---|\n", True),
+                ("a checklist with an HTML comment is refused", "- Ask. (C-1)\n<!-- hidden -->\n", False),
+                ("a comment closing on a later line is refused", "- Ask.\nstill hidden -->\n", False),
+                ("a fenced block is refused", "- Ask.\n```\nx\n```\n", False),
+                ("a tilde fence is refused", "~~~\nx\n", False),
+                ("an indented fence is refused", "- Ask.\n    ```sh\n", False),
+                ("an indented table row is refused", "  | a | b |\n", False),
+                ("a claim id mid-line is refused", "- Per C-1, is RLS on?\n", False),
+                ("a claim id before the slot is refused", "- C-2 says so (C-1)\n", False),
+                ("a slot that is not at the end is refused", "- Ask (C-1) then more.\n", False),
+                ("a malformed slot is refused", "- Ask. (C-1,C-2)\n", False),
+                # #2210 adversary: each input that got through the first rule
+                ("a <details> block is refused", "<details><summary>x</summary>\nhidden\n</details>\n", False),
+                ("an inline hidden span is refused", "- Ask <span hidden>x</span> now.\n", False),
+                ("a link reference definition is refused", "- Ask.\n\n[k]: <> \"hidden text\"\n", False),
+                ("an indented code block is refused", "- Ask.\n\n    const x = secret();\n", False),
+                ("a list continuation is not a code block", "- Ask a long\n    question here.\n", True),
+                ("a pipeless table is refused", "a | b\n--- | ---\n", False),
+                ("a zero-width character in a citation is refused", "- Per C\u200b-1 ask\n", False),
+                ("a non-ASCII hyphen in the slot is refused", "- Ask (C\u20111)\n", False),
+                ("a Cyrillic C in the slot is refused", "- Ask (\u04211)\n- Ask (\u0421-1)\n", False),
+                ("a spaced claim id outside the slot is refused", "- Per C - 1, ask\n", False),
+                ("a suffixed id in the slot is refused", "- Ask (C-1a)\n", False),
+                ("a break only Python sees is refused", "- Ask (C-1)\x1c then more\n", False),
+                ("a NEL is refused", "- Ask (C-1)\x85 then more\n", False),
+                ("a CRLF line ending is a line end, as in CommonMark", "- Ask. (C-1)\r\n- More. (C-2)\r\n", True),
+                ("a tab is refused", "-\tAsk.\n", False),
+                ("a BOM is refused", "\ufeff# C\n", False),
+                ("the marks the checklists use pass", "# Spoofing — who? (rails-8 §2b)\n", True),
+                ("an em-dash claim id outside the slot is refused", "- Per C\u20141 the proxy is bypassed\n", False),
+                ("an HTML entity is refused", "- see &#67;-9 too\n", False),
+                ("a named entity is refused", "- Ask&nbsp;now.\n", False),
+                ("a link title is refused", "- [why](https://x \"hidden\") (C-1)\n", False),
+                ("an image is refused", "- ![hidden](x.png)\n", False),
+                ("a plain link passes", "- See [the guide](https://x/y) first.\n", True),
+                ("an ampersand in prose passes", "- Read & write: who? (C-1)\n", True)):
+            # every fixture names its audit, so a refusal is the format rule's and never the "names 0 audits" one
+            audit_line = "" if "docs/evidence/audits/" in body else "Rows of `docs/evidence/audits/a.md`.\n"
+            (sec_dir / "sec.md").write_text(audit_line + body, encoding="utf-8")
+            got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+            case((not got) == want, f"{label}: {got}")
+        # A cited row must be a CONFIRMED row of the one audit the checklist names, read in a marketplace checkout.
+        named = "Rows in `docs/evidence/audits/a.md`.\n"
+        (sec_dir / "sec.md").write_text("- Ask. (C-1)\n", encoding="utf-8")
+        got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+        case(any("names 0 audits" in p for p in got), f"a citation with no audit named is refused: {got}")
+        (sec_dir / "sec.md").write_text(named + "Also `docs/evidence/audits/b.md`.\n- Ask. (C-1)\n", encoding="utf-8")
+        got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+        case(any("names 2 audits" in p for p in got), f"a citation naming two audits is refused: {got}")
+        (sec_dir / "sec.md").write_text(named + "- Ask. (C-1, C-3)\n", encoding="utf-8")
+        got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+        case(not got, f"outside a marketplace checkout the audit is not read: {got}")
+        (root / ".claude-plugin").mkdir(exist_ok=True)
+        (root / ".claude-plugin" / "marketplace.json").write_text("{}", encoding="utf-8")
+        got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+        case(any("cannot be read" in p for p in got), f"a named audit that is missing is a problem: {got}")
+        (root / "docs" / "evidence" / "audits").mkdir(parents=True)
+        (root / "docs" / "evidence" / "audits" / "a.md").write_text(
+            "# A\n\n## C-1 — x\n\nVerdict: CONFIRMED [quotes: C-1]\n\n## C-2 — y\n\nVerdict: CONFIRMED\n\n## C-3 — z\n\nVerdict: REFUTED\n"
+            "\n## C-4 — w\n\nVerdict: CONFIRMED-ish\n\n## C-5 — v\n\nVerdict: REFUTED\n\n### C-9 — nested\n\nVerdict: CONFIRMED\n"
+            "\n## C-6 — u\n\nVerdict: REFUTED\nVerdict: CONFIRMED\n\n## C-7 — t\n\n### detail\n\nVerdict: CONFIRMED\n"
+            "\n## C-8 — s\n\nVerdict: REFUTED\n\n## C-8 — s again\n\nVerdict: CONFIRMED\n"
+            "\n## C-10 — r\n\n```quotes C-10\nVerdict: CONFIRMED\n```\n\nVerdict: REFUTED\n"
+            "\n## C-11 — q\n\n```quotes C-11\nhttps://x | d | p\n```\n\nVerdict: CONFIRMED [quotes: C-11]\n",
+            encoding="utf-8")
+        got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+        case(any("cites C-3, not a CONFIRMED row" in p for p in got), f"a citation of a REFUTED row is refused: {got}")
+        (sec_dir / "sec.md").write_text(named + "- Ask. (C-99)\n", encoding="utf-8")
+        got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+        case(any("cites C-99" in p for p in got), f"a citation of a row the audit lacks is refused: {got}")
+        for cid, why in (("C-4", "a verdict that only starts CONFIRMED"), ("C-5", "a REFUTED row with a nested CONFIRMED heading"),
+                         ("C-6", "a row whose first verdict is REFUTED"),
+                         ("C-7", "a row with no verdict of its own, only a nested heading's"),
+                         ("C-8", "a row headed twice"), ("C-10", "a verdict line inside a quotes block")):
+            (sec_dir / "sec.md").write_text(named + f"- Ask. ({cid})\n", encoding="utf-8")
+            got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+            case(any(f"cites {cid}," in p for p in got), f"{why} is not CONFIRMED: {got}")
+        (sec_dir / "sec.md").write_text(named + "- Ask. (C-1, C-2, C-11)\n", encoding="utf-8")
+        got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+        case(not got, f"citations of CONFIRMED rows pass: {got}")
+        (root / ".claude-plugin" / "marketplace.json").unlink()
+        (sec_dir / "sec.md").write_bytes(b"\xff\xfe bad")
+        got = security_problems(sec_manifest, sec_manifest["stacks"][0], "w")
+        case(any("cannot be read" in p for p in got), f"an undecodable checklist is a problem, not a pass: {got}")
 
     for f in failures:
         print(f"FAIL {f}")

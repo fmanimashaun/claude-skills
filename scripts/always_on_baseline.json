@@ -15,32 +15,32 @@
   },
   "plugins": {
     "design-flow": {
-      "chars": 4435,
-      "est_tokens": 1478
+      "chars": 4476,
+      "est_tokens": 1492
     },
     "flow-suite": {
       "chars": 0,
       "est_tokens": 0
     },
     "nextjs-stack": {
-      "chars": 545,
-      "est_tokens": 182
+      "chars": 817,
+      "est_tokens": 272
     },
     "pipeline": {
-      "chars": 1538,
-      "est_tokens": 513
+      "chars": 1084,
+      "est_tokens": 361
     },
     "qa-flow": {
       "chars": 5558,
       "est_tokens": 1853
     },
     "rails-flow": {
-      "chars": 8496,
-      "est_tokens": 2832
+      "chars": 7922,
+      "est_tokens": 2641
     },
     "rails-stack": {
-      "chars": 5416,
-      "est_tokens": 1805
+      "chars": 7473,
+      "est_tokens": 2491
     }
   }
 }

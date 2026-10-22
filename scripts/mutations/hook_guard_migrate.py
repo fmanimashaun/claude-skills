@@ -3,15 +3,17 @@ from mutation_types import Guard, Mutation  # noqa: F401
 
 GUARD = Guard(
     name='hook_guard_migrate',
-    subject='plugins/rails-flow/hooks/scripts/guard-migrate.sh',
+    subject='plugins/rails-stack/hooks/scripts/guard-migrate.sh',
     selftest='plugins/rails-flow/scripts/check_hook_gates.py',
     # Only the fixture groups that drive this subject (#1497): the whole harness per
     # mutant was ~70% of the mutation-coverage budget.
     selftest_args=("--only", "guard_migrate"),
     # The harness resolves every hook from the selftest's own location, so the whole
     # directory is staged -- one hook's fixtures may exercise another's shape.
-    needs=("plugins/rails-flow/scripts/fixture_git.py", 
+    needs=("plugins/rails-flow/scripts/advisory_scope.py", "plugins/rails-flow/scripts/security_scope.py", "plugins/rails-flow/scripts/check_threat_model.py", "plugins/rails-flow/scripts/detect_stack.py",  # stop-gate.sh runs advisory_scope.py (#2262)
+           "plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # session-start.sh runs all three (#1581, #1828: the harness drives it)
+           'plugins/rails-stack/hooks/scripts', 'plugins/rails-stack/hooks/hooks.json',  # the hook and its manifest live in rails-stack since #2174
            'plugins/rails-flow/hooks/scripts', 'plugins/rails-flow/hooks/hooks.json',
            'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
            # guard-claims.sh runs extract_claims.py; without it the harness's two claim

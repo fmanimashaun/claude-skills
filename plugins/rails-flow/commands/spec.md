@@ -57,6 +57,8 @@ trace in the artifact, so nothing mechanical can check it.
   reason, **only when all three hold**: it is hard to reverse, it would surprise a reader without
   context, and it was a real trade-off. Otherwise it is a line in the spec, not a decision record.
 
+**4b. Check the security scope (#2117).** Run `${CLAUDE_PLUGIN_ROOT}/scripts/security_scope.py` over the settled decisions and the paths the first slice will touch. Exit 1 names a boundary (a public or token route, upload, webhook, MCP tool, outbound fetch, auth or role change, personal column): run `/rails-flow:secure-design` before step 5 and cite `docs/security/threat-models/<slug>.md` under Implementation decisions. Exit 0 says nothing is owed; exit 2 means it could not classify, which is not "none".
+
 **5. Write `docs/product/specs/<slug>.md`.** The headings are a contract (`check_spec.py`):
 
 ```markdown

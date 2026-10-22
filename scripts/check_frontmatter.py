@@ -101,6 +101,8 @@ USER_ONLY = frozenset({
     "plugins/rails-flow/commands/wrap.md",
     # #2070: run by a person (or at the owner's word) to take the coordinator role; invoked by nothing as a step (grep of commands/ and agents/: no reference).
     "plugins/rails-flow/commands/claim-coordinator.md",
+    # #2221: run by a person against a running app; invoked by nothing as a step (grep of commands/, agents/ and reference/: only its own agent's description and a tier row name it, neither runs it).
+    "plugins/design-flow/commands/interface-audit.md",
 })
 
 OUR_SKILLS = ("rails-8", "hotwire", "design-system", "code-review", "quality-pass", "derived-artifacts",

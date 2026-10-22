@@ -11,6 +11,173 @@
       "descriptor": {
         "runner_prefix": ["bundle", "exec"],
         "setup_section": "setup/rails.md",
+        "ui_scope": {
+          "paths": [
+            "^app/views/",
+            "^app/components/",
+            "^app/javascript/",
+            "^app/assets/(stylesheets|tailwind|images)/",
+            "^app/helpers/",
+            "^config/locales/",
+            "^public/[^/]+\\.(html|png|svg|ico|webmanifest)$"
+          ],
+          "not_paths": ["\\.(json|xml)(\\.[a-z]+)?$"],
+          "seen_anyway": ["^app/views/pwa/"],
+          "cases": "ui-scope-cases.json"
+        },
+        "toolchain": {
+            "plugins": [{"id": "rails-stack@claude-skills", "install": "/plugin install rails-stack@claude-skills"}]
+        },
+        "security": {
+            "checklist": "security/rails.md",
+            "cases": "security/boundary-cases.json",
+            "syntax_cases": "security/syntax-cases.json",
+            "code_syntax": [
+                {
+                  "extensions": [
+                    ".rb",
+                    ".rake"
+                  ],
+                  "block_comments": [
+                    {
+                      "open": "=begin",
+                      "close": "=end",
+                      "column0": true
+                    }
+                  ],
+                  "heredoc": "<<[~-]?([\"'`]?)(?P<id>[A-Za-z_]\\w*)\\1"
+                },
+                {
+                  "extensions": [
+                    ".erb"
+                  ],
+                  "block_comments": [
+                    {
+                      "open": "<%#",
+                      "close": "%>",
+                      "column0": false
+                    },
+                    {
+                      "open": "<%-#",
+                      "close": "%>",
+                      "column0": false
+                    },
+                    {
+                      "open": "<!--",
+                      "close": "-->",
+                      "column0": false
+                    }
+                  ],
+                  "heredoc": "<<[~-]?([\"'`]?)(?P<id>[A-Za-z_]\\w*)\\1"
+                },
+                {
+                  "extensions": [
+                    ".js",
+                    ".mjs",
+                    ".cjs"
+                  ],
+                  "block_comments": [
+                    {
+                      "open": "/*",
+                      "close": "*/",
+                      "column0": false
+                    }
+                  ],
+                  "line_comments": [
+                    "<!--",
+                    "-->"
+                  ],
+                  "refuse_when": [
+                    {
+                      "pattern": "`",
+                      "why": "contains a backtick: a template literal's body lines cannot be told from code by a line reader, and an even backtick count proves nothing (a nested template, an escaped backtick, a backtick in a string, in a substitution or in a comment all keep it even); cite a file without one"
+                    },
+                    {
+                      "pattern": "\\S.*<!--",
+                      "why": "has `<!--` after other text: a comment in a Script and code in a Module, and this reader cannot tell which"
+                    },
+                    {
+                      "pattern": "\\{\\s*/\\*",
+                      "why": "opens a block comment right after `{` (a JSX comment container): not read"
+                    }
+                  ]
+                }
+              ],
+            "data_markers": [
+                {
+                  "extensions": [
+                    ".rb",
+                    ".rake"
+                  ],
+                  "marker": "__END__"
+                }
+              ],
+            "scanners": [
+              "brakeman",
+              "bundler-audit",
+              "importmap audit"
+            ],
+            "boundary_text": [
+              {
+                "boundary": "public-route",
+                "pattern": "\\ballow_unauthenticated_access\\b"
+              },
+              {
+                "boundary": "upload-import",
+                "pattern": "\\bhas_(?:one|many)_attached\\b"
+              },
+              {
+                "boundary": "outbound-fetch",
+                "pattern": "\\b(?:net::http|faraday|open-uri)\\b"
+              },
+              {
+                "boundary": "secrets",
+                "pattern": "\\b(?:encrypts|has_secure_password|rails credentials)\\b"
+              },
+              {
+                "boundary": "input-parsing",
+                "pattern": "\\b(?:yaml\\.(?:safe_)?load|marshal\\.load|json\\.parse\\s*\\(?\\s*request\\.(?:body|raw_post))"
+              },
+              {
+                "boundary": "raw-html",
+                "pattern": "\\bhtml_safe\\b|\\braw\\(|<%==?\\s*raw\\b|\\brender\\s*\\(?\\s*(?:html|inline):"
+              },
+              {
+                "boundary": "auth-session-role",
+                "pattern": "\\b(?:require_authentication|require_login|skip_before_action\\s+:authenticate\\w*|protect_from_forgery|skip_forgery_protection|csrf|cors)\\b|\\bauthenticate_user!"
+              },
+              {
+                "boundary": "redirect-param",
+                "pattern": "\\bredirect_to\\s*\\(?\\s*(?:params\\b|session\\[|request\\.referr?er\\b)"
+              }
+            ],
+            "boundary_paths": [
+              {
+                "boundary": "public-route",
+                "pattern": "^app/controllers/(?:public|pages|home)_controller\\.rb$|^config/routes\\.rb$"
+              },
+              {
+                "boundary": "webhook",
+                "pattern": "^app/controllers/(?:[^/]+/)*webhooks?/|_webhooks?_controller\\.rb$"
+              },
+              {
+                "boundary": "mcp-tool",
+                "pattern": "^app/(?:[^/]+/)*mcp/|^app/controllers/(?:[^/]+/)*mcp(?:_[^/]*)?_controller\\.rb$"
+              },
+              {
+                "boundary": "auth-session-role",
+                "pattern": "(?:^|/)(?:sessions|passwords|registrations|omniauth_callbacks|logins?|magic_links|two_factors?|invitations|confirmations|unlocks)_controller\\.rb$|^app/controllers/application_controller\\.rb$|^app/controllers/concerns/auth(?:entication|orization|enticat\\w*)?(?:_[^/]*)?\\.rb$|^app/(?:policies|abilities?)/|^app/models/(?:session|current|role|user)\\.rb$|^config/initializers/(?:devise|session_store)\\.rb$|^lib/(?:[^/]+/)*auth(?:entication|orization|enticat\\w*)?(?:_[^/]*)?(?:/|\\.rb$)|^app/(?:models|services|jobs)/(?:[^/]+/)*(?:auth(?:entication|orization|enticat\\w*)?(?:_[^/]*)?/|(?:[^/]*_)?(?:tokens?|sessions?|auth(?:entication|orization|enticat\\w*)?)(?:_[^/]*)?\\.rb$)"
+              },
+              {
+                "boundary": "upload-import",
+                "pattern": "^app/(?:[^/]+/)*uploads?/|^app/(?:models|services|jobs)/(?:[^/]+/)*[^/]*(?:import|intake|upload)[^/]*\\.rb$|^app/controllers/(?:[^/]+/)*(?:uploads?|attachments?|imports?|intakes?)_controller\\.rb$"
+              },
+              {
+                "boundary": "api",
+                "pattern": "^app/controllers/api/|^app/controllers/(?:api|webhook)_controller\\.rb$"
+              }
+            ]
+          },
         "tests": {
           "command": ["rspec", "--fail-fast", "--no-color"],
           "glob": "spec/**/*_spec.rb",
@@ -29,22 +196,22 @@
           "routes": ["/", "/up"]
         },
         "agents": {
-          "developer": "rails-flow:rails-developer",
-          "migrations": "rails-flow:migration-writer",
-          "test_runner": "rails-flow:test-runner",
-          "security": "rails-flow:security-auditor",
-          "reviewer": "rails-flow:code-reviewer",
-          "design_auditor": "rails-flow:design-auditor"
+          "developer": "rails-stack:rails-developer",
+          "migrations": "rails-stack:migration-writer",
+          "test_runner": "rails-stack:test-runner",
+          "security": "rails-stack:security-auditor",
+          "reviewer": "rails-stack:code-reviewer",
+          "design_auditor": "rails-stack:design-auditor"
         },
         "deploy": {
           "target": "kamal",
           "artifact": "docker-image",
-          "agent": "pipeline:kamal-configurator"
+          "agent": "rails-stack:kamal-configurator"
         },
         "ui": {
           "implementation": "viewcomponent-erb",
-          "porter": "design-flow:design-porter",
-          "composer": "design-flow:ui-composer"
+          "porter": "design-flow:rails-ui-porter",
+          "composer": "design-flow:rails-ui-composer"
         },
         "dangerous_commands": [
           { "pattern": "db:reset", "allowed": "RAILS_ENV=test bin/rails db:reset" }

@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Rails 8 & Hotwire development skills — vanilla-first stack, pure RSpec, Turbo/Stimulus/Hotwire Native, OpenAPI via rswag, ruby_llm, Kamal 2",
-    "version": "1.158.0"
+    "version": "1.159.0"
   },
   "plugins": [
     {
@@ -41,7 +41,7 @@
     },
     {
       "name": "rails-flow",
-      "description": "Agentic development flow for Rails 8 projects — /feature, /fix, /review, /setup-flow and /brain commands, thirteen specialist subagents (rails-developer, migration-writer, code-reviewer, spec-reviewer, test-runner, security-auditor, design-auditor, doc-updater, pr-reviewer, claim-verifier, skill-curator, claude-skills-reporter, adversary), and guardrail hooks that mechanically enforce spec-proven changes, safe migrations and git discipline. Pairs with the rails-stack skills.",
+      "description": "Agentic development flow for Rails 8 projects — /feature, /fix, /review, /setup-flow and /brain commands, fourteen specialist subagents (rails-developer, migration-writer, code-reviewer, spec-reviewer, test-runner, security-auditor, design-auditor, doc-updater, pr-reviewer, claim-verifier, skill-curator, claude-skills-reporter, adversary, plan-advisor), and guardrail hooks that mechanically enforce spec-proven changes, safe migrations and git discipline. Pairs with the rails-stack skills.",
       "source": "./plugins/rails-flow",
       "strict": false,
       "author": {
@@ -104,7 +104,7 @@
     },
     {
       "name": "design-flow",
-      "description": "Agentic UI/design flow for Rails 8 + Hotwire + Tailwind v4 — applies the design system so UI is consistent, modern, and responsive without a designer or Figma. /design-flow:setup scaffolds the @theme token architecture (brand primitives -> semantic roles -> Utopia fluid scale) + layout-primitive @utility recipes + base ViewComponents; /design-flow:component authors UI by composing layout primitives + role tokens with a fixed variant/size/state vocabulary, a11y, and prescribed responsive behavior; /design-flow:canvas composes a Claude Design prompt carrying the project's own tokens and catalog, /design-flow:port brings the returned canvas back as ERB/ViewComponents/Turbo/Stimulus; /design-flow:audit flags drift. Agents: ui-composer, design-auditor, design-critic, design-porter, brand-guardian. Pairs with the design-system skill (bundled in rails-stack).",
+      "description": "Agentic UI/design flow — applies the design system so UI is consistent, modern, and responsive without a designer or Figma. /design-flow:setup scaffolds the token architecture (brand primitives -> semantic roles -> Utopia fluid scale) + layout-primitive recipes + base components through the project's UI adapter; /design-flow:component authors UI by composing layout primitives + role tokens with a fixed variant/size/state vocabulary, a11y, and prescribed responsive behavior; /design-flow:canvas composes a Claude Design prompt carrying the project's own tokens and catalog, /design-flow:port brings the returned canvas back through the project's UI adapter; /design-flow:audit flags drift. Agents: rails-ui-composer, design-auditor, design-critic, rails-ui-porter, brand-guardian, interface-auditor. Pairs with the design-system skill (bundled in rails-stack).",
       "source": "./plugins/design-flow",
       "strict": false,
       "author": {
@@ -144,7 +144,7 @@
     },
     {
       "name": "nextjs-stack",
-      "description": "Next.js + Supabase + Vercel stack, 0.1.0, an early release: conventions for how the three fit together, and the stack's markers for the stack detector. feature/fix/review still lean on the Rails-flavoured agents. Platform knowledge stays in Vercel's official plugin (vercel-plugin) and Supabase's supabase/agent-skills, which it points to rather than copies.",
+      "description": "Next.js + Supabase + Vercel stack, 0.1.0, an early release: conventions for how the three fit together, the stack's markers for the stack detector, and a React frontend architecture (the react skill) whose rules are each enforced by lint, nextjs-stack's checks, a declaration or a recorded review verdict. feature/fix/review still lean on the Rails-flavoured agents. Platform knowledge stays in Vercel's official plugin (vercel-plugin) and Supabase's supabase/agent-skills, which it points to rather than copies.",
       "source": "./plugins/nextjs-stack",
       "author": {
         "name": "Fisayo Animashaun",

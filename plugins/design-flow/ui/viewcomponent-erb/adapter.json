@@ -1,0 +1,20 @@
+{
+  "id": "viewcomponent-erb",
+  "stack": "rails",
+  "tokens_file": "app/assets/tailwind/application.css",
+  "summary": "The Rails rendering half of design-flow: ERB, ViewComponent and Tailwind v4 checks, the agents that compose and port UI into them, and the canvas port gate.",
+  "agents": {
+    "porter": "rails-ui-porter",
+    "composer": "rails-ui-composer"
+  },
+  "checks": [
+    "surface-layout",
+    "table-layout",
+    "modal-fit",
+    "layout-composition",
+    "component-contract",
+    "variant-conformance",
+    "token-drift",
+    "port-fidelity"
+  ]
+}

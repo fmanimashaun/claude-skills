@@ -109,7 +109,7 @@ Steps 1–2 are once per project. Steps 3–4 are the loop.
 <details>
 <summary><b>rails-flow</b> — build, fix, review, remember</summary>
 
-`feature` `fix` `review` `issues` `brief` `spec` `slice` `curate` `explain` `graph` `handoff` `pr-comments`
+`feature` `fix` `review` `issues` `brief` `spec` `secure-design` `slice` `curate` `explain` `graph` `handoff` `pr-comments`
 `retro` `report` `setup-flow` `toolchain-audit` · **memory:** `brain` `brain-review` `brain-sync` ·
 **autonomous:** `drive` `escalate` `toolchain-check` · **parallel sessions:** `coordinate` `claim-coordinator` `wrap`
 
@@ -118,7 +118,7 @@ Steps 1–2 are once per project. Steps 3–4 are the loop.
 <details>
 <summary><b>design-flow</b> — UI and the design system</summary>
 
-`setup` `component` `tokens` `variants` `mobile` `audit` `critique` `canvas` `port` `compose` ·
+`setup` `component` `tokens` `variants` `mobile` `audit` `critique` `interface-audit` `canvas` `port` `compose` ·
 **assets:** `assets` `generate`
 
 </details>

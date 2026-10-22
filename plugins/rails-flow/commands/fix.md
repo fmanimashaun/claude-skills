@@ -5,6 +5,8 @@ argument-hint: <bug description | path to review report | phase number>
 
 # /rails-flow:fix — $ARGUMENTS
 
+Agents are named by **role** (`developer`, `migrations`, `test_runner`, `reviewer`, `security`, `design_auditor`), resolved from the project's stack: see `reference/stack-roles.md`. When the stack names no agent for a role, STOP and ask; never use a Rails agent by default.
+
 Fix work follows the same discipline as features, with two entry modes.
 
 ## Setup
@@ -127,16 +129,20 @@ hypothesis that turned out to be the cause, so the next reader learns it.
 
 ```
 1. BRANCH:    git checkout <base> && git pull && git checkout -b fix/<phase-or-slug>
+1a. ADVISORY: advisory_scope.py --slug <slug> once the phase's acceptance file exists (#2262); exit 1 → the
+              plan advisory in /rails-flow:feature Phase 1 (--begin, the `plan-advisor` agent, a disposition per finding,
+              --stamp). The Stop gate and the sweep refuse a fix branch that skipped a required one
 1b. MOCK-UP:  a fix that changes what a user sees waits for an approved mock-up (#1376):
               check_mockup_gate.py --paths <files the fix will touch>; exit 1 → the mock-up
-              gate in /rails-flow:feature Phase 1 (build, publish, STOP for approval, record)
+              gate in /rails-flow:feature Phase 1 (build it inside the app's shell, publish, STOP for
+              approval, record; no recorded shell yet: the first change is the shell, #2211)
 2. IMPLEMENT: the loop above, one issue per commit; the spec that FAILS without the fix comes first (#1858). Run it on the pre-fix tree (RED), then
               with the fix (GREEN), and record both under `## Red/green proof` in the PR body. A project with a QA catalogue also adds or updates the
-              manual case that proves the fix, with the issue in its Source (owner rule, #1853; reference/case-per-change.md); delegate big items to rails-developer,
-              schema changes to migration-writer
-3. VERIFY:    test-runner → FULL suite, 0 failures; code-reviewer → VERDICT: CLEAN;
+              manual case that proves the fix, with the issue in its Source (owner rule, #1853; reference/case-per-change.md); delegate big items to the `developer` role,
+              schema changes to the `migrations` role
+3. VERIFY:    the `test_runner` role → FULL suite, 0 failures; the `reviewer` role → VERDICT: CLEAN;
               spec-reviewer against the phase's acceptance file → VERDICT: CLEAN with
-              check_spec_review.py exit 0 (#1370), reported apart from code-reviewer
+              check_spec_review.py exit 0 (#1370), reported apart from the `reviewer` role
 4. PUSH + PR: gh pr create --base <base> --title "fix: <phase — summary>" --body "<PR Documentation Contract>"
 5. GATE:      review-pr skill if the code-review-graph CLI + graph are present
               (command -v code-review-graph && [ -d .code-review-graph ]), else
@@ -154,9 +160,10 @@ hypothesis that turned out to be the cause, so the next reader learns it.
 7. MERGE:     on CLEAN, run check_mockup_gate.py --base <base> (#1376) and
               classify_door.py --base <base> (#1338); exit 1 or 2 from either stops
               for the user with its reasons. Then risky_diff.py --base <base> --record
-              docs/evidence/reviews/prs/<branch-slug>/adversary.md (#1819): exit 1 means run the
+              docs/evidence/reviews/prs/<branch-slug>/adversary.md (#1819; `<branch-slug>` is defined in feature.md Phase 6): exit 1 means run the
               `adversary` agent (Fable), save its answer verbatim to that path, and check again;
-              exit 3 (it recorded BLOCKED) or 2 stops for the user with the findings.
+              BLOCKED also exits 1: stop for the user with the findings (only a recorded
+              `Override: <who> | <reason> | #<issue>` lets it through, #2264); exit 2 stops too.
               Otherwise merge to dev (squash);
               default-branch bases stop for the user
 8. DOCS:      doc-updater; mark the phase done in the review report

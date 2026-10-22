@@ -25,28 +25,31 @@ Do **not** fold the critique's suggestions into this report. Consistency finding
 and an exact fix; taste findings carry a missing decision. Merging them puts an advisory note next to a
 blocking one, and the reader cannot tell which is which.
 
-## First: the mechanical cross-check (run it before reading anything)
+## Which stack renders this
 
-The checklist below audits a *project's* UI. This one audits the **toolchain** — it catches
-doctrine that references a runtime artefact `/design-flow:setup` never generates, which is
-invisible to every other check and only surfaces as a `NoMethodError` at a user's first setup
-run. It reads the shipped doctrine and generator, so it is meaningful from any clone:
+Some of what is audited is the stack's. Resolve the project's UI adapter from its stack descriptor:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/setup_doctrine_crosscheck.py"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ui_adapter.py"
 ```
 
-Read the exit code, because two of them mean opposite things:
+It prints JSON: `dir` (the adapter directory) and `agents`. **Exit 2 means it cannot say** (no recognised stack, a stack with no UI
+adapter yet): quote its message and stop; never audit against another stack's rules. Read **`<dir>/audit.md`**: it names the source
+directories to scan, the toolchain cross-check, the default boot of the app, and the variants scaffold to look for.
 
-- **Exit 1 — a toolchain defect, not a project defect.** Doctrine reads config the generator
-  never produces. Report it with `/rails-flow:report` (component `design-flow`) rather than
+## First: the mechanical cross-check (run it before reading anything)
+
+The checklist below audits a *project's* UI. The adapter's cross-check audits the **toolchain**: it catches doctrine that references a
+runtime artefact `/design-flow:setup` never generates, which is invisible to every other check. Run it as `<dir>/audit.md` §1 says and
+read its exit code, because two of them mean opposite things:
+
+- **Exit 1 — a toolchain defect, not a project defect.** Report it with `/rails-flow:report` (component `design-flow`) rather than
   patching locally.
-- **Exit 2 — the check could not run** (an input missing, unreadable, or not valid UTF-8). That
-  is *your clone*, not the toolchain: fix the input and re-run. Filing it as a doctrine defect
-  sends a maintainer hunting something that does not exist.
+- **Exit 2 — the check could not run** (an input missing, unreadable, or not valid UTF-8). That is *your clone*, not the toolchain: fix
+  the input and re-run. Filing it as a doctrine defect sends a maintainer hunting something that does not exist.
 
-Treating any non-zero exit as a defect to report conflates the two. Warnings flag config setup
-generates that no doctrine reads: probably dead scaffolding, worth a look but not a blocker.
+Treating any non-zero exit as a defect to report conflates the two. Warnings flag config setup generates that no doctrine reads:
+probably dead scaffolding, worth a look but not a blocker.
 
 ## Second: the LLM-tell detector, over the project's own views
 
@@ -54,7 +57,7 @@ The cross-check above audits the *toolchain*. This one audits **what was generat
 project** — the static half of the conformance question, needing no browser and no booted app:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/llm_tell_detector.py" app/views app/components
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/llm_tell_detector.py" <source-dir> [<source-dir> ...]   # the directories <dir>/audit.md names
 ```
 
 Seven rules, each citing the doctrine line it enforces (`--list-rules` prints them). **Two of them
@@ -73,7 +76,7 @@ not run".
 
 Disagree with a rule on a specific line? Disable it **with a reason**:
 
-```erb
+```html
 <!-- design-flow-disable stock-palette-literal: third-party embed dictates the palette -->
 ```
 
@@ -90,13 +93,13 @@ Each pass sees something only it can, and the earlier ones cannot substitute for
 | # | pass | subject | blocks? | what only it sees |
 |---|---|---|---|---|
 | 1 | **intent** | the Claude Design output, before code | **no** | is this the researched style; does it use the catalog; is the copy real |
-| 2 | **source** | the ERB | **yes** | role tokens, `-foreground` pairing, ARIA presence, primitives, motion **count** |
+| 2 | **source** | the code | **yes** | role tokens, `-foreground` pairing, ARIA presence, primitives, motion **count** |
 | 3 | **rendered** | the running browser | **yes** | computed contrast, resolved tokens, focus rules that no longer match |
 
 **Pass 1 never blocks, and it cannot judge conformance.** A design cannot state whether the
 implementation has a focus ring, whether ARIA is correct, or whether `min-h-touch` is held — those
 are properties of code that does not exist yet. It is a **read**, not a script: when a Claude Design
-artboard preceded the ERB, open it and check it against the brief and the catalog the way
+artboard preceded the code, open it and check it against the brief and the catalog the way
 `/design-flow:port` §2 does. **Say plainly that Pass 1 was skipped when no composition preceded the
 code** — most `/design-flow:component` work has none, and a skipped pass must never read as a
 passed one.
@@ -160,7 +163,7 @@ taken against a server booted from a different checkout is not a weaker measurem
 CSS, it is a precise measurement of some other tree's. Every downstream number — resolved colours,
 focus rules, token membership — would be attributed to the wrong source. Resolving the listener's
 working directory and refusing a stranger is what keeps the rest of this mode's arithmetic about
-the code you are auditing. Measured on this machine while the fix was written: a Ruby server
+the code you are auditing. Measured on this machine while the fix was written: a dev server
 answering on `3001` resolved to a different project's checkout entirely.
 
 **An unresolvable owner is a refusal, not a shrug.** In a container, on a remote runner, or when
@@ -168,7 +171,7 @@ the process belongs to another user, the cwd cannot be read — and "cannot show
 "it is mine". Fall back to the source checklist and say so; do not audit against it and qualify the
 finding afterwards.
 
-No `app:` block? Infer the Rails default (`bin/dev`, port 3000, `/up`) and say so.
+No `app:` block? Use the stack's default boot from `<dir>/audit.md` and say so.
 
 ### 2. Collect one snapshot per route × viewport × theme
 
@@ -273,7 +276,7 @@ with no scope becomes a way to browse:
 attached to a real browser has whatever tabs the human left open, and a measurement taken against
 the wrong tab is not wrong-looking — it is a confident number about a page nobody asked about.
 
-**A snapshot is evidence of one state, not of the component.** The a11y tree after a Turbo
+**A snapshot is evidence of one state, not of the component.** The a11y tree after a client-side
 navigation is a different tree; re-snapshot after the interaction rather than reasoning forward
 from the one you took.
 
@@ -311,11 +314,9 @@ and skips are not passes.
   (btn `rounded-md`, card `rounded-lg`, badge `rounded-full`); non-Lucide icons.
 
 **Leftover variant scaffolding**
-- `app/views/design_variants/`, `app/controllers/design_variants_controller.rb`, or a
-  `design_variants` route still present. A variant set is a **decision in progress**: once one is
+- The variants scaffold (`<dir>/audit.md` §4 names its directory, controller and route) still present. A variant set is a **decision in progress**: once one is
   chosen the rest are dead screens, and an un-run discard step looks exactly like a completed one.
-  Verify rather than eyeball it — `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variant_conformance.py"
-  --verify-discard .` — and if the set is still live, the audit is premature: choose first, then
+  Verify rather than eyeball it — `variant_conformance.py --verify-discard .`, run as the adapter's `variants.md` gives it — and if the set is still live, the audit is premature: choose first, then
   audit the winner in its real home.
 
 **Composition/branding**

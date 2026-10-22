@@ -5,6 +5,8 @@ argument-hint: "[PR number]"
 
 # /rails-flow:pr-comments — $ARGUMENTS
 
+Agents are named by **role** (`developer`, `migrations`, `test_runner`, `reviewer`, `security`, `design_auditor`), resolved from the project's stack: see `reference/stack-roles.md`. When the stack names no agent for a role, STOP and ask; never use a Rails agent by default.
+
 Review feedback is work, not noise. Nothing raised on a PR may evaporate: every
 actionable comment is either fixed on this branch or captured as a repo issue —
 and the PR is not finished until that is true for every thread.
@@ -69,7 +71,7 @@ When intent is ambiguous, ask the commenter on the thread rather than guessing.
 
 ## Phase 3 — Re-gate and verify clean closure
 
-If any code changed during the sweep: re-run test-runner (full suite, 0 failures) and
+If any code changed during the sweep: re-run the `test_runner` role (full suite, 0 failures) and
 the merge gate (review-pr skill / pr-reviewer) until CLEAN again.
 
 The PR closes clean only when ALL are true:

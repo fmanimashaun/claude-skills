@@ -46,6 +46,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fixture_git  # noqa: E402  (#1588: a fixture's git touches only its own temp repo)
 
 HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
+# The two Rails-only hooks (guard-migrate, lint-ruby) live in rails-stack since #2174; this checker still drives them.
+STACK_HOOKS = Path(__file__).resolve().parents[2] / "rails-stack" / "hooks" / "scripts"
 
 
 # The prefix of every fixture directory. The `--match` mask (`_TEMP_PATH`) is built from it, so a label that embeds a scratch path compares equal in the survey and the run
@@ -547,7 +549,7 @@ def blocked_lines(out: str) -> str:
 
 def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
              env_extra: dict[str, str] | None = None, unset: tuple[str, ...] = (),
-             shell: str | tuple[str, ...] = "bash") -> tuple[int, str]:
+             shell: str | tuple[str, ...] = "bash", hooks_dir: Path = HOOKS) -> tuple[int, str]:
     env = dict(os.environ)
     for k in unset:
         env.pop(k, None)
@@ -556,9 +558,10 @@ def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
         env.pop(k, None)                    # a git hook's GIT_DIR, a CI's GH_*: each would route every fixture
     if path_prefix:
         env["PATH"] = os.pathsep.join(str(p) for p in path_prefix) + os.pathsep + env["PATH"]
+    env.setdefault("RAILS_FLOW_GIT_TIMEOUT", "120")      # a loaded machine must not turn a slow git into a refusal (#2295); the rows that test the timeout set their own
     if env_extra:
         env.update(env_extra)
-    done = _run([*((shell,) if isinstance(shell, str) else shell), str(HOOKS / name)], cwd=cwd, input=stdin, env=env,
+    done = _run([*((shell,) if isinstance(shell, str) else shell), str(hooks_dir / name)], cwd=cwd, input=stdin, env=env,
                           capture_output=True, text=True, timeout=60)
     return done.returncode, done.stdout + done.stderr
 
@@ -632,6 +635,52 @@ def stop_gate_fixtures() -> None:
     code, out = paths_scenario("docs/product/acceptance/widgets.md")
     check("stop-gate: criteria at docs/product/acceptance/<slug>.md are found (not 'no acceptance criteria')",
           "no acceptance criteria" not in out, f"exit {code}: {out.strip()[:200]!r}")
+    # The criteria pass here (the later exit 2 is the no-spec rule), so the note can only come from the success path.
+    check("stop-gate: criteria that pass with no threat model still say the security check was skipped (#2213)",
+          "security check skipped" in out and "acceptance criteria do not hold" not in out, f"exit {code}: {out.strip()[:300]!r}")
+    # THE PLAN ADVISORY (#2262): criteria naming a security boundary owe a recorded plan-advisor pass, so the gate blocks without one.
+    def advisory_scenario(record: str | None, plugin_root: Path | None = None) -> tuple[int, str]:
+        with scratch_dir() as td:
+            repo = Path(td) / "repo"
+            _git_repo(repo)
+            _run(["git", "checkout", "-q", "-b", "feature/widgets"], cwd=repo, check=True, capture_output=True)
+            (repo / "spec").mkdir()
+            (repo / "app").mkdir()
+            (repo / "app" / "widget.rb").write_text("class Widget; end\n")
+            acc = repo / "docs/product/acceptance/widgets.md"
+            acc.parent.mkdir(parents=True)
+            acc.write_text("- **AC-1** Given a partner, when it posts to the webhook, then the widget is saved.\n"
+                           "- **AC-2** Given a bad signature, when the partner posts to the webhook, then it is rejected with an error message.\n")
+            # A threat model with a threat row confirms the boundary (plan-advisor A-2): an `accept` row, so no [security] criterion is owed.
+            tm = repo / "docs/security/threat-models/widgets.md"
+            tm.parent.mkdir(parents=True)
+            tm.write_text("# T\n## What we are building\nA partner webhook.\n## Trust boundaries\n- partner -> app: the callback body\n"
+                          "## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n"
+                          "| TM-1 | Replayed callback | R | webhook | accept | the save is idempotent, a replay changes nothing |\n"
+                          "## Security requirements\n- treat a replayed callback as a no-op\n")
+            if record is not None:
+                env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+                _run([sys.executable, str(HOOKS.parents[1] / "scripts" / "advisory_scope.py"), "--begin", "--slug", "widgets", "--root", str(repo)],
+                     check=True, capture_output=True, env=env)
+                rec = repo / "docs/evidence/reviews/plans/widgets/plan-advisor.md"
+                rec.write_text(rec.read_text() + record)
+            stubs = Path(td) / "bin"
+            stubs.mkdir()
+            _stub(stubs, "bundle", passing)
+            return run_hook("stop-gate.sh", cwd=repo, stdin="{}", path_prefix=[stubs],
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(plugin_root or HOOKS.parents[1])})
+
+    with scratch_dir() as broken:
+        (Path(broken) / "scripts").mkdir()
+        code, out = advisory_scenario(None, Path(broken))
+    check("stop-gate: a plugin root missing advisory_scope.py fails closed, never a silent skip (#2267 review)",
+          code == 2 and "advisory_scope.py is missing" in out, f"exit {code}: {out.strip()[:240]!r}")
+    code, out = advisory_scenario(None)
+    check("stop-gate: a plan with a threat model and no plan-advisor record blocks (#2262)",
+          code == 2 and "plan advisory is owed" in out, f"exit {code}: {out.strip()[:240]!r}")
+    code, out = advisory_scenario("- A-1 trusts the body\nVERDICT: PROCEED\nDisposition A-1: accepted | verify the signature before parsing\n")
+    check("stop-gate: a disposed plan-advisor record lets the plan through (#2262)",
+          "plan advisory is owed" not in out, f"exit {code}: {out.strip()[:240]!r}")
     code, out = paths_scenario("docs/acceptance/widgets.md")
     check("stop-gate: criteria at the pre-layout docs/acceptance/<slug>.md still count",
           "no acceptance criteria" not in out, f"exit {code}: {out.strip()[:200]!r}")
@@ -644,6 +693,39 @@ def stop_gate_fixtures() -> None:
 
 
 # ---- guard-lane.sh (#823) -----------------------------------------------------------------------
+def guard_plan_fixtures() -> None:
+    """guard-plan.sh (#2262, plan-advisor A-1 on #2267): a build edit waits for a required plan-advisor pass; docs/ stays free."""
+    def scenario(path: str, branch: str = "feature/widgets", record: str | None = None) -> tuple[int, str]:
+        with scratch_dir() as td:
+            repo = Path(td) / "repo"
+            _git_repo(repo)
+            _run(["git", "checkout", "-q", "-b", branch], cwd=repo, check=True, capture_output=True)
+            acc = repo / "docs/product/acceptance/widgets.md"
+            acc.parent.mkdir(parents=True)
+            acc.write_text("- **AC-1** Given a partner, when it posts to the webhook, then the widget is saved.\n")
+            tm = repo / "docs/security/threat-models/widgets.md"
+            tm.parent.mkdir(parents=True)
+            tm.write_text("## Threats\n| ID | Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|---|\n"
+                          "| TM-1 | Forged callback | S | webhook | mitigate | signature checked |\n")
+            if record is not None:
+                _run([sys.executable, str(HOOKS.parents[1] / "scripts" / "advisory_scope.py"), "--begin", "--slug", "widgets", "--root", str(repo)],
+                     check=True, capture_output=True)
+                rec = repo / "docs/evidence/reviews/plans/widgets/plan-advisor.md"
+                rec.write_text(rec.read_text() + record)
+            payload = json.dumps({"tool_input": {"file_path": str(repo / path)}})
+            return run_hook("guard-plan.sh", cwd=repo, stdin=payload,
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1]), "CLAUDE_PROJECT_DIR": str(repo)})
+
+    code, out = scenario("app/models/widget.rb")
+    check("guard-plan: a build edit while the plan owes a plan-advisor pass is blocked", code == 2 and "plan guard" in out, f"exit {code}: {out.strip()[:200]!r}")
+    code, out = scenario("docs/evidence/reviews/plans/widgets/plan-advisor.md")
+    check("guard-plan: writing under docs/ (the plan and its record) stays allowed", code == 0, f"exit {code}: {out.strip()[:200]!r}")
+    code, out = scenario("app/models/widget.rb", branch="chore/widgets")  # its slug has a plan, so only the branch rule allows it
+    check("guard-plan: a branch outside the flow is not judged", code == 0, f"exit {code}: {out.strip()[:200]!r}")
+    code, out = scenario("app/models/widget.rb", record="- A-1 trusts the body\nVERDICT: PROCEED\nDisposition A-1: accepted | verify the signature before parsing\n")
+    check("guard-plan: once the pass is recorded and disposed, the build edit is allowed", code == 0, f"exit {code}: {out.strip()[:200]!r}")
+
+
 def guard_lane_fixtures() -> None:
     def write(path: str, lane: str | None) -> tuple[int, str]:
         with scratch_dir() as td:
@@ -681,7 +763,7 @@ def guard_migrate_fixtures() -> None:
             file_path = file_path_fn(proj)
             payload = json.dumps({"tool_input": {"file_path": file_path}, "cwd": str(proj)})
             return run_hook("guard-migrate.sh", cwd=proj, stdin=payload,
-                            unset=("CLAUDE_PROJECT_DIR",))
+                            unset=("CLAUDE_PROJECT_DIR",), hooks_dir=STACK_HOOKS)
 
     # THE BLOCKED SHAPE, both ways a path arrives: relative and absolute.
     code, out = write(lambda p: "db/migrate/20260927120000_add_thing.rb")
@@ -713,7 +795,7 @@ def guard_migrate_fixtures() -> None:
             (proj / "bin" / "rails").write_text("#!/usr/bin/env ruby\n")
             (proj / "db" / "mig").symlink_to("migrate")
             payload = json.dumps({"tool_input": {"file_path": "db/mig/20260927120000_add_thing.rb"}, "cwd": str(proj)})
-            return run_hook("guard-migrate.sh", cwd=proj, stdin=payload, unset=("CLAUDE_PROJECT_DIR",))[0]
+            return run_hook("guard-migrate.sh", cwd=proj, stdin=payload, unset=("CLAUDE_PROJECT_DIR",), hooks_dir=STACK_HOOKS)[0]
     code = via_symlink()
     check("guard-migrate (#1416): a Write through a symlink into db/migrate/ is blocked", code == 2, f"exit {code}")
 
@@ -756,7 +838,7 @@ def guard_migrate_fixtures() -> None:
             (proj / "db" / "migrate").mkdir(parents=True)
             (proj / "bin").mkdir()
             (proj / "bin" / "rails").write_text("#!/usr/bin/env ruby\n")
-            return run_hook("guard-migrate.sh", cwd=proj, stdin=stdin, unset=("CLAUDE_PROJECT_DIR",))
+            return run_hook("guard-migrate.sh", cwd=proj, stdin=stdin, unset=("CLAUDE_PROJECT_DIR",), hooks_dir=STACK_HOOKS)
 
     code, _ = raw("not json, but it mentions db/migrate/20260927120000_add_thing.rb in passing")
     check("guard-migrate: an UNPARSABLE payload naming a db/migrate/*.rb path is blocked",
@@ -779,7 +861,7 @@ def guard_migrate_fixtures() -> None:
             only.mkdir()
             for tool in ("bash", "cat"):
                 (only / tool).symlink_to(bash if (tool == "bash" and bash) else shutil.which(tool))
-            done = _run([str(only / "bash"), str(HOOKS / "guard-migrate.sh")], cwd=proj,
+            done = _run([str(only / "bash"), str(STACK_HOOKS / "guard-migrate.sh")], cwd=proj,
                                   input=json.dumps({"tool_input": {"file_path": file_path}}),
                                   env={"PATH": str(only)}, capture_output=True, text=True, timeout=60)
             return done.returncode, done.stdout + done.stderr
@@ -806,7 +888,7 @@ def guard_migrate_fixtures() -> None:
 
     # WIRED SCOPE: hooks.json must route this hook from `Write` alone. `Edit`/`MultiEdit` cannot
     # create a file, so there is no creation moment for either of them to carry into this hook.
-    manifest = json.loads((HOOKS.parent / "hooks.json").read_text(encoding="utf-8"))
+    manifest = json.loads((STACK_HOOKS.parent / "hooks.json").read_text(encoding="utf-8"))
     matchers = [entry.get("matcher") for entry in manifest.get("hooks", {}).get("PreToolUse", [])
                 for hook in entry.get("hooks", []) if "guard-migrate.sh" in hook.get("command", "")]
     check("guard-migrate: hooks.json wires it to exactly one PreToolUse entry, matcher `Write`",
@@ -838,7 +920,7 @@ def lint_ruby_fixtures() -> None:
                 _stub(stubs, "mise", 'case "$1" in current) exit 0;; exec) shift; shift; '
                                      f'[ "$1" = bundle ] && shift && exec "{rubybin}/bundle" "$@";; esac; exit 1')
             payload = json.dumps({"tool_input": {"file_path": str(proj / "a.rb")}})
-            return run_hook("lint-ruby.sh", cwd=proj, stdin=payload, path_prefix=[stubs])
+            return run_hook("lint-ruby.sh", cwd=proj, stdin=payload, path_prefix=[stubs], hooks_dir=STACK_HOOKS)
 
     # THE #824 SHAPE: everything corrected; the summary counts the corrected offenses as detected.
     corrected = ('echo "== a.rb =="; echo "C:  1:  1: [Corrected] Style/FrozenStringLiteralComment: Missing."; '
@@ -1908,6 +1990,31 @@ def guard_claims_fixtures() -> None:
           run("gh issue comment 1141 --body-file BODY", NUMERIC) == 2, said())
     check("guard-claims: ...and the same comment passes once it shows it was verified",
           run("gh issue comment 1141 --body-file BODY", CHECKED) == 0, said())
+
+    # #2258: THE TRIPWIRE'S SHAPES, AND THE STRICT MODE THE GH SHIM RUNS IT IN. The hook judges the command's TEXT: a heredoc or a `cd` chain
+    # hides the directory, and an inline --body or a `--body-file "$F"` names no file it can read, so it says NOT checked and allows (the
+    # guarantee for those shapes is the gh shim, `gh_shim_selftest.py` "claim bodies"). Under RAILS_FLOW_CLAIMS_STRICT=1, which only the shim
+    # sets, every one of those "could not read" outcomes is a refusal.
+    TPL2258 = "## Summary\n\n## Notes\n"
+    rc, out = run("gh pr create --body-file BODY", PROSE, template=TPL2258, with_output=True)
+    check("guard-claims (#2258): a plain --body-file missing a template section is blocked", rc == 2, out[-200:])
+    rc, out = run("cat > BODYDIR/h.md <<'E'\nx\nE\ngh pr create --body-file BODY", PROSE, template=TPL2258, with_output=True)
+    check("guard-claims (#2258): a heredoc before gh leaves the directory unknown, and the hook SAYS the template was not checked",
+          rc == 0 and "NOT checked" in out, out[-200:])
+    rc, out = run('gh pr create --body "Tidy up the wording."', None, template=TPL2258, with_output=True)
+    check("guard-claims (#2258): an inline --body is not read by the tripwire, and it says so", rc == 0 and "could not read" in out, out[-200:])
+    rc, out = run('F=BODY; gh pr create --body-file "$F"', PROSE, template=TPL2258, with_output=True)
+    check("guard-claims (#2258): a --body-file named through a VAR is not read by the tripwire, and it says so",
+          rc == 0 and "could not read" in out, out[-200:])
+    rc, out = run("gh pr create -R other/repo --body-file BODY", PROSE, template=TPL2258, with_output=True)
+    check("guard-claims (#2258): -R names another repository, so its template is NOT checked, said", rc == 0 and "NOT checked" in out, out[-200:])
+    rc, out = run("gh pr create --body-file /nonexistent/body.md", None, env_extra={"RAILS_FLOW_CLAIMS_STRICT": "1"}, with_output=True)
+    check("guard-claims (#2258): strict (the gh shim): a body that cannot be read is BLOCKED, never allowed unchecked", rc == 2, out[-200:])
+    check("guard-claims (#2258): ...and without strict the tripwire still allows it, loudly (its contract is unchanged)",
+          run("gh pr create --body-file /nonexistent/body.md", None) == 0, said())
+    check("guard-claims (#2258) control: strict passes a readable body that meets the template and makes no claim",
+          run("gh pr create --body-file BODY", "## Summary\n\nA fix.\n\n## Notes\n\nnone\n", template=TPL2258,
+              env_extra={"RAILS_FLOW_CLAIMS_STRICT": "1"}) == 0, said())
 
     # WHERE THE `gh` IS (#1877). The match used to be a substring of the whole command, so `gh issue create` was blocked
     # whenever its title or a trailing comment merely NAMED `gh pr create`. Words are not a command; a command is.
@@ -6231,6 +6338,141 @@ def guard_pr_ready_fixtures() -> None:
                guard(repo, f"cd {other} && gh pr ready 3 -R o/r"), 2, "explicit repository target")
         expect("guard-pr-ready (#2132): `cd <missing dir> && gh pr ready` cannot be judged: refused",
                guard(repo, f"cd {td}/nope && gh pr ready 3"), 2)
+        # #2143: the refusal NAMES the worktree that holds a green record, and loosens nothing. A session whose directory is reset to the main
+        # checkout is judged on its HEAD; the released way out is the `cd` form, which the refusal never mentioned.
+        main_head = head_of(repo)
+        (repo / ".git" / "rails-flow" / "sweep" / f"{main_head}.json").unlink(missing_ok=True)    # the rows above left the main checkout a green record
+
+        def add_worktree(name: str, branch: str) -> Path:
+            wt = Path(td) / name
+            _fixture_git(repo, "worktree", "add", "-q", "-b", branch, str(wt), check=True)
+            _fixture_git(wt, "commit", "-q", "--allow-empty", "-m", "work", check=True)
+            return wt.resolve()
+
+        def record_in(wt: Path, **over) -> Path:
+            where = (_fixture_git(wt, "rev-parse", "--git-path", "rails-flow/sweep", check=True).stdout or "").strip()
+            d = Path(where) if os.path.isabs(where) else wt / where
+            d.mkdir(parents=True, exist_ok=True)
+            head = head_of(wt)
+            rec = {"head": head, "tree": "t", "verdict": "green", "passed": 3, "failed": 0, "errored": 0, "not_applicable": 2, "manifest_problems": 0,
+                   "skips": 0, "at": "2026-10-10T00:00:00Z", "project_gates": "0"}
+            rec.update(over)
+            f = d / f"{head}.json"
+            f.write_text(json.dumps(rec), encoding="utf-8")
+            return f
+
+        lone = new_repo(td, "lone")
+        res = guard(lone, "gh pr ready 3")
+        expect("guard-pr-ready (#2143): with no other worktree there is nothing to name: refused, no hint", res, 2, "no sweep record")
+        check("guard-pr-ready (#2143): ...and the refusal does not claim a green record elsewhere", "exists for HEAD" not in res[1], blocked_lines(res[1]))
+        wt = add_worktree("wt2143", "feature/2143")
+        res = guard(repo, "gh pr ready 3")
+        check("guard-pr-ready (#2143): a worktree without a record is not named", str(wt) not in res[1], blocked_lines(res[1]))
+        rec_wt = record_in(wt)
+        res = guard(repo, "gh pr ready 3")
+        expect("guard-pr-ready (#2143): the main checkout is still REFUSED (nothing is loosened)", res, 2, f"no sweep record for HEAD {main_head[:12]}")
+        expect("guard-pr-ready (#2143): ...and the refusal names the worktree with a green record, the HEAD it covers and the one-command cd form", res, 2,
+               f"exists for HEAD {head_of(wt)[:12]} in the worktree {wt}", f"cd {wt} && gh pr ready 3", "ONE command")
+        expect("guard-pr-ready (#2143): ...and the form it names is ALLOWED", guard(repo, f"cd {wt} && gh pr ready 3"), 0)
+        expect("guard-pr-ready (#2143): the PR number the session typed is the one in the hint",
+               guard(repo, "gh pr ready 77"), 2, f"cd {wt} && gh pr ready 77")
+        rec_wt.unlink()
+        record_in(wt, verdict="red")
+        res = guard(repo, "gh pr ready 3")
+        check("guard-pr-ready (#2143): a RED record elsewhere is not offered as a way out", res[0] == 2 and str(wt) not in res[1], blocked_lines(res[1]))
+        record_in(wt, skips=1)
+        res = guard(repo, "gh pr ready 3")
+        check("guard-pr-ready (#2143): a record with a skip elsewhere is not offered either", res[0] == 2 and str(wt) not in res[1], blocked_lines(res[1]))
+        record_in(wt, head="e" * 40)
+        res = guard(repo, "gh pr ready 3")
+        check("guard-pr-ready (#2143): a record naming another head elsewhere is not offered", res[0] == 2 and str(wt) not in res[1], blocked_lines(res[1]))
+        record_in(wt, skips="0")
+        res = guard(repo, "gh pr ready 3")
+        check("guard-pr-ready (#2143): a record whose skips is not a number elsewhere is not offered", res[0] == 2 and str(wt) not in res[1], blocked_lines(res[1]))
+        record_in(wt)
+        spaced = add_worktree("wt 2143 spaced", "feature/2143-spaced")
+        record_in(spaced)
+        res = guard(repo, "gh pr ready 3")
+        check("guard-pr-ready (#2143): a worktree path the cd exception cannot accept is named WITHOUT the cd form",
+              f"from a session started in {str(spaced)!r}" in res[1] and f"cd {spaced}" not in res[1] and f"cd {wt} && gh pr ready 3" in res[1], blocked_lines(res[1]))
+        # #2293 review S1: the worktree list is read with -z, so a newline in a path is one path, shown escaped.
+        newline = add_worktree("wt\nnl", "feature/2143-newline")
+        record_in(newline)
+        res = guard(repo, "gh pr ready 3")
+        check("guard-pr-ready (#2143): a worktree path holding a NEWLINE is one path, shown escaped, never as raw text or cut in two",
+              repr(str(newline)) in res[1] and str(newline) not in res[1] and f"cd {wt} && gh pr ready 3" in res[1], blocked_lines(res[1]))
+        # #2293 review S2: the search is bounded.
+        res = run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(repo)}),
+                       env_extra={"RAILS_FLOW_HINT_MAX_WORKTREES": "1"})
+        check("guard-pr-ready (#2143): the hint reads at most RAILS_FLOW_HINT_MAX_WORKTREES worktrees and says it stopped",
+              res[0] == 2 and res[1].count("exists for HEAD") == 1 and "stopped after 1 worktrees" in res[1], blocked_lines(res[1]))
+        real_git = shutil.which("git", path=os.pathsep.join(d for d in os.environ.get("PATH", "").split(os.pathsep) if "git-shim" not in d)) or "git"   # not an installed shim: the stub would call itself
+        stubs = Path(td) / "stub-git"
+        stubs.mkdir()
+
+        def stub_git(body: str) -> None:
+            f = stubs / "git"
+            f.write_text("#!/bin/sh\n" + body + "\n", encoding="utf-8")
+            f.chmod(0o755)
+
+        stub_git(f'case "$*" in *--git-path*rails-flow*) [ -n "$RF_STUB_SLOW" ] && sleep 3;; esac\nexec {real_git} "$@"')
+        res = run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(repo)}),
+                       path_prefix=[stubs], env_extra={"RAILS_FLOW_HINT_BUDGET": "1", "RF_STUB_SLOW": "1"})
+        check("guard-pr-ready (#2143): the hint has a TIME budget: a git that answers too slowly names nothing, says it stopped, and the refusal stands",
+              res[0] == 2 and "exists for HEAD" not in res[1] and "stopped after 1 s" in res[1], blocked_lines(res[1]))
+        # #2295: a git that does not answer in time is a NAMED REFUSAL, not "not a repository" (which is allowed).
+        stub_git("sleep 5")
+        notrepo = Path(td) / "not-a-repo"
+        notrepo.mkdir()
+        slow = {"RAILS_FLOW_GIT_TIMEOUT": "1"}
+        res = run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(repo)}), path_prefix=[stubs], env_extra=slow)
+        expect("guard-pr-ready (#2295): a git that does not answer in time is a NAMED refusal, not an allow", res, 2, "did not answer within 1 s", "cannot be told")
+        # The same, where the TOP-LEVEL question is answered and only the questions after it stall: the timeout must come from `git()` itself (HEAD, the sweep directory), not from
+        # the top-level probe that raises first when every git call sleeps. A `git()` that read a timeout as "no answer" would say "HEAD ... could not be read" instead.
+        stub_git(f'case "$*" in *--show-toplevel*) exec {real_git} "$@";; esac\nsleep 5')
+        res = run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(repo)}), path_prefix=[stubs], env_extra=slow)
+        expect("guard-pr-ready (#2295): a git whose top level answers but whose later questions stall is a NAMED refusal from git() itself", res, 2, "did not answer within 1 s")
+        stub_git("sleep 5")
+        res = run_hook("guard-pr-ready.sh", cwd=notrepo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(notrepo)}), path_prefix=[stubs], env_extra=slow)
+        expect("guard-pr-ready (#2295): ...in a directory that may or may not be a repository too: nothing is guessed", res, 2, "did not answer within 1 s")
+        stub_git("echo 'fatal: not a git repository (or any of the parent directories): .git' >&2\nexit 128")
+        res = run_hook("guard-pr-ready.sh", cwd=notrepo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(notrepo)}), path_prefix=[stubs], env_extra=slow)
+        expect("guard-pr-ready (#2295): CONTROL: git ANSWERING `not a git repository` is still allowed", res, 0)
+        # The review of faef5db8: ANY git failure that is not that answer is no answer. A missing git, "dubious ownership" and a corrupt repository used to read as "not a repository".
+        hook_in = lambda where, env=None: run_hook("guard-pr-ready.sh", cwd=where, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(where)}),  # noqa: E731
+                                                  path_prefix=[stubs], env_extra=env or {})
+        # A git that is not installed: a PATH of links to the tools the hook needs and nothing else. (An executable with a missing interpreter would not do: the search goes on to the next PATH entry.)
+        minbin = Path(td) / "minbin"
+        minbin.mkdir()
+        clean_path = os.pathsep.join(d for d in os.environ.get("PATH", "").split(os.pathsep) if "git-shim" not in d)
+        for tool in ("bash", "python3", "env", "tr", "sed", "grep", "awk", "cat", "dirname", "head", "tail", "sort", "uname", "mktemp", "cut", "readlink", "wc", "printf", "basename", "rm", "ls"):
+            found = shutil.which(tool, path=clean_path)
+            if found:
+                (minbin / tool).symlink_to(found)
+        expect("guard-pr-ready (#2295): a git that is not installed is a NAMED refusal, not `not a repository`",
+               run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(repo)}), env_extra={"PATH": str(minbin)}),
+               2, "could not say whether", "cannot be told")
+        stub_git("echo \"fatal: detected dubious ownership in repository at '/x'\" >&2\nexit 128")
+        expect("guard-pr-ready (#2295): `dubious ownership` is a NAMED refusal, not `not a repository`", hook_in(repo), 2, "could not say whether", "cannot be told")
+        stub_git("echo 'error: object file .git/objects/ab/cdef is empty' >&2\nexit 128")
+        expect("guard-pr-ready (#2295): a git failing with any other error (a corrupt repository) is a NAMED refusal", hook_in(repo), 2, "could not say whether", "cannot be told")
+        shutil.rmtree(stubs, ignore_errors=True)
+        stubs.mkdir()
+        expect("guard-pr-ready (#2295): CONTROL: a REAL directory that is not a repository is still allowed", run_hook(
+            "guard-pr-ready.sh", cwd=notrepo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(notrepo)})), 0)
+        # A repository in force only through its sweep directory, whose git cannot say where that directory is: judged and refused, not skipped as not in force.
+        only_dir = new_repo(td, "sweepdir-only", marker=False)
+        (only_dir / ".git" / "rails-flow" / "sweep").mkdir(parents=True)
+        stub_git(f'case "$*" in *--git-path*) echo "fatal: cannot read the git directory" >&2; exit 128;; esac\nexec {real_git} "$@"')
+        expect("guard-pr-ready (#2295): a repository in force by its sweep directory, whose git cannot say where it is, is refused", hook_in(only_dir), 2, "could not be read")
+        # S3: ONE time budget for the whole run: five-second git calls under a six-second budget end in a named refusal well before the 15 s the hook is given.
+        stub_git(f'sleep 5\nexec {real_git} "$@"')
+        began = time.monotonic()
+        res = hook_in(repo, {"RAILS_FLOW_HOOK_BUDGET": "6", "RAILS_FLOW_GIT_TIMEOUT": "20"})
+        took = time.monotonic() - began
+        check("guard-pr-ready (#2295): ONE time budget bounds every git call of a run, so a slow git ends in a named refusal before the hook's own deadline",
+              res[0] == 2 and ("budget of this check is spent" in res[1] or "did not answer within" in res[1] or "could not say whether" in res[1]) and took < 12, f"rc {res[0]}, {took:.0f} s, {blocked_lines(res[1])}")
+        shutil.rmtree(stubs, ignore_errors=True)
 
     with scratch_dir() as td:
         plain = new_repo(td, "plain", marker=False)
@@ -6642,7 +6884,7 @@ def normalizer_linear_fixtures() -> None:
 
 
 GROUPS = {
-    "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
+    "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures, "guard_plan": guard_plan_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
     "guard_bash_db_reset": guard_bash_db_reset_fixtures,
@@ -6675,7 +6917,7 @@ GROUPS = {
 # killed before printing. MEASURED alone on an origin/dev export: guard_bash 196 s wall (137 CPU-s), the rest of part a 273 s (115 CPU-s,
 # 623 checks). guard_bash is its own part so each fits its budget; no budget was raised.
 PARTS = {
-    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash_db_reset", "guard_claims", "guard_claims_pipe",
+    "a": ["stop_gate", "guard_lane", "guard_plan", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash_db_reset", "guard_claims", "guard_claims_pipe",
           "ci_verdict_hint", "session_end", "timeout", "hostile_env"],
     "b": ["release_gate", "release_gate_effects", "release_gate_large"],
     "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
