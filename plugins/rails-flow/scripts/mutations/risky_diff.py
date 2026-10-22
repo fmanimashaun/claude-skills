@@ -68,20 +68,20 @@ GUARD = Guard(
         ),
         Mutation(
             "an override with a short reason is accepted",
-            "len(m.group(2)) >= advisory_scope.REASON_MIN and ",
+            " and len(m.group(2)) >= advisory_scope.REASON_MIN",
             "",
             "BLOCKED with an override whose reason is short is refused",
         ),
         Mutation(
             "an override with a filler reason is accepted",
-            "not advisory_scope._filler(m.group(2)) and ",
-            "",
+            "and not advisory_scope._filler(m.group(2)) and ISSUE_CHECK(",
+            "and ISSUE_CHECK(",
             "BLOCKED with an override whose reason is filler is refused",
         ),
         Mutation(
             "an override citing an issue nobody can read is accepted",
-            " and advisory_scope.ISSUE_CHECK(m.group(3)):",
-            ":",
+            " and ISSUE_CHECK(root, m.group(3))):",
+            "):",
             "BLOCKED with an override citing an issue that cannot be read is refused",
         ),
         Mutation(
@@ -113,6 +113,42 @@ GUARD = Guard(
             'VERDICT = re.compile(r"^VERDICT:\\s*(CLEAN|BLOCKED)\\s*$")',
             'VERDICT = re.compile(r".*VERDICT:\\s*(CLEAN|BLOCKED)\\s*$")',
             "a verdict quoted inside a sentence",
+        ),
+        Mutation(
+            "the record is derived with the prefix dropped (feature/x is x), so the gate looks where no agent writes",
+            '    return out.replace("/", "-")',
+            '    return out.split("/", 1)[-1].replace("/", "-")',
+            "record derived from the branch",
+        ),
+        Mutation(
+            "a VERDICT line inside a fenced example decides the verdict",
+            "    lines = unfenced(text)\n    heads",
+            "    lines = text.splitlines()\n    heads",
+            "a VERDICT line inside a fenced block is not the verdict",
+        ),
+        Mutation(
+            "an Override line inside a fenced example grants the override",
+            '        lines = unfenced(path.read_text(encoding="utf-8"))',
+            '        lines = path.read_text(encoding="utf-8").splitlines()',
+            "an override inside a fenced block grants nothing",
+        ),
+        Mutation(
+            "an override whose who has no letters is accepted",
+            "sum(c.isalpha() for c in m.group(1)) >= WHO_MIN_LETTERS and ",
+            "",
+            "BLOCKED with an override whose who has one letter is refused",
+        ),
+        Mutation(
+            "a pull request number counts as the follow-up issue",
+            ' and "/issues/" in proc.stdout',
+            "",
+            "a pull request number is no issue",
+        ),
+        Mutation(
+            "the issue is looked up in the caller's repository, not the one at --root",
+            "timeout=30, cwd=root)",
+            "timeout=30)",
+            "it is read in the repository at --root",
         ),
     ),
 )

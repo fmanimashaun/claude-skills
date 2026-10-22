@@ -12,8 +12,9 @@ Exit: 0 not risky, or risky with a recorded `VERDICT: CLEAN` for this HEAD, or r
 
 HOW IT BINDS `gh pr ready` (#2264, the owner's rule that everything must be enforced). It is registered in `checks.json` (`adversary-review`),
 so `project_gates.py` runs it, and `gh pr ready` is refused without a green sweep record for HEAD (`guard-pr-ready.sh`, #1565). With no
-`--record` the record is `docs/evidence/reviews/prs/<slug>/adversary.md`, where `<slug>` is the branch name without its first prefix
-(`feature/x` is `x`), as the commands derive it. A branch with no name (a detached HEAD) cannot say where its record is: exit 2.
+`--record` the record is `docs/evidence/reviews/prs/<branch-slug>/adversary.md`, where `<branch-slug>` is the branch name with each `/`
+replaced by `-`, the prefix KEPT (`feature/x` is `feature-x`), the form `pr-reviewer`, `spec-reviewer` and the commands document and
+agents already write. A branch with no name (a detached HEAD) cannot say where its record is: exit 2.
 
 WHY (#1819, the owner's rule of 2026-10-08). Fable is the model for adversarial attack passes, the ones that try to break a change.
 Retask sessions ran one by hand and recorded a "Fable adversary HOLDS" verdict on several PRs, so it depended on someone remembering.
@@ -35,8 +36,9 @@ THE RECORD. `--record` names the file the pass leaves. It counts only if it has 
 CURRENT HEAD (a record for an earlier commit says nothing about this one) and ends with a line `VERDICT: CLEAN` or
 `VERDICT: BLOCKED` (the LAST such line decides). BLOCKED is recorded and reported, never swallowed: the human decides, by a line
 `Override: <who> | <reason, 20+ characters, not filler> | #<issue>` in the same record (the form `advisory_scope.py` takes for RETHINK, #2262):
-who made the call, why it stands, and an issue `gh` can read that carries the follow-up. A new commit makes the record stale, so an
-override is for one HEAD.
+who made the call (at least two letters), why it stands, and an ISSUE (not a pull request) that `gh` can read in this repository, which carries
+the follow-up. A new commit makes the record stale, so an override is for one HEAD. Lines inside a fenced code block are never read: a
+pasted example of the format must not decide a verdict, name a head or grant an override.
 
 LIMITS. This is a classifier over paths and added/removed lines, in the spirit of `classify_door.py`: a trigger is not proof of
 a defect, and a risky change in a place the lists do not know is not caught. It cannot make a model follow the agent's
@@ -104,6 +106,20 @@ def head_sha(root: Path) -> str:
     return proc.stdout.strip()
 
 
+def unfenced(text: str) -> list[str]:
+    """The lines of `text` outside fenced code blocks (``` or ~~~; an unclosed fence runs to the end, so what follows it is refused, never read)."""
+    out: list[str] = []
+    fence = ""
+    for line in text.splitlines():
+        mark = line.strip()[:3]
+        if mark in ("```", "~~~"):
+            fence = "" if fence == mark else (fence or mark)
+            continue
+        if not fence:
+            out.append(line)
+    return out
+
+
 def read_record(path: Path, head: str) -> tuple[str, str]:
     """(kind, detail): kind is CLEAN or BLOCKED for a usable record of THIS head, else missing / no-head / stale / no-verdict."""
     try:
@@ -112,7 +128,7 @@ def read_record(path: Path, head: str) -> tuple[str, str]:
         return "missing", f"no record at {path}"
     except (OSError, UnicodeDecodeError) as exc:
         return "no-verdict", f"{path} could not be read: {exc}"
-    lines = text.splitlines()
+    lines = unfenced(text)
     heads = [m.group(1) for line in lines if (m := HEAD_LINE.match(line.strip()))]
     if not heads:
         return "no-head", f"{path} has no `Head: <sha>` line, so it cannot be tied to this commit"
@@ -124,25 +140,46 @@ def read_record(path: Path, head: str) -> tuple[str, str]:
     return verdicts[-1], f"{path}: VERDICT: {verdicts[-1]}"
 
 
-def override_of(path: Path) -> tuple[str, str] | None:
-    """(who, #issue) of the first valid `Override:` line in the record, else None. A short or filler reason, a missing issue or an issue
-    `gh` cannot read is no override: the decision has to name who, why and where the follow-up lives."""
+def issue_readable(root: Path, ref: str) -> bool:
+    """Whether `#n` is an ISSUE `gh` can read in the repository at `root` (not the working directory's): a pull request number reads too, and is no
+    follow-up. False when it cannot be read (fails closed)."""
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        proc = subprocess.run(["gh", "issue", "view", ref.lstrip("#"), "--json", "number,url"], capture_output=True, text=True, timeout=30, cwd=root)
+        return proc.returncode == 0 and "/issues/" in proc.stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+ISSUE_CHECK = issue_readable   # the selftest swaps in a stub, so it never calls the network
+WHO_MIN_LETTERS = 2
+
+
+def override_of(path: Path, root: Path) -> tuple[str, str] | None:
+    """(who, #issue) of the first valid `Override:` line in the record, else None. `who` with fewer than two letters, a short or filler reason, a
+    missing issue, a pull request number or an issue `gh` cannot read is no override: the decision has to name who, why and where the follow-up lives."""
+    try:
+        lines = unfenced(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError):
         return None
     for line in lines:
         m = advisory_scope.OVERRIDE_RE.match(line) if line.strip().lower().startswith("override") else None
-        if m and len(m.group(2)) >= advisory_scope.REASON_MIN and not advisory_scope._filler(m.group(2)) and advisory_scope.ISSUE_CHECK(m.group(3)):
+        if (m and sum(c.isalpha() for c in m.group(1)) >= WHO_MIN_LETTERS and len(m.group(2)) >= advisory_scope.REASON_MIN
+                and not advisory_scope._filler(m.group(2)) and ISSUE_CHECK(root, m.group(3))):
             return m.group(1), m.group(3)
     return None
 
 
+def branch_slug(root: Path) -> str:
+    """The branch name with each `/` replaced by `-`, the prefix kept (`feature/x` is `feature-x`); "" on a detached HEAD."""
+    out = subprocess.run(["git", "-C", str(root), "symbolic-ref", "--short", "-q", "HEAD"], capture_output=True, text=True).stdout.strip()
+    return out.replace("/", "-")
+
+
 def default_record(root: Path) -> Path:
-    """`docs/evidence/reviews/prs/<slug>/adversary.md` for the branch HEAD is on; Unusable when HEAD is on no branch."""
-    slug = advisory_scope.slug_of(root)
+    """`docs/evidence/reviews/prs/<branch-slug>/adversary.md` for the branch HEAD is on; Unusable when HEAD is on no branch."""
+    slug = branch_slug(root)
     if not slug:
-        raise Unusable("HEAD is on no branch, so there is no <slug> to name the record (pass --record)")
+        raise Unusable("HEAD is on no branch, so there is no <branch-slug> to name the record (pass --record)")
     return Path(RECORD_DIR) / slug / "adversary.md"
 
 
@@ -154,7 +191,7 @@ def resolve_base(root: Path, base: str) -> str:
     return base
 
 
-def decide(reasons: list[str], record: Path | None, head: str | None) -> tuple[int, list[str]]:
+def decide(reasons: list[str], record: Path | None, head: str | None, root: Path = Path(".")) -> tuple[int, list[str]]:
     """(exit code, lines to print): the whole decision, apart from reading the diff."""
     if not reasons:
         return 0, ["NOT RISKY -- nothing in the diff touches auth, access, parsing or privacy by these rules"]
@@ -165,7 +202,7 @@ def decide(reasons: list[str], record: Path | None, head: str | None) -> tuple[i
     if kind == "CLEAN":
         return 0, [f"RISKY ({len(reasons)} reason(s)), adversary pass recorded: {detail}", *body]
     if kind == "BLOCKED":
-        decided = override_of(record)
+        decided = override_of(record, root)
         if decided:
             return 0, [f"RISKY ({len(reasons)} reason(s)), adversary pass recorded BLOCKED and overridden by {decided[0]} ({decided[1]}): {detail}", *body]
         return 1, [f"RISKY ({len(reasons)} reason(s)), adversary pass recorded BLOCKED -- a finding for a human to decide: fix it and run the pass on the new HEAD, "
@@ -189,7 +226,7 @@ def main(argv: list[str]) -> int:
     except Unusable as exc:
         print(f"UNUSABLE: {exc} -- an unclassified diff is not 'not risky'; run the adversary pass", file=sys.stderr)
         return 2
-    code, lines = decide(reasons, (a.root / record) if record and not record.is_absolute() else record, head)
+    code, lines = decide(reasons, (a.root / record) if record and not record.is_absolute() else record, head, a.root)
     print("\n".join(lines))
     return code
 
@@ -313,8 +350,14 @@ def selftest() -> int:
         recorded("a BLOCKED record with no override is a finding for a human, exit 1: never 0, and never 3, which the project gates read as n/a (#1873)",
                  f"Head: {head}\nVERDICT: BLOCKED\n", 1, "human")
         recorded("the LAST verdict decides: BLOCKED after CLEAN is BLOCKED", f"Head: {head}\nVERDICT: CLEAN\nVERDICT: BLOCKED\n", 1, "BLOCKED")
+        recorded("a record for another commit is stale (exit 1)", f"Head: {'0' * 40}\nVERDICT: CLEAN\n", 1, "stale")
+        recorded("a record with no Head line is refused (exit 1)", "VERDICT: CLEAN\n", 1, "no-head")
+        recorded("a record with no verdict line is refused (exit 1)", f"Head: {head}\nlooks fine\n", 1, "no-verdict")
+        recorded("a verdict quoted inside a sentence is not a verdict line", f"Head: {head}\nthe pass said VERDICT: CLEAN\n", 1, "no-verdict")
+        recorded("an empty record is refused (exit 1)", "", 1)
         # THE OVERRIDE (#2264): who decided, why (20+ characters, not filler), and an issue that can be read. Only #9 "exists" here.
-        saved_check, advisory_scope.ISSUE_CHECK = advisory_scope.ISSUE_CHECK, (lambda ref: ref == "#9")
+        global ISSUE_CHECK
+        saved_check, ISSUE_CHECK = ISSUE_CHECK, (lambda where, ref: ref == "#9")
         try:
             blocked = f"Head: {head}\nVERDICT: BLOCKED\n"
             recorded("BLOCKED with a full override (who, a real reason, a readable issue) passes", blocked + "Override: owner | the finding is accepted for this release, see the issue | #9\n", 0, "overridden by owner")
@@ -325,18 +368,45 @@ def selftest() -> int:
             recorded("BLOCKED with an override that names nobody is refused", blocked + "Override:  | the finding is accepted for this release | #9\n", 1)
             recorded("an override is not a verdict: a record with only an override line is refused", f"Head: {head}\nOverride: owner | the finding is accepted for this release | #9\n", 1, "no-verdict")
             recorded("a stale record's override is no override (the record is for another head)", f"Head: {'0' * 40}\nVERDICT: BLOCKED\nOverride: owner | the finding is accepted for this release | #9\n", 1, "stale")
+            recorded("BLOCKED with an override whose who has one letter is refused", blocked + "Override: x | the finding is accepted for this release | #9\n", 1)
+            recorded("BLOCKED with an override whose who has no letters is refused", blocked + "Override: 12 | the finding is accepted for this release | #9\n", 1)
+            # a fenced example never decides anything (c2 review, suggestion 3)
+            recorded("a VERDICT line inside a fenced block is not the verdict", f"Head: {head}\n```\nVERDICT: CLEAN\n```\n", 1, "no-verdict")
+            recorded("a fenced CLEAN after a real BLOCKED does not turn it CLEAN", f"Head: {head}\nVERDICT: BLOCKED\n~~~\nVERDICT: CLEAN\n~~~\n", 1, "BLOCKED")
+            recorded("a Head line inside a fenced block is no Head", f"```\nHead: {head}\n```\nVERDICT: CLEAN\n", 1, "no-head")
+            recorded("an override inside a fenced block grants nothing", blocked + "```\nOverride: owner | the finding is accepted for this release | #9\n```\n", 1)
+            recorded("an unclosed fence hides everything after it", f"Head: {head}\n```\nVERDICT: CLEAN\n", 1, "no-verdict")
+            recorded("text after a closed fence is read again", f"Head: {head}\n```\nexample\n```\nVERDICT: CLEAN\n", 0)
         finally:
-            advisory_scope.ISSUE_CHECK = saved_check
+            ISSUE_CHECK = saved_check
         recorded("the LAST verdict decides: CLEAN after BLOCKED is CLEAN", f"Head: {head}\nVERDICT: BLOCKED\nVERDICT: CLEAN\n", 0)
-        recorded("a record for another commit is stale (exit 1)", f"Head: {'0' * 40}\nVERDICT: CLEAN\n", 1, "stale")
-        recorded("a record with no Head line is refused (exit 1)", "VERDICT: CLEAN\n", 1, "no-head")
-        recorded("a record with no verdict line is refused (exit 1)", f"Head: {head}\nlooks fine\n", 1, "no-verdict")
-        recorded("a verdict quoted inside a sentence is not a verdict line", f"Head: {head}\nthe pass said VERDICT: CLEAN\n", 1, "no-verdict")
-        recorded("an empty record is refused (exit 1)", "", 1)
         code, lines = decide([], rec, head)
         expect("a diff that is not risky needs no record (exit 0), even with a bad one on disk", code == 0, (code, lines))
         code, lines = decide(risky, None, None)
         expect("a risky diff with no --record asks for the pass (exit 1)", code == 1, (code, lines))
+
+        # THE ISSUE CHECK itself (c2 review, suggestion 2): an ISSUE in the repository at --root, not a pull request, not the cwd's repository.
+        import os, stat
+        bin_dir = root / "stub-bin"
+        bin_dir.mkdir()
+        stub = bin_dir / "gh"
+        stub.write_text('#!/bin/sh\npwd > "$STUB_CWD"\ncase "$3" in\n  9) echo \'{"number":9,"url":"https://github.com/o/r/issues/9"}\' ;;\n'
+                        '  10) echo \'{"number":10,"url":"https://github.com/o/r/pull/10"}\' ;;\n  *) exit 1 ;;\nesac\n')
+        stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+        saved_path, saved_cwd = os.environ.get("PATH", ""), os.environ.get("STUB_CWD")
+        os.environ["PATH"], os.environ["STUB_CWD"] = f"{bin_dir}:{saved_path}", str(root / "stub-cwd.txt")
+        try:
+            expect("an issue gh can read counts", issue_readable(root, "#9"))
+            expect("it is read in the repository at --root, not the caller's working directory",
+                   (root / "stub-cwd.txt").read_text().strip() == str(root.resolve()), (root / "stub-cwd.txt").read_text())
+            expect("a pull request number is no issue (gh reads it, and it carries no follow-up)", not issue_readable(root, "#10"))
+            expect("an issue gh cannot read does not count", not issue_readable(root, "#404"))
+        finally:
+            os.environ["PATH"] = saved_path
+            if saved_cwd is None:
+                os.environ.pop("STUB_CWD", None)
+            else:
+                os.environ["STUB_CWD"] = saved_cwd
 
         # THE CLI, end to end on a real repo
         (root / "app/models/session.rb").write_text("class Session\nend\n")
@@ -344,8 +414,8 @@ def selftest() -> int:
         head2 = head_sha(root)
         rec.parent.mkdir(parents=True, exist_ok=True)
         base = [sys.executable, str(Path(__file__).resolve()), "--root", str(root), "--base", "dev"]
-        # with --record, and (#2264) with NO flag: the record is derived from the branch, feature/y is `y`, so `rec` (…/prs/x/…) is NOT it
-        derived = root / "docs/evidence/reviews/prs/y/adversary.md"
+        # with --record, and (#2264) with NO flag: the record is derived from the branch, feature/y is `feature-y`, so `rec` (…/prs/x/…) is NOT it
+        derived = root / "docs/evidence/reviews/prs/feature-y/adversary.md"   # the documented <branch-slug>: `/` becomes `-`, the prefix kept
         for label, text, want in (("no record", None, 1), ("a CLEAN record for the new HEAD", f"Head: {head2}\nVERDICT: CLEAN\n", 0),
                                   ("a record for the OLD head", f"Head: {head}\nVERDICT: CLEAN\n", 1),
                                   ("a BLOCKED record with no override", f"Head: {head2}\nVERDICT: BLOCKED\n", 1)):
@@ -361,7 +431,14 @@ def selftest() -> int:
         rec.unlink(missing_ok=True)
         derived.unlink(missing_ok=True)
         done = subprocess.run([*base], capture_output=True, text=True)
-        expect("CLI: the record owed is named after the branch (…/prs/y/adversary.md), not left to the caller", "prs/y/adversary.md" in done.stdout, done.stdout)
+        expect("CLI: the record owed is named after the branch (…/prs/feature-y/adversary.md), not left to the caller", "prs/feature-y/adversary.md" in done.stdout, done.stdout)
+        # the OLD form (prefix dropped) is not where the documented agents write: a CLEAN record there is not found
+        old_form = root / "docs/evidence/reviews/prs/y/adversary.md"
+        old_form.parent.mkdir(parents=True, exist_ok=True)
+        old_form.write_text(f"Head: {head2}\nVERDICT: CLEAN\n")
+        done = subprocess.run([*base], capture_output=True, text=True)
+        expect("CLI: a record at the prefix-dropped path (prs/y/) is not the record: exit 1", done.returncode == 1, (done.returncode, done.stdout))
+        old_form.unlink()
         expect("CLI: a risky diff with no record and no flag exits 1 and says where the record goes", done.returncode == 1, (done.returncode, done.stdout))
         # THE SWEEP (#2264): the check is REGISTERED, so `project_gates.py` runs it. Run the registered row's own command in the fixture:
         # a risky diff with no record must turn it red (exit 1), and a CLEAN record for HEAD must turn it green.

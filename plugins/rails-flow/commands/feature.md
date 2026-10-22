@@ -56,7 +56,7 @@ way round.
 **If the issue is a slice** (its body opens `Slice S<n> of <spec>`, or `Slice S<n>.` when the plan
 named no source; filed by `/rails-flow:slice`,
 #1369), **its `AC-n` lines are this unit's criteria**, copied verbatim into
-`docs/product/acceptance/<branch-slug>.md`. They are the criteria the owner approved for this slice
+`docs/product/acceptance/<unit-slug>.md`. They are the criteria the owner approved for this slice
 alone. The spec then supplies only the `Seam:`, the Out of scope and the decisions, never more
 criteria; turning every story in the spec into criteria would build other slices' work on this
 branch and break the order `/slice` filed.
@@ -78,7 +78,7 @@ schema impact. Then produce a short plan:
 
 ### Acceptance criteria — write them BEFORE any code
 
-Every unit gets criteria, recorded in `docs/product/acceptance/<branch-slug>.md` (the layout's home for WHAT we are building; a pre-layout `docs/product/acceptance/` is still recognised by the gate, #910) — the slug is the
+Every unit gets criteria, recorded in `docs/product/acceptance/<unit-slug>.md` (the layout's home for WHAT we are building; a pre-layout `docs/product/acceptance/` is still recognised by the gate, #910) — the slug is the
 branch name after `feature/`, with any remaining `/` flattened to `-` (so `feature/team/foo`
 → `docs/product/acceptance/team-foo.md`). One `##` section per unit:
 
@@ -316,6 +316,10 @@ gh pr create --base <base> --title "feat: <summary>" --body "<the PR Documentati
 ```
 
 ## Phase 6 — Merge gate (non-skippable)
+
+**`<branch-slug>`**, used for every review record below (`docs/evidence/reviews/prs/<branch-slug>/…`), is the branch name with each `/` replaced by
+`-`, the prefix kept: `feature/team/foo` is `feature-team-foo`. It is NOT the `<unit-slug>` of the criteria files (the name after `feature/`).
+`risky_diff.py` derives it the same way, so a record written at that path is the one the gate looks for (#2264).
 
 - If the code-review-graph CLI is present with a built graph
   (`command -v code-review-graph && [ -d .code-review-graph ]`): run its `review-pr`
