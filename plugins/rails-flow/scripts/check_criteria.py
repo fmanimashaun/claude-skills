@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Reject acceptance criteria that cannot fail, and specs that do not prove them.
 
-Run:  python3 check_criteria.py docs/product/acceptance/<branch-slug>.md
+Run:  python3 check_criteria.py docs/product/acceptance/<unit-slug>.md
       python3 check_criteria.py docs/product/acceptance/<slug>.md --specs spec
       python3 check_criteria.py --selftest
 
@@ -388,7 +388,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Validate acceptance criteria, and that specs cite them."
     )
-    parser.add_argument("criteria_path", nargs="?", help="docs/product/acceptance/<branch-slug>.md")
+    parser.add_argument("criteria_path", nargs="?", help="docs/product/acceptance/<unit-slug>.md")
     parser.add_argument(
         "--specs", metavar="DIR",
         help="also require every AC-n to be cited by a spec under DIR (usually `spec`)",
