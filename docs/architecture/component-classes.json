@@ -6007,6 +6007,19 @@
    "via": "runs check_criteria.py"
   },
   {
+   "class": "mixed",
+   "issue": 2183,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-flow/checks.json#adversary-review",
+   "plugin": "rails-flow",
+   "proven": false,
+   "rails_lines": 54,
+   "registered": [],
+   "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
+   "type": "gate",
+   "via": "runs risky_diff.py"
+  },
+  {
    "class": "rails",
    "issue": 2177,
    "nextjs_lines": 0,
@@ -7482,7 +7495,7 @@
    "path": "plugins/rails-flow/checks.json",
    "plugin": "rails-flow",
    "proven": false,
-   "rails_lines": 6,
+   "rails_lines": 7,
    "registered": [],
    "seam": "asks the stack detector (#2163) for the stack's commands, paths and source globs instead of hardwiring Rails",
    "type": "support",

@@ -348,9 +348,11 @@ gh pr create --base <base> --title "feat: <summary>" --body "<the PR Documentati
   A diff that touches authentication, sessions, access rules, input parsing or a privacy filter needs one **adversarial pass** before
   the PR is marked ready: exit 1 means run the `adversary` agent (it runs on Fable, the owner's model for attack passes) with the
   printed reasons and the base, **save its answer verbatim** to that path (its first line is `Head: <sha>`, its last is
-  `VERDICT: CLEAN` or `VERDICT: BLOCKED`), and run the check again. Exit 0 continues. Exit 3 means the pass recorded BLOCKED: that is
-  a finding for the user, so stop, quote the findings and hand the merge over; it is not an automatic stop of the work, and you do
-  not decide its disposition. Exit 2 means it could not classify: stop. Mark the PR ready with `risky_diff.py ... && gh pr ready`,
+  `VERDICT: CLEAN` or `VERDICT: BLOCKED`), and run the check again. Exit 0 continues. A BLOCKED record also exits 1 (never 3: the project
+  gates read 3 as not applicable, #1873): that is a finding for the user, so stop, quote the findings and hand the merge over; you do not decide
+  its disposition. Only the user's line `Override: <who> | <reason, 20+ characters> | #<issue>` in that record lets it through. Exit 2 means it
+  could not classify: stop. The check is registered as `adversary-review` (`checks.json`), so the sweep `gh pr ready` requires fails without it
+  (#2264); `risky_diff.py` with no `--record` finds the record from the branch name. Mark the PR ready with `risky_diff.py ... && gh pr ready`,
   never `;`. A record is tied to the commit it names, so a push after the pass needs a new one.
 - On CLEAN, **verify the threat model** when the change adds or edits one (`docs/security/threat-models/<slug>.md`, #2119):
   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_security_review.py"`. `security-auditor` is MANDATORY then, not "if auth changed": give it the model and the

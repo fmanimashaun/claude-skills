@@ -9,7 +9,8 @@ GUARD = Guard(
     name="risky_diff",
     subject="scripts/risky_diff.py",
     selftest="scripts/risky_diff.py",   # --selftest lives in the module itself
-    needs=("scripts/fixture_git.py", "scripts/classify_door.py"),   # its git goes through fixture_git (#1588); it imports classify_door's diff
+    needs=("scripts/fixture_git.py", "scripts/classify_door.py", "scripts/advisory_scope.py", "scripts/check_threat_model.py", "scripts/detect_stack.py", "checks.json"),
+    # its git goes through fixture_git (#1588); it imports classify_door's diff, and advisory_scope's override line, filler test, issue check and slug (#2264)
     mutations=(
         Mutation(
             "a spec or test file counts as risky, so every spec that parses JSON holds the PR",
@@ -54,10 +55,52 @@ GUARD = Guard(
             "a record with no Head line is refused",
         ),
         Mutation(
-            "a BLOCKED verdict exits 0, so the finding never reaches the human",
-            "        return 3, [f\"RISKY",
-            "        return 0, [f\"RISKY",
-            "a BLOCKED record is a finding for a human",
+            "a BLOCKED verdict with no override exits 0, so the finding never reaches the human",
+            "        return 1, [f\"RISKY ({len(reasons)} reason(s)), adversary pass recorded BLOCKED -- a finding",
+            "        return 0, [f\"RISKY ({len(reasons)} reason(s)), adversary pass recorded BLOCKED -- a finding",
+            "a BLOCKED record with no override is a finding for a human",
+        ),
+        Mutation(
+            "a BLOCKED verdict exits 3 again, which the project gates read as not applicable (#1873)",
+            "        return 1, [f\"RISKY ({len(reasons)} reason(s)), adversary pass recorded BLOCKED -- a finding",
+            "        return 3, [f\"RISKY ({len(reasons)} reason(s)), adversary pass recorded BLOCKED -- a finding",
+            "a BLOCKED record with no override is a finding for a human",
+        ),
+        Mutation(
+            "an override with a short reason is accepted",
+            "len(m.group(2)) >= advisory_scope.REASON_MIN and ",
+            "",
+            "BLOCKED with an override whose reason is short is refused",
+        ),
+        Mutation(
+            "an override with a filler reason is accepted",
+            "not advisory_scope._filler(m.group(2)) and ",
+            "",
+            "BLOCKED with an override whose reason is filler is refused",
+        ),
+        Mutation(
+            "an override citing an issue nobody can read is accepted",
+            " and advisory_scope.ISSUE_CHECK(m.group(3)):",
+            ":",
+            "BLOCKED with an override citing an issue that cannot be read is refused",
+        ),
+        Mutation(
+            "the record is not derived from the branch, so the registered check asks for a pass nobody can name",
+            "record = a.record if a.record else (default_record(a.root) if reasons else None)",
+            "record = a.record",
+            "record derived from the branch",
+        ),
+        Mutation(
+            "a detached HEAD reads as a branch named nothing, so the record path is prs//adversary.md and the answer is 1, not 2",
+            "    if not slug:\n        raise Unusable(",
+            "    if False:\n        raise Unusable(",
+            "a detached HEAD cannot name its record",
+        ),
+        Mutation(
+            "a base that exists only as origin/<base> is no longer tried, so a CI checkout cannot classify",
+            '    for candidate in (base, f"origin/{base}"):',
+            "    for candidate in (base,):",
+            "a base that exists only as origin/<base> still resolves",
         ),
         Mutation(
             "the FIRST verdict decides, so a later BLOCKED is not seen",
