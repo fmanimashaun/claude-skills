@@ -85,10 +85,10 @@ GUARD = Guard(
             "a RED record is refused",
         ),
         Mutation(
-            "a repository that does not run project_gates is judged anyway",
+            "a repository that declared an opt-out, with a reason, is judged anyway",
             "    if not root or not in_force(root):\n",
             "    if not root:\n",
-            "NOT in force (no marker, no workflow, no record dir)",
+            "an opt-out WITH a reason leaves the repository alone",
         ),
         Mutation(
             'the refusal never names the worktree with a green record',
@@ -154,7 +154,7 @@ GUARD = Guard(
             'a git that does not answer in time reads as "not a repository" again',
             'raise GitTimeout(f"`git {\' \'.join(args[:3])}` in {where} did not answer within {limit:g} s") from exc',
             'return None',
-            'a git that does not answer in time is a NAMED refusal',
+            'a git whose top level answers but whose later questions stall is a NAMED refusal from git() itself',
         ),
         Mutation(
             'the hook entry does not catch a git that gave no answer',
@@ -187,9 +187,9 @@ GUARD = Guard(
             'a git that is not installed is a NAMED refusal',
         ),
         Mutation(
-            'a repository whose git cannot say where its sweep directory is counts as not in force',
-            '    if d is None:\n        return True       # git cannot say',
-            '    if d is None:\n        return False      # git cannot say',
+            'a repository whose git cannot say where its sweep directory is is allowed instead of refused by name',
+            '    if d is None:\n        return refuse(f"the git directory of {root} could not be read.", args)',
+            '    if d is None:\n        return 0',
             'whose git cannot say where it is',
         ),
         Mutation(

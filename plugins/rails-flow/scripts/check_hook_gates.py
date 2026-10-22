@@ -6449,6 +6449,12 @@ def guard_pr_ready_fixtures() -> None:
         slow = {"RAILS_FLOW_GIT_TIMEOUT": "1"}
         res = run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(repo)}), path_prefix=[stubs], env_extra=slow)
         expect("guard-pr-ready (#2295): a git that does not answer in time is a NAMED refusal, not an allow", res, 2, "did not answer within 1 s", "cannot be told")
+        # The same, where the TOP-LEVEL question is answered and only the questions after it stall: the timeout must come from `git()` itself (HEAD, the sweep directory), not from
+        # the top-level probe that raises first when every git call sleeps. A `git()` that read a timeout as "no answer" would say "HEAD ... could not be read" instead (#2304).
+        stub_git(f'case "$*" in *--show-toplevel*) exec {real_git} "$@";; esac\nsleep 5')
+        res = run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(repo)}), path_prefix=[stubs], env_extra=slow)
+        expect("guard-pr-ready (#2295): a git whose top level answers but whose later questions stall is a NAMED refusal from git() itself", res, 2, "did not answer within 1 s")
+        stub_git("sleep 5")
         res = run_hook("guard-pr-ready.sh", cwd=notrepo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(notrepo)}), path_prefix=[stubs], env_extra=slow)
         expect("guard-pr-ready (#2295): ...in a directory that may or may not be a repository too: nothing is guessed", res, 2, "did not answer within 1 s")
         stub_git("echo 'fatal: not a git repository (or any of the parent directories): .git' >&2\nexit 128")
