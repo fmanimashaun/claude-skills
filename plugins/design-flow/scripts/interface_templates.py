@@ -262,7 +262,10 @@ def selftest() -> int:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             record(root, "r", "Screen One", Template=template, States="loaded", Nav="level 1 under shell", **lines)
-            f, _, u = judge_templates([snap(**structure)], [{"url": "/s", "screen": "Screen One"}], root)
+            try:
+                f, _, u = judge_templates([snap(**structure)], [{"url": "/s", "screen": "Screen One"}], root)
+            except Exception as err:  # a mutant that crashes must fail a check, not end the run before later checks print
+                return [f"crash:{type(err).__name__}"]
             return [x["rule"] for x in f] + [f"unverified:{x}" for x in u]
 
     # multi-step
@@ -272,6 +275,7 @@ def selftest() -> int:
     check('a "Next" button is an A34 finding', run("multi-step", {**GOOD_STEP, "forward_button": {"present": True, "label": "Next"}}) == ["A34"])
     check('"NEXT" in capitals is an A34 finding too', run("multi-step", {**GOOD_STEP, "forward_button": {"present": True, "label": " NEXT "}}) == ["A34"])
     check("a label the rule does not name is not asserted", run("multi-step", {**GOOD_STEP, "forward_button": {"present": True, "label": "Save and go on"}}) == [])
+    check("a missing back link is a finding whatever the position fact says", run("multi-step", {**GOOD_STEP, "back_link": {"present": False, "before_h1": True, "text": None}}) == ["A31"])
     check("a page with no forward button has no A34 finding", run("multi-step", {**GOOD_STEP, "forward_button": {"present": False, "label": None}}) == [])
     # search-results
     check("a conforming results page has no findings", run("search-results", results()) == [])
@@ -310,14 +314,14 @@ def selftest() -> int:
         check("a record with no Template line is an A10 finding", "/3" in by_url and "`Template:` line" in by_url["/3"]["message"])
         check("a url mapped to null is an A10 finding", "/4" in by_url and by_url["/4"]["rule"] == "A10")
         check("a url in no entry is an A10 finding, never assumed declared", "/5" in by_url)
-        check("every undeclared finding carries a proposed record to review", all("proposal" in by_url[u] and "Screen:" in by_url[u]["proposal"] for u in ("/2", "/3", "/4", "/5")))
+        check("every undeclared finding carries a proposed record to review", all("Screen:" in by_url.get(u, {}).get("proposal", "") for u in ("/2", "/3", "/4", "/5")))
         check("A10 is audited over every screen", aud["A10"] == 5)
         sr = snap("/6", **results())
         sr["structure"]["results"]["list_items"] = 3
         f2, _, _ = judge_templates([sr], [{"url": "/6", "screen": None}], root)
-        check("the proposal names a Template from a results structure, as a proposal", "Template: search-results" in f2[0]["proposal"] and "not a verdict" in f2[0]["proposal"])
+        check("the proposal names a Template from a results structure, as a proposal", "Template: search-results" in (f2 or [{}])[0].get("proposal", "") and "not a verdict" in (f2 or [{}])[0].get("proposal", ""))
         f3, _, _ = judge_templates([snap("/7")], [{"url": "/7", "screen": None}], root)
-        check("with nothing to go on the proposal names no template", "<one of the nine" in f3[0]["proposal"])
+        check("with nothing to go on the proposal names no template", "<one of the nine" in (f3 or [{}])[0].get("proposal", ""))
         # the refusals
         def refuses(screens_doc, needle: str, setup=None) -> bool:
             try:
@@ -352,4 +356,4 @@ def selftest() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(selftest() if sys.argv[1:] == ["--selftest"] else 2)
+    sys.exit(selftest() if "--selftest" in sys.argv[1:] else 2)
