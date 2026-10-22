@@ -46,9 +46,16 @@ GUARD = Guard(
         ),
         Mutation(
             "release() no longer hands a dir over, so a fixture built in a subprocess is gone before its parent reads it",
-            "    for pid, d in [x for x in _DIRS if os.path.realpath(x[1]) == target]:\n        _DIRS.remove((pid, d))",
+            "    for pid, d in [x for x in _DIRS if target in (os.path.realpath(x[1]), os.path.realpath(_inner(x[1])))]:\n        _DIRS.remove((pid, d))",
             "    pass",
             "a released dir outlives the process that made it",
+        ),
+        Mutation(
+            # #2316 review: the marker inside the dir broke every caller that wants it empty (os.rmdir, a listing).
+            "the caller gets the wrapper itself, marker and all, not an empty dir",
+            "    return _inner(wrapper)",
+            "    return wrapper",
+            "the dir handed out is empty, rf- named, and its wrapper carries the marker",
         ),
     ),
 )
