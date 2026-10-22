@@ -163,10 +163,17 @@ same way surfaces already are. Two roles are enforced, at the two thresholds WCA
 | `--ring` | **1.4.11** non-text | **3:1** | a focus indicator is a UI component state |
 | `--*-ink` | **1.4.3** text | **4.5:1** | an `-ink` role exists to *be* text — that is why `--success-ink` was added beside `--success` |
 
-The **base** feedback roles are deliberately not enumerated against the page. They serve as fills,
-borders or icons depending on the component, so the right threshold depends on a usage the token
-file cannot see — and picking one would fail both shipped packs for a rule neither clause states.
-Judge those on the rendered component, where `/design-flow:audit` pass 3 already looks.
+The **base** feedback tones (`--info`, `--success`, `--warning`, `--destructive`) are enumerated on
+the **dark** ground only, at 1.4.11's **3:1** against the dark card and page (#2324, the owner's
+ruling on that issue). They serve as fills, borders or icons depending on the component, so 3:1 is
+the floor a token file can state without seeing a usage; a tone used as *text* needs an `-ink` role
+at 4.5:1, as `--success-ink` does. The light ground is not enumerated: it is the open contract
+question above, and it would fail fidara's bright hues for a rule no clause states. `--signal` is
+emphasis, not feedback, and is not enumerated. The same pass holds the interactive roles:
+`--primary-hover` (and any `*-hover` or `*-active` role the light block sets) is re-pointed under
+`.dark` too, and its label is 4.5:1 on it — a hover left at its light value was a dark fill under a
+dark label, 1.98–3.02:1 across the three shipped pack files. Judge the rest on the rendered component,
+where `/design-flow:audit` pass 3 already looks.
 
 - `variants` — each carries only what re-labelling needs: display `name`, the `endorsement`
   string (or `null`), and which `mark` asset to use. **No variant carries values**, which is
@@ -227,8 +234,9 @@ fixed upstream. The same applies to a missing `.dark` re-point that the lint acc
 `Ui::Logo` endorsement on the wrong variant. First real run of a new pack **is** the
 verification step — see the checklist in `/design-flow:setup`. Two subtleties the lint encodes, both easy to get wrong by
 hand: `--background`'s companion is `--foreground` (not `--background-foreground`), and the
-feedback roles plus `--ring` are deliberately **not** re-pointed on dark — requiring a dark
-value for every role would be a wrong check.
+feedback roles plus `--ring` are not *required* to be re-pointed on dark — requiring a dark value
+for every role would be a wrong check — but what the dark block *resolves to* is measured (a
+hover role, `--primary-hover`, must be re-pointed; each tone must be 3:1 on the dark card and page).
 
 ## Starting a pack when the client has no palette
 

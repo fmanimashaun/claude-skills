@@ -15,14 +15,18 @@ What it verifies:
   4.              — surface roles are re-pointed under .dark
   5.              — no var() reference points at a primitive the pack never defines
   6.              — no component-level CSS leaked into the pack
+  7.              — the dark states read: a `*-hover`/`*-active` role the light block sets is set
+                    under `.dark` too, its label is 4.5:1 on it, and the feedback tones
+                    (`--info --success --warning --destructive`) are 3:1 on the dark card and page
 
 Two subtleties this encodes, both easy to get wrong by hand (and both measured from
 rails-stack's skills/design-system/references/foundations-tokens.md rather than assumed):
 
   * `--background`'s companion is `--foreground`, NOT `--background-foreground`.
-  * The feedback roles and `--ring` are deliberately NOT re-pointed on dark. Requiring a
+  * The feedback roles and `--ring` are not REQUIRED to be re-pointed on dark. Requiring a
     dark value for every role would fail every correct pack — a wrong check is worse
-    than no check, because people stop believing the ones that are right.
+    than no check, because people stop believing the ones that are right. What is required
+    is what the dark block RESOLVES to (#2324): see `lint_dark_states`.
 
 Stdlib only, by design: a pack must be lintable in any clone with nothing installed.
 
@@ -519,6 +523,73 @@ def lint_chart(path: str, report: Report, manifest: dict) -> None:
                          f"{resolved['light']} vs {declared}")
 
 
+# #2324. The dark ground's states. The dark block re-points the surfaces and `--primary`; a role it
+# does not mention keeps its LIGHT value, which was tuned for a light ground. Two shipped packs left
+# `--primary-hover` there (the dark label on a dark hover fill: 2.22:1), and reliance left all four
+# feedback tones (2.41-3.22:1 on its dark card and page).
+TONES = ("--info", "--success", "--warning", "--destructive")
+TEXT_FLOOR = 4.5       # WCAG 1.4.3: text on a surface
+NON_TEXT_FLOOR = 3.0   # WCAG 1.4.11: a fill, border or icon against what it sits on
+
+
+def _hex(value: str) -> str | None:
+    """`#RGB` or `#RRGGBB` as `#RRGGBB`, else None (a colour this lint cannot measure)."""
+    m = re.fullmatch(r"#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})", value.strip())
+    if not m:
+        return None
+    h = m.group(1)
+    return "#" + (("".join(c * 2 for c in h)) if len(h) == 3 else h).upper()
+
+
+def lint_dark_states(path: str, report: Report) -> None:
+    """The interactive and feedback roles, as `.dark` resolves them (#2324).
+
+    A role the `.dark` block does not set inherits its `:root` value, so the dark value of a role
+    is `.dark`'s, else `:root`'s, followed through the pack's own declarations. A colour that does
+    not resolve to a hex is an ERROR, not a pass: a lint that reads clean over a value it could not
+    measure is worse than no lint."""
+    if not os.path.exists(path):
+        return
+    # The one contrast maths this plugin ships. A late import, because palette_candidates imports this
+    # module for the role contract (a top-level import here would be circular).
+    from palette_candidates import contrast
+    src = strip_css_comments(open(path, encoding="utf-8").read())
+    root_block, dark_block = selector_block(src, ":root"), selector_block(src, ".dark")
+    if not root_block or not dark_block:
+        return          # `lint_theme` already reports a missing block
+    primitives: dict[str, str] = {}
+    for body in theme_bodies(src):
+        primitives.update(declarations(body))
+    light, dark = declarations(root_block), declarations(dark_block)
+    scope = {**primitives, **light, **dark}
+
+    for role in sorted(r for r in light if re.search(r"-(hover|active)$", r) and r not in dark):
+        report.error(f"{role} is set in `:root` but not re-pointed under `.dark`: it keeps its light value, "
+                     "tuned for a light ground, under the dark label")
+
+    def colour(token: str) -> str | None:
+        return _hex(resolve_value(scope.get(token, ""), scope))
+
+    def pair(fg: str, bg: str, floor: float, what: str) -> None:
+        a, b = colour(fg), colour(bg)
+        if a is None or b is None:
+            report.error(f"dark {what}: {fg if a is None else bg} does not resolve to a hex colour, so the pair "
+                         "cannot be measured; write it as #RRGGBB or var() of one")
+            return
+        ratio = contrast(a, b)
+        if ratio < floor:
+            report.error(f"dark {what}: {fg} {a} on {bg} {b} is {ratio:.2f}:1, under {floor}:1")
+
+    for role in sorted(r for r in light if r.endswith("-hover")):
+        label = role[: -len("-hover")] + "-foreground"
+        if label in scope:
+            pair(label, role, TEXT_FLOOR, f"{role} under its label (1.4.3)")
+    for tone in TONES:
+        if tone in scope:
+            for ground in ("--card", "--background"):
+                pair(tone, ground, NON_TEXT_FLOOR, f"{tone} on {ground} (1.4.11)")
+
+
 def lint_pack(pack_dir: str) -> Report:
     report = Report(pack_dir)
     if not os.path.isdir(pack_dir):
@@ -527,6 +598,7 @@ def lint_pack(pack_dir: str) -> Report:
     manifest = lint_manifest(os.path.join(pack_dir, "brand.json"), report)
     lint_theme(os.path.join(pack_dir, "theme.css"), report)
     lint_chart(os.path.join(pack_dir, "theme.css"), report, manifest)
+    lint_dark_states(os.path.join(pack_dir, "theme.css"), report)
     lint_assets(pack_dir, report, manifest)
     return report
 
@@ -786,6 +858,62 @@ def selftest() -> int:
     r = chart_report(["var(--color-missing)"] + validated[1:], dark_series)
     check("a chart slot that does not resolve to a hex is an ERROR",
           any("do not resolve to #RRGGBB" in e for e in r.errors), f"{r.errors}")
+
+    # ---- THE DARK STATES (#2324) -------------------------------------------------------------
+    def states_report(root: str, dark: str, prim: str = "") -> Report:
+        css = ("@theme {\n  --color-ink: #061F30;\n  --color-card: #08293E;\n  --color-lite: #E1F1FF;\n" + prim + "}\n"
+               ":root {\n  --card: #FFFFFF;\n  --background: #FFFFFF;\n  --primary-foreground: #FFFFFF;\n" + root + "}\n"
+               ".dark {\n  --card: var(--color-card);\n  --background: var(--color-ink);\n  --primary-foreground: var(--color-ink);\n" + dark + "}\n")
+        with _tf.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "theme.css")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(css)
+            r = Report("x")
+            lint_dark_states(path, r)
+            return r
+
+    GOOD_TONES = "".join(f"  {t}: #5BC0FF;\n" for t in TONES)
+    r = states_report("  --primary-hover: #0D5889;\n" + GOOD_TONES, "  --primary-hover: var(--color-lite);\n")
+    check("CONTROL: a dark hover with a readable label and light-enough tones passes", r.errors == [], f"{r.errors}")
+    r = states_report("  --primary-hover: #0D5889;\n" + GOOD_TONES, "")
+    check("a hover the light block sets and `.dark` does not is an ERROR",
+          any("--primary-hover is set in `:root` but not re-pointed" in e for e in r.errors), f"{r.errors}")
+    r = states_report("  --primary-hover: #0D5889;\n" + GOOD_TONES, "  --primary-hover: #0D5889;\n")
+    check("a dark hover whose label is under 4.5:1 is an ERROR naming the ratio",
+          any("--primary-hover under its label" in e and "2.2" in e for e in r.errors), f"{r.errors}")
+    r = states_report("  --primary-active: #0D5889;\n" + GOOD_TONES, "")
+    check("any `*-active` role is held to the same rule, not only --primary-hover",
+          any("--primary-active is set in `:root` but not re-pointed" in e for e in r.errors), f"{r.errors}")
+    r = states_report("  --info: #1171B0;\n", "")
+    check("a tone left at its light value is an ERROR when it is under 3:1 on the dark card",
+          any("--info on --card" in e and "2.87" in e for e in r.errors), f"{r.errors}")
+    r = states_report("  --info: #1171B0;\n", "  --info: #5BC0FF;\n")
+    check("the same tone re-pointed for dark passes", r.errors == [], f"{r.errors}")
+    r = states_report("  --info: #3B82F6;\n", "")
+    check("a tone that already clears 3:1 on both grounds needs no re-point", r.errors == [], f"{r.errors}")
+    r = states_report("  --info: oklch(60% 0.2 250);\n", "")
+    check("a tone this lint cannot measure is an ERROR, never a pass",
+          any("--info" in e and "cannot be measured" in e for e in r.errors), f"{r.errors}")
+    r = states_report("  --primary-hover: #0D5889;\n", "  --primary-hover: var(--color-missing);\n")
+    check("a dark hover that does not resolve is an ERROR, never a pass",
+          any("--primary-hover" in e and "cannot be measured" in e for e in r.errors), f"{r.errors}")
+    # THE ENTRY POINT: lint_pack on a copy of each shipped pack with the dark hover removed must fail.
+    for slug in ("reliance", "fidara"):
+        with _tf.TemporaryDirectory() as tmp:
+            pack = os.path.join(tmp, slug)
+            _sh.copytree(os.path.join(here, "..", "brands", slug), pack)
+            theme = os.path.join(pack, "theme.css")
+            css = open(theme, encoding="utf-8").read()
+            check(f"control: the shipped {slug} pack re-points --primary-hover under .dark",
+                  lint_pack(pack).ok, f"{lint_pack(pack).errors}")
+            dark_at = css.index(".dark {")
+            stripped = css[:dark_at] + re.sub(r"^[ \t]*--primary-hover:[^\n]*\n", "", css[dark_at:], count=1, flags=re.M)
+            check(f"control: the removal changed the {slug} dark block", stripped != css)
+            with open(theme, "w", encoding="utf-8") as fh:
+                fh.write(stripped)
+            r = lint_pack(pack)
+            check(f"lint_pack on {slug} without its dark --primary-hover FAILS",
+                  any("--primary-hover is set in `:root` but not re-pointed" in e for e in r.errors), f"{r.errors}")
 
     for f in failures:
         print(f"FAIL {f}")

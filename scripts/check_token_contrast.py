@@ -83,13 +83,13 @@ SRGB_LINEAR_BREAKPOINT = 0.04045
 #   `--ring` is a focus indicator -- a UI component state, so 1.4.11, 3:1.
 #   `--*-ink` roles exist to BE text (that is why `--success-ink` was added alongside `--success`),
 #     so 1.4.3, 4.5:1.
-#   The base feedback roles (`--success`, `--warning`, `--info`, `--signal`, `--destructive`) are
-#     NOT enumerated against the page, and that is deliberate. They serve as fills, borders and
-#     icons depending on the component, so the correct threshold depends on a usage this file cannot
-#     see from tokens alone -- and picking 4.5 or 3 for all of them would fail both shipped packs
-#     for a rule neither WCAG clause actually states. #775 measured it: fidara's bright hues clear
-#     dark and fail light; reliance's darkened ones clear light and fail dark. A single value cannot
-#     serve both grounds, which is a CONTRACT question, recorded in brand.md, not a checker's call.
+#   The base feedback tones (`--info`, `--success`, `--warning`, `--destructive`) are enumerated on
+#     the DARK ground only, at 3:1 (#2324, the owner's ruling on that issue): they are fills, borders
+#     and icons, so 1.4.11 is the floor this file can state without seeing a usage, and an `-ink`
+#     role carries them as text. Light is NOT enumerated: #775 measured that fidara's bright hues
+#     clear dark and fail light while reliance's darkened ones clear light and fail dark, so one
+#     value cannot serve both grounds and the light ground is a CONTRACT question, recorded in
+#     brand.md. `--signal` stays unenumerated: it is emphasis, not feedback, and has no ruling.
 AA_LARGE = 3.0
 
 PAIRS: tuple[tuple[str, str, str, str] | tuple[str, str, str, str, float], ...] = (
@@ -119,6 +119,22 @@ PAIRS: tuple[tuple[str, str, str, str] | tuple[str, str, str, str, float], ...] 
     ("success ink on a card",         "--success-ink",        "--card",       "light"),
     ("success ink on the page",       "--success-ink",        "--background", "dark"),
     ("success ink on a card",         "--success-ink",        "--card",       "dark"),
+    # #2324. Hover keeps the label the resting button carries, so the pair is the label on the hover
+    # fill, in both modes: `.dark` re-points --primary and its label but had left --primary-hover at
+    # its light value, which put the dark label on a dark fill at 2.22:1 in two shipped packs.
+    ("primary button label on hover", "--primary-foreground", "--primary-hover", "light"),
+    ("primary button label on hover", "--primary-foreground", "--primary-hover", "dark"),
+    # #2324. The base feedback tones on the dark ground, at 1.4.11's 3:1: a tone is a fill, border or
+    # icon on a surface, so the dark card and page are what it must be seen against. Dark only: the
+    # light ground is a separate question (fidara's bright hues fail it, #775) this does not decide.
+    ("info tone on the page",         "--info",               "--background", "dark",  AA_LARGE),
+    ("info tone on a card",           "--info",               "--card",       "dark",  AA_LARGE),
+    ("success tone on the page",      "--success",            "--background", "dark",  AA_LARGE),
+    ("success tone on a card",        "--success",            "--card",       "dark",  AA_LARGE),
+    ("warning tone on the page",      "--warning",            "--background", "dark",  AA_LARGE),
+    ("warning tone on a card",        "--warning",            "--card",       "dark",  AA_LARGE),
+    ("destructive tone on the page",  "--destructive",        "--background", "dark",  AA_LARGE),
+    ("destructive tone on a card",    "--destructive",        "--card",       "dark",  AA_LARGE),
     ("primary ink on the page",       "--primary-ink",        "--background", "light"),
     ("primary ink on a card",         "--primary-ink",        "--card",       "light"),
     ("primary ink on the page",       "--primary-ink",        "--background", "dark"),
@@ -438,13 +454,19 @@ def selftest() -> int:
         modes = {pair[3] for pair in PAIRS if pair[0] == lbl}
         check(f"{lbl!r} is enumerated in BOTH modes", modes == {"light", "dark"}, f"{modes}")
 
-    # THE BASE FEEDBACK ROLES ARE DELIBERATELY ABSENT. Their correct threshold depends on a usage
-    # this file cannot see from tokens, and choosing one would fail both shipped packs for a rule
-    # neither WCAG clause states. A negative test, so re-adding them is a deliberate act.
+    # THE DARK STATES (#2324). The four feedback tones are enumerated on the DARK ground at 3:1 and the
+    # hover label in both modes at 4.5:1. `--signal` stays absent: it is emphasis, not feedback, and no
+    # ruling covers it -- a negative test, so enumerating it is a deliberate act.
     enumerated = {pair[1] for pair in PAIRS}
-    for role in ("--success", "--warning", "--info", "--signal", "--destructive"):
-        check(f"{role} is NOT enumerated against the page", role not in enumerated,
-              "if this is intended, the reasoning above PAIRS has to change with it")
+    check("--signal is NOT enumerated against the page", "--signal" not in enumerated,
+          "if this is intended, the reasoning above PAIRS has to change with it")
+    for tone in ("--info", "--success", "--warning", "--destructive"):
+        rows_ = [pair for pair in PAIRS if pair[1] == tone]
+        check(f"{tone} is enumerated on the dark page and card at 1.4.11's 3:1, and in no light row",
+              sorted((pair[2], pair[3], pair[4] if len(pair) > 4 else AA_NORMAL) for pair in rows_)
+              == [("--background", "dark", AA_LARGE), ("--card", "dark", AA_LARGE)], f"{rows_}")
+    hover = sorted((pair[3], pair[4] if len(pair) > 4 else AA_NORMAL) for pair in PAIRS if pair[2] == "--primary-hover")
+    check("the hover label is judged in BOTH modes at 1.4.3's 4.5:1", hover == [("dark", AA_NORMAL), ("light", AA_NORMAL)], f"{hover}")
 
     # AN UNDECLARED ROLE IS SKIPPED, NEVER PASSED -- and never raised either, because a pack that
     # predates a role (or a template with placeholder refs) is not a measurement failure.
@@ -475,6 +497,21 @@ def selftest() -> int:
         # above read PAIRS directly, so they prove the tier is DECLARED and not that anything uses
         # it -- a mutation collapsing `measure`'s floor to AA_NORMAL survived every one of them.
         # Proving the table is not proving the reader.
+        # #2324. The new rows judge a value: a pack whose dark hover is a dark fill under a dark label,
+        # and whose dark tone is a dark fill on a dark card, FAILS -- the defect measured in two packs.
+        bad = Path(td) / "bad.css"
+        bad.write_text("@theme {\n  --color-t-blue: #005FA3;\n}\n"
+                       ":root {\n  --background: #FFFFFF;\n  --card: #FFFFFF;\n  --primary: #005FA3;\n"
+                       "  --primary-foreground: #FFFFFF;\n  --primary-hover: #08497F;\n  --info: #1171B0;\n}\n"
+                       ".dark {\n  --background: #061F30;\n  --card: #08293E;\n  --primary: #C9DBFF;\n"
+                       "  --primary-foreground: #061F30;\n}\n", encoding="utf-8")
+        brows = measure(bad)
+        hov = [r for r in brows if r[1] == "primary button label on hover" and r[0] == "dark" and r[7]]
+        check("a dark hover whose label is under 4.5:1 is a FAILING row", bool(hov) and all(r[6] < r[7] for r in hov),
+              f"{[(r[6], r[7]) for r in hov]}")
+        tone = [r for r in brows if r[1] == "info tone on a card" and r[0] == "dark" and r[7]]
+        check("a dark tone left at its light value is a FAILING row", bool(tone) and all(r[6] < r[7] for r in tone),
+              f"{[(r[6], r[7]) for r in tone]}")
         ring = [r for r in rows if r[1].startswith("focus ring") and r[7]]
         ink = [r for r in rows if "ink" in r[1] and r[7]]
         check("measure() gives a focus-ring row the 3:1 floor",
@@ -497,7 +534,11 @@ def selftest() -> int:
           f"declared: {sorted(labels)}")
     # Every pair must exist in BOTH modes. One mode only is a half-measured palette, and dark is
     # the half that goes unlooked-at.
+    # The one deliberate exception (#2324): the feedback tones are dark-only, because the light ground
+    # is a contract question (#775), not a measurement -- and the `--signal` negative above is the
+    # fixture that keeps the exception from widening by accident.
     light_only = {lb for lb, m in labels if m == "light"} ^ {lb for lb, m in labels if m == "dark"}
+    light_only -= {lb for lb in light_only if lb.endswith(" tone on the page") or lb.endswith(" tone on a card")}
     check("every pair is measured in light AND dark", not light_only,
           f"only one mode: {sorted(light_only)}")
 
@@ -569,6 +610,13 @@ def selftest() -> int:
             check("the shipped threshold is the same threshold",
                   shipped.AA_NORMAL == AA_NORMAL,
                   f"shipped {shipped.AA_NORMAL}, canonical {AA_NORMAL}")
+            # #2324. The brand-pack lint a user runs measures with palette_candidates' maths (compared
+            # above) but holds its own copy of the two floors, so those are compared: a lint with a
+            # different floor would pass a pack this script fails.
+            import brand_pack_lint as lint_copy  # noqa: PLC0415  (deliberate late import)
+            check("the brand-pack lint holds the same two floors",
+                  (lint_copy.TEXT_FLOOR, lint_copy.NON_TEXT_FLOOR) == (AA_NORMAL, AA_LARGE),
+                  f"lint {(lint_copy.TEXT_FLOOR, lint_copy.NON_TEXT_FLOOR)}, canonical {(AA_NORMAL, AA_LARGE)}")
 
             # The PARSER is duplicated too, for the same reason, so it is compared too. Agreeing
             # maths over disagreeing token resolution would still ship two different verdicts --

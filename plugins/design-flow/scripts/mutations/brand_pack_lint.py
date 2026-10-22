@@ -12,10 +12,10 @@ GUARD = Guard(
     name="brand_pack_lint",
     subject="scripts/brand_pack_lint.py",
     selftest="scripts/brand_pack_lint.py",
-    deps=("scripts/palette_gates.py",),   # #1235: imported when a pack overrides chart_hues
+    deps=("scripts/palette_gates.py", "scripts/palette_candidates.py"),   # #1235: imported when a pack overrides chart_hues; #2324: the dark-state check measures with palette_candidates.contrast
     # The shipped pack is a dependency, not incidental data: the last fixture parses the real
     # theme.css, so the hand-written fixtures cannot drift from the shape actually shipped.
-    needs=("brands/fidara/theme.css", "brands/reliance"),   # #1271: the entry-point fixture lints a copy of reliance
+    needs=("brands/fidara", "brands/reliance"),   # #1271, #2324: the entry-point fixtures lint a copy of each shipped pack
     mutations=(
         Mutation(
             # THE REPORTED BUG. `:root, .light { ... }` is ordinary CSS and is what this design
@@ -120,6 +120,54 @@ GUARD = Guard(
             "        return resolve_value(decls[m.group(1)], decls, depth + 1)\n",
             "        return value.strip()\n",
             "a full, validated chart set resolving through a primitive passes",
+        ),
+        Mutation(
+            "a hover the light block sets is no longer required under .dark",
+            '    for role in sorted(r for r in light if re.search(r"-(hover|active)$", r) and r not in dark):\n',
+            '    for role in sorted(r for r in light if re.search(r"-(hover|active)$", r) and r not in dark and False):\n',
+            "a hover the light block sets and `.dark` does not is an ERROR",
+        ),
+        Mutation(
+            "only -hover is held, so an -active role slips through",
+            '    for role in sorted(r for r in light if re.search(r"-(hover|active)$", r) and r not in dark):\n',
+            '    for role in sorted(r for r in light if re.search(r"-(hover)$", r) and r not in dark):\n',
+            "any `*-active` role is held to the same rule",
+        ),
+        Mutation(
+            "the dark hover's label is not measured",
+            '            pair(label, role, TEXT_FLOOR, f"{role} under its label (1.4.3)")\n',
+            '            pair(label, role, 0.0, f"{role} under its label (1.4.3)")\n',
+            "a dark hover whose label is under 4.5:1 is an ERROR",
+        ),
+        Mutation(
+            "the non-text floor drops below the measured light value",
+            "NON_TEXT_FLOOR = 3.0   # WCAG 1.4.11",
+            "NON_TEXT_FLOOR = 2.0   # WCAG 1.4.11",
+            "a tone left at its light value is an ERROR when it is under 3:1",
+        ),
+        Mutation(
+            "a tone is judged on the page only, never on a card",
+            '            for ground in ("--card", "--background"):\n',
+            '            for ground in ("--background",):\n',
+            "a tone left at its light value is an ERROR when it is under 3:1",
+        ),
+        Mutation(
+            "a role .dark does not set is no longer read from :root",
+            "    scope = {**primitives, **light, **dark}\n",
+            "    scope = {**primitives, **dark}\n",
+            "a tone left at its light value is an ERROR when it is under 3:1",
+        ),
+        Mutation(
+            "a colour this lint cannot measure reads as a pass",
+            "        if a is None or b is None:\n            report.error(",
+            "        if a is None or b is None:\n            return\n            report.error(",
+            "a tone this lint cannot measure is an ERROR, never a pass",
+        ),
+        Mutation(
+            "lint_pack never calls the dark-state check",
+            '    lint_dark_states(os.path.join(pack_dir, "theme.css"), report)\n',
+            "",
+            "lint_pack on reliance without its dark --primary-hover FAILS",
         ),
     ),
 )
