@@ -1265,39 +1265,62 @@ def run() -> int:
             FAILURES.append(f"#1459: Ctrl-C during a gate left it running (doctor exited: {exited}; recorded "
                             f"{len(pids)} of 2 pids; survivors {left})")
 
-    # #2306: the temp monitor reports a leaked rf- dir over 24 h; --fix removes it, keeps a foreign one, a young one and one a live
-    # process holds.
+    # #2306, #2316 review: the temp monitor reports and --fix removes ONLY a directory proven ours (rf_tmp's owner marker) whose owner is
+    # gone and that nothing holds, over 24 h. A foreign rf- dir, a plain rf- file, a young dir, a held dir and one whose owner lives are kept.
     with tempfile.TemporaryDirectory() as tmp_root:
         old = time.time() - 3 * 24 * 3600
-        for name in ("rf-leaked", "foreign-old", "rf-held"):
-            os.makedirs(os.path.join(tmp_root, name))
-            os.utime(os.path.join(tmp_root, name), (old, old))
+        gone = subprocess.Popen(["true"])
+        gone.wait()                                    # a pid that has exited: a dead owner
+        def make(name: str, owner: int | None, is_file: bool = False) -> None:
+            path = os.path.join(tmp_root, name)
+            if is_file:
+                Path(path).write_text("x\n")
+            else:
+                os.makedirs(path)
+                if owner is not None:
+                    Path(path, ".rf_tmp-owner").write_text(f"rf_tmp v1\n{owner}\n{int(old)}\n")
+            os.utime(path, (old, old))
+        holder = subprocess.Popen(["sleep", "60"])
+        for name, owner, is_file in (("rf-leaked", gone.pid, False), ("rf-foreign", None, False), ("rf-x.txt", None, True),
+                                     ("rf-held", gone.pid, False), ("rf-alive", holder.pid, False), ("foreign-old", None, False)):
+            make(name, owner, is_file)
         os.makedirs(os.path.join(tmp_root, "rf-young"))
-        holder = subprocess.Popen(["sleep", "60"], cwd=os.path.join(tmp_root, "rf-held"))
+        Path(tmp_root, "rf-young", ".rf_tmp-owner").write_text(f"rf_tmp v1\n{gone.pid}\n{int(time.time())}\n")
+        holder.kill()
+        holder.wait()
+        alive = subprocess.Popen(["sleep", "60"])
+        Path(tmp_root, "rf-alive", ".rf_tmp-owner").write_text(f"rf_tmp v1\n{alive.pid}\n{int(old)}\n")
+        os.utime(os.path.join(tmp_root, "rf-alive"), (old, old))
+        cwd_holder = subprocess.Popen(["sleep", "60"], cwd=os.path.join(tmp_root, "rf-held"))
         try:
             report = md.Doctor(fix=False)
             report.check_temp_dirs(tmp_root=tmp_root, scratch_glob=os.path.join(tmp_root, "none-*"))
             r = find(report, "temp dirs")
             _tick()
-            if not (r and r.status == md.FAIL and "rf-leaked" in r.findings and "foreign-old" not in r.findings and "rf-young" not in r.findings):
+            if not (r and r.status == md.FAIL and "rf-leaked" in r.findings
+                    and not {"foreign-old", "rf-young", "rf-foreign", "rf-x.txt"} & set(r.findings)):
                 FAILURES.append(f"#2306: a leaked rf- dir over 24 h is reported (and only ours, and only old ones): {r}")
             fixer = md.Doctor(fix=True)
             fixer.check_temp_dirs(tmp_root=tmp_root, scratch_glob=os.path.join(tmp_root, "none-*"))
-            _tick()
-            if os.path.exists(os.path.join(tmp_root, "rf-leaked")):
-                FAILURES.append("#2306: --fix removes a leaked rf- dir over 24 h")
-            _tick()
-            if not os.path.exists(os.path.join(tmp_root, "foreign-old")):
-                FAILURES.append("#2306: --fix never touches another program's entry")
-            _tick()
-            if not os.path.exists(os.path.join(tmp_root, "rf-young")):
-                FAILURES.append("#2306: --fix keeps an rf- dir under 24 h")
+            for label, name, want in (("#2306: --fix removes a leaked rf- dir over 24 h", "rf-leaked", False),
+                                      ("#2306: --fix never touches another program's entry", "foreign-old", True),
+                                      ("#2306: --fix keeps an rf- dir under 24 h", "rf-young", True),
+                                      ("#2316: --fix keeps a foreign rf- dir with no owner marker", "rf-foreign", True),
+                                      ("#2316: --fix never removes a plain rf- file", "rf-x.txt", True),
+                                      ("#2316: --fix keeps a dir whose owner pid is alive", "rf-alive", True)):
+                _tick()
+                if os.path.lexists(os.path.join(tmp_root, name)) != want:
+                    FAILURES.append(label)
             _tick()
             if shutil.which("lsof") and not os.path.exists(os.path.join(tmp_root, "rf-held")):
                 FAILURES.append("#2306: --fix keeps an rf- dir a live process still holds")
+            _tick()
+            if fixer.fixed and "1 rf- temp entry" not in " ".join(fixer.fixed):
+                FAILURES.append(f"#2316: --fix counts only what is gone: {fixer.fixed}")
         finally:
-            holder.kill()
-            holder.wait()
+            for p in (alive, cwd_holder):
+                p.kill()
+                p.wait()
 
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)
