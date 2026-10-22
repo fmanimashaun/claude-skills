@@ -241,5 +241,53 @@ GUARD = Guard(
             '        if not (docs / d).is_dir():',
             "...and not the waived one's",
         ),
+        Mutation(
+            'ADRs are homed in brain/ again',
+            '(re.compile(r"^(adr|adrs|decisions)$", re.I), "product/{name}", True),',
+            '(re.compile(r"^(adr|adrs|decisions)$", re.I), "brain/{name}", True),',
+            '#2329: ADRs are homed in product/decisions/, not brain/',
+        ),
+        Mutation(
+            'an authored file in architecture/ reads as generated',
+            '            return "authored"                                          # a person\'s document in a generated directory (#2331)',
+            '            return "generated"',
+            '#2331: a hand-written file in architecture/ is authored and proposed for product/',
+        ),
+        Mutation(
+            'an authored file in architecture/ is left where it is',
+            '        if top in GENERATED_OUTPUTS and kind == "authored":\n            return (',
+            '        if False:\n            return (',
+            '#2331: a hand-written file in architecture/ is authored and proposed for product/',
+        ),
+        Mutation(
+            "the generator's own output is treated as authored",
+            '    if top in GENERATED_OUTPUTS and rel.name not in GENERATED_OUTPUTS[top] and',
+            '    if top in GENERATED_OUTPUTS and',
+            "#2331: the generator's own output stays in architecture/",
+        ),
+        Mutation(
+            'segments spelling a moved directory are not rewritten',
+            '            s2 = segs.sub(lambda mm, new_dir=new_dir: join_segments(new_dir, mm), s2)',
+            '            pass',
+            '#2330: a join() of segments spelling a moved directory is rewritten',
+        ),
+        Mutation(
+            'a directory without its trailing slash is not rewritten',
+            '            s2 = bare.sub(new_dir.rstrip("/"), s)',
+            '            s2 = s',
+            '#2330: a moved directory named without its trailing slash is rewritten',
+        ),
+        Mutation(
+            'leftover spellings are not reported as problems',
+            '    for line in p.get("leftover", []):                              # #2330',
+            '    for line in []:                              # #2330',
+            '#2330: a spelling no pass can rewrite is named as LEFT, file and line, not reported clean',
+        ),
+        Mutation(
+            'the loose net requires slashes, so a concatenation escapes it',
+            'r"[\\W_]{1,8}".join(re.escape(part)',
+            '"/".join(re.escape(part)',
+            '#2330: a spelling no pass can rewrite is named as LEFT, file and line, not reported clean',
+        ),
     ),
 )

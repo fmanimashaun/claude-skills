@@ -1,0 +1,2 @@
+section: rails-flow
+- **`docs_layout.py --propose` homes ADRs where `--report` accepts them — `plugins/rails-flow/scripts/docs_layout.py`** (#2329). The directory rule sent `adr`, `adrs` and `decisions` to `brain/{name}`, and the brain rule then flagged every `brain/<subdir>/` as product content, so the proposal's own output failed the `docs-layout` gate (measured on flo-it-ui). They now go to `product/{name}`, the one home both rules agree on. A selftest applies the proposal and asserts the report has no finding about any file it moved.

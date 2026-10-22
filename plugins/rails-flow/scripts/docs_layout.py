@@ -50,6 +50,10 @@ LAYOUT: dict[str, tuple[str, str]] = {
     "brain":        ("WHAT did we learn and decide?", "`STATUS.md`, `DECISIONS.md`, `HYPOTHESES.md`, `PROGRESS-LOG.md`, `MEMORY.md`, memos under `memos/<type>/`, `history/`. Not: product specs (product/)."),
 }
 GENERATED_DIRS = {"architecture", "wiki"}
+# What `/rails-flow:graph` writes into architecture/ (and the README scaffold writes). Anything else there with no generated
+# header is a person's document in a generated directory: it is moved to product/ before the directory is marked generated,
+# so a marker never labels authored text disposable (#2331). wiki/ is not listed: it keeps hand-written pages by design.
+GENERATED_OUTPUTS = {"architecture": {"graph.json", "graph.md", "index.html", "README.md", ".generated"}}
 # REQUIRED DIRECTORIES (#2298). A layout nobody has to follow is a suggestion: a repo with no brain/ passed this gate.
 # These four exist in every project. `design/` and `runbooks/` are required only where the project has what they
 # describe, read from the markers below. A directory may be WAIVED, with a reason, in docs/README.md `## Waivers`.
@@ -127,7 +131,9 @@ DIR_HOMES: list[tuple[re.Pattern, str, bool]] = [
     (re.compile(r"^(brand|brand-assets|assets|images|img|logos?)$", re.I), "design/assets/{name}", True),
     (re.compile(r"^(spikes?|spike-evidence|screenshots|validation|coverage|benchmarks?|audits?)$", re.I), "evidence/{name}", True),
     (re.compile(r"^(runbooks?|ops|operations|setup|deploy(ment)?|integrations?)$", re.I), "runbooks/{name}", True),
-    (re.compile(r"^(adr|adrs|decisions)$", re.I), "brain/{name}", True),
+    # ADRs are product content, not memory: `brain/<subdir>/` is flagged as product content below, so homing them in brain/
+    # made the proposal's own output fail the report (#2329). product/ is the one home both agree on.
+    (re.compile(r"^(adr|adrs|decisions)$", re.I), "product/{name}", True),
 ]
 FILE_HOMES: list[tuple[re.Pattern, str, bool]] = [
     (re.compile(r"(runbook|setup|deploy|oncall|on-call|sso|install)", re.I), "runbooks", True),
@@ -164,6 +170,13 @@ def kind_of(p: Path, docs: Path) -> str:
         return "code"
     if p.suffix.lower() in BINARY_EXT or (p.suffix.lower() not in PROSE_EXT and is_binary(p)):
         return "binary"
+    if top in GENERATED_OUTPUTS and rel.name not in GENERATED_OUTPUTS[top] and p.suffix.lower() in PROSE_EXT | {".json"}:
+        try:
+            head = p.read_text(encoding="utf-8", errors="replace")[:600]
+        except OSError:
+            head = ""
+        if not GENERATED_HEADER.search(head):
+            return "authored"                                          # a person's document in a generated directory (#2331)
     if top in GENERATED_DIRS or (top and (docs / top / ".generated").exists()) or (p.parent / ".generated").exists():
         return "generated"
     if p.suffix.lower() in PROSE_EXT | {".json"}:
@@ -213,6 +226,9 @@ def home_for(p: Path, docs: Path, kind: str, declared: set[str] = frozenset(), r
                 sub = RENAMES.get(parts[1], parts[1])
                 return f"product/{sub}/{'/'.join(parts[2:])}", True, f"`brain/{parts[1]}/` is product content inside memory (specs, roles, open questions)"
             return None, True, ""
+        if top in GENERATED_OUTPUTS and kind == "authored":
+            return (f"product/{top}/{'/'.join(parts[1:])}", False,
+                    f"a hand-written document in the generated `{top}/` -- product/ holds authored text (#2331)")
         if kind == "binary" and top not in {"design", "evidence"}:
             return f"design/assets/{'/'.join(parts[1:])}", False, f"a binary under {top}/ -- design/assets/ or evidence/"
         return None, True, ""
@@ -489,6 +505,42 @@ def plan(root: Path, rows: list[dict]) -> dict:
                 s2 = rewrite_dir_mentions(s)
                 if s2 != s:
                     rewrites[key] = s2
+    # ---- #2330: two spellings the passes above cannot see. A directory named WITHOUT its trailing slash
+    # (`mkdirSync(join(root, "docs/progress"))`, a JSON `_comment`), and a directory built from SEGMENTS
+    # (`join(process.cwd(), "docs", "inventory")`). Both are rewritten here, per moved directory.
+    whole_dirs = dir_moves(applied, [r["path"] for r in rows])
+    for old_dir, new_dir in whole_dirs.items():
+        bare, segs = bare_dir_pattern(old_dir), segment_pattern(old_dir)
+        for f in files:
+            key = f.relative_to(root).as_posix()
+            try:
+                s = rewrites.get(key) or f.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            s2 = bare.sub(new_dir.rstrip("/"), s)
+            s2 = segs.sub(lambda mm, new_dir=new_dir: join_segments(new_dir, mm), s2)
+            if s2 != s:
+                rewrites[key] = s2
+    # ---- #2330: say what is LEFT. After every pass, any old spelling still in the tree is named, file and line,
+    # instead of a bare "0 problem(s)": a rewriter that cannot say what it missed has no way to be right.
+    leftover: list[str] = []
+    olds = [(m["path"], re.compile(re.escape(m["path"]))) for m in applied]
+    for old_dir in whole_dirs:
+        # a LOOSE net, independent of the passes above: `docs`, then each segment, with only non-word characters between, so
+        # `"docs/" + "inventory"` or `path.join('docs','inventory')` is caught; a correct rewrite always puts a word between them
+        loose = re.compile(r"(?<![\w])" + r"[\W_]{1,8}".join(re.escape(part) for part in old_dir.strip("/").split("/")) + r"(?![\w-])")
+        olds += [(old_dir.rstrip("/"), loose)]
+    for f in files:
+        key = f.relative_to(root).as_posix()
+        try:
+            s = rewrites.get(key) or f.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for label, pat in olds:
+            for mm in pat.finditer(s):
+                if any(s.startswith(named, mm.start()) for named in left_alone):
+                    continue                                          # already reported as LEFT ALONE (a file that never moved)
+                leftover.append(f"{moved_to.get(key, key)}:{s.count(chr(10), 0, mm.start()) + 1} still names {label}")
     # ---- Gap 1: code left in docs/ whose neighbours move -- its relative paths will break; say so, loudly.
     code_left = []
     for r in rows:
@@ -498,7 +550,32 @@ def plan(root: Path, rows: list[dict]) -> dict:
             if neighbours:
                 code_left.append((r["path"], neighbours))
     return {"moves": applied, "refused": refused, "rewrites": rewrites,
-            "left_alone": sorted(set(left_alone)), "code_left": code_left}
+            "left_alone": sorted(set(left_alone)), "code_left": code_left, "leftover": sorted(set(leftover))}
+
+
+PATH_CHAR = r"[\w./-]"
+
+
+def bare_dir_pattern(old_dir: str) -> re.Pattern:
+    """`docs/progress` as a whole path with no trailing slash: not part of a longer path on either side (#2330)."""
+    return re.compile(rf"(?<!{PATH_CHAR}){re.escape(old_dir.rstrip('/'))}(?!{PATH_CHAR})")
+
+
+def segment_pattern(old_dir: str) -> re.Pattern:
+    """`"docs", "inventory"`: the directory as quoted string segments separated by commas, as `join()` takes it (#2330)."""
+    parts = old_dir.strip("/").split("/")
+    quoted = [rf"(?P<q{i}>[\"']){re.escape(part)}(?P=q{i})" for i, part in enumerate(parts)]
+    if len(quoted) == 1:
+        return re.compile(quoted[0])
+    # the first separator is captured so the rewrite can reuse it; the rest only have to be separators
+    return re.compile(quoted[0] + r"(?P<sep>\s*,\s*)" + r"\s*,\s*".join(quoted[1:]))
+
+
+def join_segments(new_dir: str, mm: re.Match) -> str:
+    """The new directory as segments, in the quote and separator the old spelling used."""
+    q = mm.group("q0")
+    sep = mm.group("sep") if "sep" in mm.re.groupindex else ", "
+    return sep.join(f"{q}{part}{q}" for part in new_dir.strip("/").split("/"))
 
 
 AREAS = (("doctrine", re.compile(r"^(CLAUDE|AGENTS|GUARDRAILS|README|loop)\.md$|^\.claude/")),
@@ -528,6 +605,8 @@ def render_plan(root: Path, p: dict) -> str:
     for path, neighbours in p.get("code_left", []):
         out.append(f"# WARNING code left in docs/: {path} -- {len(neighbours)} neighbour(s) move ({', '.join(neighbours)}); "
                    "a path it resolves relative to its own directory will break: move the script to scripts/ or fix its paths")
+    for line in p.get("leftover", []):
+        out.append(f"# LEFT {line} -- no rewrite pass matched this spelling; it stays as written unless fixed by hand")
     for path in p.get("left_alone", []):
         out.append(f"# LEFT ALONE {path}: named under a moved directory but no such file moved (deleted earlier? never existed?) -- not re-pointed; fix the row by hand")
     if p["rewrites"]:
@@ -584,6 +663,8 @@ def apply_plan(root: Path, p: dict) -> list[str]:
         problems.append(f"{path} stayed while {len(neighbours)} neighbour(s) moved -- a relative path inside it now points at nothing; move it to scripts/ or fix its paths")
     for path in p.get("left_alone", []):
         problems.append(f"{path} is named under a moved directory but no such file moved -- the mention was left as it was; fix the row by hand")
+    for line in p.get("leftover", []):                              # #2330: what no pass could rewrite, by file and line
+        problems.append(f"LEFT {line} -- no rewrite pass matched this spelling; fix it by hand")
     return problems
 
 
@@ -987,6 +1068,54 @@ def selftest() -> int:
         check("the registered command FAILS (exit 1) on a project with a folder outside the layout", bad.returncode == 1 and "decisions" in bad.stdout, f"{bad.returncode} {bad.stdout[:200]}")
         check("...and passes (exit 0) on a conforming project", good.returncode == 0, f"{good.returncode} {good.stdout[:200]}")
 
+    # #2329, #2330, #2331 (flo-it-ui, measured downstream): the proposal's output must pass its own report, every spelling of a
+    # moved path is rewritten or named as LEFT, and an authored file in architecture/ is moved out rather than marked generated.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td) / "flo"; root.mkdir()
+        for rel, text in {
+            "docs/decisions/0001-tokens.md": "# ADR 1\n", "docs/decisions/README.md": "# Decisions\n",
+            "docs/architecture/overview.md": "# Architecture overview\n\nLayers, styling, server/client rules.\n",
+            "docs/architecture/graph.json": '{"nodes": []}\n',
+            "docs/inventory/report.md": "# Inventory\n", "docs/progress/log.md": "# Progress\n",
+            "docs/brain/STATUS.md": "# Status\n",
+            "scripts/inventory-corpora.ts": 'const out = join(process.cwd(), "docs", "inventory");\n',
+            "scripts/plan.ts": 'mkdirSync(join(root, "docs/progress"), { recursive: true });\n',
+            "scripts/concat.ts": 'const dir = "docs/" + "inventory";\n',
+            "docs/brain/phase-map.json": '{"_comment": "the inventory lives in docs/inventory"}\n',
+        }.items():
+            f = root / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(text, encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        (root / ".git" / "rails-flow-fixture").touch()
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)   # a fixture repo, not this one
+        rows = {r["path"]: r for r in classify(root)}
+        check("#2329: ADRs are homed in product/decisions/, not brain/",
+              rows["docs/decisions/0001-tokens.md"]["dest"] == "docs/product/decisions/0001-tokens.md", str(rows["docs/decisions/0001-tokens.md"]))
+        check("#2331: a hand-written file in architecture/ is authored and proposed for product/",
+              rows["docs/architecture/overview.md"]["kind"] == "authored"
+              and rows["docs/architecture/overview.md"]["dest"] == "docs/product/architecture/overview.md", str(rows["docs/architecture/overview.md"]))
+        check("#2331: the generator's own output stays in architecture/",
+              rows["docs/architecture/graph.json"]["kind"] == "generated" and not rows["docs/architecture/graph.json"]["dest"],
+              str(rows["docs/architecture/graph.json"]))
+        p = plan(root, list(rows.values()))
+        moved = {m["dest"] for m in p["moves"]}
+        problems = apply_plan(root, p)
+        inv = (root / "scripts/inventory-corpora.ts").read_text(encoding="utf-8")
+        check("#2330: a join() of segments spelling a moved directory is rewritten",
+              'join(process.cwd(), "docs", "product", "inventory")' in inv, inv)
+        check("#2330: a moved directory named without its trailing slash is rewritten",
+              '"docs/product/progress"' in (root / "scripts/plan.ts").read_text(encoding="utf-8"), (root / "scripts/plan.ts").read_text(encoding="utf-8"))
+        comment = next((root / "docs").rglob("phase-map.json")).read_text(encoding="utf-8")
+        check("#2330: a path in a JSON comment is rewritten", "docs/product/inventory" in comment and "docs/inventory\"" not in comment, comment)
+        check("#2330: a spelling no pass can rewrite is named as LEFT, file and line, not reported clean",
+              any(pr.startswith("LEFT scripts/concat.ts:1 still names docs/inventory") for pr in problems), str(problems))
+        check("#2330: nothing correctly rewritten is reported as LEFT",
+              not any(pr.startswith("LEFT") and "concat.ts" not in pr for pr in problems), str(problems))
+        after = classify(root)
+        about_moved = [r for r in after if r["path"] in moved and r["dest"]]
+        check("#2329/#2331: the proposal's output passes its own report (no finding about a moved file)",
+              not about_moved, str([(r["path"], r["dest"], r.get("reason")) for r in about_moved]))
     for f in failures:
         print(f"FAIL {f}")
     print(f"docs_layout selftest: {n} checks, {len(failures)} failure(s)")
