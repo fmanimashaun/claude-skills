@@ -60,7 +60,7 @@ Mock-up: docs/design/remember-device.png
   other slice says `no visible change`.
 - **Criteria** are stubs in `check_criteria.py`'s shape: Given / when / then, with at least one
   `[error]` path per slice. `/rails-flow:feature` copies them verbatim into
-  `docs/product/acceptance/<branch-slug>.md` when it picks the slice up (its Phase 1 says so): they,
+  `docs/product/acceptance/<unit-slug>.md` when it picks the slice up (its Phase 1 says so): they,
   not the spec's stories, are that branch's criteria.
 - **No `###` headings inside a slice.** A heading starts a new criteria unit and detaches the
   criteria below it.

@@ -56,7 +56,7 @@ way round.
 **If the issue is a slice** (its body opens `Slice S<n> of <spec>`, or `Slice S<n>.` when the plan
 named no source; filed by `/rails-flow:slice`,
 #1369), **its `AC-n` lines are this unit's criteria**, copied verbatim into
-`docs/product/acceptance/<branch-slug>.md`. They are the criteria the owner approved for this slice
+`docs/product/acceptance/<unit-slug>.md`. They are the criteria the owner approved for this slice
 alone. The spec then supplies only the `Seam:`, the Out of scope and the decisions, never more
 criteria; turning every story in the spec into criteria would build other slices' work on this
 branch and break the order `/slice` filed.
@@ -78,7 +78,7 @@ schema impact. Then produce a short plan:
 
 ### Acceptance criteria — write them BEFORE any code
 
-Every unit gets criteria, recorded in `docs/product/acceptance/<branch-slug>.md` (the layout's home for WHAT we are building; a pre-layout `docs/product/acceptance/` is still recognised by the gate, #910) — the slug is the
+Every unit gets criteria, recorded in `docs/product/acceptance/<unit-slug>.md` (the layout's home for WHAT we are building; a pre-layout `docs/product/acceptance/` is still recognised by the gate, #910) — the slug is the
 branch name after `feature/`, with any remaining `/` flattened to `-` (so `feature/team/foo`
 → `docs/product/acceptance/team-foo.md`). One `##` section per unit:
 
@@ -317,6 +317,10 @@ gh pr create --base <base> --title "feat: <summary>" --body "<the PR Documentati
 
 ## Phase 6 — Merge gate (non-skippable)
 
+**`<branch-slug>`**, used for every review record below (`docs/evidence/reviews/prs/<branch-slug>/…`), is the branch name with each `/` replaced by
+`-`, the prefix kept: `feature/team/foo` is `feature-team-foo`. It is NOT the `<unit-slug>` of the criteria files (the name after `feature/`).
+`risky_diff.py` derives it the same way, so a record written at that path is the one the gate looks for (#2264).
+
 - If the code-review-graph CLI is present with a built graph
   (`command -v code-review-graph && [ -d .code-review-graph ]`): run its `review-pr`
   skill with the PR number (installed per-project by `code-review-graph install`;
@@ -348,9 +352,11 @@ gh pr create --base <base> --title "feat: <summary>" --body "<the PR Documentati
   A diff that touches authentication, sessions, access rules, input parsing or a privacy filter needs one **adversarial pass** before
   the PR is marked ready: exit 1 means run the `adversary` agent (it runs on Fable, the owner's model for attack passes) with the
   printed reasons and the base, **save its answer verbatim** to that path (its first line is `Head: <sha>`, its last is
-  `VERDICT: CLEAN` or `VERDICT: BLOCKED`), and run the check again. Exit 0 continues. Exit 3 means the pass recorded BLOCKED: that is
-  a finding for the user, so stop, quote the findings and hand the merge over; it is not an automatic stop of the work, and you do
-  not decide its disposition. Exit 2 means it could not classify: stop. Mark the PR ready with `risky_diff.py ... && gh pr ready`,
+  `VERDICT: CLEAN` or `VERDICT: BLOCKED`), and run the check again. Exit 0 continues. A BLOCKED record also exits 1 (never 3: the project
+  gates read 3 as not applicable, #1873): that is a finding for the user, so stop, quote the findings and hand the merge over; you do not decide
+  its disposition. Only the user's line `Override: <who> | <reason, 20+ characters> | #<issue>` in that record lets it through. Exit 2 means it
+  could not classify: stop. The check is registered as `adversary-review` (`checks.json`), so the sweep `gh pr ready` requires fails without it
+  (#2264); `risky_diff.py` with no `--record` finds the record from the branch name. Mark the PR ready with `risky_diff.py ... && gh pr ready`,
   never `;`. A record is tied to the commit it names, so a push after the pass needs a new one.
 - On CLEAN, **verify the threat model** when the change adds or edits one (`docs/security/threat-models/<slug>.md`, #2119):
   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_security_review.py"`. `security-auditor` is MANDATORY then, not "if auth changed": give it the model and the
