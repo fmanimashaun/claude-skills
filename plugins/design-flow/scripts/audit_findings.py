@@ -72,7 +72,7 @@ BLOCKED = {
     "A5": "needs the mock-up record's `Nav:` line (#2226)",
     "A8": "needs a way to drive a list's controls (#2229)",
     "A9": "needs a client-routed stack's crawl (#2222)",
-    "A10": "needs the mock-up record's `Template:` line (#2226)",
+    "A10": "needs `--screens` (the list linking each URL to its mock-up record, #2251)",
     "A19": "axe runs in the a11y-auditor agent; no judge with JSON output yet",
     "A20": "axe runs in the a11y-auditor agent; no judge with JSON output yet",
     "A21": "no focus check yet (#2228)",
@@ -81,8 +81,22 @@ BLOCKED = {
     "A59": "no forced-state check yet (#2229)",
     "A60": "no forced-state check yet (#2229)",
 }
+# The template rules (A29 to A58) this audit does not measure, each with the reason. The seven it does measure
+# (A31, A34, A53 to A57) are judged only with `--screens`, and say so when it is absent.
+_NEEDS_JOURNEY = "needs a declared flow or a judgement: no check yet (#2251)"
+NOT_MEASURED_TEMPLATE = {
+    **{r: _NEEDS_JOURNEY for r in ("A29", "A30", "A33")},
+    "A32": "needs a driven journey: the back link's state depends on the step before (#2229)",
+    **{f"A{n}": "the mock-up record has no check-answers or confirmation kind to declare (#2310)" for n in range(35, 43)},
+    **{f"A{n}": "the mock-up record has no task-list kind to declare (#2310)" for n in range(43, 53)},
+    "A58": "needs a driver for a partial update (#2229)",
+}
+NEEDS_SCREENS = {r: "judged only for a screen whose record declares its template, via `--screens` (#2251); none did in this run"
+                 for r in ("A31", "A34", "A53", "A54", "A55", "A56", "A57")}
+BLOCKED.update(NEEDS_SCREENS)
+BLOCKED.update(NOT_MEASURED_TEMPLATE)
 JUDGEMENT = ("density matches the surface, content hierarchy, interaction feedback, whether a screen is the right "
-             "template: no verdict channel yet (#2225)")
+             "template: no verdict channel yet (#2225, rows tracked in #2309)")
 
 
 class Unusable(Exception):
@@ -233,7 +247,7 @@ def not_audited(doc: dict, registry: dict[str, dict]) -> dict[str, list[str]]:
         if rid in doc["audited"]:
             continue
         why = BLOCKED.get(rid) or (f"enforced by `{r['ref']}`; run that check separately" if r["basis"] == "check"
-                                   else "no mechanical check in this audit yet (a later slice, #2251)")
+                                   else "no mechanical check in this audit yet (no later slice is filed for it)")
         groups.setdefault(why, []).append(rid)
     return groups
 
