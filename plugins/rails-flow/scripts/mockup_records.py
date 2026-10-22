@@ -20,7 +20,7 @@ RECORD_KEYS = ("Mock-up", "Issue", "Approved-by", "Approval", "Widths", "States"
 SHELL_RECORD = RECORD_DIR + "shell.md"
 SHELL_KEYS = ("Kind", "Shell", "Shell-sources", "Shell-keep", "Shell-signature")
 # The design lines of a screen record (#2226); their allowed values are in reference/mockup-vocabulary.json, the one list.
-DESIGN_KEYS = ("Template", "Screen", "Nav", "Story")
+DESIGN_KEYS = ("Template", "Screen", "Nav", "Story", "Statuses")
 ISSUE_REF = re.compile(r"^(#\d+|https://github\.com/[^/\s]+/[^/\s]+/issues/\d+)\b")
 
 

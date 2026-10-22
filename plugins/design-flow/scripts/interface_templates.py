@@ -12,18 +12,36 @@ THE SCREEN-TO-RECORD LINK IS DATA THE CALLER SUPPLIES. A record has no route (it
 `{"url": "/orders", "screen": "Order list"}`, where `screen` names a record's `Screen:` line (null for none). This reads the records itself, refuses a
 `screen` no record has, and refuses two records with one `Screen:`. A URL in no entry is undeclared, never assumed.
 
-WHAT IS MEASURED. The browser collector records FACTS in `structure`; this decides. Seven rules, each only for the template that owns it:
-  multi-step      (a question page: `Template: multi-step` with no sub-kind, #2310; check-answers, confirmation and task-list pages are not judged here)
+WHAT IS MEASURED. The browser collector records FACTS in `structure`; this decides. Fifteen rules, each only for the template that owns it:
+  multi-step      (a question page: `Template: multi-step` with no sub-kind, #2310)
                   A31 a back link at the top (present, and before the page's h1)
                   A34 the forward button is labelled "Continue", not "Next" (a finding only for "Next": the other labels the rule does not name are not asserted)
+  multi-step: check-answers (#2327)
+                  A35 a Change link on every row of the summary list
+                  A36 each Change link's accessible name says more than "Change" (the hidden text naming what it changes)
+                  A40 a text block sits between the answers and the submit button (its presence, never its wording)
+  multi-step: task-list (#2327)
+                  A43 a list of fewer than two tasks is not a task list
+                  A44 one list per group: two lists under one heading are a finding
+                  A46 every task shows a status
+                  A47 a task whose status is the project's "cannot start" word is not a link
+                  A50 no way forward while a task is not "completed"
   search-results  A53 a results count; pagination when the count is above ten; and, with no results, a no-results message
                   A54 the count sits above the list, and names a search term when the URL carries one
                   A55 with no results the message says so plainly and offers hints
                   A56 a sort control, when there is one, sits above the results
                   A57 no more than ten results on a page
-NOT MEASURED, and named in the report with their reasons (`audit_findings.NOT_MEASURED_TEMPLATE`): A29, A30, A33 (one question per page, a statement heading, a
-heading no other page of the flow shares: they need a declared flow or a judgement), A32 (the back link's state: it needs a driven journey), A35-A42
-(check-answers and confirmation pages) and A43-A52 (task lists): the record's vocabulary has no page kind for either, and A58 (a partial update needs a driver).
+`multi-step: confirmation` has NO judge: the rules about a confirmation page (A41, A42) are statements in prose, so the page is not judged and is not
+reported as unverified either; the report's Not audited section says why.
+
+THE TASK STATUS WORDS (A47, A50) are the project's. A task-list record may carry `Statuses: not-started=To do; cannot-start=Blocked; completed=Done`
+(`reference/mockup-record.md`); with no line the GOV.UK wording is used. A list whose status words match neither vocabulary has A47 and A50 left out of
+the audited rules and its screen reported as unverified, never clean and never guilty; a status word the vocabulary does not name also leaves A50 out
+(it could mean "done"), though a finding A47 can still make from a word it does know stands.
+
+NOT MEASURED, and named in the report with their reasons (`audit_findings.NOT_MEASURED_TEMPLATE`): A29, A30, A33 (one question per page, a statement
+heading, a heading no other page of the flow shares: they need a declared flow or a judgement), A32, A37, A39, A48, A49, A51 (they need a driven journey),
+A38, A41, A42 (statements in prose: a phrase match would be a wrong check), A45 and A52 (a judgement), and A58 (a partial update needs a driver).
 
 Exit codes are `interface_audit.py`'s. Stdlib only.
 """
@@ -36,8 +54,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mockup_records import RECORD_DIR, SHELL_RECORD, read_fields  # noqa: E402  (vendored, byte-identical to rails-flow's: the one reader of a record)
 
-TEMPLATE_RULES = {"multi-step": ("A31", "A34"), "search-results": ("A53", "A54", "A55", "A56", "A57")}
-RULES = ("A10", *TEMPLATE_RULES["multi-step"], *TEMPLATE_RULES["search-results"])
+CHECK_ANSWERS, TASK_LIST = "multi-step: check-answers", "multi-step: task-list"
+TEMPLATE_RULES = {"multi-step": ("A31", "A34"), "search-results": ("A53", "A54", "A55", "A56", "A57"),
+                  CHECK_ANSWERS: ("A35", "A36", "A40"), TASK_LIST: ("A43", "A44", "A46", "A47", "A50")}
+# The words a task list shows for its statuses unless its record's `Statuses:` line says otherwise: the GOV.UK pattern's own (#2327).
+DEFAULT_STATUSES = {"not-started": "Not started", "in-progress": "In progress", "cannot-start": "Cannot start yet", "completed": "Completed"}
+RULES = ("A10", *(r for rules in TEMPLATE_RULES.values() for r in rules))
 DESIGN_LINES = ("Template", "States", "Nav")
 PAGE_SIZE = 10
 
@@ -57,6 +79,27 @@ def finding(rule: str, url: str, ref: str, message: str, proposal: str | None = 
 # The records
 # ---------------------------------------------------------------------------------------------
 
+def parse_statuses(line: str | None, where: str) -> dict[str, str]:
+    """`{role: word}` from a record's `Statuses:` line (`cannot-start=Blocked; completed=Done`), the GOV.UK wording when there is no line.
+
+    check_mockup_gate.py refuses a malformed line when a record is added or changed; this reads records that predate it or were never
+    judged, so it refuses too (a half-read mapping would judge a project's tasks by words it never used)."""
+    if not line:
+        return dict(DEFAULT_STATUSES)
+    out: dict[str, str] = {}
+    for entry in (e.strip() for e in line.split(";")):
+        role, eq, word = (part.strip() for part in entry.partition("="))
+        if not eq or not word or role not in DEFAULT_STATUSES or role in out:
+            raise Unusable(f"{where}: Statuses entry {entry!r} must read `<role>=<word>` with a role of {', '.join(DEFAULT_STATUSES)}, once each")
+        if word.lower() in {w.lower() for w in out.values()}:
+            raise Unusable(f"{where}: Statuses gives {word!r} to two roles: one word stands for one state")
+        out[role] = word
+    missing = [r for r in ("cannot-start", "completed") if r not in out]
+    if missing:
+        raise Unusable(f"{where}: Statuses must name {', '.join(missing)}")
+    return out
+
+
 def load_records(root: Path) -> dict[str, dict]:
     """`{Screen: {template, fields, path}}` for every record under docs/product/mockups/ that names a `Screen:` (the shell record is not a screen)."""
     base = root / RECORD_DIR
@@ -72,7 +115,7 @@ def load_records(root: Path) -> dict[str, dict]:
             raise Unusable(f"two mock-up records name the screen `{name}` ({records[name]['path']} and {path.name}): a screen name is unique")
         # `multi-step: check-answers` stays whole: a sub-kind is a different page from the question page the multi-step rules describe (#2310)
         template = re.sub(r"\s*:\s*", ": ", fields.get("Template", "").strip()).rstrip(": ")
-        records[name] = {"template": template, "fields": fields, "path": f"{RECORD_DIR}{path.name}"}
+        records[name] = {"template": template, "fields": fields, "path": f"{RECORD_DIR}{path.name}", "statuses": parse_statuses(fields.get("Statuses"), path.name)}
     return records
 
 
@@ -142,7 +185,78 @@ def judge_search_results(url: str, s: dict) -> list[dict]:
     return out
 
 
-JUDGES = {"multi-step": judge_multi_step, "search-results": judge_search_results}
+def _plural(n: int, noun: str) -> str:
+    return f"{n} {noun}" + ("" if n == 1 else "s")
+
+
+def judge_check_answers(url: str, s: dict, statuses: dict[str, str]) -> tuple[list[dict], list[str]]:
+    """A35 a Change link on every row, A36 its accessible name says what it changes, A40 a text block between the summary and the submit button.
+    Presence and structure only: what the statement SAYS is prose (A38) and is never judged."""
+    ca = s["check_answers"]
+    out: list[dict] = []
+    rows = ca["rows"]
+    bare = [r for r in rows if not r["change_links"]]
+    if bare:
+        out.append(finding("A35", url, f"{len(bare)} of {len(rows)} summary rows have no Change link at {url}",
+                           f"{_plural(len(bare), 'row')} of the answers {'has' if len(bare) == 1 else 'have'} no Change link", None) | {"instances": len(bare)})
+    links = [l for r in rows for l in r["change_links"]]
+    vague = [l for l in links if (l["name"] or "").strip().lower() == (l["visible"] or "").strip().lower()]
+    if vague:
+        out.append(finding("A36", url, f"{len(vague)} of {len(links)} Change links are named only {vague[0]['visible']!r} at {url}",
+                           f"{_plural(len(vague), 'Change link')} {'says' if len(vague) == 1 else 'say'} only what the link is, not what it changes (no hidden text)", None)
+                   | {"instances": len(vague)})
+    if ca["submit_present"] and not ca["text_before_submit"]:
+        out.append(finding("A40", url, f"no text block between the answers and the submit button at {url}", "no statement sits above the submit button"))
+    return out, ([] if ca["submit_present"] else ["A40"])
+
+
+def judge_task_list(url: str, s: dict, statuses: dict[str, str]) -> tuple[list[dict], list[str]]:
+    """A43 more than one task, A44 one list per group, A46 every task shows a status, A47 a task that cannot start is not a link, A50 move on only
+    when every task is Completed. A47 and A50 read the status WORDS, the record's (`Statuses:`) or the GOV.UK default; a list whose words match
+    neither is not judged for those two (unverified), never reported clean and never reported guilty."""
+    tl = s["task_list"]
+    out: list[dict] = []
+    skipped: list[str] = []
+    items = [i for l in tl["lists"] for i in l["items"]]
+    if len(items) < 2:
+        out.append(finding("A43", url, f"{len(items)} task(s) in the task list at {url}", "a task list of fewer than two tasks is not a task list"))
+    by_heading: dict[object, int] = {}
+    for l in tl["lists"]:
+        by_heading[l["heading_index"]] = by_heading.get(l["heading_index"], 0) + 1
+    shared = [h for h, n in by_heading.items() if n > 1]
+    if shared:
+        out.append(finding("A44", url, f"{len(shared)} heading(s) with more than one task list at {url}",
+                           "a group of tasks is split across more than one task list") | {"instances": len(shared)})
+    blank = [i for i in items if not (i["status"] or "").strip()]
+    if blank:
+        out.append(finding("A46", url, f"{len(blank)} of {len(items)} tasks show no status at {url}",
+                           f"{_plural(len(blank), 'task')} {'shows' if len(blank) == 1 else 'show'} no status") | {"instances": len(blank)})
+    words = {w.lower(): role for role, w in statuses.items()}
+    known = [i for i in items if (i["status"] or "").strip().lower() in words]
+    if items and not known and len(blank) < len(items):
+        return out, ["A47", "A50"]
+    stuck = [i for i in items if words.get((i["status"] or "").strip().lower()) == "cannot-start" and i["has_link"]]
+    if stuck:
+        out.append(finding("A47", url, f"{len(stuck)} task(s) with status {statuses['cannot-start']!r} are links at {url}",
+                           f"{_plural(len(stuck), 'task')} that cannot be started {'is' if len(stuck) == 1 else 'are'} still a link") | {"instances": len(stuck)})
+    # A status the vocabulary does not name could mean "done", so A50 is not judged while one is on the page.
+    unnamed = [i for i in items if (i["status"] or "").strip() and (i["status"] or "").strip().lower() not in words]
+    if unnamed:
+        return out, ["A50"]
+    open_ = [i for i in items if words.get((i["status"] or "").strip().lower()) != "completed"]
+    if tl["forward_present"] and open_:
+        out.append(finding("A50", url, f"{len(open_)} of {len(items)} tasks are not {statuses['completed']!r}, yet a way forward is offered at {url}",
+                           "the user can move on from the task list before every task is complete"))
+    return out, []
+
+
+def _plain(judge):
+    """Adapt a judge that returns only findings and ignores the record's statuses."""
+    return lambda url, s, statuses: (judge(url, s), [])
+
+
+JUDGES = {"multi-step": _plain(judge_multi_step), "search-results": _plain(judge_search_results),
+          CHECK_ANSWERS: judge_check_answers, TASK_LIST: judge_task_list}
 
 
 def validate_structure(url: str, s: object, template: str) -> None:
@@ -151,7 +265,20 @@ def validate_structure(url: str, s: object, template: str) -> None:
         if not cond:
             raise Unusable(f"snapshot {url}: `structure` {what}")
     need(isinstance(s, dict), "is missing: the collector records it, and a template row is never judged without it")
-    if template == "multi-step":
+    if template == CHECK_ANSWERS:
+        ca = s.get("check_answers")
+        need(isinstance(ca, dict) and isinstance(ca.get("rows"), list) and ca["rows"], "needs check_answers.rows: no summary list was found, so no row was measured")
+        need(all(isinstance(r, dict) and isinstance(r.get("change_links"), list) and all(isinstance(l, dict) and "visible" in l and "name" in l for l in r["change_links"])
+                 for r in ca["rows"]), "needs each row's change_links, each with its visible text and its accessible name")
+        need(isinstance(ca.get("submit_present"), bool) and isinstance(ca.get("text_before_submit"), bool), "needs check_answers.submit_present and text_before_submit")
+    elif template == TASK_LIST:
+        tl = s.get("task_list")
+        need(isinstance(tl, dict) and isinstance(tl.get("lists"), list) and tl["lists"] and isinstance(tl.get("forward_present"), bool),
+             "needs task_list.lists (a task list was found) and forward_present")
+        need(all(isinstance(l, dict) and "heading_index" in l and isinstance(l.get("items"), list)
+                 and all(isinstance(i, dict) and "status" in i and isinstance(i.get("has_link"), bool) for i in l["items"]) for l in tl["lists"]),
+             "needs each list's heading_index and items, each with a status and has_link")
+    elif template == "multi-step":
         b, f = s.get("back_link"), s.get("forward_button")
         need(isinstance(b, dict) and isinstance(b.get("present"), bool) and isinstance(b.get("before_h1"), bool), "needs back_link {present, before_h1}")
         need(isinstance(f, dict) and isinstance(f.get("present"), bool), "needs forward_button {present, label}")
@@ -224,9 +351,13 @@ def judge_templates(snapshots: list[dict], screens_doc: object, root: Path) -> t
         except Unusable:
             unverified.append(url)
             continue
-        findings += JUDGES[template](url, snap["structure"])
+        found, skipped = JUDGES[template](url, snap["structure"], record["statuses"])
+        findings += found
         for rule in TEMPLATE_RULES[template]:
-            audited[rule] = audited.get(rule, 0) + 1
+            if rule not in skipped:
+                audited[rule] = audited.get(rule, 0) + 1
+        if skipped:
+            unverified.append(url)
     return findings, audited, unverified
 
 
@@ -251,6 +382,27 @@ def selftest() -> int:
 
     def snap(url="/s", **structure) -> dict:
         return {"url": url, "title": "A screen", "status": 200, "structure": structure}
+
+    def CA_ROW(links=None, name="Change your answer"):
+        return {"key": "Name", "change_links": [{"visible": "Change", "name": name}] if links is None else links}
+
+    def CA(rows=None, submit=True, text=True):
+        return {"rows": [CA_ROW(), CA_ROW()] if rows is None else rows, "submit_present": submit, "text_before_submit": text}
+
+    def TLI(status, link):
+        return {"name": "A task", "status": status, "has_link": link}
+
+    def TLL(items=None, heading=0):
+        return {"heading_index": heading, "items": [TLI("Completed", True), TLI("Cannot start yet", False)] if items is None else items}
+
+    def TL(lists=None, forward=False):
+        return {"lists": [TLL()] if lists is None else lists, "forward_present": forward}
+
+    def judge_one(template: str, structure: dict) -> list[dict]:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            record(root, "r", "Screen One", Template=template, States="loaded", Nav="level 1 under shell")
+            return judge_templates([snap(**structure)], [{"url": "/s", "screen": "Screen One"}], root)[0]
 
     GOOD_STEP = {"back_link": {"present": True, "before_h1": True, "text": "Back"}, "forward_button": {"present": True, "label": "Continue"}}
 
@@ -296,10 +448,67 @@ def selftest() -> int:
     check("a sort control below the list is an A56 finding", run("search-results", results(sort_control={"present": True, "before_list": False})) == ["A56"])
     check("no sort control is not a finding (a sort is optional)", run("search-results", results(sort_control={"present": False, "before_list": None})) == [])
     # applicability: a rule is judged only for its template
-    for sub_kind in ("check-answers", "confirmation", "task-list"):
-        check(f"a multi-step: {sub_kind} page is not judged as a question page", run(f"multi-step: {sub_kind}", {}) == [])
+    # a sub-kind keeps its whole template (#2310): the question-page rules (back link, Continue) never reach it
+    for sub_kind, structure in (("check-answers", {"check_answers": CA()}), ("task-list", {"task_list": TL()}), ("confirmation", {})):
+        check(f"a multi-step: {sub_kind} page is not judged as a question page", run(f"multi-step: {sub_kind}", structure) == [])
     check("a trailing colon leaves no trailing space, so the template still names a judge", run("multi-step:", GOOD_STEP) == [] and run("multi-step: ", {**GOOD_STEP, "forward_button": {"present": True, "label": "Next"}}) == ["A34"])
     check("a multi-step: sub-kind written without a space is read the same", run("multi-step:confirmation", {}) == [])
+    check("a confirmation page has no judge: it is not judged, and it is not reported as unverified either", run("multi-step: confirmation", GOOD_STEP) == [])
+
+    # ---- check-answers (A35, A36, A40) ------------------------------------------------------------
+    check("a conforming check-answers page has no findings", run("multi-step: check-answers", {"check_answers": CA()}) == [])
+    check("a row with no Change link is an A35 finding", run("multi-step: check-answers", {"check_answers": CA(rows=[CA_ROW(), CA_ROW(links=[])])}) == ["A35"])
+    check("A35 counts the rows that lack one, in one finding", [f["instances"] for f in judge_one("multi-step: check-answers", {"check_answers": CA(rows=[CA_ROW(links=[]), CA_ROW(links=[])])})] == [2])
+    check("a Change link named only 'Change' is an A36 finding", run("multi-step: check-answers", {"check_answers": CA(rows=[CA_ROW(name="Change")])}) == ["A36"])
+    check("A36 ignores case and padding", run("multi-step: check-answers", {"check_answers": CA(rows=[CA_ROW(name=" CHANGE ")])}) == ["A36"])
+    check("a Change link whose name carries the hidden text is clean", run("multi-step: check-answers", {"check_answers": CA(rows=[CA_ROW(name="Change your address")])}) == [])
+    check("no text block above the submit button is an A40 finding", run("multi-step: check-answers", {"check_answers": CA(text=False)}) == ["A40"])
+    check("a check-answers page with no submit button has A40 not judged, and is unverified", run("multi-step: check-answers", {"check_answers": CA(submit=False, text=False)}) == ["unverified:/s"])
+    check("a check-answers page where no summary list was found is unverified, never a pass", run("multi-step: check-answers", {"check_answers": CA(rows=[])}) == ["unverified:/s"])
+
+    # ---- task list (A43, A44, A46, A47, A50) -------------------------------------------------------
+    check("a conforming task list has no findings", run("multi-step: task-list", {"task_list": TL()}) == [])
+    check("a task list of one task is an A43 finding", run("multi-step: task-list", {"task_list": TL(lists=[TLL([TLI("Completed", True)])])}) == ["A43"])
+    check("two task lists under one heading are an A44 finding", run("multi-step: task-list", {"task_list": TL(lists=[TLL(heading=0), TLL(heading=0)])}) == ["A44"])
+    check("two task lists under two headings are clean", run("multi-step: task-list", {"task_list": TL(lists=[TLL(heading=0), TLL(heading=1)])}) == [])
+    check("a task with no status is an A46 finding", run("multi-step: task-list", {"task_list": TL(lists=[TLL([TLI("Completed", True), TLI(None, True)])])}) == ["A46"])
+    check("a task whose status is only spaces is an A46 finding", run("multi-step: task-list", {"task_list": TL(lists=[TLL([TLI("Completed", True), TLI("  ", True)])])}) == ["A46"])
+    check("a task that cannot start but is a link is an A47 finding", run("multi-step: task-list", {"task_list": TL(lists=[TLL([TLI("Completed", True), TLI("Cannot start yet", True)])])}) == ["A47"])
+    check("A47 ignores the case of the status", run("multi-step: task-list", {"task_list": TL(lists=[TLL([TLI("Completed", True), TLI("CANNOT START YET", True)])])}) == ["A47"])
+    check("a task that is a link and Completed is not an A47 finding", run("multi-step: task-list", {"task_list": TL(lists=[TLL([TLI("Completed", True), TLI("Completed", True)])])}) == [])
+    check("a way forward while a task is not Completed is an A50 finding", run("multi-step: task-list", {"task_list": TL(forward=True)}) == ["A50"])
+    check("a way forward when every task is Completed is clean", run("multi-step: task-list", {"task_list": TL(lists=[TLL([TLI("Completed", True), TLI("Completed", True)])], forward=True)}) == [])
+    check("no way forward while a task is open is clean", run("multi-step: task-list", {"task_list": TL(forward=False)}) == [])
+    check("a task list the collector could not find is unverified, never a pass", run("multi-step: task-list", {"task_list": TL(lists=[])}) == ["unverified:/s"])
+
+    # the status vocabulary: declared (judged) against renamed and undeclared (unverified)
+    renamed = {"task_list": TL(lists=[TLL([TLI("Done", True), TLI("Blocked", True)])], forward=True)}
+    check("a renamed vocabulary that IS declared is judged: the link on a Blocked task and the open task are findings",
+          run("multi-step: task-list", renamed, Statuses="cannot-start=Blocked; completed=Done") == ["A47", "A50"])
+    check("a renamed vocabulary that is NOT declared is unverified for A47 and A50, never clean and never guilty",
+          run("multi-step: task-list", renamed) == ["unverified:/s"])
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        record(root, "r", "Screen One", Template="multi-step: task-list", States="loaded", Nav="level 1 under shell")
+        _, aud, _ = judge_templates([snap(**renamed)], [{"url": "/s", "screen": "Screen One"}], root)
+        check("a vocabulary nothing matches leaves A47 and A50 out of the audited rules, and A46 in",
+              "A47" not in aud and "A50" not in aud and aud.get("A46") == 1)
+    check("...and A46 is still judged there, because it reads no word",
+          run("multi-step: task-list", {"task_list": TL(lists=[TLL([TLI("Done", True), TLI(None, True)])], forward=True)}) == ["A46", "unverified:/s"])
+    check("a declared vocabulary is not mixed with the default: 'Cannot start yet' means nothing once the project says Blocked",
+          run("multi-step: task-list", {"task_list": TL(lists=[TLL([TLI("Done", True), TLI("Cannot start yet", True)])])}, Statuses="cannot-start=Blocked; completed=Done") == ["unverified:/s"])
+    check("a status the vocabulary does not name is not guessed at: A50 is not judged, though A47 still is",
+          run("multi-step: task-list", {"task_list": TL(lists=[TLL([TLI("Completed", True), TLI("Waiting", True)])], forward=True)}) == ["unverified:/s"])
+    check("...and an A47 finding there is still reported, because it reads one known word",
+          run("multi-step: task-list", {"task_list": TL(lists=[TLL([TLI("Cannot start yet", True), TLI("Waiting", True)])], forward=True)}) == ["A47", "unverified:/s"])
+    for label, line in (("a role twice", "cannot-start=A; cannot-start=B; completed=C"), ("an unknown role", "cannot-start=A; completed=B; later=C"),
+                        ("no completed", "cannot-start=A"), ("one word for two roles", "cannot-start=A; completed=a"), ("an entry that is not role=word", "cannot-start A; completed=B")):
+        try:
+            parse_statuses(line, "r.md")
+            check(f"a Statuses line with {label} is refused", False)
+        except Unusable:
+            check(f"a Statuses line with {label} is refused", True)
+    check("no Statuses line means the GOV.UK wording", parse_statuses(None, "r.md") == DEFAULT_STATUSES)
     check("a list screen is not judged for a back link", run("list", {}) == [])
     check("a multi-step screen is not judged for a results count", run("multi-step", {**GOOD_STEP, **results(count_text=None)}) == [])
     # a missing structure is unverified, never clean
@@ -351,7 +560,7 @@ def selftest() -> int:
         (d / "shell.md").write_text("Kind: shell\nScreen: Shell\nTemplate: list\n", encoding="utf-8")
         check("the shell record is not a screen", "Shell" not in load_records(root))
     check("the rules the module claims are the rules it judges",
-          set(RULES) == {"A10", "A31", "A34", "A53", "A54", "A55", "A56", "A57"})
+          set(RULES) == {"A10", "A31", "A34", "A53", "A54", "A55", "A56", "A57", "A35", "A36", "A40", "A43", "A44", "A46", "A47", "A50"})
 
     bad = 0
     for label, ok in cases:

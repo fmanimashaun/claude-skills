@@ -170,7 +170,7 @@ def selftest() -> int:
         rep = af.report_md(out, af.load_registry())
         cases.append(("the report prints the proposed record for the undeclared screen", "Proposed improvements" in rep and "/mystery" in rep))
         cases.append(("the report names a reason for each rule it did not measure",
-                      "check-answers or confirmation page is declared" in rep and "task-list page is declared" in rep and "A58" in rep and "A29, A30, A33" in rep))
+                      "a statement in prose" in rep and "A58" in rep and "A29, A30, A33" in rep and "A45, A52" in rep))
         cases.append(("without --screens no template rule is audited", set(judge(doc)["audited"]) == {"A1", "A2", "A4"}))
         try:
             judge(doc, [{"url": "/step", "screen": "Nowhere"}], root)

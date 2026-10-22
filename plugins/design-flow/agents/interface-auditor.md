@@ -46,8 +46,10 @@ Say what the rule is; the report prints its authority for you.
    `Screen:` line of a record in `docs/product/mockups/` (`null` when no record fits; never guess a
    match). A URL with no record, or a record without `Template:`, `States:` or `Nav:`, becomes an
    **A10** finding carrying a proposed record: relay it as a proposal for a person to review, never
-   as the screen's template. A rule of multi-step (A31, A34) or search-results (A53 to A57) is judged
-   only for a screen whose record declares that `Template:`.
+   as the screen's template. A rule of multi-step (A31, A34), `multi-step: check-answers` (A35, A36, A40),
+   `multi-step: task-list` (A43, A44, A46, A47, A50) or search-results (A53 to A57) is judged only for a screen
+   whose record declares that `Template:`; a `multi-step: confirmation` page has no measured rule. A47 and A50
+   read the task-status words from the record's `Statuses:` line (the GOV.UK wording when there is none).
 4. **Reuse what already exists.** If qa-flow evidence is present (`layout_fit`, `text_resize`,
    `theme_parity`, `link_audit` `--json` outputs), convert each with
    `audit_findings.py from-judge NAME file.json --screens N` and merge with
@@ -69,9 +71,10 @@ The report lists, under **Not audited**, every rule you could not measure this r
   they are **not audited**, never "looks fine";
 - rules whose check is not built (card in a card #2227, focus visible #2228, forced states #2229,
   Core Web Vitals #2230);
-- 23 of the 30 template rules (A29 to A58), each with its reason in the report: the record has no
-  check-answers, confirmation or task-list page's rows are not built yet (#2327; a record declares
-  them as `multi-step: <sub-kind>`, #2310), or the rule needs a declared flow or a driven journey. The seven it can measure are judged only with `--screens`.
+- 15 of the 30 template rules (A29 to A58), each with its reason in the report: the rule needs a
+  declared flow or a driven journey (A29, A30, A32, A33, A37, A39, A48, A49, A51, A58), is a statement in prose
+  (A38, A41, A42) or a judgement (A45, A52). The other fifteen (A31, A34, A35, A36, A40, A43, A44, A46,
+  A47, A50, A53 to A57) are judged only with `--screens`.
 
 `audit_findings.py report` writes that section itself from the framework's rules table: every rule the
 document did not audit, grouped by what blocks it, plus the judgement rules. You do not write it and

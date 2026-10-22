@@ -589,6 +589,48 @@ GUARD = Guard(
             'a sub-kind on a template that takes none is held',
         ),
         Mutation(
+            "a Statuses line is taken on any record",
+            '    if name != "multi-step" or sub != "task-list":',
+            "    if False:",
+            "#2327: a Statuses line on a record that is not a task list is held",
+        ),
+        Mutation(
+            "a Statuses line need not name completed or cannot-start",
+            '    if needed and not out:\n        out.append(f"{rel}: Statuses must name',
+            '    if False:\n        out.append(f"{rel}: Statuses must name',
+            "#2327: a Statuses line naming no completed role is held",
+        ),
+        Mutation(
+            "an unknown Statuses role is accepted",
+            '        elif role not in vocab["task_statuses"]:',
+            "        elif False:",
+            "#2327: a Statuses line with an unknown role is held",
+        ),
+        Mutation(
+            "a Statuses role may be named twice",
+            "        elif role in words:",
+            "        elif False:",
+            "#2327: a Statuses line with a role twice is held",
+        ),
+        Mutation(
+            "one word may stand for two Statuses roles",
+            "        elif word.lower() in {w.lower() for w in words.values()}:",
+            "        elif False:",
+            "#2327: a Statuses line giving one word to two roles is held",
+        ),
+        Mutation(
+            "a Statuses entry need not be role=word",
+            "        if not eq or not word:",
+            "        if False:",
+            "#2327: a Statuses line with an entry that is not role=word is held",
+        ),
+        Mutation(
+            "a stray semicolon in Statuses is not reported",
+            '        if not entry:\n            out.append(f"{rel}: Statuses has an empty entry',
+            '        if False:\n            out.append(f"{rel}: Statuses has an empty entry',
+            "#2327: a Statuses line with a stray semicolon is held",
+        ),
+        Mutation(
             'a colon with nothing after it is accepted',
             '    if colon and not sub:',
             '    if False:',
@@ -607,9 +649,15 @@ GUARD = Guard(
             'CONTROL: Template `multi-step: task-list` is accepted',
         ),
         Mutation(
-            'a missing multi-step sub-kind list is accepted',
+            'a missing task-status list is accepted',
+            '"system_subkinds", "multi_step_subkinds", "task_statuses", "task_statuses_required", "states"))',
             '"system_subkinds", "multi_step_subkinds", "states"))',
-            '"system_subkinds", "states"))',
+            'a no task statuses vocabulary refuses every record',
+        ),
+        Mutation(
+            'a missing multi-step sub-kind list is accepted',
+            '"system_subkinds", "multi_step_subkinds", "task_statuses", "task_statuses_required", "states"))',
+            '"system_subkinds", "task_statuses", "task_statuses_required", "states"))',
             'a no multi-step sub-kinds vocabulary refuses every record',
         ),
         Mutation(

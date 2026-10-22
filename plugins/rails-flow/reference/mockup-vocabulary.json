@@ -3,6 +3,8 @@
  "templates": ["list", "detail", "create-edit", "multi-step", "dashboard", "settings", "search-results", "sign-in", "system"],
  "system_subkinds": ["not-found", "no-permission", "error", "maintenance"],
  "multi_step_subkinds": ["check-answers", "confirmation", "task-list"],
+ "task_statuses": ["not-started", "in-progress", "cannot-start", "completed"],
+ "task_statuses_required": ["cannot-start", "completed"],
  "states": ["loaded", "empty-filtered", "loading", "error", "partial", "permission-denied", "success", "first-run"],
  "nav_max_level": 3
 }

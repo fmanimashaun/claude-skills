@@ -61,6 +61,49 @@ const collectInterfaceSnapshot = () => {
     const v = here.searchParams.get(k);
     if (v && v.trim()) terms.push(...v.trim().split(/\s+/));
   });
+  // Check-answers and task-list facts (#2327). The same rule: record what is on the page by the conventional hooks,
+  // never decide. A fact that is not found is reported empty, and the judge reads that as unverified, not as a pass.
+  const hiddenSel = '.govuk-visually-hidden, .visually-hidden, .sr-only, [data-visually-hidden]';
+  const squash = (t) => (t || '').replace(/\s+/g, ' ').trim();
+  const textOf = (el, withHidden) => {
+    const c = el.cloneNode(true);
+    if (!withHidden) c.querySelectorAll(hiddenSel).forEach((n) => n.remove());
+    return squash(c.textContent);
+  };
+  const accName = (a) => squash(a.getAttribute('aria-label')) || textOf(a, true);
+  const summary = main.querySelector('.govuk-summary-list, [data-check-answers], dl.summary-list, dl');
+  const changeLinks = (scope) => Array.from(scope.querySelectorAll('a[href]'))
+    .filter((a) => a.closest('[class*="actions"]') || /^change\b/i.test(textOf(a, false)))
+    .map((a) => ({ visible: textOf(a, false), name: accName(a) }));
+  let rows = [];
+  if (summary) {
+    const wrapped = Array.from(summary.children).filter((c) => c.tagName === 'DIV' || c.matches('.govuk-summary-list__row'));
+    rows = wrapped.length
+      ? wrapped.map((r) => ({ key: textOf(r.querySelector('dt') || r.firstElementChild || r, false).slice(0, 80), change_links: changeLinks(r) }))
+      : Array.from(summary.querySelectorAll(':scope > dt')).map((dt) => {
+        const holder = document.createElement('div');
+        for (let n = dt.nextElementSibling; n && n.tagName !== 'DT'; n = n.nextElementSibling) holder.appendChild(n.cloneNode(true));
+        return { key: textOf(dt, false).slice(0, 80), change_links: changeLinks(holder) };
+      });
+  }
+  const textBlocks = summary && fwdEl ? Array.from(main.querySelectorAll('p, h2, h3, h4, [role="note"]'))
+    .filter((el) => !summary.contains(el) && before(summary, el) && before(el, fwdEl) && squash(el.textContent)).length : 0;
+  const check_answers = { rows, submit_present: !!fwdEl, text_before_submit: textBlocks > 0 };
+  const taskHeadings = Array.from(main.querySelectorAll('h2, h3'));
+  const taskLists = Array.from(main.querySelectorAll('.govuk-task-list, ul.task-list, [data-task-list]')).map((list) => {
+    const preceding = taskHeadings.filter((h) => before(h, list));
+    return {
+      heading_index: preceding.length - 1,
+      items: Array.from(list.querySelectorAll(':scope > li, :scope > .govuk-task-list__item')).map((item) => {
+        const st = item.querySelector('.govuk-task-list__status, [data-status], .task-list__status, .govuk-tag, strong.tag');
+        const nm = item.querySelector('.govuk-task-list__name-and-hint, [data-task-name], a');
+        return { name: nm ? textOf(nm, false).slice(0, 80) : '', status: st ? textOf(st, false) : null, has_link: !!item.querySelector('a[href]') };
+      }),
+    };
+  });
+  const forwardEl = fwdEl || main.querySelector('a.govuk-button, [data-continue]');
+  const task_list = { lists: taskLists, forward_present: !!forwardEl };
+
   const structure = {
     back_link: { present: !!backEl, before_h1: before(backEl, h1), text: backEl ? (backEl.textContent || '').trim().slice(0, 40) : null },
     forward_button: { present: !!fwdEl, label: fwdEl ? ((fwdEl.value || fwdEl.textContent || '').trim().slice(0, 40)) : null },
@@ -75,6 +118,8 @@ const collectInterfaceSnapshot = () => {
       sort_control: { present: !!sortEl, before_list: sortEl && listEl ? before(sortEl, listEl) : null },
     },
     query: { terms },
+    check_answers,
+    task_list,
   };
 
   return {

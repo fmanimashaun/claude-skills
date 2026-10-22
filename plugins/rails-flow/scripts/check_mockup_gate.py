@@ -692,7 +692,7 @@ def load_vocabulary() -> dict | None:
     except (OSError, ValueError):
         return None
     ok = (isinstance(data, dict) and all(isinstance(data.get(k), list) and data[k] and all(isinstance(x, str) and x for x in data[k])
-                                         for k in ("templates", "system_subkinds", "multi_step_subkinds", "states"))
+                                         for k in ("templates", "system_subkinds", "multi_step_subkinds", "task_statuses", "task_statuses_required", "states"))
           and isinstance(data.get("nav_max_level"), int) and data["nav_max_level"] >= 1)
     return data if ok else None
 
@@ -716,6 +716,42 @@ def template_problems(rel: str, fields: dict[str, str], vocab: dict) -> list[str
     elif sub:
         return [f"{rel}: only `system` and `multi-step` take a sub-kind; got {value!r}"]
     return []
+
+
+def statuses_problems(rel: str, fields: dict[str, str], vocab: dict) -> list[str]:
+    """`Statuses: not-started=<word>; cannot-start=<word>; completed=<word>`, only on a `multi-step: task-list` record (#2327).
+
+    A task list's statuses are the project's own words ("Cannot start yet", "Blocked"); the interface audit needs to know which word
+    means which state to judge A47 and A50, so a project that renames them says so here. Optional: no line means the GOV.UK wording.
+    The roles `cannot-start` and `completed` are required once the line exists, no word stands for two states, and no other kind of
+    record takes the line."""
+    value = fields.get("Statuses", "")
+    if not value:
+        return []
+    name, _, sub = (part.strip() for part in fields.get("Template", "").partition(":"))
+    if name != "multi-step" or sub != "task-list":
+        return [f"{rel}: only a `Template: multi-step: task-list` record takes a `Statuses:` line"]
+    out: list[str] = []
+    words: dict[str, str] = {}
+    for entry in (e.strip() for e in value.split(";")):
+        if not entry:
+            out.append(f"{rel}: Statuses has an empty entry (a stray `;`)")
+            continue
+        role, eq, word = (part.strip() for part in entry.partition("="))
+        if not eq or not word:
+            out.append(f"{rel}: Statuses entry {entry!r} must read `<role>=<the word the page shows>`")
+        elif role not in vocab["task_statuses"]:
+            out.append(f"{rel}: Statuses names {role!r}, which is not one of {', '.join(vocab['task_statuses'])}")
+        elif role in words:
+            out.append(f"{rel}: Statuses names {role} twice")
+        elif word.lower() in {w.lower() for w in words.values()}:
+            out.append(f"{rel}: Statuses gives {word!r} to two roles: one word stands for one state")
+        else:
+            words[role] = word
+    needed = [r for r in vocab["task_statuses_required"] if r not in words]
+    if needed and not out:
+        out.append(f"{rel}: Statuses must name {', '.join(needed)}: the audit cannot judge a task that cannot start, or a list that is complete, without them")
+    return out
 
 
 def states_problems(rel: str, fields: dict[str, str], vocab: dict) -> list[str]:
@@ -857,6 +893,7 @@ def record_problems(root: Path, rel: str, require_story: bool = False, scopes: l
         else:
             out += template_problems(rel, fields, vocab)
             out += states_problems(rel, fields, vocab)
+            out += statuses_problems(rel, fields, vocab)
             out += screen_nav_problems(root, rel, fields, vocab)
         if require_story:
             out += story_problems(root, rel, fields, scopes)
@@ -1036,10 +1073,28 @@ def selftest() -> int:
         for empty in ("multi-step:", "multi-step: ", "list:"):
             code, msg = with_record(GOOD.replace("Template: list", f"Template: {empty}"))
             check_that(f"#2310: a `:` with no sub-kind (`{empty}`) is held", code == 1 and any("no sub-kind after it" in m for m in msg), msg)
+        # #2327: `Statuses:` on a task-list record.
+        task = GOOD.replace("Template: list", "Template: multi-step: task-list")
+        code, msg = with_record(task + "Statuses: not-started=To do; cannot-start=Blocked; completed=Done\n")
+        check_that("#2327 CONTROL: a task-list record that declares its statuses is accepted", code == 0, msg)
+        code, msg = with_record(task)
+        check_that("#2327 CONTROL: a task-list record with no Statuses line is accepted (the default wording)", code == 0, msg)
+        for label, line, needle in (
+                ("on a record that is not a task list", "Statuses: cannot-start=Blocked; completed=Done\n", "only a `Template: multi-step: task-list`"),
+                ("naming no completed role", "Statuses: cannot-start=Blocked\n", "must name completed"),
+                ("naming no cannot-start role", "Statuses: completed=Done\n", "must name cannot-start"),
+                ("with an unknown role", "Statuses: cannot-start=Blocked; completed=Done; waiting=Hold\n", "not one of"),
+                ("giving one word to two roles", "Statuses: cannot-start=Done; completed=done\n", "one word stands for one state"),
+                ("with a role twice", "Statuses: cannot-start=Blocked; cannot-start=Stuck; completed=Done\n", "twice"),
+                ("with an entry that is not role=word", "Statuses: cannot-start Blocked; completed=Done\n", "must read"),
+                ("with an empty word", "Statuses: cannot-start=; completed=Done\n", "must read"),
+                ("with a stray semicolon", "Statuses: cannot-start=Blocked;; completed=Done\n", "empty entry")):
+            code, msg = with_record((GOOD if "not a task list" in label else task) + line)
+            check_that(f"#2327: a Statuses line {label} is held", code == 1 and any(needle in m for m in msg), msg)
         # A missing or corrupt vocabulary refuses; it never lets a record through unchecked.
         real = globals()["VOCABULARY"]
         try:
-            for label, text in (("missing", None), ("not JSON", "{"), ("no templates", '{"templates": [], "system_subkinds": ["x"], "multi_step_subkinds": ["z"], "states": ["y"], "nav_max_level": 3}'), ("no multi-step sub-kinds", '{"templates": ["list"], "system_subkinds": ["x"], "multi_step_subkinds": [], "states": ["y"], "nav_max_level": 3}')):
+            for label, text in (("missing", None), ("not JSON", "{"), ("no templates", '{"templates": [], "system_subkinds": ["x"], "multi_step_subkinds": ["z"], "task_statuses": ["t"], "task_statuses_required": ["t"], "states": ["y"], "nav_max_level": 3}'), ("no multi-step sub-kinds", '{"templates": ["list"], "system_subkinds": ["x"], "multi_step_subkinds": [], "task_statuses": ["t"], "task_statuses_required": ["t"], "states": ["y"], "nav_max_level": 3}'), ("no task statuses", '{"templates": ["list"], "system_subkinds": ["x"], "multi_step_subkinds": ["z"], "task_statuses": [], "task_statuses_required": ["t"], "states": ["y"], "nav_max_level": 3}')):
                 bad = root / "vocab.json"
                 bad.unlink(missing_ok=True)
                 if text is not None:

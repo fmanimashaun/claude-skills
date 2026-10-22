@@ -81,18 +81,24 @@ BLOCKED = {
     "A59": "no forced-state check yet (#2229)",
     "A60": "no forced-state check yet (#2229)",
 }
-# The template rules (A29 to A58) this audit does not measure, each with the reason. The seven it does measure
-# (A31, A34, A53 to A57) are judged only with `--screens`, and say so when it is absent.
+# The template rules (A29 to A58) this audit does not measure, each with the reason. The fifteen it does measure
+# (A31, A34, A35, A36, A40, A43, A44, A46, A47, A50, A53 to A57) are judged only with `--screens`, and say so when it is absent.
 _NEEDS_JOURNEY = "needs a declared flow or a judgement: no check yet (#2251)"
+_JOURNEY = "needs a driven journey or a declared flow (#2229)"
+_PROSE = "a statement in prose: a phrase match would be a wrong check, so it is not measured (#2327)"
+_VERDICT = "a judgement, with no verdict channel yet (#2225, rows tracked in #2309)"
 NOT_MEASURED_TEMPLATE = {
     **{r: _NEEDS_JOURNEY for r in ("A29", "A30", "A33")},
     "A32": "needs a driven journey: the back link's state depends on the step before (#2229)",
-    **{f"A{n}": "a check-answers or confirmation page is declared (`multi-step: check-answers|confirmation`, #2310), but its rows are not built yet (#2327)" for n in range(35, 43)},
-    **{f"A{n}": "a task-list page is declared (`multi-step: task-list`, #2310), but its rows are not built yet (#2327)" for n in range(43, 53)},
+    "A37": _JOURNEY + ": the check-answers page must come immediately before the confirmation",
+    "A39": _JOURNEY + ": it follows a Change link and presses Continue",
+    "A38": _PROSE, "A41": _PROSE + ": \"when there is one\" is not knowable from the page", "A42": _PROSE,
+    "A45": _VERDICT, "A52": _VERDICT,
+    **{r: _JOURNEY for r in ("A48", "A49", "A51")},
     "A58": "needs a driver for a partial update (#2229)",
 }
-NEEDS_SCREENS = {r: "judged only for a screen whose record declares its template, via `--screens` (#2251); none did in this run"
-                 for r in ("A31", "A34", "A53", "A54", "A55", "A56", "A57")}
+NEEDS_SCREENS = {r: "judged only for a screen whose record declares its template, via `--screens` (#2251, #2327); none did in this run"
+                 for r in ("A31", "A34", "A35", "A36", "A40", "A43", "A44", "A46", "A47", "A50", "A53", "A54", "A55", "A56", "A57")}
 BLOCKED.update(NEEDS_SCREENS)
 BLOCKED.update(NOT_MEASURED_TEMPLATE)
 JUDGEMENT = ("density matches the surface, content hierarchy, interaction feedback, whether a screen is the right "
@@ -456,6 +462,10 @@ def selftest() -> int:
     cases.append(("the real registry loads and holds rules", len(real) > 0))
     cases.append(("every judge maps to a rule that exists", all(r in real for r in JUDGE_RULES.values())))
     cases.append(("every blocker names a rule that exists", all(r in real for r in BLOCKED)))
+    template_rules = {f"A{n}" for n in range(29, 59)}
+    cases.append(("every template rule A29 to A58 is either measured or named with a reason, exactly once",
+                  set(NEEDS_SCREENS) | set(NOT_MEASURED_TEMPLATE) == template_rules and not set(NEEDS_SCREENS) & set(NOT_MEASURED_TEMPLATE)
+                  and len(NEEDS_SCREENS) == 15 and len(NOT_MEASURED_TEMPLATE) == 15))
     bad = 0
     for label, ok in cases:
         bad += not ok
