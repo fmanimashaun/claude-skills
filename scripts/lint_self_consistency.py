@@ -44,6 +44,10 @@ WHAT IT CHECKS
                               differ, or one is missing -- one normaliser is a claim only while they are identical
   fixture-git-drift           the three shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
                               pipeline) differ, or one is missing -- one fixture-git lock, three copies (#1588)
+  rf-tmp-drift                a shipped copy of scripts/rf_tmp.py (qa-flow, pipeline, design-flow) differs from rails-flow's, or is
+                              missing -- the temp dirs that remove themselves are one helper, several copies (#2306)
+  bare-mkdtemp                a tempfile.mkdtemp outside rf_tmp whose enclosing function never removes it (no rmtree, no atexit), or a
+                              shell `mktemp -d` in a file with no `trap` that removes it: the dir outlives the run (#2306)
   findings-script-drift       the two shipped copies of scripts/findings.py (rails-flow, qa-flow) differ,
                               or one is missing -- qa-reporter runs its own copy (#1680)
   vendored-copy-drift         a file rails-stack vendors from rails-flow (triage_failures.py, dev_baseline.py,
@@ -657,6 +661,78 @@ def check_fixture_git_drift() -> tuple[list[Finding], int]:
                                     f"differs from {FIXTURE_GIT_COPIES[0]} -- one fixture-git lock, several copies: a fix "
                                     "landed in one and not the others. Copy the canonical file over it (cp) and re-run"))
     return findings, len(FIXTURE_GIT_COPIES)
+
+
+# Rule: rf-tmp-drift (#2306)
+# The helper that names our temp dirs `rf-` and removes them at exit and on a signal ships as one copy per plugin that makes temp dirs.
+RF_TMP_COPIES = ("plugins/rails-flow/scripts/rf_tmp.py",
+                 "plugins/qa-flow/scripts/rf_tmp.py",
+                 "plugins/pipeline/scripts/rf_tmp.py",
+                 "plugins/design-flow/scripts/rf_tmp.py")
+
+
+def check_rf_tmp_drift() -> tuple[list[Finding], int]:
+    """The rf_tmp copies exist and are byte-identical to the rails-flow (canonical) one."""
+    findings: list[Finding] = []
+    texts = {}
+    for rel in RF_TMP_COPIES:
+        p = ROOT / rel
+        if not p.is_file():
+            findings.append(Finding("rf-tmp-drift", rel, 0, "missing -- this plugin's temp dirs lose their rf- name and their cleanup; "
+                                    "copy it from plugins/rails-flow/scripts/rf_tmp.py"))
+            continue
+        texts[rel] = p.read_bytes()
+    canonical = texts.get(RF_TMP_COPIES[0])
+    for rel in RF_TMP_COPIES[1:]:
+        if canonical is not None and rel in texts and texts[rel] != canonical:
+            findings.append(Finding("rf-tmp-drift", rel, 0, f"differs from {RF_TMP_COPIES[0]} -- copy the canonical file over it (cp) and re-run"))
+    return findings, len(RF_TMP_COPIES)
+
+
+# Rule: bare-mkdtemp (#2306, owner rule 2026-10-22: "temp folder should be monitored and cleared out")
+_MKTEMP_D = re.compile(r"\bmktemp\s+(?:-[a-zA-Z]*d|--directory)\b")
+_TRAP_RM = re.compile(r"\btrap\b[^\n]*\brm\b")
+
+
+def check_bare_mkdtemp(python_sources: dict[Path, str]) -> tuple[list[Finding], int]:
+    """A temp dir nothing removes: tempfile.mkdtemp outside rf_tmp with no rmtree or atexit in its enclosing function, or `mktemp -d` in
+    a shell script with no `trap ... rm`. TemporaryDirectory and rf_tmp.mkdtemp pass: they remove what they make."""
+    import ast as _ast
+    findings: list[Finding] = []
+    examined = 0
+    for path, text in python_sources.items():
+        rel = path.relative_to(ROOT) if path.is_absolute() else path
+        if rel.name == "rf_tmp.py" or "mkdtemp" not in text:
+            continue
+        try:
+            tree = _ast.parse(text)
+        except SyntaxError:
+            continue
+        parents = {c: n for n in _ast.walk(tree) for c in _ast.iter_child_nodes(n)}
+        for node in _ast.walk(tree):
+            f = getattr(node, "func", None) if isinstance(node, _ast.Call) else None
+            name = getattr(f, "attr", getattr(f, "id", ""))
+            if name != "mkdtemp" or (isinstance(f, _ast.Attribute) and getattr(f.value, "id", "") == "rf_tmp"):
+                continue
+            examined += 1
+            scope = node
+            while scope in parents and not isinstance(scope, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+                scope = parents[scope]
+            body = _ast.unparse(scope) if scope is not node else ""
+            if "rmtree" not in body and "atexit" not in body:
+                findings.append(Finding("bare-mkdtemp", str(rel), node.lineno,
+                                        "a temp dir nothing removes: use rf_tmp.mkdtemp(<tag>) (rf- name, removed at exit and on a signal) or "
+                                        "tempfile.TemporaryDirectory()"))
+    for path in walk(".sh"):
+        text = read(path)
+        if not _MKTEMP_D.search(text):
+            continue
+        examined += 1
+        if not _TRAP_RM.search(text):
+            n = next(i for i, ln in enumerate(text.splitlines(), 1) if _MKTEMP_D.search(ln))
+            findings.append(Finding("bare-mkdtemp", str(path.relative_to(ROOT)), n,
+                                    "`mktemp -d` with no `trap ... rm` in the script: the dir outlives the run; add `trap 'rm -rf \"$d\"' EXIT`"))
+    return findings, examined
 
 
 # Rule: schema-reader-drift (#1698)
@@ -4557,6 +4633,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     growth, claude_md_lines = check_claude_md_growth()
     hook_lib, hook_lib_copies = check_hook_lib_drift()
     fixture_git, fixture_git_copies = check_fixture_git_drift()
+    rf_tmp_drift, rf_tmp_copies = check_rf_tmp_drift()
+    bare_tmp, bare_tmp_examined = check_bare_mkdtemp(python_sources)
     schema_drift, schema_drift_examined = check_schema_reader_drift()
     hook_start, hook_start_examined = check_hook_start_hardened()
     gate_onfail, gate_onfail_examined = check_gate_without_onfailure()
@@ -4628,6 +4706,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "claude_md_lines": claude_md_lines,
         "hook_lib_copies": hook_lib_copies,
         "fixture_git_copies": fixture_git_copies,
+        "rf_tmp_copies": rf_tmp_copies,
+        "temp_dir_creations_examined": bare_tmp_examined,
         "schema_trees_compared": schema_drift_examined,
         "hook_commands_checked_for_a_hardened_start": hook_start_examined,
         "gate_hooks_checked_for_onfailure": gate_onfail_examined,
@@ -4697,7 +4777,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + planted + dangling + flat_role
             + agents_md + undoc_skill + ui_adapter + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
             + findings_copy + detect_copy + vendored_copy + rel_xplugin
-            + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
+            + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep + rf_tmp_drift + bare_tmp,
             coverage)
 
 
@@ -5908,6 +5988,23 @@ def selftest() -> int:
              files={**{c: FG for c in FIXTURE_GIT_COPIES}, FIXTURE_GIT_COPIES[3]: FG + "\n"})
     scenario("a missing fixture_git copy is a finding", rule="fixture-git-drift", expect_finding=True,
              files={c: FG for c in FIXTURE_GIT_COPIES if c != FIXTURE_GIT_COPIES[2]})
+    RT = "PREFIX = 'rf-'\n"
+    scenario("identical rf_tmp copies are silent", rule="rf-tmp-drift", expect_finding=False, files={c: RT for c in RF_TMP_COPIES})
+    scenario("an rf_tmp copy that differs by one byte is a finding", rule="rf-tmp-drift", expect_finding=True,
+             files={**{c: RT for c in RF_TMP_COPIES}, RF_TMP_COPIES[3]: RT + "\n"})
+    scenario("a missing rf_tmp copy is a finding", rule="rf-tmp-drift", expect_finding=True, files={c: RT for c in RF_TMP_COPIES[:3]})
+    only_tmp = lambda: check_bare_mkdtemp({p: read(p) for p in walk(".py")})  # noqa: E731
+    scenario("a bare tempfile.mkdtemp is a finding", rule="bare-mkdtemp", expect_finding=True, only=only_tmp,
+             files={"plugins/x/scripts/a.py": "import tempfile\ndef f():\n    return tempfile.mkdtemp(prefix='x-')\n"})
+    scenario("an mkdtemp its function removes is silent", rule="bare-mkdtemp", expect_finding=False, only=only_tmp,
+             files={"plugins/x/scripts/a.py": "import shutil, tempfile\ndef f():\n    d = tempfile.mkdtemp()\n    shutil.rmtree(d)\n"})
+    scenario("rf_tmp.mkdtemp is silent", rule="bare-mkdtemp", expect_finding=False, only=only_tmp,
+             files={"plugins/x/scripts/a.py": "import rf_tmp\ndef f():\n    return rf_tmp.mkdtemp('x')\n"})
+    only_sh = lambda: check_bare_mkdtemp({})  # noqa: E731
+    scenario("a shell mktemp -d with no trap is a finding", rule="bare-mkdtemp", expect_finding=True, only=only_sh,
+             files={"plugins/x/hooks/scripts/a.sh": "#!/bin/sh\nd=$(mktemp -d)\necho $d\n"})
+    scenario("a shell mktemp -d with a trap that removes it is silent", rule="bare-mkdtemp", expect_finding=False, only=only_sh,
+             files={"plugins/x/hooks/scripts/a.sh": "#!/bin/sh\nd=$(mktemp -d)\ntrap 'rm -rf \"$d\"' EXIT\n"})
     FS = "REQUIRED = ('id',)\n"
     scenario("identical findings.py copies are silent", rule="findings-script-drift", expect_finding=False,
              files={c: FS for c in FINDINGS_COPIES}, only=check_findings_script_drift)
