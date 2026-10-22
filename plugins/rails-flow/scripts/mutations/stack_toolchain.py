@@ -119,7 +119,7 @@ GUARD = Guard(
         ),
         Mutation(
             'the probe runs in the current directory, which may be the project',
-            '    return {**env, "PATH": os.pathsep.join(keep)}, tempfile.gettempdir()',
+            '    return {**env, "PATH": os.pathsep.join(keep)}, "/"',
             '    return {**env, "PATH": os.pathsep.join(keep)}, os.getcwd()',
             'a probe runs outside the project, not in it',
         ),
@@ -128,6 +128,12 @@ GUARD = Guard(
             '    env = {k: v for k, v in os.environ.items() if k in PROBE_ENV_KEYS or k.startswith("LC_")}',
             '    env = dict(os.environ)',
             'BASH_ENV from the environment does not make a bash-script CLI load a project file',
+        ),
+        Mutation(
+            'a path-valued key inside the project is passed to the probe',
+            '        if key in env and inside(Path(env[key]), project):\n            del env[key]',
+            '        if False:\n            del env[key]',
+            'DOCKER_CONFIG inside the project does not let a docker-info-shaped probe run a project plugin',
         ),
     ),
 )

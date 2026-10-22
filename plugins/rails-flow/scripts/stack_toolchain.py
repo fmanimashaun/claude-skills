@@ -22,6 +22,7 @@ import argparse
 import re
 import json
 import os
+import pwd
 import subprocess
 import sys
 import tempfile
@@ -71,7 +72,13 @@ def inside(path: Path, project: Path) -> bool:
         root = os.stat(project)
     except OSError:
         return False
+    depth = len(Path(project).parts)
+    # Only an ancestor at least as deep as the project can BE the project: every alias spells it at the same depth (letter case) or
+    # deeper (/System/Volumes/Data<path>). Stopping there also keeps the walk off the system temp directory, which a stat can
+    # take seconds to answer on a busy machine (#2168: measured 1.5 s per stat of $TMPDIR).
     for p in (path, *path.parents):
+        if len(p.parts) < depth:
+            break
         try:
             if os.path.samestat(os.stat(p), root):
                 return True
@@ -88,15 +95,26 @@ PROBE_ENV_KEYS = ("HOME", "USER", "LOGNAME", "LANG", "TMPDIR", "TERM", "XDG_CONF
                   "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_CERT_PATH", "DOCKER_TLS_VERIFY")
 
 
+PROBE_PATH_KEYS = ("HOME", "TMPDIR", "XDG_CONFIG_HOME", "XDG_RUNTIME_DIR", "DOCKER_CONFIG", "DOCKER_CERT_PATH")
+
+
 def probe_env(project: Path) -> tuple[dict[str, str], str]:
     """(environment, working directory) for running a CLI on PATH. Its PATH keeps only absolute entries outside the project, so a
     `#!/usr/bin/env node` script cannot pick up the project's own `node`; the rest of its environment is PROBE_ENV_KEYS and the
-    `LC_*` locale only; it runs from a neutral directory, so nothing reads the project's config by being started inside it.
+    `LC_*` locale only; it runs from `/`, so nothing reads the project's config by being started inside it.
     A project file hard-linked into a global directory is not caught (its parents never meet the project): a clone cannot create
     one, only the user or code already running can."""
     keep = [e for e in os.environ.get("PATH", "").split(os.pathsep) if e and os.path.isabs(e) and not inside(Path(e), project)]
     env = {k: v for k, v in os.environ.items() if k in PROBE_ENV_KEYS or k.startswith("LC_")}
-    return {**env, "PATH": os.pathsep.join(keep)}, tempfile.gettempdir()
+    # A path-valued key that names a place inside the project is dropped: `docker info` runs every plugin in
+    # `$DOCKER_CONFIG/cli-plugins` (or `~/.docker/cli-plugins`) to list it, so a project directory there is project code
+    # (#2291 adversary round 3). HOME falls back to the account's real home, never the project.
+    for key in PROBE_PATH_KEYS:
+        if key in env and inside(Path(env[key]), project):
+            del env[key]
+    if "HOME" not in env:
+        env["HOME"] = pwd.getpwuid(os.getuid()).pw_dir
+    return {**env, "PATH": os.pathsep.join(keep)}, "/"
 
 
 def ready(command: list[str], env: dict[str, str], cwd: str) -> tuple[bool, str]:
@@ -207,7 +225,23 @@ def audit(project: Path, home: Path, dirs: list[Path] | None = None) -> tuple[in
 
 
 def selftest() -> int:
+    global READY_TIMEOUT
+    # The fixture probes are one-line shell scripts, but under a loaded mutation run a 20 s budget can kill one before it acts,
+    # and a "never executed" row would then pass for the wrong reason (#2168: a mutant read as surviving). Give them room.
+    READY_TIMEOUT = 300
     bad = 0
+
+    def fake(path: Path, script: str, shebang: str = "#!/bin/sh") -> None:
+        """A fixture CLI. The executable is written ONCE as a launcher that sources `<name>.body`, and each fixture changes only
+        that data file: macOS scans an executable again every time it is modified, which under load took 12-51 s per fixture
+        and let a probe time out before it acted (#2168)."""
+        launcher = f"{shebang}\n. \"$0.body\"\n" if shebang in ("#!/bin/sh", "#!/bin/bash") else f"{shebang}\n"
+        if path.is_symlink() or not path.is_file() or path.read_text(encoding="utf-8") != launcher:
+            path.unlink(missing_ok=True)
+            path.write_text(launcher, encoding="utf-8")
+            path.chmod(0o755)
+        path.with_name(path.name + ".body").write_text(script, encoding="utf-8")
+
 
     def case(ok: bool, message: str) -> None:
         nonlocal bad
@@ -223,8 +257,7 @@ def selftest() -> int:
         bindir = root / "bin"
         bindir.mkdir()
         for name, rc in (("okcli", 0), ("downcli", 1)):
-            (bindir / name).write_text(f"#!/bin/sh\nexit {rc}\n", encoding="utf-8")
-            (bindir / name).chmod(0o755)
+            fake((bindir / name), f"exit {rc}\n")
         toolchain = {"plugins": [{"id": "tc-stack@m", "install": "/plugin install tc-stack@m"},
                                  {"id": "extra@official", "install": "/plugin install extra@official"}],
                      "clis": [{"bin": "okcli", "install": "get okcli", "ready": ["okcli"], "ready_hint": "log in to okcli"},
@@ -256,32 +289,28 @@ def selftest() -> int:
                  f"a project-local CLI that is absent is flagged with its install line: {findings}")
             local = proj / "node_modules" / ".bin" / "localcli"
             local.parent.mkdir(parents=True)
-            local.write_text("#!/bin/sh\necho 'localcli 9.8.7'\n", encoding="utf-8")
-            local.chmod(0o755)
+            fake(local, "echo 'localcli 9.8.7'\n")
             rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
             case(not any("localcli" in f for f in findings) and any("ok   cli localcli at node_modules/.bin/localcli (the project's own copy: not run)" in n for n in notes),
                  f"a CLI in the project's node_modules/.bin is found and reported present: {findings} {notes}")
             ran = proj / "ran.txt"
-            local.write_text(f"#!/bin/sh\necho ran > '{ran}'\n", encoding="utf-8")
+            fake(local, f"echo ran > '{ran}'\n")
             run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
             case(not ran.exists(), "the project's own copy of a CLI is never executed by the audit")
             local.unlink()
             outside = root / "outside-cli"
-            outside.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-            outside.chmod(0o755)
+            fake(outside, "exit 0\n")
             local.symlink_to(outside)
             rc, findings, _ = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
             case(any("MISSING cli localcli" in f for f in findings), f"a project path that is a symlink out of the project is not the CLI: {findings}")
             local.unlink()
-            local.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-            local.chmod(0o755)
+            fake(local, "exit 0\n")
             # #2291 review: the project's node_modules/.bin on PATH (direnv, `npm run`, a shell rc) is still the project's copy.
             pwned = proj / "PWNED"
-            local.write_text(f"#!/bin/sh\ntouch '{pwned}'\n", encoding="utf-8")
+            fake(local, f"touch '{pwned}'\n")
             os.environ["PATH"] = f"{local.parent}{os.pathsep}{bindir}{os.pathsep}/usr/bin{os.pathsep}/bin"
             toolchain["clis"].append({"bin": "localcli2", "install": "get localcli2", "version": ["--version"]})
-            (local.parent / "localcli2").write_text(f"#!/bin/sh\ntouch '{pwned}'\n", encoding="utf-8")
-            (local.parent / "localcli2").chmod(0o755)
+            fake((local.parent / "localcli2"), f"touch '{pwned}'\n")
             (plug / "stacks.json").write_text(json.dumps({"plugin": "tc", "stacks": [
                 {"id": "tcs", "all": [{"file": "marker.txt"}], "descriptor": {"toolchain": toolchain}}]}), encoding="utf-8")
             rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
@@ -300,16 +329,14 @@ def selftest() -> int:
                  f"a relative PATH entry is not searched: {findings}")
             # project_paths come before PATH: a global copy never hides the project-pinned one
             os.environ["PATH"] = f"{bindir}{os.pathsep}/usr/bin{os.pathsep}/bin"
-            (bindir / "localcli").write_text("#!/bin/sh\necho 'global 1.0'\n", encoding="utf-8")
-            (bindir / "localcli").chmod(0o755)
+            fake((bindir / "localcli"), "echo 'global 1.0'\n")
             rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
             case(any("ok   cli localcli at node_modules/.bin/localcli (the project's own copy: not run)" in n for n in notes),
                  f"the project-pinned CLI is found before a global one: {notes}")
             (bindir / "localcli").unlink()
             # a ready command naming another binary that is the project's own is not run either
             toolchain["clis"].append({"bin": "okcli2", "install": "get okcli2", "ready": ["localcli2", "status"], "ready_hint": "h2"})
-            (bindir / "okcli2").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-            (bindir / "okcli2").chmod(0o755)
+            fake((bindir / "okcli2"), "exit 0\n")
             (plug / "stacks.json").write_text(json.dumps({"plugin": "tc", "stacks": [
                 {"id": "tcs", "all": [{"file": "marker.txt"}], "descriptor": {"toolchain": toolchain}}]}), encoding="utf-8")
             os.environ["PATH"] = f"{bindir}{os.pathsep}{local.parent}{os.pathsep}/usr/bin{os.pathsep}/bin"
@@ -320,12 +347,11 @@ def selftest() -> int:
             (plug / "stacks.json").write_text(json.dumps({"plugin": "tc", "stacks": [
                 {"id": "tcs", "all": [{"file": "marker.txt"}], "descriptor": {"toolchain": toolchain}}]}), encoding="utf-8")
             (local.parent / "localcli2").unlink()
-            local.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake(local, "exit 0\n")
             os.environ["PATH"] = f"{bindir}{os.pathsep}/usr/bin{os.pathsep}/bin"
             # #2291 adversary: containment is judged by file identity, so a PATH entry spelling the project in other letter case
             # (a case-insensitive volume) is still the project. On a case-sensitive volume that spelling does not exist.
-            (local.parent / "casecli").write_text(f"#!/bin/sh\ntouch '{pwned}'\n", encoding="utf-8")
-            (local.parent / "casecli").chmod(0o755)
+            fake((local.parent / "casecli"), f"touch '{pwned}'\n")
             alias = Path(str(local.parent).replace(proj.name, proj.name.upper()))
             toolchain["clis"].append({"bin": "casecli", "install": "get casecli", "version": ["--version"]})
             (plug / "stacks.json").write_text(json.dumps({"plugin": "tc", "stacks": [
@@ -335,16 +361,14 @@ def selftest() -> int:
             case(not pwned.exists(), f"a PATH entry naming the project in other letter case does not run its binary (alias exists: {alias.exists()})")
             # a global script whose interpreter comes from PATH cannot pick up the project's own interpreter
             (local.parent / "casecli").unlink()
-            (local.parent / "fakeinterp").write_text(f"#!/bin/sh\ntouch '{pwned}'\n", encoding="utf-8")
-            (local.parent / "fakeinterp").chmod(0o755)
+            fake((local.parent / "fakeinterp"), f"touch '{pwned}'\n")
             where = root / "probe-cwd.txt"
-            (bindir / "casecli").write_text(f"#!/usr/bin/env fakeinterp\n", encoding="utf-8")
-            (bindir / "casecli").chmod(0o755)
+            fake((bindir / "casecli"), f"", shebang="#!/usr/bin/env fakeinterp")
             os.environ["PATH"] = f"{bindir}{os.pathsep}{local.parent}{os.pathsep}/usr/bin{os.pathsep}/bin"
             rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
             case(not pwned.exists(), "a global CLI's `#!/usr/bin/env` interpreter is never resolved from the project")
             # the probe runs outside the project, so nothing reads the project's config by being started in it
-            (bindir / "casecli").write_text(f"#!/bin/sh\npwd > '{where}'\n", encoding="utf-8")
+            fake((bindir / "casecli"), f"pwd > '{where}'\n")
             here = os.getcwd()
             os.chdir(proj)
             try:
@@ -356,7 +380,7 @@ def selftest() -> int:
             # an interpreter-option variable from the user's environment (direnv can set it from the project) never reaches a probe
             evil = proj / "evil.sh"
             evil.write_text(f"touch '{pwned}'\n", encoding="utf-8")
-            (bindir / "casecli").write_text("#!/bin/bash\necho 'casecli 1.0'\n", encoding="utf-8")
+            fake((bindir / "casecli"), "echo 'casecli 1.0'\n", shebang="#!/bin/bash")
             os.environ["BASH_ENV"] = str(evil)
             os.environ["NODE_OPTIONS"] = f"--require {evil}"
             try:
@@ -375,6 +399,26 @@ def selftest() -> int:
                 os.environ.pop("LC_ALL", None)
             case("NODE_OPTIONS" not in env_seen and env_seen.get("LC_ALL") == "C" and "HOME" in env_seen,
                  f"a probe's environment is the allowlist plus locale: {sorted(env_seen)}")
+            # a path-valued key pointing into the project is dropped, and HOME falls back to the real home
+            plug_dir = proj / ".docker" / "cli-plugins"
+            plug_dir.mkdir(parents=True)
+            fake((plug_dir / "docker-evil"), f"touch '{pwned}'\n")
+            fake((bindir / "casecli"), 'p="${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins/docker-evil"; [ -x "$p" ] && "$p"; echo ok\n')
+            saved = {k: os.environ.get(k) for k in ("DOCKER_CONFIG", "HOME")}
+            try:
+                for key, value in (("DOCKER_CONFIG", str(proj / ".docker")), ("HOME", str(proj))):
+                    os.environ[key] = value
+                    env_seen, _ = probe_env(proj)
+                    case(not inside(Path(env_seen.get(key, "/")), proj), f"{key} inside the project is not passed to a probe: {env_seen.get(key)}")
+                    run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
+                    case(not pwned.exists(), f"{key} inside the project does not let a docker-info-shaped probe run a project plugin")
+                    os.environ.pop(key) if saved[key] is None else os.environ.__setitem__(key, saved[key])
+            finally:
+                for key, value in saved.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
             toolchain["clis"] = [c for c in toolchain["clis"] if c["bin"] != "casecli"]
             (plug / "stacks.json").write_text(json.dumps({"plugin": "tc", "stacks": [
                 {"id": "tcs", "all": [{"file": "marker.txt"}], "descriptor": {"toolchain": toolchain}}]}), encoding="utf-8")
@@ -405,9 +449,8 @@ def selftest() -> int:
             (home / ".claude" / "settings.json").write_text(json.dumps({"enabledPlugins": ["tc-stack@m"]}), encoding="utf-8")
             rc, findings, _ = audit(proj, home, [plug])
             case(rc == 2, f"an enabledPlugins that is not an object is exit 2: rc={rc} {findings}")
-            (bindir / "absentcli").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-            (bindir / "absentcli").chmod(0o755)
-            (bindir / "downcli").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake((bindir / "absentcli"), "exit 0\n")
+            fake((bindir / "downcli"), "exit 0\n")
             rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True, "extra@official": True}}, None, None)
             case(rc == 0 and not findings, f"everything present and ready is exit 0: rc={rc} {findings}")
             (proj / "marker.txt").unlink()
