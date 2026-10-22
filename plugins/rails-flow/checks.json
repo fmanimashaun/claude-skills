@@ -177,6 +177,39 @@
       ]
     },
     {
+      "id": "brain-fresh",
+      "why": "The SessionStart nudge 'brain-review due since 2026-10-04' printed for 18 days and nothing acted on it, so docs/brain/STATUS.md sat on 2026-09-27 while seven owner rulings lived in one session's memory (#2297). A nudge is not enforcement: this refuses an ARM or a PROMOTION while STATUS.md's `_Updated: <date> · sha` commit is older than the newest v* tag's commit. It fires only at an arm (a chore/arm-* or release/* branch, or a diff that adds a `(release vX.Y.Z)` heading to CHANGELOG.md) and is not applicable otherwise, so it does not turn every PR red between a release and the refresh. At an arm it cannot be 'unable to tell': a STATUS it cannot read, a sha the clone lacks or a shallow clone is a refusal, never a pass.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_brain_fresh.py",
+        "--when",
+        "arm"
+      ],
+      "applies_when": [
+        "docs/brain/STATUS.md"
+      ],
+      "requires": [
+        "python3",
+        "git"
+      ]
+    },
+    {
+      "id": "owner-rulings",
+      "why": "An issue is where an owner ruling is made, not where it is kept: it closes, and the next session looks in docs/brain (#2297). Seven rulings of 2026-10-21 and 22 lived only in issue comments and one session's memory. For each issue the PR closes (a line that is exactly `Fixes #n`), if its body or a comment states an owner ruling (`owner rule/ruling/decision/decided/direction`, or `owner, <date>`), some `## D-NNN` block in docs/brain/DECISIONS.md at HEAD, so one added in this PR or already on dev, must mention #n; otherwise the PR is refused, and `gh pr ready` with it. It reads GitHub through gh: with gh present a failed read REFUSES; it is not applicable (exit 3, said plainly) only when gh is not installed or the branch has no PR yet.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_owner_rulings.py"
+      ],
+      "applies_when": [
+        "docs/brain/DECISIONS.md"
+      ],
+      "requires": [
+        "python3",
+        "git",
+        "gh"
+      ]
+    },
+    {
       "id": "docs-layout",
       "why": "A file's directory answers the question a reader would ask to find it; without a map agents litter docs/ and nothing can say a file is misplaced. Reports root files, code in docs, binaries at a root, product content inside the brain, memos at the brain root, and the missing map; --propose prints the moves with their link rewrites.",
       "command": [

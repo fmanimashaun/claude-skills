@@ -877,10 +877,18 @@ def run() -> int:
     # cases (about 300 real-hook runs; its ~50-case fast tier runs everywhere). Every member must be a
     # real gate, and the set must not grow without an edit here -- a "fast" mode that quietly absorbs
     # gates is how it becomes the only mode.
+    # `brain fresh at promotion` (#2297) joined: it is a PROMOTION-only gate (`check_brain_fresh.py`, judging every time) and a
+    # pull request is not a promotion, so a PR must not go red because STATUS predates a release it is not making. The same check
+    # runs on a PR as `brain fresh at arm` (not in this set; a skip off an arm), and release.yml's full sweep, which makes the
+    # release proof, runs the promotion gate and refuses a stale STATUS.
     _tick()
-    if set(md.PR_SKIPPED_GATES) != {"mutation coverage", "guard-bash cases (full)"}:
-        FAILURES.append(f"PR_SKIPPED_GATES is {sorted(md.PR_SKIPPED_GATES)}, expected ['guard-bash cases (full)', 'mutation coverage'] -- "
+    if set(md.PR_SKIPPED_GATES) != {"mutation coverage", "guard-bash cases (full)", "brain fresh at promotion"}:
+        FAILURES.append(f"PR_SKIPPED_GATES is {sorted(md.PR_SKIPPED_GATES)}, expected "
+                        "['brain fresh at promotion', 'guard-bash cases (full)', 'mutation coverage'] -- "
                         "widening it needs a reason recorded here")
+    _tick()
+    if "brain fresh at arm" not in gate_names or "brain fresh at arm" in md.PR_SKIPPED_GATES:
+        FAILURES.append("the arm gate of the brain check must be a gate AND must run on pull requests (an arm IS a pull request)")
     _tick()
     if "guard-bash cases" not in gate_names or "guard-bash cases" in md.PR_SKIPPED_GATES:
         FAILURES.append("the fast tier of the guard-bash cases must be a gate AND must run on pull requests (not in PR_SKIPPED_GATES)")
