@@ -6515,6 +6515,13 @@ def guard_pr_ready_fixtures() -> None:
         expect("guard-pr-ready (#2304): an opt-out WITH a reason leaves the repository alone", guard(plain, "gh pr ready 12"), 0)
         check("pr_ready_guard --wired (#2304): ...an opted-out repository gets no line", wired_line() == "", wired_line()[:200])
         (optout / "no-project-gates").unlink()
+        # A symlink is not an opt-out, even to a file that holds a reason: the reason would not be one the repository wrote.
+        (plain / "elsewhere.txt").write_text("this repository runs its own doctor, not project_gates\n", encoding="utf-8")
+        (optout / "no-project-gates").symlink_to(plain / "elsewhere.txt")
+        expect("guard-pr-ready (#2304): an opt-out that is a SYMLINK is not an opt-out, even to a file holding a reason: refused", guard(plain, "gh pr ready 12"), 2, "project gates are not wired")
+        check("pr_ready_guard --wired (#2304): ...and a symlinked opt-out still gets the NOT WIRED line", "PROJECT GATES NOT WIRED" in wired_line(), wired_line()[:200])
+        (optout / "no-project-gates").unlink()
+        (plain / "elsewhere.txt").unlink()
         wf = plain / ".github" / "workflows"
         wf.mkdir(parents=True)
         (wf / "ci.yml").write_text("run: python3 project_gates.py\n", encoding="utf-8")

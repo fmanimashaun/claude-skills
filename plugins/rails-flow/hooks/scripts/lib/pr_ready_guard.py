@@ -95,9 +95,13 @@ UNWIRED_FIX = (f"Run /rails-flow:setup-flow (its section 8 wires project_gates.p
 
 def opt_out_reason(root: str) -> str | None:
     """The reason a repository gives for running no project gates, from its first non-blank, non-`#` line of OPT_OUT; None when there is no such file
-    or it holds no reason. A file with no reason is not an opt-out: a silent opt-out is the inert gate this exists to end."""
+    or it holds no reason. A file with no reason is not an opt-out: a silent opt-out is the inert gate this exists to end. A SYMLINK is not one either: it
+    could point at any file on the machine, so the reason would be one the repository never wrote."""
+    path = Path(root) / OPT_OUT
+    if path.is_symlink():
+        return None
     try:
-        for line in (Path(root) / OPT_OUT).read_text(encoding="utf-8", errors="replace").splitlines():
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
             line = line.strip()
             if line and not line.startswith("#"):
                 return line

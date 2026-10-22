@@ -211,6 +211,12 @@ GUARD = Guard(
             'guard-pr-ready (#2304): an opt-out file that gives NO reason is not an opt-out: refused',
         ),
         Mutation(
+            'a symlinked opt-out file is followed, so a reason the repository never wrote ends the guarantee',
+            '    if path.is_symlink():',
+            '    if False:',
+            'guard-pr-ready (#2304): an opt-out that is a SYMLINK is not an opt-out, even to a file holding a reason: refused',
+        ),
+        Mutation(
             "a repository with no wiring and no record falls through to the generic 'no sweep record' refusal, which does not say the gates are not wired",
             '    if not wired_by_files(root) and not d.is_dir():',
             '    if False:',
