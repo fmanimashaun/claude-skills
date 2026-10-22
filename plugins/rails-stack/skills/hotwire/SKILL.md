@@ -80,6 +80,7 @@ attribute.
 |---|---|
 | `references/turbo.md` | Drive (visits, caching, prefetch, view transitions), morphing page refreshes, Frames (eager/lazy, targeting, breakout), Streams (the 8 actions, broadcasts, custom actions), events, **what the person sees when a request never comes back** (§8b), `turbo-rails` helpers |
 | `references/stimulus.md` | Controllers, lifecycle, actions (descriptors, options, key filters, parameters), targets, values, CSS classes, outlets, cross-controller communication, patterns and anti-patterns |
+| `references/stream-security.md` | **Anything that subscribes a page to a stream** (`turbo_stream_from`, `broadcasts_to`, a custom stream channel): what the signed stream name does and does not protect, the three real access controls, why a broadcast partial has no viewer, and the checks that enforce it |
 | `references/native.md` | Hotwire Native iOS/Android setup, navigation and the routing table, path configuration JSON, bridge components (web + Swift + Kotlin), native screens, web-side detection, turbo-rails native helpers |
 | `references/production.md` | **Anything real-time or interactive.** How two shipped 37signals apps use this stack: choosing refreshes vs hand-written broadcasts, optimistic UI and stream de-duplication, catching up after a dropped WebSocket, morph hazards (open dialogs, edits in progress), Action Cable vs Streams, presence, drag-and-drop, Stimulus organisation at 35–69 controllers |
 

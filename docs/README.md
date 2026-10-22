@@ -17,6 +17,14 @@ Memos go under `brain/memos/<type>/`. Before creating a file, find its question 
 
 Check: `python3 <rails-flow>/scripts/docs_layout.py --report` · rework an existing tree: `--propose`, then `--write`.
 
+## Waivers
+
+A required directory this project does without, and why. The check refuses a waiver with no reason and a waiver for a directory that exists.
+
+| directory | reason |
+|---|---|
+| `product/` | claude-skills is a marketplace of plugins and skills, not a product: it has no PRD, roadmap or acceptance criteria of its own (each downstream project owns those), and its issues and CHANGELOG fragments carry what a spec would |
+
 ## Root files
 
 Files this layout cannot name by kind alone, and where they belong here. The tool reads this table.

@@ -91,7 +91,9 @@ you may make the next one.
 3. **Clean up when done, with the teardown.** `python3 <rails-flow>/scripts/worktree_teardown.py <path>` when the PR merges or a review ends: it stops the
    worktree's own servers by PID, drops its databases (`dropdb --if-exists --force`, PostgreSQL 13 or later; it can still fail while a prepared transaction or an
    active logical replication slot holds the database) and then runs `git worktree remove` (never `--force`). A bare `git worktree remove` leaves every database
-   behind: 113 had piled up on one machine (#2058).
+   behind: 113 had piled up on one machine (#2058). Put everything you make for the worktree (a reviewer's export, a baseline, a log)
+   in `<worktree>/.rf-scratch/`, never beside it: the teardown removes that dir, deletes the merged branch (locally and on `origin`),
+   and fails by name on anything left in the worktrees' parent, so nothing is left behind (#2296).
 4. **Resume in place.** After a restart or cutoff, continue in the abandoned worktree; never create a new one.
 
 **What makes it true: the rails-flow `guard-worktree` hook.** With rails-flow installed, a `git worktree add`
