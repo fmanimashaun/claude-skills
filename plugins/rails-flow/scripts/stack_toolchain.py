@@ -367,6 +367,16 @@ def selftest() -> int:
             os.environ["PATH"] = f"{bindir}{os.pathsep}{local.parent}{os.pathsep}/usr/bin{os.pathsep}/bin"
             rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
             case(not pwned.exists(), "a global CLI's `#!/usr/bin/env` interpreter is never resolved from the project")
+            # The same, through a PATH entry that names the project by ANOTHER SPELLING: a symlink to it at the same depth. PATH
+            # entries are judged unresolved, so only identity (not the string) sees it is the project. Unlike the letter-case row,
+            # this alias exists on every filesystem, case-sensitive Linux included (the release runner, #2319). The name shares no
+            # prefix with the project's, so a string comparison cannot match it by accident.
+            spelled = root / "aliasdir"
+            spelled.symlink_to(proj, target_is_directory=True)
+            os.environ["PATH"] = f"{bindir}{os.pathsep}{spelled / local.parent.relative_to(proj)}{os.pathsep}/usr/bin{os.pathsep}/bin"
+            rc, findings, notes = run_with({"enabledPlugins": {"tc-stack@m": True}}, None, None)
+            case(not pwned.exists(), "a PATH entry naming the project by another spelling is stripped from a probe's PATH")
+            spelled.unlink()
             # the probe runs outside the project, so nothing reads the project's config by being started in it
             fake((bindir / "casecli"), f"pwd > '{where}'\n")
             here = os.getcwd()
