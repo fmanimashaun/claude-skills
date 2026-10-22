@@ -278,7 +278,10 @@ DESCRIPTOR_SCHEMA: dict = {
     "toolchain": {"plugins": [{"id": STR, "install": STR}],
                   # `project_paths`: where inside the project the binary may live instead of PATH (a dev-dependency CLI in
                   # `node_modules/.bin/`); `version`: the arguments that print its version, reported beside it.
-                  "clis": [{"bin": STR, "install": STR, "ready?": STRS, "ready_hint?": STR, "project_paths?": STRS, "version?": STRS}]},
+                  # `auto_install` (#2288): how `stack_toolchain.py --install` installs it unattended, methods in order of preference, each
+                  # naming the vendor repository the package must come from; `token`: the briefing-file variable its commands need.
+                  "clis": [{"bin": STR, "install": STR, "ready?": STRS, "ready_hint?": STR, "project_paths?": STRS, "version?": STRS,
+                            "auto_install?": [{"method": STR, "package": STR, "repo": STR, "os?": STR}], "token?": STR}]},
     "scripts": {"*": STR},
     "review_checklist": STRS,
 }
@@ -486,6 +489,8 @@ def security_problems(manifest: dict, stack: dict, where: str) -> list[str]:
 
 
 PLUGIN_ID = re.compile(r"[a-z0-9][a-z0-9._-]*@[a-z0-9][a-z0-9._-]*")
+AUTO_INSTALL_METHODS = ("npm-global", "brew-tap", "npm-dev")          # the only install methods stack_toolchain.py --install runs (#2288)
+VENDOR_REPO = re.compile(r"github\.com/[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+")
 
 
 def toolchain_problems(stack: dict, where: str) -> list[str]:
@@ -516,6 +521,13 @@ def toolchain_problems(stack: dict, where: str) -> list[str]:
                     found.append(f"{where}.toolchain.clis[{i}].project_paths {path!r} must stay inside the project (no absolute path, no `..`)")
             if isinstance(ready, list) and ready and isinstance(ready[0], str) and ("/" in ready[0] or " " in ready[0].strip()):
                 found.append(f"{where}.toolchain.clis[{i}].ready[0] {ready[0]!r} must be a bare command name, looked up on PATH")
+            for j, how in enumerate(row.get("auto_install") or []):
+                if isinstance(how, dict) and how.get("method") not in AUTO_INSTALL_METHODS and isinstance(how.get("method"), str):
+                    found.append(f"{where}.toolchain.clis[{i}].auto_install[{j}].method {how['method']!r} is not one of {sorted(AUTO_INSTALL_METHODS)}")
+                if isinstance(how, dict) and isinstance(how.get("repo"), str) and not VENDOR_REPO.fullmatch(how["repo"]):
+                    found.append(f"{where}.toolchain.clis[{i}].auto_install[{j}].repo {how['repo']!r} must be `github.com/<owner>/<repo>`")
+            if isinstance(row.get("token"), str) and not re.fullmatch(r"[A-Z][A-Z0-9_]*", row["token"]):
+                found.append(f"{where}.toolchain.clis[{i}].token {row['token']!r} must be an environment variable name")
             if "ready" in row and not row.get("ready_hint"):
                 found.append(f"{where}.toolchain.clis[{i}] has a `ready` check but no `ready_hint` saying how to pass it")
     return found
