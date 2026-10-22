@@ -64,8 +64,9 @@
   --chart-8: #e34948;
 }
 
-/* Dark re-points the SURFACE roles only. The feedback roles and --ring legitimately hold one
-   value across both themes — the lint knows this, so it does not demand 22 dark values. */
+/* Dark re-points the SURFACE roles, --primary with its label and hover, and the ring and inks.
+   The four feedback tones keep their one value on purpose: each already clears 1.4.11's 3:1 on the
+   dark card and page (measured by scripts/check_token_contrast.py, and by the lint). */
 .dark {
   --background: var(--color-fm-navy);       --foreground: var(--color-fm-slate-50);
   --card: var(--color-fm-ink);              --card-foreground: var(--color-fm-slate-50);
@@ -79,6 +80,9 @@
      dark mode. Re-pointing --primary WITHOUT its companion is the #304 defect; it was fixed in
      foundations-tokens.md and left live in this pack until #129 measured the pack itself. */
   --primary-foreground: var(--color-fm-navy);
+  /* #2324. A role the light block overrides is overridden here too: --primary-hover left at its
+     light value (#0069B4) is a dark fill under the navy label above. cyan is 9.72:1 with it. */
+  --primary-hover: var(--color-fm-cyan);
   /* #775. Re-pointed for dark like the surfaces above, not left at their light values.
      A focus ring is a UI component state (WCAG 1.4.11, 3:1); an `-ink` role exists to BE
      text (1.4.3, 4.5:1). Held at their light values they measured 2.15–2.85:1 on this ground —

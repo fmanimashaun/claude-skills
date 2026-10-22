@@ -32,7 +32,7 @@ PREFIX = "rf-"
 # removes only a DIRECTORY holding a valid marker, whose pid is gone: a name starting `rf-` alone proves nothing.
 MARKER = ".rf_tmp-owner"
 MAGIC = "rf_tmp v1"
-_DIRS: list[tuple[int, str]] = []          # (the pid that made it, the dir): a forked child never removes its parent's dirs
+_DIRS: list[tuple[int, str]] = []          # (the pid that made it, the WRAPPER): a forked child never removes its parent's dirs
 _INSTALLED = False
 
 
@@ -40,6 +40,14 @@ def _clean() -> None:
     me = os.getpid()
     for pid, d in [x for x in _DIRS if x[0] == me]:
         shutil.rmtree(d, ignore_errors=True)
+        _DIRS.remove((pid, d))
+
+
+def release(path: str) -> None:
+    """Hand `path` over: this process will not remove it at exit. For a dir made here and inspected by ANOTHER process after this one
+    ends (a fixture built in a subprocess); that process then owns its removal. Nothing else changes, the marker included."""
+    target = os.path.realpath(path)
+    for pid, d in [x for x in _DIRS if target in (os.path.realpath(x[1]), os.path.realpath(_inner(x[1])))]:
         _DIRS.remove((pid, d))
 
 
@@ -77,14 +85,22 @@ def _install() -> None:
             pass
 
 
+def _inner(wrapper: str) -> str:
+    return os.path.join(wrapper, os.path.basename(wrapper))
+
+
 def mkdtemp(tag: str = "tmp", dir: str | None = None) -> str:  # noqa: A002 -- the same keyword tempfile.mkdtemp takes
-    """A new `rf-<tag>-XXXXXX` directory, removed when this process ends (at exit, or on SIGTERM, SIGHUP or Ctrl-C)."""
-    d = tempfile.mkdtemp(prefix=f"{PREFIX}{tag.strip('-') or 'tmp'}-", dir=dir)
-    with open(os.path.join(d, MARKER), "w", encoding="utf-8") as f:
+    """A new, EMPTY `rf-<tag>-XXXXXX` directory, removed when this process ends (at exit, or on SIGTERM, SIGHUP or Ctrl-C).
+
+    It sits inside a wrapper of the same name that holds the owner marker (#2316 review): a caller gets an empty dir it may list,
+    copy or `rmdir`, as tempfile.mkdtemp gives, and the marker never shows up in what it reads. The wrapper is what a cleaner sees."""
+    wrapper = tempfile.mkdtemp(prefix=f"{PREFIX}{tag.strip('-') or 'tmp'}-", dir=dir)
+    with open(os.path.join(wrapper, MARKER), "w", encoding="utf-8") as f:
         f.write(f"{MAGIC}\n{os.getpid()}\n{int(time.time())}\n")
-    _DIRS.append((os.getpid(), d))
+    os.mkdir(_inner(wrapper), 0o700)
+    _DIRS.append((os.getpid(), wrapper))
     _install()
-    return d
+    return _inner(wrapper)
 
 
 def selftest() -> int:
@@ -110,11 +126,25 @@ def selftest() -> int:
     fork = subprocess.run([sys.executable, "-c", "import os, sys; sys.path.insert(0, %r); import rf_tmp; d = rf_tmp.mkdtemp('fork'); "
                            "pid = os.fork()\n"
                            "if pid == 0: sys.exit(0)\n"
-                           "os.waitpid(pid, 0); print(os.path.isdir(d), rf_tmp.owner_pid(d) == os.getpid())" % here],
+                           "os.waitpid(pid, 0); print(os.path.isdir(d), rf_tmp.owner_pid(os.path.dirname(d)) == os.getpid())" % here],
                           capture_output=True, text=True)
     if fork.stdout.strip() != "True True":
         bad += 1
         print(f"FAIL a forked child's exit leaves the parent's dir and its marker: {fork.stdout!r} {fork.stderr[-200:]!r}")
+    handed = subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0, %r); import rf_tmp; d = rf_tmp.mkdtemp('handed'); "
+                             "rf_tmp.release(d); print(d)" % here], capture_output=True, text=True)
+    path = handed.stdout.strip()
+    if not path or not os.path.isdir(path):
+        bad += 1
+        print(f"FAIL a released dir outlives the process that made it: {path!r} {handed.stderr[-200:]!r}")
+    else:
+        shutil.rmtree(path, ignore_errors=True)
+    empty = subprocess.run([sys.executable, "-c", "import os, sys; sys.path.insert(0, %r); import rf_tmp; d = rf_tmp.mkdtemp('empty'); "
+                            "print(os.listdir(d) == [], os.path.basename(d).startswith('rf-empty-'), rf_tmp.owner_pid(os.path.dirname(d)) == os.getpid())"
+                            % here], capture_output=True, text=True)
+    if empty.stdout.strip() != "True True True":
+        bad += 1
+        print(f"FAIL the dir handed out is empty, rf- named, and its wrapper carries the marker: {empty.stdout!r} {empty.stderr[-200:]!r}")
     keep = subprocess.run([sys.executable, "-c", "import signal, sys; sys.path.insert(0, %r); import rf_tmp; h = lambda s, f: None; "
                            "signal.signal(signal.SIGTERM, h); rf_tmp.mkdtemp('x'); print(signal.getsignal(signal.SIGTERM) is h)" % here],
                           capture_output=True, text=True)

@@ -1,0 +1,6 @@
+section: rails-flow
+- **`contained()` sweeps an orphaned system binary on macOS — `plugins/rails-flow/scripts/process_containment.py`** (#2292).
+  - **The gap.** The sweep found a process only by the token in its environment, and macOS withholds a system binary's environment: `KERN_PROCARGS2` returns just its path and argv (measured: about 30 bytes for `/bin/sleep`, `/bin/cat` and `/usr/bin/yes`). So a leaked `cat` or `sleep` was never swept; #2268 left two `cat` processes blocked on a fifo that way.
+  - **The fix.** A watcher thread now records every process descended from the caller while its parent is alive, by pid and start time, read through `libproc` with no process spawned (one pass over about 700 processes is about 1 ms). An orphan re-parented to pid 1 is still known. The sweep kills a recorded process only if its start time still matches, and a subtree the caller started before the box is left alone.
+  - **Limit, stated.** A child that forks and loses its parent inside one 0.1 s tick is not recorded.
+  - **Proof.** Two new selftest cases: a `/bin/sleep` orphaned inside the box (invisible to the token, swept through the lineage), and a child started before the box that must outlive it. The guard has 3 new mutations; 3 older ones were re-anchored.

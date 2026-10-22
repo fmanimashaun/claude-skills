@@ -589,6 +589,30 @@ GUARD = Guard(
             'a sub-kind on a template that takes none is held',
         ),
         Mutation(
+            'a colon with nothing after it is accepted',
+            '    if colon and not sub:',
+            '    if False:',
+            '#2310: a `:` with no sub-kind (`multi-step:`) is held',
+        ),
+        Mutation(
+            'an unknown multi-step sub-kind is accepted',
+            '        if sub and sub not in vocab["multi_step_subkinds"]:',
+            '        if False:',
+            '`multi-step` with an unknown sub-kind is held',
+        ),
+        Mutation(
+            'a multi-step sub-kind is not read from the vocabulary',
+            '        if sub and sub not in vocab["multi_step_subkinds"]:',
+            '        if sub and sub not in ("check-answers", "confirmation"):',
+            'CONTROL: Template `multi-step: task-list` is accepted',
+        ),
+        Mutation(
+            'a missing multi-step sub-kind list is accepted',
+            '"system_subkinds", "multi_step_subkinds", "states"))',
+            '"system_subkinds", "states"))',
+            'a no multi-step sub-kinds vocabulary refuses every record',
+        ),
+        Mutation(
             'an empty vocabulary list is accepted',
             '    return data if ok else None',
             '    return data',

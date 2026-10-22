@@ -27,7 +27,19 @@ AMBER FROM 80%: a window or the context fill at or past 80 is drawn in amber (AN
 from __future__ import annotations
 
 import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
-import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
+try:
+    import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
+except ImportError:      # VENDORED ALONE (#1261): a project copies this one file, without rf_tmp beside it
+    import tempfile as _rf_tempfile
+
+    class rf_tmp:  # noqa: N801 -- the same call as the module, kept local: TemporaryDirectory removes it at exit (not on a signal)
+        _keep: list = []
+
+        @staticmethod
+        def mkdtemp(tag: str = "tmp") -> str:
+            t = _rf_tempfile.TemporaryDirectory(prefix=f"rf-{tag.strip('-') or 'tmp'}-")
+            rf_tmp._keep.append(t)
+            return t.name
 import json
 import math
 import os

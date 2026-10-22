@@ -10,7 +10,7 @@ GUARD = Guard(
     subject="scripts/interface_audit.py",
     selftest="scripts/interface_audit.py",
     selftest_args=("--selftest",),
-    needs=("scripts/audit_findings.py", "reference/architecture-rules.json"),
+    needs=("scripts/audit_findings.py", "reference/architecture-rules.json", "scripts/interface_templates.py", "scripts/mockup_records.py"),
     mutations=(
         Mutation(
             "a second visible main stops being a finding",

@@ -15,8 +15,8 @@ GUARD = Guard(
     mutations=(
         Mutation(
             "contained() never sweeps, so a leaking fixture's processes outlive it",
-            "        box.killed = sweep(token)",
-            "        box.killed = []",
+            "            box.killed = sweep(token, also=lineage.stop())",
+            "            box.killed = []",
             "under contained(), a leaking fixture leaves NOTHING behind",
         ),
         Mutation(
@@ -27,8 +27,8 @@ GUARD = Guard(
         ),
         Mutation(
             "children are not tagged, so the sweep finds nothing to kill",
-            "    os.environ[TOKEN_VAR] = token\n    try:",
-            "    try:",
+            "    os.environ[TOKEN_VAR] = token\n    lineage = _Lineage(os.getpid())\n    try:",
+            "    lineage = _Lineage(os.getpid())\n    try:",
             "a leaking fixture's processes are tagged while it runs",
         ),
         Mutation(
@@ -60,8 +60,8 @@ GUARD = Guard(
         Mutation(
             # #1582 slice B, #1589 re-review S1
             "the sweep is no longer shielded from a second signal, so one landing mid-sweep aborts it (#1589 re-review S1)",
-            "        with _deferred_signals():\n            box.killed = sweep(token)\n",
-            "        box.killed = sweep(token)\n",
+            "        with _deferred_signals():\n            box.killed = sweep(token, also=lineage.stop())\n",
+            "        box.killed = sweep(token, also=lineage.stop())\n",
             "does not abort the sweep",
         ),
         Mutation(
@@ -76,6 +76,32 @@ GUARD = Guard(
             "    held = {signal.SIGTERM, signal.SIGHUP, signal.SIGINT}",
             "    held = {signal.SIGTERM, signal.SIGHUP}",
             "a SIGINT 0.3s after a SIGTERM does not abort the sweep",
+        ),
+        Mutation(
+            # #2292: a /bin binary's environment is unreadable on macOS, so only the lineage can sweep it.
+            "the sweep ignores the lineage, so an orphaned /bin binary outlives the box",
+            "            box.killed = sweep(token, also=lineage.stop())",
+            "            box.killed = sweep(token)",
+            "a /bin binary orphaned inside contained() is swept anyway",
+        ),
+        Mutation(
+            "the lineage records a subtree that existed before the box, so the caller's own child is killed",
+            "                continue                                      # the caller's own process from before the box, and its subtree",
+            "                pass",
+            "a child the caller started BEFORE the box outlives it",
+        ),
+        Mutation(
+            "the watcher never scans between ticks, so an orphan whose parent exits is never recorded",
+            "        while not self._stop.wait(0.1):\n            self.scan()",
+            "        while not self._stop.wait(0.1):\n            pass",
+            "a /bin binary orphaned inside contained() is swept anyway",
+        ),
+        Mutation(
+            # #2294 review S1: the start time is re-checked right before the SIGSTOP, so a reused pid is never stopped or killed.
+            "the sweep trusts the recorded pid without re-checking its start time, so a reused pid is killed",
+            "        recorded = {pid for pid, start in also if pid in table and table[pid][1] == start}",
+            "        recorded = {pid for pid, start in also}",
+            "a recorded pid whose start time changed (a reused pid) is not killed",
         ),
     ),
 )

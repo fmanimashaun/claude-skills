@@ -14,6 +14,11 @@ the rule's basis and is never written here. Rules judged in this first slice, by
       for toasts outside `main`.
   A4  the link to the current page in the primary navigation has `aria-current="page"`.
 
+With `--screens screens.json` (#2251) it also reads the mock-up records and judges, only for a screen whose
+record declares the template that owns the rule: A31 and A34 (multi-step), A53 to A57 (search-results), and
+A10, a screen with no record or no `Template:`/`States:`/`Nav:` line, which is a finding with a proposed
+record. The rules are in `interface_templates.py`; the 23 other A29 to A58 rules are named under Not audited.
+
 A page with a non-2xx status is not judged and is counted under `skipped`, never as clean; an
 empty snapshot list is refused, because a report over no pages says nothing. A4 is judged only on
 a page that the primary navigation links to: a page absent from the nav has nothing to mark.
@@ -26,6 +31,9 @@ import argparse
 import json
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from interface_templates import Unusable as TemplatesUnusable, judge_templates  # noqa: E402
 
 SCHEMA = "design-flow/interface-snapshot/1"
 RULES = ("A1", "A2", "A4")  # the framework rules this judge measures
@@ -60,7 +68,7 @@ def judge_page(snap: dict) -> list[dict]:
     return out
 
 
-def judge(doc: object) -> dict:
+def judge(doc: object, screens: object = None, root: Path | None = None) -> dict:
     if not isinstance(doc, list) or not doc:
         raise Unusable("the snapshots file must be a non-empty list: a report over no pages says nothing")
     findings: list[dict] = []
@@ -78,8 +86,18 @@ def judge(doc: object) -> dict:
         findings += judge_page(snap)
     if not judged:
         raise Unusable(f"no snapshot had a 2xx status ({skipped} skipped): nothing was judged")
-    return {"audit": "interface audit: landmarks, skip link, current navigation",
-            "audited": {rule: judged for rule in RULES}, "unverified": unverified, "skipped_non_2xx": skipped,
+    audited = {rule: judged for rule in RULES}
+    title = "interface audit: landmarks, skip link, current navigation"
+    if screens is not None:
+        try:
+            more, counts, unv = judge_templates([s for s in doc if 200 <= s["status"] < 300], screens, root or Path.cwd())
+        except TemplatesUnusable as exc:
+            raise Unusable(str(exc)) from exc
+        findings += more
+        audited.update(counts)
+        unverified += unv
+        title += ", screen templates"
+    return {"audit": title, "audited": audited, "unverified": unverified, "skipped_non_2xx": skipped,
             "findings": findings}
 
 
@@ -133,6 +151,32 @@ def selftest() -> int:
     import audit_findings as af
     out = judge([snap(mains={"visible": 2}), snap(url="/b", skip_link={"present": False, "first_focusable": "a", "href": None, "target_exists": False})])
     cases.append(("the judge's output passes the findings contract", af.validate(out, af.load_registry(), Path(".")) == []))
+    # The template rows (#2251): read through the real entry point, over a temporary project.
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "docs/product/mockups").mkdir(parents=True)
+        (root / "docs/product/mockups/step.md").write_text(
+            "Screen: Step\nTemplate: multi-step\nStates: loaded\nNav: level 2 under Orders\n", encoding="utf-8")
+        step = {"back_link": {"present": False, "before_h1": False, "text": None}, "forward_button": {"present": True, "label": "Next"}}
+        doc = [snap(url="/step", structure=step), snap(url="/mystery")]
+        scr = [{"url": "/step", "screen": "Step"}, {"url": "/mystery", "screen": None}]
+        out = judge(doc, scr, root)
+        got = sorted((f["rule"], f["screen"]) for f in out["findings"])
+        cases.append(("with --screens the template rows and the undeclared screen are judged", got == [("A10", "/mystery"), ("A31", "/step"), ("A34", "/step")]))
+        cases.append(("A10 is audited over every judged screen, a template rule over the screens that declare it",
+                      out["audited"]["A10"] == 2 and out["audited"]["A31"] == 1 and "A53" not in out["audited"]))
+        cases.append(("the template findings pass the findings contract", af.validate(out, af.load_registry(), Path(".")) == []))
+        rep = af.report_md(out, af.load_registry())
+        cases.append(("the report prints the proposed record for the undeclared screen", "Proposed improvements" in rep and "/mystery" in rep))
+        cases.append(("the report names a reason for each rule it did not measure",
+                      "check-answers or confirmation page is declared" in rep and "task-list page is declared" in rep and "A58" in rep and "A29, A30, A33" in rep))
+        cases.append(("without --screens no template rule is audited", set(judge(doc)["audited"]) == {"A1", "A2", "A4"}))
+        try:
+            judge(doc, [{"url": "/step", "screen": "Nowhere"}], root)
+            cases.append(("a screens file naming no record is unusable", False))
+        except Unusable as exc:
+            cases.append(("a screens file naming no record is unusable", "no mock-up record" in str(exc)))
     bad = 0
     for label, ok in cases:
         bad += not ok
@@ -145,6 +189,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("snapshots", nargs="?")
     ap.add_argument("--out")
+    ap.add_argument("--screens", help="screens.json: a list of {url, screen} linking each URL to a mock-up record's `Screen:` (null for none); judges the template rows")
+    ap.add_argument("--root", default=".", help="the project root holding docs/product/mockups/ (default: the current directory)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
     if a.selftest:
@@ -153,7 +199,8 @@ def main(argv: list[str] | None = None) -> int:
         ap.print_help()
         return 2
     try:
-        result = judge(json.loads(Path(a.snapshots).read_text(encoding="utf-8")))
+        screens = json.loads(Path(a.screens).read_text(encoding="utf-8")) if a.screens else None
+        result = judge(json.loads(Path(a.snapshots).read_text(encoding="utf-8")), screens, Path(a.root))
     except (Unusable, OSError, ValueError) as exc:
         print(f"UNUSABLE: {exc}", file=sys.stderr)
         return 2

@@ -1,0 +1,2 @@
+# Why this repository does not wire project_gates.py (#2304)
+claude-skills is the marketplace that ships project_gates.py: its own gates are scripts/maintainer_doctor.py, run by .github/workflows/gates.yml on every pull request and by release.yml at promotion; project_gates.py is the runner for downstream projects.
