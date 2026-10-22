@@ -379,6 +379,25 @@ GUARD = Guard(
             "whose command line only MENTIONS --bg-spare",
         ),
         Mutation(
+            # #2296: the context clears only after the teardown PASSED.
+            "a teardown that left something behind counts as done",
+            "  return String(text ?? '').includes('worktree_teardown: done, nothing left') ? path : null",
+            "  return path",
+            "no clear after a teardown that left something behind",
+        ),
+        Mutation(
+            "a dry run counts as a teardown",
+            "['--dry-run', '--audit', '--selftest', '--check-wording']",
+            "['--audit', '--selftest', '--check-wording']",
+            "no clear after a dry run",
+        ),
+        Mutation(
+            "a bare git worktree remove marks the job removed again",
+            "      const rm = passedTeardown(cmd, out)",
+            "      const rm = passedTeardown(cmd, out) ?? parseWorktreeRemove(cmd)",
+            "no clear after a bare git worktree remove",
+        ),
+        Mutation(
             'a resumed session whose election fails is left with no role',
             '  if (resumed && forced === null) {',
             '  if (false) {',
