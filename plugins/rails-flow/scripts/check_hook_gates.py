@@ -5383,6 +5383,28 @@ def guard_worktree_pointer_fixtures() -> None:
 # `lib/deadline.sh` runs each hook's work in its own process group under a wall-clock deadline and kills the whole
 # group. The stub below is the incident: an `awk` that hangs and leaves a sleeper behind, every pid recorded.
 # ---- wip-commit.sh (#1564) ----------------------------------------------------------------------------------------------------
+
+    # ---- SessionStart says it when project gates are not wired (#2304): the first line a session reads there, and nothing where they run or are opted out ----
+    with scratch_dir() as td:
+        repo = new_repo(td)
+        code, out = start(repo)
+        check("session-start (#2304): a repository with no project_gates wiring and no opt-out gets a PROJECT GATES NOT WIRED line naming setup-flow and the opt-out file",
+              code == 0 and "PROJECT GATES NOT WIRED" in out and "setup-flow" in out and "no-project-gates" in out, out[-300:])
+        (repo / ".claude" / "rails-flow").mkdir(parents=True)
+        (repo / ".claude" / "rails-flow" / "no-project-gates").write_text("# why\nthis repository runs its own doctor\n", encoding="utf-8")
+        code, out = start(repo)
+        check("session-start (#2304): ...and a repository that opted out WITH a reason gets none", code == 0 and "PROJECT GATES NOT WIRED" not in out, out[-300:])
+        (repo / ".claude" / "rails-flow" / "no-project-gates").write_text("# why\n", encoding="utf-8")
+        code, out = start(repo)
+        check("session-start (#2304): ...an opt-out file with no reason is not one, so the line returns", code == 0 and "PROJECT GATES NOT WIRED" in out, out[-300:])
+        (repo / ".claude" / "rails-flow" / "no-project-gates").unlink()
+        wf = repo / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "ci.yml").write_text("run: python3 project_gates.py\n", encoding="utf-8")
+        code, out = start(repo)
+        check("session-start (#2304): ...and a repository whose workflow names project_gates.py gets none", code == 0 and "PROJECT GATES NOT WIRED" not in out, out[-300:])
+
+
 def wip_commit_fixtures() -> None:
     """The Stop hook that commits a lane's tracked changes as WIP, driven the way the harness drives it, in the environment a project's own
     settings can set (#1843). Advisory, so every fixture also proves it exits 0. The judgement is proved by `wip_commit.py --selftest` (70 checks,
@@ -6476,11 +6498,35 @@ def guard_pr_ready_fixtures() -> None:
 
     with scratch_dir() as td:
         plain = new_repo(td, "plain", marker=False)
-        expect("guard-pr-ready: NOT in force (no marker, no workflow, no record dir): allowed", guard(plain, "gh pr ready 12"), 0)
+        # #2304: a repository where this plugin is installed and project_gates is NOT wired is refused, not "not applicable": every project gate is inert there.
+        wired_probe = [sys.executable, str(HOOKS / "lib" / "pr_ready_guard.py"), "--wired", str(plain)]
+
+        def wired_line() -> str:
+            return _run(wired_probe, capture_output=True, text=True, timeout=30).stdout
+        check("pr_ready_guard --wired (#2304): an unwired repository gets the PROJECT GATES NOT WIRED line, naming setup-flow and the opt-out file",
+              "PROJECT GATES NOT WIRED" in wired_line() and "setup-flow" in wired_line() and "no-project-gates" in wired_line(), wired_line()[:200])
+        expect("guard-pr-ready (#2304): NOT wired (no marker, no workflow, no record dir): REFUSED, naming the wiring", guard(plain, "gh pr ready 12"), 2, "project gates are not wired")
+        expect("...and the refusal says how to fix it (setup-flow) and how to opt out", guard(plain, "gh pr ready 12"), 2, "no-project-gates")
+        optout = plain / ".claude" / "rails-flow"
+        optout.mkdir(parents=True)
+        (optout / "no-project-gates").write_text("# why\n\n", encoding="utf-8")
+        expect("guard-pr-ready (#2304): an opt-out file that gives NO reason is not an opt-out: refused", guard(plain, "gh pr ready 12"), 2, "project gates are not wired")
+        (optout / "no-project-gates").write_text("# why\nthis repository runs its own doctor, not project_gates\n", encoding="utf-8")
+        expect("guard-pr-ready (#2304): an opt-out WITH a reason leaves the repository alone", guard(plain, "gh pr ready 12"), 0)
+        check("pr_ready_guard --wired (#2304): ...an opted-out repository gets no line", wired_line() == "", wired_line()[:200])
+        (optout / "no-project-gates").unlink()
+        # A symlink is not an opt-out, even to a file that holds a reason: the reason would not be one the repository wrote.
+        (plain / "elsewhere.txt").write_text("this repository runs its own doctor, not project_gates\n", encoding="utf-8")
+        (optout / "no-project-gates").symlink_to(plain / "elsewhere.txt")
+        expect("guard-pr-ready (#2304): an opt-out that is a SYMLINK is not an opt-out, even to a file holding a reason: refused", guard(plain, "gh pr ready 12"), 2, "project gates are not wired")
+        check("pr_ready_guard --wired (#2304): ...and a symlinked opt-out still gets the NOT WIRED line", "PROJECT GATES NOT WIRED" in wired_line(), wired_line()[:200])
+        (optout / "no-project-gates").unlink()
+        (plain / "elsewhere.txt").unlink()
         wf = plain / ".github" / "workflows"
         wf.mkdir(parents=True)
         (wf / "ci.yml").write_text("run: python3 project_gates.py\n", encoding="utf-8")
         expect("guard-pr-ready: a workflow naming project_gates.py puts it in force", guard(plain, "gh pr ready 12"), 2, "no sweep record")
+        check("pr_ready_guard --wired (#2304): ...and a repository whose workflow names project_gates.py gets no line", wired_line() == "", wired_line()[:200])
 
 
 # ---- every hook, under an environment a repository's settings can set (#1850, P1 of #1843) ----------------------------------------

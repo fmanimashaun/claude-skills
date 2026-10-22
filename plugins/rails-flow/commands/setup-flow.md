@@ -545,8 +545,9 @@ unless `docs/README.md` carries a `## Waivers` table with the directory and **a 
 for a directory that exists, fails too. `--scaffold --write` creates the missing ones. A legacy tree maps in with
 `--propose --write` (`decisions/` and `progress/` into `brain/`, `spec/` and `plan/` into `product/`, `research/` and
 `inventory/` into `evidence/`, `process/` into `runbooks/`, by `git mv`, link rewrites asserted). The check runs
-in a project's sweep only where §8 wired `project_gates.py` into CI or `CLAUDE.md` (a project that skipped §8 is
-reported by nothing: wire it). Two more checks ride the same sweep (#2297): `brain-fresh` (an arm or promotion is
+in a project's sweep only where §8 wired `project_gates.py` into CI or `CLAUDE.md`; a project that skipped §8 has every
+gate inert, so `gh pr ready` is **refused** there (and SessionStart says "PROJECT GATES NOT WIRED") until it is wired or declares
+an opt-out, with a reason, in `.claude/rails-flow/no-project-gates` (#2304). Two more checks ride the same sweep (#2297): `brain-fresh` (an arm or promotion is
 refused while `docs/brain/STATUS.md` predates the last release tag) and `owner-rulings` (a PR whose `Fixes #n` issue carries
 an owner ruling needs a `## D-NNN` block in `docs/brain/DECISIONS.md` that mentions `#n`).
 
@@ -882,6 +883,12 @@ covers all of them. **Pin the `ref`** — an unpinned `main` means our next rele
 what your CI enforces, which is the same drift this whole toolchain exists to remove. Bump it
 deliberately, the way you bump any other dependency, and record which tag you pinned so the bump is
 a decision rather than a discovery.
+
+**Wiring is not optional (#2304).** A repository where this plugin is installed and that neither names `project_gates.py` in a
+workflow, nor carries the rails-flow managed block in `CLAUDE.md`, nor has ever run a sweep, has no gate that runs: the guard on
+`gh pr ready` refuses it ("project gates are not wired") and SessionStart prints a "PROJECT GATES NOT WIRED" line, instead of
+reporting "not applicable". The way out is to wire it (this section), or, for a repository that genuinely runs something else,
+to write one line giving the reason in `.claude/rails-flow/no-project-gates` (a file with no reason is not an opt-out).
 
 `project_gates.py` discovers which of the shipped checks apply to *this* repo and reports four
 states — **pass / FAIL / not-applicable / ERROR**. A project with no `qa/` directory reports the

@@ -74,6 +74,11 @@ if command -v python3 >/dev/null 2>&1; then
 fi
 [ -f CLAUDE.md ] || echo "- NOTE: no CLAUDE.md — run /rails-flow:setup-flow to scaffold project conventions."
 [ -f GUARDRAILS.md ] || echo "- NOTE: no GUARDRAILS.md — run /rails-flow:setup-flow."
+# #2304: a repository whose project gates are not wired has every gate inert; say so as the first thing a session reads.
+if command -v python3 >/dev/null 2>&1; then
+  _unwired="$(python3 "${BASH_SOURCE[0]%/*}/lib/pr_ready_guard.py" --wired "$PWD" 2>/dev/null)"
+  [ -n "$_unwired" ] && echo "$_unwired"
+fi
 if [ -f docs/brain/STATUS.md ]; then
   echo "- brain STATUS (docs/brain/STATUS.md, top):"
   head -8 docs/brain/STATUS.md | sed 's/^/  /'
