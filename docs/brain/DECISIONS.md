@@ -1,5 +1,11 @@
 # DECISIONS (ADR-lite)
 
+**Format.** A record ends with a line of its own, `Refs #n[, #m]`, naming the issue(s) where the ruling or the work lives,
+outside any code fence. `plugins/rails-flow/scripts/check_owner_rulings.py` (a project gate) refuses a PR that closes
+an issue carrying an owner's ruling unless some `## D-NNN` block here has such a line naming that issue; a passing
+mention, a link or an inline `Refs` mid-sentence does not count. Records D-001 to D-011 predate the rule and mention
+their issues inline; D-012 onward follow it.
+
 ## D-001 — Relocate, never summarise (2026-09-03) `[decided]`
 **Choice:** when `CLAUDE.md` passes its ceiling, pure-history paragraphs move **verbatim** to a history
 file with one pointer per section; nothing is paraphrased. **Alternatives:** summarise in place;
@@ -126,6 +132,7 @@ Where the MCP spec gives a mechanism, the item cites it (`doctrine-verifier` CON
 **Rationale:** the owner's words above.
 **Enforced by:** not yet enforced, tracked in #2225 (open). This memo is itself prose, not a check.
 **Reversal condition:** the owner withdraws the rule.
+Refs #2225.
 
 ## D-013 — The full sweep runs on GitHub, because the repository is public; a local proof is for private repositories only (2026-10-21) `[decided]`
 **Choice:** `.github/workflows/release.yml` runs the full gate sweep (including `mutation coverage`) on GitHub for a push to `main`. A local `maintainer_doctor.py --gates-only --require-slow --record-proof` is optional and meant for private repositories; it posts a `full-sweep` status that `release.yml` reuses for an identical tree.
@@ -134,6 +141,7 @@ Where the MCP spec gives a mechanism, the item cites it (`doctrine-verifier` CON
 **Rationale:** the owner's words above; the repository is public, so GitHub runs the sweep at no cost.
 **Enforced by:** the full sweep on GitHub is enforced by `release.yml` (the `proof` and `gates` jobs). Not yet enforced: refusing a local proof on this public repository. Nothing checks it, and no issue tracks that gap.
 **Reversal condition:** the repository goes private, or GitHub stops running the sweep for free.
+Refs #2234.
 
 ## D-014 — Design is neutral: rails-stack does not own design, and a UI change starts as a mock-up in the app's own shell (2026-10-21) `[decided]`
 **Choice:** design belongs to the design flow, not to the Rails stack. Every UI change starts as a mock-up in the app's own shell; a new project first mocks its core shell and foundation screens.
@@ -142,6 +150,7 @@ Where the MCP spec gives a mechanism, the item cites it (`doctrine-verifier` CON
 **Rationale:** the owner's words above.
 **Enforced by:** not yet enforced, tracked in #2280 (the design-system move from rails-stack to design-flow, open). No gate for the mock-up-first rule was found: `grep -rln -i "mock-up\|mockup" plugins/design-flow/scripts` matches only `audit_findings.py` and `detect_stack.py`.
 **Reversal condition:** the owner moves design back into rails-stack.
+Refs #2211, #2280.
 
 ## D-015 — External catalogues are inspiration only; we build from our own design system (2026-10-21) `[decided]`
 **Choice:** external UI catalogues (Shadcn Space and others) inform ideas. Their code is never pasted or installed; components are built from our own design system.
@@ -150,6 +159,7 @@ Where the MCP spec gives a mechanism, the item cites it (`doctrine-verifier` CON
 **Rationale:** the owner's words above.
 **Enforced by:** nothing. Not yet enforced, and no open or closed issue tracks it (`gh issue list --state all --limit 30 --search "Shadcn catalogue in:title,body"` finds only #1069, which is a component-gap issue).
 **Reversal condition:** the owner names a catalogue as a permitted source.
+Refs #1069.
 
 ## D-016 — Flows run unattended: a shipped step acts instead of printing guidance; a human is needed only for credentials, permission prompts and product calls (2026-10-21) `[decided]`
 **Choice:** a step a flow ships installs and configures what it can. It prints guidance only where a human must act: credentials, a permission prompt, or a product decision.
@@ -158,6 +168,7 @@ Where the MCP spec gives a mechanism, the item cites it (`doctrine-verifier` CON
 **Rationale:** the owner's words above.
 **Enforced by:** not yet enforced, tracked in #2288 (toolchain-check installs and logs in autonomously, open).
 **Reversal condition:** the owner withdraws the rule.
+Refs #2288.
 
 ## D-017 — Vendor plugins (Vercel, Supabase) own their doctrine; we detect and hand off, and carry no copy (2026-10-21) `[decided]`
 **Choice:** the Vercel and Supabase plugins own their own commands and doctrine. Our shipped docs detect the stack and hand off to the vendor plugin; they never carry a copy of a vendor CLI step.
@@ -166,6 +177,7 @@ Where the MCP spec gives a mechanism, the item cites it (`doctrine-verifier` CON
 **Rationale:** the owner's words above. The vendor plugins are the authority on their own CLIs; a copy in our docs would go stale.
 **Enforced by:** `scripts/check_vendor_handoff.py` (from #2290, merged) refuses a shipped `.md` line that tells the reader to run a vendor CLI step. It is wired into `scripts/maintainer_doctor.py`. The detect-and-hand-off part (#2168, PR #2291) is not yet merged.
 **Reversal condition:** a vendor plugin is withdrawn, or the owner moves a vendor's doctrine back into our docs.
+Refs #2168, #2289, #2290, #2291.
 
 ## D-018 — A worktree teardown leaves no file or folder behind, deletes the merged branch, and the temp dir is monitored and cleared (2026-10-22) `[decided]`
 **Choice:** a teardown removes every file and folder the session created, deletes the branch once it is merged, and the temp directory is monitored and cleared.
@@ -174,3 +186,4 @@ Where the MCP spec gives a mechanism, the item cites it (`doctrine-verifier` CON
 **Rationale:** the owner's words above. #2296 records the defect: teardown leaves files and folders behind.
 **Enforced by:** not yet enforced, tracked in #2296 (open).
 **Reversal condition:** the owner withdraws the rule.
+Refs #2296.

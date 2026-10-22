@@ -157,6 +157,9 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | qa-flow visual baselines | `qa-flow` | `python3 plugins/qa-flow/scripts/visual_baseline.py --selftest` | selftest |
 | qa-flow walkthrough plan | `qa-flow` | `python3 plugins/qa-flow/scripts/walkthrough_plan.py --selftest` | selftest |
 | acceptance criteria | `rails-flow` | `python3 plugins/rails-flow/scripts/check_criteria.py --selftest` | selftest |
+| brain fresh at arm | `rails-flow` | `python3 plugins/rails-flow/scripts/check_brain_fresh.py --when arm` | live check |
+| brain fresh at promotion | `rails-flow` | `python3 plugins/rails-flow/scripts/check_brain_fresh.py` | live check |
+| brain fresh selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/check_brain_fresh.py --selftest` | selftest |
 | curated drift signal | `rails-flow` | `python3 plugins/rails-flow/scripts/check_drift_signal.py --selftest` | selftest |
 | design-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/design-flow/agents --tiers plugins/design-flow/reference/model-tiers.md` | live check |
 | gh shim | `rails-flow` | `python3 plugins/rails-flow/scripts/gh_shim_selftest.py` | live check |
@@ -169,6 +172,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | label-new-issue selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/label_new_issue.py --selftest` | selftest |
 | memory index limit | `rails-flow` | `python3 plugins/rails-flow/scripts/check_memory_index.py --selftest` | selftest |
 | mod unit tests | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mods.py` | live check |
+| owner rulings selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/check_owner_rulings.py --selftest` | selftest |
 | pipeline tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/pipeline/agents --tiers plugins/pipeline/reference/model-tiers.md` | live check |
 | project gates | `rails-flow` | `python3 plugins/rails-flow/scripts/project_gates.py --selftest` | selftest |
 | project settings dead config | `rails-flow` | `python3 plugins/rails-flow/scripts/check_project_settings.py --root . --markdown plugins/rails-flow/commands` | live check |
