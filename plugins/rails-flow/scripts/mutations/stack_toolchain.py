@@ -106,10 +106,12 @@ GUARD = Guard(
             "a ready probe that is the project's own binary is not run",
         ),
         Mutation(
-            'containment is judged by spelling, so another letter case of the project escapes it',
+            # #2319: caught by the symlink-spelling row, which exists on every filesystem; the letter-case row only bites on a
+            # case-insensitive volume (macOS), so on the Linux release runner it could not tell this mutant from the right check.
+            'containment is judged by spelling, so another spelling of the project (a symlink, or letter case) escapes it',
             '            if os.path.samestat(os.stat(p), root):',
             '            if str(p).startswith(str(project.resolve())):',
-            'a PATH entry naming the project in other letter case does not run its binary',
+            "a PATH entry naming the project by another spelling is stripped from a probe's PATH",
         ),
         Mutation(
             "the probe keeps the project's PATH entries, so a #!/usr/bin/env interpreter can be the project's",
