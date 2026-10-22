@@ -432,5 +432,29 @@ GUARD = Guard(
             "if (job.touched && state.role === 'implementation' && state.hasSurface && (state.defaulted || (jobDoneShape() && job.checked?.ok === true && job.checked.epoch === job.epoch))) fire($, job.epoch)",
             'a defaulted session with no worktree and no PR of its own never clears',
         ),
+        Mutation(
+            'the resumed re-claim does not take the takeover lock',
+            '    mkdir "$lk" 2>/dev/null || report\n    read_claim\n    if owns && [ -d "$c" ]',
+            '    read_claim\n    if owns && [ -d "$c" ]',
+            'the resumed re-claim takes the takeover lock',
+        ),
+        Mutation(
+            'the reset prompt goes to a session whose role changed while the clear was pending',
+            "        if (state.role !== 'implementation') {\n          say($, `reset prompt skipped: the role is ${state.role} now, not implementation`)\n          return undefined\n        }\n",
+            '',
+            'a role that changed while a clear was pending skips the reset prompt',
+        ),
+        Mutation(
+            'ensureRole changes the role while a clear is pending',
+            '    if (job.pending) return                  // a clear is queued under the role it was decided with: nothing changes it until the clear has run (#2311 review)\n',
+            '',
+            'a clear queued while the session is defaulted freezes the role',
+        ),
+        Mutation(
+            'syncRole changes the role while a clear is pending',
+            '    if (job.pending) return                  // see ensureRole: a queued clear keeps the role it was decided with\n',
+            '',
+            'syncRole does not change the role while a clear is pending either',
+        ),
     ),
 )

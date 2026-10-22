@@ -916,6 +916,90 @@ await check('#2307: after an all-implementation restart (no claim) the first /ra
   assert.equal(reset.parseElection(await taker.run(['sh', '-c', '', 'sh', 'n-b', '1', '1'])).role, 'coordinator')
 })
 
+// ---- #2311 review: a clear queued under one role must not run under another, and the resumed re-claim takes the takeover lock ----------------
+await check('#2311: a clear queued while the session is defaulted freezes the role: ensureRole does not elect until the clear has run, then the claim holder gets coordinator back', async () => {
+  const h = home()
+  const before = new Proc(h)
+  await before.run(['sh', '-c', '', 'sh', 'flip-owner', '0'])   // the coordinator's claim, its process gone after the restart
+  before.kill()
+  await new Promise((r) => setTimeout(r, 100))
+  const real = new Proc(h)
+  let elections = 0
+  const s = await session({ role: null, sid: 'flip-owner', turns: 4, gh: MERGED, holdClear: true, proc: { run: async (argv) => { if (argv[6] !== '2') elections++; if (elections === 1 && argv[6] !== '2') throw new Error('stalled'); return real.run(argv) } } })
+  await s.start()
+  assert.equal(reset.state.defaulted, true)
+  await finishJob(s)
+  await new Promise((r) => setTimeout(r, 40))
+  const turn = s.turnDone()
+  assert.equal(s.calls.clear, 1, 'the clear is queued under the defaulted implementation role')
+  reset.state.electAt = 0
+  await s.submit()                                   // prompt.submit asks ensureRole while the clear waits
+  assert.equal(elections, 1, 'no election runs while a clear is pending')
+  assert.equal(reset.state.role, 'implementation', 'the role is frozen until the clear has run')
+  s.releaseClear()
+  await turn
+  await new Promise((r) => setTimeout(r, 60))
+  assert.equal(s.calls.submitted.length, 1, 'the reset prompt goes to the session it was decided for')
+  reset.state.electAt = 0
+  await s.turnStart()
+  assert.equal(reset.state.role, 'coordinator', 'once the clear has run the claim holder gets its role back')
+})
+
+await check('#2311: syncRole does not change the role while a clear is pending either', async () => {
+  const s = await session({ sid: 'sync-flip', role: 'implementation', gh: MERGED, holdClear: true, proc: { run: async (argv) => (argv[6] === '2' ? 'coordinator' : 'implementation') } })
+  await finishJob(s)
+  await new Promise((r) => setTimeout(r, 40))
+  const turn = s.turnDone()
+  assert.equal(s.calls.clear, 1)
+  await s.turnStart()                                // turn.start runs syncRole, which would read coordinator
+  assert.equal(reset.state.role, 'implementation', 'a pending clear keeps the role it was decided with')
+  s.releaseClear()
+  await turn
+})
+
+await check('#2311: a role that changed while a clear was pending skips the reset prompt (whatever changed it)', async () => {
+  const s = await session({ role: 'implementation', gh: MERGED, holdClear: true, env: { RAILS_FLOW_DEBUG: '1' } })
+  await finishJob(s)
+  await new Promise((r) => setTimeout(r, 40))
+  const turn = s.turnDone()
+  assert.equal(s.calls.clear, 1)
+  reset.state.role = 'coordinator'                   // some route this module does not own
+  s.releaseClear()
+  await turn
+  await new Promise((r) => setTimeout(r, 60))
+  assert.deepEqual(s.calls.submitted, [], 'a coordinator is never told it is an implementation session waiting for one')
+  assert.ok(s.debugLog().includes('reset prompt skipped'))
+})
+
+await check('#2311: the resumed re-claim takes the takeover lock: a session holding it sends the resumed owner to implementation, never a second coordinator', async () => {
+  const h = home()
+  const before = new Proc(h)
+  await before.run(['sh', '-c', '', 'sh', 'lock-owner', '0'])
+  before.kill()
+  await new Promise((r) => setTimeout(r, 100))
+  mkdirSync(join(h, '.claude/rails-flow/lock'))      // a taker is in the middle of replacing the dead claim
+  const owner = new Proc(h)
+  assert.equal(reset.parseElection(await owner.run(['sh', '-c', '', 'sh', 'lock-owner', '0', '1'])).role, 'implementation', 'the lock is held: not coordinator')
+  assert.ok(existsSync(join(h, '.claude/rails-flow/lock')), "and the other session's lock is left alone")
+  rmSync(join(h, '.claude/rails-flow/lock'), { recursive: true })
+  assert.equal(reset.parseElection(await owner.run(['sh', '-c', '', 'sh', 'lock-owner', '0', '1'])).role, 'coordinator', 'the lock is free: the owner re-claims')
+  assert.ok(!existsSync(join(h, '.claude/rails-flow/lock')), 'and releases it')
+  assert.ok(readFileSync(join(h, '.claude/rails-flow/coordinator/claim'), 'utf8').includes(String(owner.pid)), 'the claim carries the new process')
+})
+
+await check('#2311: a resumed owner and a fresh taker racing for the same dead claim: exactly one coordinator, five rounds', async () => {
+  for (let round = 0; round < 5; round++) {
+    const h = home()
+    const before = new Proc(h)
+    await before.run(['sh', '-c', '', 'sh', 'racer-owner', '0'])
+    before.kill()
+    await new Promise((r) => setTimeout(r, 100))
+    const [a, b] = await Promise.all([new Proc(h).run(['sh', '-c', '', 'sh', 'racer-owner', '0', '1']), new Proc(h).run(['sh', '-c', '', 'sh', 'racer-new', '0', '0'])])
+    const roles = [reset.parseElection(a)?.role, reset.parseElection(b)?.role]
+    assert.equal(roles.filter((r) => r === 'coordinator').length, 1, `round ${round}: ${roles.join(', ')}`)
+  }
+})
+
 // ---- adversarial review of #1728 (Fable, f8bff97b) ---------------------------------------------------
 
 await check('P1: work that starts while gh answers cancels the clear; work after the clear was queued skips the reset prompt', async () => {

@@ -268,6 +268,9 @@ more). The pid is `$PPID` of the shell `$.process.run` starts: measured under `c
   claim of the session's own id coming back as coordinator). A fresh session (no turns) that cannot be elected, a
   forced `RAILS_FLOW_ROLE=coordinator` and a pre-warmed spare are not defaulted. The "could not elect" line is
   only for a fresh session that still has no role after that. `RAILS_FLOW_DEBUG=1` records which failure it was.
+  A clear queued at turn end freezes the role until it has run, and its reset prompt is skipped if the role is no
+  longer implementation. The resumed re-claim of a dead claim takes the same `lock` directory as the stale-claim
+  taker, so a resumed owner and a fresh start racing for it cannot both print coordinator.
 - **Not done:** the role is not written to the board's session record (`coordination.py`); that is a separate change.
 
 **Hardening from the adversarial review of #1728.** (1) Any tool call after the turn ended, or while `gh` answers,

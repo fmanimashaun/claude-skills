@@ -122,10 +122,20 @@ if [ "$resumed" = "2" ]; then
   echo none; exit 0
 fi
 if [ "$force" = "1" ]; then rm -rf "$c"; fi
+# The claim a RESUMED session may keep: it carries this session's id, and its process is gone (or is this one). Read again under the lock below.
+owns() { [ -n "$hp" ] && [ "$hs" = "$sid" ] && { [ "$hp" = "$me" ] || ! alive "$hp" "$hl"; }; }
 if [ "$resumed" = "1" ] && [ "$force" != "1" ]; then
   read_claim
-  if [ -n "$hp" ] && [ "$hs" = "$sid" ] && { [ "$hp" = "$me" ] || ! alive "$hp" "$hl"; }; then
-    printf '%s\\n%s\\n%s\\n%s\\n' "$me" "$sid" "$(date +%s)" "$(start "$me")" > "$c/claim"; echo coordinator; exit 0
+  if owns; then
+    # The re-claim REWRITES the claim file, so it takes the same lock as the stale takeover below (#2311 review): unlocked, a fresh start taking this dead claim over
+    # (rm -rf, then mkdir) could remove the directory between this read and this write, and both sessions would print coordinator. A holder of the lock sends this
+    # session to implementation (fewer coordinators, never more); the claim is read again under the lock, and the write must land in a claim that still exists.
+    if [ -n "$(find "$lk" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rmdir "$lk" 2>/dev/null; fi
+    mkdir "$lk" 2>/dev/null || report
+    read_claim
+    if owns && [ -d "$c" ] \\
+       && printf '%s\\n%s\\n%s\\n%s\\n' "$me" "$sid" "$(date +%s)" "$(start "$me")" > "$c/claim"; then rmdir "$lk"; echo coordinator; exit 0; fi
+    rmdir "$lk"; read_claim; report
   fi
   report
 fi
@@ -212,6 +222,8 @@ export async function electRole($) {
     }
   } catch (err) {
     why = `${String(err?.message ?? err).slice(0, 120)}`
+    // An error that reached here may be the RAILS_FLOW_ROLE read itself, before `resumed` was asked. Counting the session as resumed then is the SAFE direction: it
+    // defaults to implementation, never to coordinator ("fewer coordinators, never more"), and a forced role (which this branch skips) is never defaulted.
     if (forced === null) resumed = resumed || (await isResumed($).catch(() => true))
   }
   if (resumed && forced === null) {
@@ -242,6 +254,7 @@ async function applyRole($, r, how) {
 // election per ELECT_RETRY_MS otherwise. Advisory and fails open: an error leaves the role as it was.
 export async function ensureRole($) {
   try {
+    if (job.pending) return                  // a clear is queued under the role it was decided with: nothing changes it until the clear has run (#2311 review)
     if (state.role !== null && !state.defaulted) return        // a DEFAULTED role is asked again: a stall that has passed may now give the real answer
     const now = Date.now()
     if (state.electAt !== null && now - state.electAt < ELECT_RETRY_MS) return
@@ -258,6 +271,7 @@ export async function ensureRole($) {
 export async function syncRole($) {
   try {
     if (roleOf(await $.env.get('RAILS_FLOW_ROLE'))) return
+    if (job.pending) return                  // see ensureRole: a queued clear keeps the role it was decided with
     const r = await $.process.run(['sh', '-c', ELECT_SCRIPT, 'sh', String(await $.session.id()), '0', '2'], { timeoutMs: ELECT_TIMEOUT_MS })
     const e = r.exitCode === 0 ? parseElection(r.stdout) : null
     if (e === null || e.role === state.role) return
@@ -566,6 +580,12 @@ function fire($, epoch) {
           return undefined
         }
         resetJob()
+        // The clear has run. The role is checked again HERE (#2311 review): a session that became the coordinator between the queue and the run must not be told it
+        // is an implementation session waiting for one. (The queued clear itself cannot be taken back; ensureRole and syncRole do not change the role while it is pending.)
+        if (state.role !== 'implementation') {
+          say($, `reset prompt skipped: the role is ${state.role} now, not implementation`)
+          return undefined
+        }
         return $.prompt.submit({ text: resetPrompt(handoff) })
       })
       .catch((err) => {
