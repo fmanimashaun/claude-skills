@@ -66,7 +66,9 @@ def limit_for(timeout: float | None) -> float:
 
 
 def git(where: str, *args: str, timeout: float | None = None) -> str | None:
-    """git's stdout when it succeeds, None when it fails or cannot run. A TIMEOUT raises GitTimeout: under load it used to read as `not a repository`, which is allowed (#2295)."""
+    """git's stdout when it succeeds, None when it fails or cannot run. A TIMEOUT raises GitTimeout: under load it used to read as `not a repository`, which is allowed (#2295).
+    No caller turns None into an allow: judge_record refuses on it (HEAD, or the sweep directory, unreadable), in_force counts an unreadable sweep directory as in force, and the
+    "green elsewhere" hint, whose refusal is already certain, only names nothing. Whether a directory is a repository is asked through `toplevel_or_raise`, never through here."""
     limit = limit_for(timeout)
     try:
         done = subprocess.run(["git", "-C", where, *args], capture_output=True, text=True, timeout=limit)
