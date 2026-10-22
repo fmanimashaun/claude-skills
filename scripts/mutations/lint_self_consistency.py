@@ -1796,8 +1796,8 @@ GUARD = Guard(
         Mutation(
             # #2306: the rf_tmp copies must stay identical.
             "a differing rf_tmp copy is no longer reported",
-            "        if canonical is not None and texts.get(rel, canonical) != canonical:",
-            "        if False:",
+            "        if canonical is not None and texts.get(rel, canonical) != canonical:\n            findings.append(Finding(\"rf-tmp-drift\"",
+            "        if False:\n            findings.append(Finding(\"rf-tmp-drift\"",
             "rf-tmp-drift / an rf_tmp copy that differs by one byte is a finding",
         ),
         Mutation(
