@@ -299,7 +299,7 @@ end
 models or jobs:
 
 ```erb
-<%= turbo_stream_from @room %>   <%# signed channel subscription %>
+<%= turbo_stream_from @room %>   <%# signed name: integrity, NOT access control (stream-security.md) %>
 ```
 
 ```ruby
@@ -313,8 +313,10 @@ end
 
 Broadcast rules: broadcasts render partials with **no controller context**
 (no `current_user` — design partials to take everything as locals); broadcast
-after commit only; never trust user-supplied stream names —
-`turbo_stream_from` signs them for you. First consider §3 refreshes;
+after commit only; never build a stream name from user input. `turbo_stream_from` signs
+the name, which stops a client forging or altering one; it does **not** authorize the
+subscriber (anyone holding a valid signed name can listen, and it never expires) — read
+`stream-security.md` before putting a stream on a page. First consider §3 refreshes;
 hand-authored broadcasts are for high-frequency or surgical updates where
 re-rendering the page is too heavy.
 

@@ -170,5 +170,11 @@ GUARD = Guard(
             "            record.unlink()",
             "--begin --again keeps the old record and snapshot numbered",
         ),
+        Mutation(
+            "an override that names nobody (`Override:  | reason | #9`) is accepted",
+            '([^|\\s][^|]*?)\\s*\\|\\s*(.+?)',
+            '([^|]+?)\\s*\\|\\s*(.+?)',
+            "RETHINK with an override that names nobody is refused",
+        ),
     ),
 )

@@ -149,7 +149,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the resumed flag never reaches the election script",
-            "(await isResumed($)) ? '1' : '0'",
+            "resumed ? '1' : '0'",
             "'0'",
             "every session resumed at once",
         ),
@@ -185,8 +185,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the elected role is never stored",
-            "      state.role = r.role\n",
-            "",
+            "  state.role = r.role\n  state.coordinator = r.coordinator\n  state.defaulted",
+            "  state.coordinator = r.coordinator\n  state.defaulted",
             "the first session is elected coordinator",
         ),
         # Fable's review of #1728: each fix is held by its own check.
@@ -381,14 +381,14 @@ GUARD = Guard(
         Mutation(
             # #2296: the context clears only after the teardown PASSED.
             "a teardown that left something behind counts as done",
-            "  return /worktree_teardown: done, nothing left/.test(String(text ?? '')) ? m[2] : null",
-            "  return m[2]",
+            "  return String(text ?? '').includes('worktree_teardown: done, nothing left') ? path : null",
+            "  return path",
             "no clear after a teardown that left something behind",
         ),
         Mutation(
             "a dry run counts as a teardown",
-            "if (!m || /--(?:dry-run|audit|selftest|check-wording)\\b/.test(m[1])) return null",
-            "if (!m || /--(?:audit|selftest|check-wording)\\b/.test(m[1])) return null",
+            "['--dry-run', '--audit', '--selftest', '--check-wording']",
+            "['--audit', '--selftest', '--check-wording']",
             "no clear after a dry run",
         ),
         Mutation(
@@ -396,6 +396,84 @@ GUARD = Guard(
             "      const rm = passedTeardown(cmd, out)",
             "      const rm = passedTeardown(cmd, out) ?? parseWorktreeRemove(cmd)",
             "no clear after a bare git worktree remove",
+        ),
+        Mutation(
+            'a resumed session whose election fails is left with no role',
+            '  if (resumed && forced === null) {',
+            '  if (false) {',
+            'defaults to implementation, says so',
+        ),
+        Mutation(
+            'the election gets 8 s again, not 20',
+            'export const ELECT_TIMEOUT_MS = 20000',
+            'export const ELECT_TIMEOUT_MS = 8000',
+            'the election gets 20 s, not 8',
+        ),
+        Mutation(
+            'the turn start does not elect a role-less session on demand',
+            '    await ensureRole($)\n    await syncRole($)',
+            '    await syncRole($)',
+            'the first turn start elects on demand too',
+        ),
+        Mutation(
+            'a defaulted role is never asked again',
+            '    if (state.role !== null && !state.defaulted) return',
+            '    if (state.role !== null) return',
+            'a defaulted session asks again',
+        ),
+        Mutation(
+            'a session with no role asks again on every hook',
+            '    if (state.electAt !== null && now - state.electAt < ELECT_RETRY_MS) return\n',
+            '',
+            'the retry is throttled',
+        ),
+        Mutation(
+            'a FRESH session whose election fails defaults too',
+            '  if (resumed && forced === null) {',
+            '  if (forced === null) {',
+            'a FRESH session whose election fails still has no role',
+        ),
+        Mutation(
+            'a forced coordinator whose election fails is defaulted to implementation',
+            '  if (resumed && forced === null) {',
+            '  if (resumed) {',
+            'RAILS_FLOW_ROLE=coordinator is never defaulted',
+        ),
+        Mutation(
+            'a pre-warmed spare is defaulted to implementation',
+            "      if (e !== null || /^\\s*spare\\b/.test(String(r.stdout ?? ''))) return e",
+            '      if (e !== null) return e',
+            'a pre-warmed spare takes no part',
+        ),
+        Mutation(
+            'a defaulted session clears without the full job-done condition',
+            "if (job.touched && state.role === 'implementation' && state.hasSurface && jobDoneShape() && job.checked?.ok === true && job.checked.epoch === job.epoch) fire($, job.epoch)",
+            "if (job.touched && state.role === 'implementation' && state.hasSurface && (state.defaulted || (jobDoneShape() && job.checked?.ok === true && job.checked.epoch === job.epoch))) fire($, job.epoch)",
+            'a defaulted session with no worktree and no PR of its own never clears',
+        ),
+        Mutation(
+            'the resumed re-claim does not take the takeover lock',
+            '    mkdir "$lk" 2>/dev/null || report\n    read_claim\n    if owns && [ -d "$c" ]',
+            '    read_claim\n    if owns && [ -d "$c" ]',
+            'the resumed re-claim takes the takeover lock',
+        ),
+        Mutation(
+            'the reset prompt goes to a session whose role changed while the clear was pending',
+            "        if (state.role !== 'implementation') {\n          say($, `reset prompt skipped: the role is ${state.role} now, not implementation`)\n          return undefined\n        }\n",
+            '',
+            'a role that changed while a clear was pending skips the reset prompt',
+        ),
+        Mutation(
+            'ensureRole changes the role while a clear is pending',
+            '    if (job.pending) return                  // a clear is queued under the role it was decided with: nothing changes it until the clear has run (#2311 review)\n',
+            '',
+            'a clear queued while the session is defaulted freezes the role',
+        ),
+        Mutation(
+            'syncRole changes the role while a clear is pending',
+            '    if (job.pending) return                  // see ensureRole: a queued clear keeps the role it was decided with\n',
+            '',
+            'syncRole does not change the role while a clear is pending either',
         ),
     ),
 )

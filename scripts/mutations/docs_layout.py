@@ -9,6 +9,7 @@ GUARD = Guard(
     name="docs_layout",
     subject="plugins/rails-flow/scripts/docs_layout.py",
     selftest="plugins/rails-flow/scripts/docs_layout.py",   # --selftest lives in the module itself
+    needs=("plugins/rails-flow/checks.json",),   # #2298: the selftest runs the command checks.json registers
     mutations=(
         Mutation(
             "code in docs/ is classified as authored prose, so a generator script looks like a document",
@@ -203,6 +204,42 @@ GUARD = Guard(
             '        if abs_new == abs_old and old_dir == new_dir:\n            return mm.group(0)\n',
             '',
             "#1189: a file whose links point at nothing that moved is not rewritten at all",
+        ),
+        Mutation(
+            'a missing required directory stops being a finding',
+            '        elif d not in waived and not present:',
+            '        elif False:',
+            'a repo with no brain/, architecture/ or evidence/ is refused, each named',
+        ),
+        Mutation(
+            'a waiver with no reason excuses the missing directory',
+            '        if d in waived and not waived[d]:',
+            '        if False:',
+            'a waiver with no reason is a finding, not an excuse',
+        ),
+        Mutation(
+            'a waiver for a directory that exists stops being a finding',
+            '        elif d in waived and present:',
+            '        elif False:',
+            'a waiver for a directory that exists is a finding (delete the waiver)',
+        ),
+        Mutation(
+            'a waiver for a name outside the layout stops being a finding',
+            '    for d in sorted(set(waived) - set(LAYOUT)):',
+            '    for d in []:',
+            'a waiver for a name that is not a layout directory is a finding',
+        ),
+        Mutation(
+            'a UI marker no longer makes design/ required',
+            '        hit = next((m for m in markers if (root / m).exists()), None)',
+            '        hit = None',
+            'a project with UI and no design/ is refused',
+        ),
+        Mutation(
+            'a waived directory is scaffolded anyway',
+            '        if d not in waived and not (docs / d).is_dir():',
+            '        if not (docs / d).is_dir():',
+            "...and not the waived one's",
         ),
     ),
 )

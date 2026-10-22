@@ -85,7 +85,7 @@ DEPENDENCY_TEXT = re.compile(r"\b(?:add|adds|adding|new|bump|upgrade|install)\b[
 BOOKKEEPING = re.compile(r"^(?:changelog\.d|dist|docs/architecture|docs/wiki|docs/evidence|\.claude/skills)/")
 FINDING_RE = re.compile(r"^\s*(?:[-*]\s*)?(?:\*\*)?(A-\d+)\b")
 DISPOSITION_RE = re.compile(r"^\s*Disposition\s+(A-\d+)\s*:\s*(\w+)\s*\|\s*(.*)$", re.I)
-OVERRIDE_RE = re.compile(r"^\s*Override\s*:\s*([^|]+?)\s*\|\s*(.+?)\s*\|\s*(#\d+)\s*$", re.I)
+OVERRIDE_RE = re.compile(r"^\s*Override\s*:\s*([^|\s][^|]*?)\s*\|\s*(.+?)\s*\|\s*(#\d+)\s*$", re.I)   # `who` starts with a non-space: an override that names nobody is none (#2264)
 
 
 def plan_files(root: Path, slug: str) -> list[str]:
@@ -406,6 +406,8 @@ def selftest() -> int:  # noqa: C901 -- one fixture table, read top to bottom
             ("RETHINK with a short override is refused", good.replace("VERDICT: PROCEED", "VERDICT: RETHINK") + "Override: owner | fine | #9\n", "H", cats, "RETHINK blocks"),
             ("RETHINK with an override and no issue is refused",
              good.replace("VERDICT: PROCEED", "VERDICT: RETHINK") + "Override: owner | the premise is deliberate, see the ruling\n", "H", cats, "RETHINK blocks"),
+            ("RETHINK with an override that names nobody is refused",
+             good.replace("VERDICT: PROCEED", "VERDICT: RETHINK") + "Override:  | the premise is deliberate, per the ruling | #9\n", "H", cats, "RETHINK blocks"),
             ("RETHINK with a full override is covered",
              good.replace("VERDICT: PROCEED", "VERDICT: RETHINK") + "Override: owner | the premise is deliberate, per the ruling | #9\n", "H", cats, None),
             ("a header-less record is refused", "VERDICT: PROCEED\n", "H", cats, "--begin"),
