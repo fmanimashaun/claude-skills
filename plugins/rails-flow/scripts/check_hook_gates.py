@@ -6432,6 +6432,40 @@ def guard_pr_ready_fixtures() -> None:
         stub_git("echo 'fatal: not a git repository (or any of the parent directories): .git' >&2\nexit 128")
         res = run_hook("guard-pr-ready.sh", cwd=notrepo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(notrepo)}), path_prefix=[stubs], env_extra=slow)
         expect("guard-pr-ready (#2295): CONTROL: git ANSWERING `not a git repository` is still allowed", res, 0)
+        # The review of faef5db8: ANY git failure that is not that answer is no answer. A missing git, "dubious ownership" and a corrupt repository used to read as "not a repository".
+        hook_in = lambda where, env=None: run_hook("guard-pr-ready.sh", cwd=where, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(where)}),  # noqa: E731
+                                                  path_prefix=[stubs], env_extra=env or {})
+        # A git that is not installed: a PATH of links to the tools the hook needs and nothing else. (An executable with a missing interpreter would not do: the search goes on to the next PATH entry.)
+        minbin = Path(td) / "minbin"
+        minbin.mkdir()
+        clean_path = os.pathsep.join(d for d in os.environ.get("PATH", "").split(os.pathsep) if "git-shim" not in d)
+        for tool in ("bash", "python3", "env", "tr", "sed", "grep", "awk", "cat", "dirname", "head", "tail", "sort", "uname", "mktemp", "cut", "readlink", "wc", "printf", "basename", "rm", "ls"):
+            found = shutil.which(tool, path=clean_path)
+            if found:
+                (minbin / tool).symlink_to(found)
+        expect("guard-pr-ready (#2295): a git that is not installed is a NAMED refusal, not `not a repository`",
+               run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(repo)}), env_extra={"PATH": str(minbin)}),
+               2, "could not say whether", "cannot be told")
+        stub_git("echo \"fatal: detected dubious ownership in repository at '/x'\" >&2\nexit 128")
+        expect("guard-pr-ready (#2295): `dubious ownership` is a NAMED refusal, not `not a repository`", hook_in(repo), 2, "could not say whether", "cannot be told")
+        stub_git("echo 'error: object file .git/objects/ab/cdef is empty' >&2\nexit 128")
+        expect("guard-pr-ready (#2295): a git failing with any other error (a corrupt repository) is a NAMED refusal", hook_in(repo), 2, "could not say whether", "cannot be told")
+        shutil.rmtree(stubs, ignore_errors=True)
+        stubs.mkdir()
+        expect("guard-pr-ready (#2295): CONTROL: a REAL directory that is not a repository is still allowed", run_hook(
+            "guard-pr-ready.sh", cwd=notrepo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(notrepo)})), 0)
+        # A repository in force only through its sweep directory, whose git cannot say where that directory is: judged and refused, not skipped as not in force.
+        only_dir = new_repo(td, "sweepdir-only", marker=False)
+        (only_dir / ".git" / "rails-flow" / "sweep").mkdir(parents=True)
+        stub_git(f'case "$*" in *--git-path*) echo "fatal: cannot read the git directory" >&2; exit 128;; esac\nexec {real_git} "$@"')
+        expect("guard-pr-ready (#2295): a repository in force by its sweep directory, whose git cannot say where it is, is refused", hook_in(only_dir), 2, "could not be read")
+        # S3: ONE time budget for the whole run: five-second git calls under a six-second budget end in a named refusal well before the 15 s the hook is given.
+        stub_git(f'sleep 5\nexec {real_git} "$@"')
+        began = time.monotonic()
+        res = hook_in(repo, {"RAILS_FLOW_HOOK_BUDGET": "6", "RAILS_FLOW_GIT_TIMEOUT": "20"})
+        took = time.monotonic() - began
+        check("guard-pr-ready (#2295): ONE time budget bounds every git call of a run, so a slow git ends in a named refusal before the hook's own deadline",
+              res[0] == 2 and ("budget of this check is spent" in res[1] or "did not answer within" in res[1] or "could not say whether" in res[1]) and took < 12, f"rc {res[0]}, {took:.0f} s, {blocked_lines(res[1])}")
         shutil.rmtree(stubs, ignore_errors=True)
 
     with scratch_dir() as td:

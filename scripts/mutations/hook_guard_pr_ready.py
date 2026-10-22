@@ -31,7 +31,7 @@ GUARD = Guard(
     mutations=(
         Mutation(
             "a target it cannot tell is guessed as the session's directory (fail open)",
-            "        root = git(start, \"rev-parse\", \"--show-toplevel\")\n        if root and in_force(root):\n            return refuse(f\"which repository",
+            "        root = toplevel_or_raise(start)\n        if root and in_force(root):\n            return refuse(f\"which repository",
             "        where = start\n        root = None\n        if root and in_force(root):\n            return refuse(f\"which repository",
             "a command whose directory cannot be told refuses, it does not guess the session's: HOME=/x gh pr ready 5",
         ),
@@ -157,10 +157,46 @@ GUARD = Guard(
             'a git that does not answer in time is a NAMED refusal',
         ),
         Mutation(
-            'the hook entry does not catch a GitTimeout',
-            '    except GitTimeout as exc:\n        return refuse(f"{exc}, so whether',
+            'the hook entry does not catch a git that gave no answer',
+            '    except GitUnanswered as exc:\n        return refuse(f"{exc}, so whether',
             '    except ZeroDivisionError as exc:\n        return refuse(f"{exc}, so whether',
             'a git that does not answer in time is a NAMED refusal',
+        ),
+        Mutation(
+            'a git that cannot run is read as "not a repository"',
+            '    except (OSError, subprocess.SubprocessError):\n        return None, "error"\n    if done.returncode == 0 and done.stdout.strip():',
+            '    except (OSError, subprocess.SubprocessError):\n        return None, "none"\n    if done.returncode == 0 and done.stdout.strip():',
+            'a git that is not installed is a NAMED refusal',
+        ),
+        Mutation(
+            'any git failure is read as "not a repository", dubious ownership included',
+            '    return None, "none" if "not a git repository" in done.stderr else "error"',
+            '    return None, "none"',
+            '`dubious ownership` is a NAMED refusal',
+        ),
+        Mutation(
+            'the hook does not refuse when git gave no answer',
+            '        raise GitUnanswered(f"git could not say whether {cwd} is a repository")',
+            '        return None',
+            'a git failing with any other error',
+        ),
+        Mutation(
+            'the hook asks git for the top level without telling "not a repository" from no answer',
+            '    root = toplevel_or_raise(where)\n    if not root or not in_force(root):',
+            '    root = git(where, "rev-parse", "--show-toplevel")\n    if not root or not in_force(root):',
+            'a git that is not installed is a NAMED refusal',
+        ),
+        Mutation(
+            'a repository whose git cannot say where its sweep directory is counts as not in force',
+            '    if d is None:\n        return True       # git cannot say',
+            '    if d is None:\n        return False      # git cannot say',
+            'whose git cannot say where it is',
+        ),
+        Mutation(
+            'every git call keeps its own limit, whatever is left of the run\'s budget',
+            '    return max(0.05, min(GIT_TIMEOUT if timeout is None else timeout, budget_left()))',
+            '    return max(0.05, GIT_TIMEOUT if timeout is None else timeout)',
+            'ONE time budget bounds every git call',
         ),
     ),
 )
