@@ -1301,7 +1301,18 @@ class Doctor:
             code, out = self.run("du", "-sk", path, cwd=REPO)
             return int(out.split()[0]) if code == 0 and out.split() and out.split()[0].isdigit() else -1
 
-        def held(path: str) -> bool:
+        sys.path.insert(0, str(REPO / "plugins" / "rails-flow" / "scripts"))
+        import rf_tmp  # noqa: E402  -- the one reader of the owner marker
+
+        def held(path: str, owner: int) -> bool:
+            """A live owner (#2316 review: a process with nothing open this moment still owns its dir), or anything open under it."""
+            try:
+                os.kill(owner, 0)
+                return True
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                return True
             if shutil.which("lsof") is None:
                 return True
             code, out = self.run("lsof", "-t", "+D", path, cwd=REPO)
@@ -1313,7 +1324,10 @@ class Doctor:
             self.add(SKIP, "temp dirs monitored", f"cannot list {root}: {exc}")
             return
         scratch = sorted(_glob.glob(scratch_glob))
-        stale = sorted(e for e in entries if e.startswith("rf-") and now - os.lstat(os.path.join(root, e)).st_mtime > 24 * 3600)
+        # OURS IS PROVEN, NOT NAMED (#2316 review): a directory carrying rf_tmp's owner marker. Another program's `rf-cache/`, or any
+        # plain file, is never ours whatever it is called.
+        owners = {e: rf_tmp.owner_pid(os.path.join(root, e)) for e in entries if e.startswith("rf-")}
+        stale = sorted(e for e, pid in owners.items() if pid is not None and now - os.lstat(os.path.join(root, e)).st_mtime > 24 * 3600)
         mb = lambda kb: "size unknown" if kb < 0 else f"{kb // 1024} MB"  # noqa: E731 -- du can fail on a very large dir
         detail = (f"{root}: {len(entries)} entries, {mb(size_kb(root))}; scratchpads {len(scratch)}, "
                   f"{mb(sum(max(size_kb(p), 0) for p in scratch))}; rf- entries over 24 h: {len(stale)}")
@@ -1321,9 +1335,10 @@ class Doctor:
         if stale and self.fix:
             for e in stale:
                 path = os.path.join(root, e)
-                if not held(path):
-                    shutil.rmtree(path, ignore_errors=True) if os.path.isdir(path) and not os.path.islink(path) else os.unlink(path)
-                    removed.append(e)
+                if not held(path, owners[e]):
+                    shutil.rmtree(path, ignore_errors=True)
+                    if not os.path.lexists(path):      # counted only when it is gone (#2316 review)
+                        removed.append(e)
             if removed:
                 self.fixed.append(f"removed {len(removed)} rf- temp entr{'y' if len(removed) == 1 else 'ies'} older than 24 h that no process held")
         left = [e for e in stale if e not in removed]

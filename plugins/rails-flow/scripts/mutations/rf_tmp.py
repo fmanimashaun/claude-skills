@@ -31,5 +31,18 @@ GUARD = Guard(
             "PREFIX = \"\"",
             "removed at a normal exit",
         ),
+        Mutation(
+            # #2316 review: a forked child's atexit removed the parent's dirs.
+            "a forked child's exit removes the parent's dirs",
+            "    for pid, d in [x for x in _DIRS if x[0] == me]:",
+            "    for pid, d in list(_DIRS):",
+            "a forked child's exit leaves the parent's dir",
+        ),
+        Mutation(
+            "the owner marker is not written, so nothing can prove the dir is ours",
+            "        f.write(f\"{MAGIC}\\n{os.getpid()}\\n{int(time.time())}\\n\")",
+            "        f.write(\"\")",
+            "a forked child's exit leaves the parent's dir and its marker",
+        ),
     ),
 )

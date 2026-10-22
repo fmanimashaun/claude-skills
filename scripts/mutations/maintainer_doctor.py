@@ -361,20 +361,27 @@ GUARD = Guard(
         Mutation(
             # #2306: the temp monitor and its --fix.
             "a leaked rf- dir over 24 h is no longer reported",
-            "        stale = sorted(e for e in entries if e.startswith(\"rf-\") and now - os.lstat(os.path.join(root, e)).st_mtime > 24 * 3600)",
+            "        stale = sorted(e for e, pid in owners.items() if pid is not None and now - os.lstat(os.path.join(root, e)).st_mtime > 24 * 3600)",
             "        stale = []",
             "#2306: a leaked rf- dir over 24 h is reported",
         ),
         Mutation(
-            "--fix removes another program's entries too",
-            "        stale = sorted(e for e in entries if e.startswith(\"rf-\") and now - os.lstat(os.path.join(root, e)).st_mtime > 24 * 3600)",
-            "        stale = sorted(e for e in entries if now - os.lstat(os.path.join(root, e)).st_mtime > 24 * 3600)",
-            "#2306: --fix never touches another program's entry",
+            # #2316 review: ownership by name alone deleted another program's rf- dir.
+            "a foreign rf- dir with no owner marker counts as ours",
+            "        stale = sorted(e for e, pid in owners.items() if pid is not None and now - os.lstat(os.path.join(root, e)).st_mtime > 24 * 3600)",
+            "        stale = sorted(e for e, pid in owners.items() if now - os.lstat(os.path.join(root, e)).st_mtime > 24 * 3600)",
+            "#2316: --fix keeps a foreign rf- dir with no owner marker",
+        ),
+        Mutation(
+            "a live owner no longer holds its dir",
+            "            try:\n                os.kill(owner, 0)\n                return True",
+            "            try:\n                os.kill(owner, 0)\n                return False",
+            "#2316: --fix keeps a dir whose owner pid is alive",
         ),
         Mutation(
             "--fix removes an entry a live process holds",
-            "                if not held(path):",
-            "                if True:",
+            "            return bool(out.strip())\n\n        try:\n            entries = os.listdir(root)",
+            "            return False\n\n        try:\n            entries = os.listdir(root)",
             "#2306: --fix keeps an rf- dir a live process still holds",
         ),
     ),

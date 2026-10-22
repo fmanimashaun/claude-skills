@@ -25,15 +25,34 @@ import shutil
 import signal
 import sys
 import tempfile
+import time
 
 PREFIX = "rf-"
-_DIRS: list[str] = []
+# PROOF OF OWNERSHIP (#2316 review): every dir carries this file, `rf_tmp v1`, then the creating pid, then the creation time. A cleaner
+# removes only a DIRECTORY holding a valid marker, whose pid is gone: a name starting `rf-` alone proves nothing.
+MARKER = ".rf_tmp-owner"
+MAGIC = "rf_tmp v1"
+_DIRS: list[tuple[int, str]] = []          # (the pid that made it, the dir): a forked child never removes its parent's dirs
 _INSTALLED = False
 
 
 def _clean() -> None:
-    while _DIRS:
-        shutil.rmtree(_DIRS.pop(), ignore_errors=True)
+    me = os.getpid()
+    for pid, d in [x for x in _DIRS if x[0] == me]:
+        shutil.rmtree(d, ignore_errors=True)
+        _DIRS.remove((pid, d))
+
+
+def owner_pid(path: str) -> int | None:
+    """The pid in `path`'s marker, or None when `path` is not a directory carrying a valid one (then it is not ours)."""
+    if os.path.islink(path) or not os.path.isdir(path):
+        return None
+    try:
+        with open(os.path.join(path, MARKER), encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return None
+    return int(lines[1]) if len(lines) >= 3 and lines[0] == MAGIC and lines[1].isdigit() else None
 
 
 def _on_signal(signum, _frame) -> None:
@@ -61,7 +80,9 @@ def _install() -> None:
 def mkdtemp(tag: str = "tmp", dir: str | None = None) -> str:  # noqa: A002 -- the same keyword tempfile.mkdtemp takes
     """A new `rf-<tag>-XXXXXX` directory, removed when this process ends (at exit, or on SIGTERM, SIGHUP or Ctrl-C)."""
     d = tempfile.mkdtemp(prefix=f"{PREFIX}{tag.strip('-') or 'tmp'}-", dir=dir)
-    _DIRS.append(d)
+    with open(os.path.join(d, MARKER), "w", encoding="utf-8") as f:
+        f.write(f"{MAGIC}\n{os.getpid()}\n{int(time.time())}\n")
+    _DIRS.append((os.getpid(), d))
     _install()
     return d
 
@@ -86,6 +107,14 @@ def selftest() -> int:
         if not ok:
             bad += 1
             print(f"FAIL {label}: {path!r} exists={os.path.exists(path) if path else None}")
+    fork = subprocess.run([sys.executable, "-c", "import os, sys; sys.path.insert(0, %r); import rf_tmp; d = rf_tmp.mkdtemp('fork'); "
+                           "pid = os.fork()\n"
+                           "if pid == 0: sys.exit(0)\n"
+                           "os.waitpid(pid, 0); print(os.path.isdir(d), rf_tmp.owner_pid(d) == os.getpid())" % here],
+                          capture_output=True, text=True)
+    if fork.stdout.strip() != "True True":
+        bad += 1
+        print(f"FAIL a forked child's exit leaves the parent's dir and its marker: {fork.stdout!r} {fork.stderr[-200:]!r}")
     keep = subprocess.run([sys.executable, "-c", "import signal, sys; sys.path.insert(0, %r); import rf_tmp; h = lambda s, f: None; "
                            "signal.signal(signal.SIGTERM, h); rf_tmp.mkdtemp('x'); print(signal.getsignal(signal.SIGTERM) is h)" % here],
                           capture_output=True, text=True)
@@ -93,7 +122,8 @@ def selftest() -> int:
         bad += 1
         print(f"FAIL a script's own SIGTERM handler is kept: {keep.stdout!r} {keep.stderr[-200:]!r}")
     if bad == 0:
-        print("rf_tmp selftest: rf- prefix; removed at exit, on SIGTERM and on Ctrl-C; a script's own handler is kept")
+        print("rf_tmp selftest: rf- prefix and owner marker; removed at exit, on SIGTERM and on Ctrl-C; a forked child leaves the parent's "
+              "dirs; a script's own handler is kept")
     return 1 if bad else 0
 
 
