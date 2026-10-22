@@ -1,0 +1,127 @@
+"""Mutation guard: toolchain_install (#2288). Declared here, run by scripts/mutation_check.py."""
+from mutation_types import Guard, Mutation  # noqa: F401
+
+GUARD = Guard(
+    name="toolchain_install",
+    subject="scripts/toolchain_install.py",
+    selftest="scripts/toolchain_install.py",
+    selftest_args=("--selftest",),
+    # it reads the detected stacks (detect_stack), reuses #2168's reader (stack_toolchain), and its fixtures build git repos (fixture_git)
+    needs=("scripts/detect_stack.py", "scripts/stack_toolchain.py", "scripts/fixture_git.py"),
+    mutations=(
+        Mutation(
+            'a plugin from any marketplace is installed',
+            '    if marketplace not in MARKETPLACES:\n        return f"plugin',
+            '    if False:\n        return f"plugin',
+            'a plugin from another marketplace is never installed',
+        ),
+        Mutation(
+            'exit 0 alone counts as an install',
+            '    if rc == 0 and isinstance(result, dict) and result.get("outcome") == "ok":',
+            '    if rc == 0:',
+            'exit 0 without `outcome: ok` is not an install',
+        ),
+        Mutation(
+            'the install goes to user scope',
+            '"--scope", "local", "--json"]',
+            '"--scope", "user", "--json"]',
+            'a missing plugin is installed at local scope',
+        ),
+        Mutation(
+            'the marketplace is never registered',
+            '    run([claude, "plugin", "marketplace", "add", MARKETPLACES.get(marketplace, marketplace)], env)',
+            '    pass',
+            'the marketplace is registered before the install',
+        ),
+        Mutation(
+            'installs are not recorded',
+            '    if installed:\n        try:\n            lines.append(f"recorded in',
+            '    if False:\n        try:\n            lines.append(f"recorded in',
+            'the install is recorded in the restart marker',
+        ),
+        Mutation(
+            "the npm package's repository is not checked",
+            '            if rc != 0 or repo_of(out) != repo:',
+            '            if False:',
+            'an npm package from another repository is never installed',
+        ),
+        Mutation(
+            "the tap's remote is not checked",
+            '            if repo_of(remote) not in (repo, want):',
+            '            if False:',
+            'a tap from another remote is never installed from',
+        ),
+        Mutation(
+            'a failed CLI install counts as installed',
+            '        if rc == 0:\n            return "installed", None',
+            '        if True:\n            return "installed", None',
+            'a failed CLI install is BLOCKED',
+        ),
+        Mutation(
+            'a missing token is not reported',
+            '                elif not tokens.get(row["token"]):',
+            '                elif False:',
+            'a missing token is BLOCKED, naming it',
+        ),
+        Mutation(
+            'a tracked briefing file is read',
+            '    if tracked.returncode == 0:\n        return {}, f"the briefing file',
+            '    if False:\n        return {}, f"the briefing file',
+            'a tracked briefing file is not read',
+        ),
+        Mutation(
+            'an unignored briefing file is read',
+            '    if ignored.returncode != 0:',
+            '    if False:',
+            'a briefing file git would commit is not read',
+        ),
+        Mutation(
+            'a devDependency is installed instead of proposed',
+            '        if how["method"] == "npm-dev":\n            return "pr",',
+            '        if False:\n            return "pr",',
+            'a devDependency is reported as a PR, not made',
+        ),
+        Mutation(
+            'the installer may come from the project',
+            '    return None if found is None or stack_toolchain.inside(found, project) else str(found)',
+            '    return None if found is None else str(found)',
+            'a claude CLI inside the project is never run as the installer',
+        ),
+        Mutation(
+            '--confirm clears the marker without checking',
+            '    if missing:\n        return 1,',
+            '    if False:\n        return 1,',
+            '--confirm with the plugin not yet enabled keeps the marker',
+        ),
+        Mutation(
+            'BLOCKED lines are never filed as asks',
+            '    if session_id and blocked:',
+            '    if False:',
+            'a BLOCKED line is filed as a coordination ask',
+        ),
+        Mutation(
+            'a stack that cannot be judged still installs',
+            '    if code == 2:\n        return 2, [f"cannot judge the stack, so nothing is installed',
+            '    if False:\n        return 2, [f"cannot judge the stack, so nothing is installed',
+            'a project that cannot be judged is exit 2 and installs nothing',
+        ),
+        Mutation(
+            'an already-enabled plugin is installed again',
+            '            if row["id"] in seen or enabled.get(row["id"]):',
+            '            if row["id"] in seen:',
+            'signal and plugin present changes nothing',
+        ),
+        Mutation(
+            "the marketplace's registered source is not checked",
+            '    if not entry or entry.get("source") != "github" or entry.get("repo") != MARKETPLACES.get(marketplace):',
+            '    if False:',
+            'a marketplace whose source is not the allowlisted one is never installed from',
+        ),
+        Mutation(
+            'the marker is written through a symlinked directory',
+            '        if here.is_symlink():\n            raise UnsafeMarker',
+            '        if False:\n            raise UnsafeMarker',
+            'a symlinked docs/brain is not written through',
+        ),
+    ),
+)

@@ -102,7 +102,18 @@ def install_plugin(plugin_id: str, project: Path, env: dict[str, str]) -> str | 
     claude = tool("claude", project)
     if not claude:
         return f"plugin {plugin_id}: the claude CLI is not on PATH, so it cannot be installed"
-    run([claude, "plugin", "marketplace", "add", MARKETPLACES[marketplace]], env)  # already registered is fine: the install decides
+    run([claude, "plugin", "marketplace", "add", MARKETPLACES.get(marketplace, marketplace)], env)  # registered already is fine: the install decides
+    # The allowlist is on the SOURCE, not the name: a repository's settings can register a marketplace under an allowlisted name
+    # that points anywhere (#2288 security review). `marketplace list --json` carries each one's source (documented).
+    rc, out = run([claude, "plugin", "marketplace", "list", "--json"], env, 120)
+    try:
+        listed = json.loads(out.strip().splitlines()[-1]) if rc == 0 and out.strip() else []
+    except ValueError:
+        listed = []
+    entry = next((m for m in listed if isinstance(m, dict) and m.get("name") == marketplace), None) if isinstance(listed, list) else None
+    if not entry or entry.get("source") != "github" or entry.get("repo") != MARKETPLACES.get(marketplace):
+        got = f"{entry.get('source')}:{entry.get('repo') or entry.get('url')}" if entry else "not registered"
+        return f"plugin {plugin_id}: marketplace {marketplace!r} is registered as {got}, not github:{MARKETPLACES.get(marketplace)}"
     rc, out = run([claude, "plugin", "install", plugin_id, "--scope", "local", "--json"], env)
     lines = [ln for ln in out.strip().splitlines() if ln.strip().startswith("{")]
     try:
@@ -157,22 +168,42 @@ def install_cli(row: dict, project: Path, env: dict[str, str]) -> tuple[str, str
 
 def record(project: Path, installed: list[str]) -> Path:
     """Add the plugins just installed to the restart marker, which `--confirm` clears once each is enabled."""
-    path = project / MARKER
+    path = safe_marker(project)
     try:
         old = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
     except (OSError, ValueError):
         old = {}
     ids = sorted(set(old.get("installed") or []) | set(installed))
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"status": "restart-pending", "installed": ids,
-                                "resume_step": "restart Claude Code (or /reload-plugins), then: toolchain_install.py --confirm"},
-                               indent=2) + "\n", encoding="utf-8")
+    data = json.dumps({"status": "restart-pending", "installed": ids,
+                       "resume_step": "restart Claude Code (or /reload-plugins), then: toolchain_install.py --confirm"}, indent=2) + "\n"
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)   # a symlink planted after the check is refused
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(data)
     return path
+
+
+class UnsafeMarker(Exception):
+    pass
+
+
+def safe_marker(project: Path) -> Path:
+    """The marker path, refused when it or any directory between it and the project is a symlink: a cloned repository could plant
+    `docs/brain` (or the marker) as a link that sends the write elsewhere (#2288 security review)."""
+    here = project
+    for part in MARKER.parts:
+        here = here / part
+        if here.is_symlink():
+            raise UnsafeMarker(f"{here.relative_to(project)} is a symlink, so the restart marker is not written through it")
+    return here
 
 
 def confirm(project: Path, home: Path) -> tuple[int, list[str]]:
     """After the restart: is every plugin the marker recorded now enabled? Clears the marker only when all are."""
-    path = project / MARKER
+    try:
+        path = safe_marker(project)
+    except UnsafeMarker as err:
+        return 2, [str(err)]
     if not path.is_file():
         return 0, ["no install is pending"]
     try:
@@ -251,7 +282,10 @@ def install(project: Path, home: Path, dirs: list[Path] | None = None, session_i
             else:
                 blocked.append(detail)
     if installed:
-        lines.append(f"recorded in {record(project, installed).relative_to(project)}: restart, then run --confirm")
+        try:
+            lines.append(f"recorded in {record(project, installed).relative_to(project)}: restart, then run --confirm")
+        except (UnsafeMarker, OSError) as err:
+            blocked.append(f"the installs were not recorded for the restart: {err}")
     lines += [f"BLOCKED {b}" for b in blocked] + [f"PR NEEDED {p}" for p in pr]
     if session_id and blocked:
         lines += file_asks(blocked, session_id, project)
@@ -303,7 +337,9 @@ def selftest() -> int:
         (proj / "marker.txt").write_text("x", encoding="utf-8")
         old_path = os.environ.get("PATH", "")
         os.environ["PATH"] = f"{bindir}{os.pathsep}/usr/bin{os.pathsep}/bin"
-        ok_json = 'echo \'{"outcome": "ok"}\'\n'
+        listing = ('case "$*" in "plugin marketplace list --json") echo \'[{"name": "claude-plugins-official", "source": "github", '
+                   '"repo": "anthropics/claude-plugins-official"}]\'; exit 0;; esac\n')
+        ok_json = listing + 'echo \'{"outcome": "ok"}\'\n'
         try:
             def enable(ids: list[str]) -> None:
                 (home / ".claude" / "settings.json").write_text(json.dumps({"enabledPlugins": {i: True for i in ids}}), encoding="utf-8")
@@ -329,10 +365,19 @@ def selftest() -> int:
             marker = json.loads((proj / MARKER).read_text(encoding="utf-8")) if (proj / MARKER).exists() else {}
             case(marker.get("installed") == ["p@claude-plugins-official"], f"the install is recorded in the restart marker: {marker}")
             # 3. install refused: BLOCKED, not recorded
-            fake("claude", 'case "$*" in *"plugin install"*) echo \'{"outcome": "failed", "failureCode": "needs_prompt"}\'; exit 1;; esac\n')
+            fake("claude", listing + 'case "$*" in *"plugin install"*) echo \'{"outcome": "failed", "failureCode": "needs_prompt"}\'; exit 1;; esac\n')
             rc, out = go()
             case(rc == 1 and any(l.startswith("BLOCKED plugin p@claude-plugins-official") and "needs_prompt" in l for l in out)
                  and not (proj / MARKER).exists(), f"a refused install is BLOCKED and not recorded: rc={rc} {out}")
+            fake("claude", listing + 'echo "installed!"\n')
+            rc, out = go()
+            case(rc == 1 and not (proj / MARKER).exists(), f"exit 0 without `outcome: ok` is not an install: rc={rc} {out}")
+            # a marketplace registered under an allowlisted NAME but another source is never installed from
+            fake("claude", 'case "$*" in "plugin marketplace list --json") echo \'[{"name": "claude-plugins-official", "source": "github", '
+                           '"repo": "attacker/market"}]\';; *"plugin install"*) echo \'{"outcome": "ok"}\';; esac\n')
+            rc, out = go()
+            case(rc == 1 and "plugin install" not in calls() and any("registered as github:attacker/market" in l for l in out),
+                 f"a marketplace whose source is not the allowlisted one is never installed from: rc={rc} {out} {calls()!r}")
             fake("claude", 'echo "installed!"\n')
             rc, out = go()
             case(rc == 1 and not (proj / MARKER).exists(), f"exit 0 without `outcome: ok` is not an install: rc={rc} {out}")
@@ -411,6 +456,20 @@ def selftest() -> int:
                  f"a claude CLI inside the project is never run as the installer: {out}")
             os.environ["PATH"] = f"{bindir}{os.pathsep}/usr/bin{os.pathsep}/bin"
             fake("claude", ok_json)
+            # 10b. a marker path through a symlink is refused, and nothing is written outside the project
+            outside = root / "outside"
+            outside.mkdir()
+            brain = proj / "docs" / "brain"
+            brain.parent.mkdir(parents=True, exist_ok=True)
+            if brain.exists():
+                import shutil
+                shutil.rmtree(brain)
+            brain.symlink_to(outside, target_is_directory=True)
+            enable([])
+            rc, out = install(proj, home, [plug])
+            case(rc == 1 and not any(outside.iterdir()) and any("is a symlink" in l for l in out),
+                 f"a symlinked docs/brain is not written through: rc={rc} {out} {list(outside.iterdir())}")
+            brain.unlink()
             # 11. --confirm: cleared only when every recorded plugin is enabled
             enable([])
             go()
