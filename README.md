@@ -24,6 +24,7 @@ Then add the flows you want:
 /plugin install qa-flow@claude-skills         # independent QA
 /plugin install pipeline@claude-skills        # release lifecycle
 /plugin install nextjs-stack@claude-skills    # Next.js + Supabase + Vercel stack
+/plugin install core-skills@claude-skills     # the stack-neutral skills (installed for you by the plugins above that need them)
 ```
 
 Or take rails-flow, qa-flow and pipeline in one step. `flow-suite` is a bundle whose manifest only declares them as dependencies, and installing a plugin installs its dependencies ([docs](https://code.claude.com/docs/en/plugins/dependencies#bundle-plugins-for-a-team)):
@@ -68,24 +69,25 @@ you actually got — installed versions drift from what you think you installed 
 
 | plugin | what it does |
 |---|---|
-| **rails-stack** | The doctrine: Rails 8.1, Hotwire, pure RSpec, Tailwind v4, a design system, and the review rules. Bundles seven skills — no commands, it just makes Claude write the right code. |
+| **rails-stack** | The doctrine: Rails 8.1, Hotwire, pure RSpec, Tailwind v4 and a design system. Bundles three skills — no commands, it just makes Claude write the right code. It depends on `core-skills`. |
+| **core-skills** | The four stack-neutral skills every flow and stack uses, installed once: code review, the advisory quality pass, derived artifacts and parallel sessions. Installed for you by `rails-stack`, `rails-flow`, `nextjs-stack` and `flow-suite`. |
 | **rails-flow** | The build loop — `/feature`, `/fix`, `/review`, plus a durable project memory and an autonomous driver. |
 | **design-flow** | UI and design system work — components, tokens, audits, a curated asset library, and an optional pen.dev tier for exploring screens visually before any code is written. |
 | **qa-flow** | An **independent** QA engineer that treats the developer's claims as unverified and produces evidence. |
 | **pipeline** | Build → verify → certify → release, with circuit breakers for unattended runs. |
 | **nextjs-stack** | The Next.js + Supabase + Vercel stack: how the three fit together, pointing to Vercel's official plugin, the Next.js skills and `supabase/agent-skills` for each platform's own guidance. It declares the stack's markers for the stack detector. |
 
-### The seven skills in `rails-stack`
+### The skills in `rails-stack` and `core-skills`
 
 | skill | covers |
 |---|---|
 | `rails-8` | the stack — models, jobs, auth, APIs, deployment |
 | `hotwire` | Turbo, Stimulus, Hotwire Native |
 | `design-system` | the design system: tokens, components, art direction, reference research |
-| `code-review` | correctness review classes — the bugs a reviewer must find |
-| `quality-pass` | reuse, simplification, efficiency, altitude — advisory, never blocking |
-| `derived-artifacts` | anything whose numbers come from somewhere else |
-| `parallel-session-lane` | working as one of several agent sessions in one repo |
+| `code-review` (core-skills) | correctness review classes — the bugs a reviewer must find |
+| `quality-pass` (core-skills) | reuse, simplification, efficiency, altitude — advisory, never blocking |
+| `derived-artifacts` (core-skills) | anything whose numbers come from somewhere else |
+| `parallel-session-lane` (core-skills) | working as one of several agent sessions in one repo |
 
 ---
 
@@ -177,8 +179,8 @@ maintainer would otherwise have to ask for.
 ## Repository layout
 
 ```
-plugins/             rails-stack (the seven skills — the doctrine that ships) · rails-flow · qa-flow ·
-                     pipeline · design-flow · flow-suite
+plugins/             rails-stack (the doctrine that ships) · core-skills (the stack-neutral skills) ·
+                     rails-flow · qa-flow · pipeline · design-flow · flow-suite
 dist/                packaged .skill files for claude.ai
 docs/                architecture, coverage and wiki pages
 scripts/             the gates that keep all of the above honest

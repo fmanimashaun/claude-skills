@@ -14,6 +14,10 @@
     "note": "The CLI counts commands with disable-model-invocation: true (pipeline's deploy-cloud, ~80 tok), which the skills docs say are not in context; and it adds a per-component overhead this estimate does not. The ratchet is on characters, so the gap does not affect pass/fail."
   },
   "plugins": {
+    "core-skills": {
+      "chars": 2732,
+      "est_tokens": 911
+    },
     "design-flow": {
       "chars": 4476,
       "est_tokens": 1492
@@ -39,8 +43,8 @@
       "est_tokens": 2641
     },
     "rails-stack": {
-      "chars": 7473,
-      "est_tokens": 2491
+      "chars": 5247,
+      "est_tokens": 1749
     }
   }
 }

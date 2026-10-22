@@ -14,7 +14,7 @@ guarantee stated in prose that nothing makes true:
 
 Three strikes across three PRs. The full class list -- including the ones that
 need judgement -- lives in the shipped `code-review` skill
-(`plugins/rails-stack/skills/code-review/SKILL.md`), so the rules sit where reviewers already look
+(`plugins/core-skills/skills/code-review/SKILL.md`), so the rules sit where reviewers already look
 and we are held to the same doctrine we sell. This file mechanises only the
 subset needing no judgement, because per this repo's own thesis a rule that stays
 in prose gets violated again. `lint_markdown_shell.py` exists for exactly that
@@ -818,7 +818,7 @@ def check_gate_without_onfailure() -> tuple[list[Finding], int]:
 FINDINGS_COPIES = ("plugins/rails-flow/scripts/findings.py",
                    "plugins/qa-flow/scripts/findings.py",
                    # #2173: rails-stack's code-reviewer moved out of rails-flow and runs its own copy (a plugin sees only its own
-                   # ${CLAUDE_PLUGIN_ROOT}). TEMPORARY: findings.py is a neutral reference whose single home is core-skills (#2186).
+                   # ${CLAUDE_PLUGIN_ROOT}). TEMPORARY: findings.py is a neutral reference whose canonical home is to become core-skills (#2283).
                    "plugins/rails-stack/scripts/findings.py")
 
 
@@ -856,7 +856,7 @@ VENDORED_COPIES = (
     ("plugins/rails-flow/scripts/mockup_records.py", "plugins/qa-flow/scripts/mockup_records.py",
      "qa-flow's release_evidence.py refuses the certification stamp for a shipped design with no `Story:`; it reads the record lines with this file (#2226), and leaves when a shared core plugin owns it"),
     ("plugins/rails-flow/reference/agent-output-contract.md", "plugins/rails-stack/reference/agent-output-contract.md",
-     "every moved agent cites it; a neutral reference whose single home is core-skills (#2186), which removes this copy"),
+     "every moved agent cites it; a neutral reference whose canonical home is to become core-skills (#2283); the copy stays, since an agent reads only its own plugin"),
 )
 
 
@@ -2255,7 +2255,7 @@ def check_flattened_conditional_role() -> tuple[list[Finding], int]:
     findings: list[Finding] = []
     branches: list[tuple[str, str]] = []
     for path in walk(".md"):
-        if not rel(path).startswith("plugins/rails-stack/skills/"):  # #2182
+        if not rel(path).startswith(("plugins/rails-stack/skills/", "plugins/core-skills/skills/")):  # #2182, #2186
             continue
         for match in _CONDITIONAL_ROLE.finditer(read(path)):
             branches.append((match.group("a"), match.group("b")))
@@ -2271,7 +2271,7 @@ def check_flattened_conditional_role() -> tuple[list[Finding], int]:
     for path in walk(".md"):
         # The doctrine itself (plugins/rails-stack/skills/, under plugins/ since #2182) is where the
         # conditional is learned, not a place that can flatten it: the check covers the flows only.
-        if not rel(path).startswith("plugins/") or rel(path).startswith("plugins/rails-stack/skills/"):
+        if not rel(path).startswith("plugins/") or rel(path).startswith(("plugins/rails-stack/skills/", "plugins/core-skills/skills/")):
             continue
         # Paragraphs, because that is the unit a reader takes the instruction from. Splitting on
         # lines would fire on any prose that wraps between the two branch names.
@@ -3557,7 +3557,7 @@ def check_undocumented_skill() -> tuple[list[Finding], int]:
     body = read(doc)
     findings: list[Finding] = []
     examined = 0
-    for parent in ("plugins/rails-stack/skills", ".claude/skills"):
+    for parent in ("plugins/rails-stack/skills", "plugins/core-skills/skills", ".claude/skills"):  # core-skills since #2186
         base = ROOT / parent
         if not base.is_dir():
             continue
@@ -4876,7 +4876,7 @@ def selftest() -> int:
     # Files the fixtures cite. A path must EXIST to count as evidence, so they have to be here.
     _TREE = {".claude-plugin/marketplace.json": _M2,
              "plugins/rails-flow/hooks/scripts/guard-lane.sh": "#!/bin/sh\n",
-             "plugins/rails-stack/skills/parallel-session-lane/SKILL.md": "---\nname: x\n---\n",
+             "plugins/rails-stack/skills/rails-8/SKILL.md": "---\nname: x\n---\n",
              "scripts/doctrine_map.py": "print(1)\n"}
 
     scenario("a bullet placed in the section that owns its code", rule=CBS, expect_finding=False,
@@ -4894,7 +4894,7 @@ def selftest() -> int:
     # entries on first input, which is #476's lesson.
     _BOTH = ("- **Advice became a guarantee.** (#660) "
              "`plugins/rails-flow/hooks/scripts/guard-lane.sh` refuses the write, and "
-             "`plugins/rails-stack/skills/parallel-session-lane/SKILL.md` §1 says so.")
+             "`plugins/rails-stack/skills/rails-8/SKILL.md` §1 says so.")  # a skill that stays in rails-stack, so its heading is rails-stack
     scenario("...a two-component bullet is accepted under the plugin heading", rule=CBS,
              expect_finding=False,
              files={**_TREE, "CHANGELOG.md": _cl("rails-flow (agentic flow plugin)", _BOTH)})
@@ -5146,11 +5146,11 @@ def selftest() -> int:
     scenario("a shipped skill named nowhere in CLAUDE.md", rule=UDS, expect_finding=True,
              files={"CLAUDE.md": "# CLAUDE.md\n\nWe ship rails-8.\n",
                     "plugins/rails-stack/skills/rails-8/SKILL.md": "---\nname: rails-8\n---\n",
-                    "plugins/rails-stack/skills/derived-artifacts/SKILL.md": "---\nname: derived-artifacts\n---\n"})
+                    "plugins/core-skills/skills/derived-artifacts/SKILL.md": "---\nname: derived-artifacts\n---\n"})
     scenario("...silent once it is named", rule=UDS, expect_finding=False,
              files={"CLAUDE.md": "# CLAUDE.md\n\nWe ship rails-8 and derived-artifacts.\n",
                     "plugins/rails-stack/skills/rails-8/SKILL.md": "---\nname: rails-8\n---\n",
-                    "plugins/rails-stack/skills/derived-artifacts/SKILL.md": "---\nname: derived-artifacts\n---\n"})
+                    "plugins/core-skills/skills/derived-artifacts/SKILL.md": "---\nname: derived-artifacts\n---\n"})
     # BOTH homes are scanned. A maintainer-only skill nobody is told about misleads a reader of
     # CLAUDE.md exactly as a shipped one does -- and that is the half that actually happened.
     scenario("...catches a maintainer-only skill too", rule=UDS, expect_finding=True,

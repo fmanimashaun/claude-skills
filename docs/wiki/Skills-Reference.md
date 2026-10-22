@@ -6,8 +6,8 @@
 
 Skills are **doctrine**, not commands: install them and Claude writes different code.
 
-All 7 ship in the `rails-stack` plugin, and each is also downloadable as a
-standalone `.skill` for claude.ai.
+All 7 ship in the `rails-stack` and `core-skills` plugins (the stack-neutral ones in `core-skills`, which
+`rails-stack` depends on), and each is also downloadable as a standalone `.skill` for claude.ai.
 
 
 ## `rails-8`

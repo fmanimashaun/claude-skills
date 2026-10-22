@@ -4,5 +4,8 @@
   "version": "1.65.0",
   "author": {
     "name": "Fisayo Animashaun"
-  }
+  },
+  "dependencies": [
+    "core-skills"
+  ]
 }

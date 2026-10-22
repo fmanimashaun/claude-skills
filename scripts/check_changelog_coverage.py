@@ -12,12 +12,12 @@ already present. A component whose files changed with **no bullet at all** passe
 
 It bit on the v1.94.0 arm. Resolving a CHANGELOG conflict, the file was rebuilt from dev's side and
 only the rails-flow body was re-grafted; the rails-stack bullet lived in the other merge stage and was
-silently dropped, while `plugins/rails-stack/skills/parallel-session-lane/SKILL.md` itself merged fine:
+silently dropped, while `plugins/rails-stack/skills/rails-8/SKILL.md` itself merged fine:
 
     $ git show origin/dev:CHANGELOG.md | grep -c 'parallel-session-lane. §0 now says'
     0
     $ git diff --name-only origin/main..origin/dev -- skills/
-    plugins/rails-stack/skills/parallel-session-lane/SKILL.md
+    plugins/rails-stack/skills/rails-8/SKILL.md
     $ python3 scripts/lint_self_consistency.py
     no findings.
 
@@ -128,7 +128,7 @@ def _selftest() -> int:
 
     # THE REPORTED CASE: a skill changed, only the other component gained a bullet.
     after = base.replace("- old rails-flow note", "- old rails-flow note\n- new rails-flow note")
-    f = missing_notes(["plugins/rails-flow/x.md", "plugins/rails-stack/skills/parallel-session-lane/SKILL.md"],
+    f = missing_notes(["plugins/rails-flow/x.md", "plugins/rails-stack/skills/rails-8/SKILL.md"],
                       base, after, plugins)
     # Indexed defensively: under a mutation that empties this list, `f[0]` would CRASH, and a crash
     # is not a verdict -- the mutation harness rejects a fixture that dies instead of failing.

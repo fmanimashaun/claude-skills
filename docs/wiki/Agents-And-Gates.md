@@ -6,6 +6,7 @@
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
+| `core-skills` | 0.1.0 | — | — | — |
 | `design-flow` | 1.46.3 | 6 | 13 | 6 |
 | `flow-suite` | 1.0.0 | — | — | — |
 | `nextjs-stack` | 0.1.0 | — | — | — |
@@ -407,4 +408,4 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `design-auditor` | mechanical | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `kamal-configurator` | judgement | — |
 
-Manifest cross-check: the 7 plugin directories inventoried are exactly the ones marketplace.json installs.
+Manifest cross-check: the 8 plugin directories inventoried are exactly the ones marketplace.json installs.

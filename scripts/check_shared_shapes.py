@@ -4,7 +4,7 @@
 Run:  python3 scripts/check_shared_shapes.py            # measure, fail on a stale count
       python3 scripts/check_shared_shapes.py --selftest  # prove the rules fire AND stay silent
 
-WHY (#360). `plugins/rails-stack/skills/quality-pass/references/worked-example.md` is a worked example of the reuse
+WHY (#360). `plugins/core-skills/skills/quality-pass/references/worked-example.md` is a worked example of the reuse
 dimension applied to this repo's own Python. It states how many files carry each shared shape, and
 it records an extraction decision that rests on those numbers. A count written in prose rots the
 moment someone adds a fifth copy -- and it rots SILENTLY, because nothing reads it. That is the
@@ -48,7 +48,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-DOC = REPO / "plugins" / "rails-stack" / "skills" / "quality-pass" / "references" / "worked-example.md"
+DOC = REPO / "plugins" / "core-skills" / "skills" / "quality-pass" / "references" / "worked-example.md"
 # What defines an install root. Read rather than assumed: `reach` groups copies by the directory a
 # plugin is installed FROM, so the manifest naming those directories is the arbiter, and a layout
 # change that this file's path grouping stopped matching would otherwise rot in silence.

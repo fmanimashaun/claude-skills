@@ -8,6 +8,7 @@
   "dependencies": [
     "rails-flow",
     "qa-flow",
-    "pipeline"
+    "pipeline",
+    "core-skills"
   ]
 }

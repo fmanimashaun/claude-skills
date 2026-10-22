@@ -99,7 +99,7 @@ GUARD = Guard(
         Mutation(
             # #2254 review: the list agreeing with itself is no ratchet; the base's list is the authority.
             "an entry the base never allowed is accepted, so a new unbased row ships with its own grandfather entry",
-            "            f\"refused, not grandfathered (#2224)\" for e in unbased if tuple(e) not in allowed]",
+            "            f\"refused, not grandfathered (#2224)\" for e in unbased if tuple(e) not in allowed and (_was(e[0]), e[1]) not in allowed]",
             "            f\"refused, not grandfathered (#2224)\" for e in unbased if False]",
             "a new row plus its own new entry is refused against the base's list",
         ),
@@ -132,6 +132,18 @@ GUARD = Guard(
             '                kw = dict(zip(("claim", "stated_in", "anchor", "kind"), call.args))',
             "                kw = {}",
             "a base row whose kind is positional is read",
+        ),
+        Mutation(
+            "a moved row is read under its new path only, so a skill that moved looks like a new advice row",
+            "(_was(e[0]), e[1]) not in allowed]",
+            "True]",
+            "a row that moved with its skill is not a new row (#2186)",
+        ),
+        Mutation(
+            "a path that did not move is read as the moved one, so any row is forgiven",
+            "            return old + path[len(new):]\n    return path",
+            '            return old + path[len(new):]\n    return "plugins/rails-stack/skills/s/SKILL.md"',
+            "a row under a path that did not move is not forgiven by the move",
         ),
     ),
 )

@@ -134,9 +134,18 @@ def first_sentence(text: str, limit: int = 200) -> str:
     return text[:limit]
 
 
+def skill_dir(name: str) -> Path:
+    """Where the real skill lives: core-skills first (#2186), so a redirect stub in rails-stack never stands for it."""
+    for plugin in ("core-skills", "rails-stack"):
+        d = ROOT / "plugins" / plugin / "skills" / name
+        if (d / "SKILL.md").exists():
+            return d
+    return ROOT / "plugins" / "rails-stack" / "skills" / name
+
+
 def skill_description(name: str) -> str:
     """The skill's own frontmatter description, trimmed to its first sentence."""
-    return first_sentence(frontmatter_description(ROOT / "plugins" / "rails-stack" / "skills" / name / "SKILL.md"))
+    return first_sentence(frontmatter_description(skill_dir(name) / "SKILL.md"))
 
 
 def command_line(plugin: str, name: str) -> str:
@@ -191,16 +200,17 @@ def page_commands() -> str:
 
 def page_skills() -> str:
     manifest = read_manifest()
-    bundled = next((p.get("skills", []) for p in manifest["plugins"]
-                    if p["name"] == "rails-stack"), [])
-    names = [Path(s).name for s in bundled]
+    by_plugin = {p["name"]: [Path(x).name for x in p.get("skills", [])] for p in manifest["plugins"]}
+    core = by_plugin.get("core-skills", [])
+    # rails-stack keeps a redirect stub for each skill that moved (#2186); the real one is listed once, under its plugin.
+    names = by_plugin.get("rails-stack", []) and [n for n in by_plugin["rails-stack"] if n not in core] + core
     out = [BANNER, "# Skills reference\n",
            "Skills are **doctrine**, not commands: install them and Claude writes different code.\n",
-           f"All {len(names)} ship in the `rails-stack` plugin, and each is also downloadable as a\n"
-           "standalone `.skill` for claude.ai.\n\n"]
+           f"All {len(names)} ship in the `rails-stack` and `core-skills` plugins (the stack-neutral ones in `core-skills`, which\n"
+           "`rails-stack` depends on), and each is also downloadable as a standalone `.skill` for claude.ai.\n\n"]
     for name in names:
         desc = skill_description(name)
-        refs = sorted((ROOT / "plugins" / "rails-stack" / "skills" / name / "references").glob("*.md"))
+        refs = sorted((skill_dir(name) / "references").glob("*.md"))
         out.append(f"## `{name}`\n")
         if desc:
             out.append(f"{desc}\n")

@@ -532,6 +532,24 @@
   "declared": [
    {
     "match": [
+     "plugins/core-skills/.claude-plugin/*",
+     "plugins/core-skills/README.md"
+    ],
+    "class": "neutral",
+    "why": "the core-skills manifest and README: a plugin of stack-neutral skills, named so a Next.js project does not install the Rails doctrine to get a code review (#2186)"
+   },
+   {
+    "match": [
+     "plugins/rails-stack/skills/code-review",
+     "plugins/rails-stack/skills/quality-pass",
+     "plugins/rails-stack/skills/derived-artifacts",
+     "plugins/rails-stack/skills/parallel-session-lane"
+    ],
+    "class": "neutral",
+    "why": "a one-line redirect to the skill's new home in core-skills (#2186), kept for two releases so a project that pins `rails-stack:<skill>` is told where it went; it names no framework"
+   },
+   {
+    "match": [
      "plugins/design-flow/agents/*"
     ],
     "class": "neutral",
@@ -837,16 +855,16 @@
    },
    {
     "match": [
-     "plugins/rails-stack/skills/quality-pass",
-     "plugins/rails-stack/skills/derived-artifacts"
+     "plugins/core-skills/skills/quality-pass",
+     "plugins/core-skills/skills/derived-artifacts"
     ],
     "class": "neutral",
     "why": "stack-neutral doctrine, bundled under the rails-stack name today; step 8 gives them a plugin of their own (#2186)"
    },
    {
     "match": [
-     "plugins/rails-stack/skills/code-review",
-     "plugins/rails-stack/skills/parallel-session-lane"
+     "plugins/core-skills/skills/code-review",
+     "plugins/core-skills/skills/parallel-session-lane"
     ],
     "class": "mixed",
     "seam": "stack-neutral doctrine whose examples name Rails; the Rails examples move out when core-skills is split (step 8)",
@@ -895,7 +913,7 @@
     "class": "mixed",
     "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
     "issue": 2186,
-    "why": "a byte-identical vendored copy of rails-flow's findings.py for rails-stack's code-reviewer (no cross-plugin root); its single home is core-skills (#2186); plugins/rails-stack/VENDORED.md"
+    "why": "a byte-identical vendored copy of rails-flow's findings.py for rails-stack's code-reviewer (no cross-plugin root); its canonical home is to become core-skills (#2283); plugins/rails-stack/VENDORED.md"
    },
    {
     "match": [
@@ -914,7 +932,7 @@
     ],
     "class": "neutral",
     "issue": 2186,
-    "why": "a byte-identical vendored copy of rails-flow's output contract, which every moved agent cites; its single home is core-skills (#2186); plugins/rails-stack/VENDORED.md"
+    "why": "a byte-identical vendored copy of rails-flow's output contract, which every moved agent cites; its canonical home is to become core-skills (#2283); plugins/rails-stack/VENDORED.md"
    },
    {
     "match": [

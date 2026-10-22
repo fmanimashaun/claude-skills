@@ -95,7 +95,7 @@ A new guard without these is a **gate that cannot fail**.
 
 ## If this touches `plugins/rails-stack/skills/**`
 
-- [ ] `python3 scripts/package_core.py` was re-run, and `git status` shows only the intended
+- [ ] (also for `plugins/core-skills/skills/**`) `python3 scripts/package_core.py` was re-run, and `git status` shows only the intended
       `dist/` change.
 
 ## If this touches markdown containing code
@@ -115,7 +115,7 @@ The fenced blocks are what an agent pastes verbatim into a user's project.
 
 ## Self-review
 
-- [ ] I read **`plugins/rails-stack/skills/code-review/SKILL.md`** against this diff before requesting review, and
+- [ ] I read **`plugins/core-skills/skills/code-review/SKILL.md`** against this diff before requesting review, and
       recorded anything it found — including findings I did not act on. We are held to the rules
       we ship.
 - [ ] Only files I authored are staged (`git status` first — never `git add -A`).
