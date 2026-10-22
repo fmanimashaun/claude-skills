@@ -358,5 +358,24 @@ GUARD = Guard(
             "            if self.shards_external:",
             "under --mutation-shards, no OTHER gate is skipped",
         ),
+        Mutation(
+            # #2306: the temp monitor and its --fix.
+            "a leaked rf- dir over 24 h is no longer reported",
+            "        stale = sorted(e for e in entries if e.startswith(\"rf-\") and now - os.lstat(os.path.join(root, e)).st_mtime > 24 * 3600)",
+            "        stale = []",
+            "#2306: a leaked rf- dir over 24 h is reported",
+        ),
+        Mutation(
+            "--fix removes another program's entries too",
+            "        stale = sorted(e for e in entries if e.startswith(\"rf-\") and now - os.lstat(os.path.join(root, e)).st_mtime > 24 * 3600)",
+            "        stale = sorted(e for e in entries if now - os.lstat(os.path.join(root, e)).st_mtime > 24 * 3600)",
+            "#2306: --fix never touches another program's entry",
+        ),
+        Mutation(
+            "--fix removes an entry a live process holds",
+            "                if not held(path):",
+            "                if True:",
+            "#2306: --fix keeps an rf- dir a live process still holds",
+        ),
     ),
 )

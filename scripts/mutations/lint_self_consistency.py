@@ -225,8 +225,8 @@ GUARD = Guard(
         # they call the check function directly. This mutation re-orphans it.
         Mutation(
             "a rule's findings are computed and dropped from run()'s return",
-            "            + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,",
-            "            + xplugin + unowned + ci_step + promo_ctx + bothways + harness_dep,",
+            "            + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep + rf_tmp_drift + bare_tmp,",
+            "            + xplugin + unowned + ci_step + promo_ctx + bothways + harness_dep + rf_tmp_drift + bare_tmp,",
             "drops them from its return",
         ),
         Mutation(
@@ -1792,6 +1792,31 @@ GUARD = Guard(
             "            if not adapter.is_file():\n",
             "            if False:\n",
             "ui-adapter-unresolved / a descriptor whose ui.implementation has no adapter.json: expected a finding saying 'does not exist'",
+        ),
+        Mutation(
+            # #2306: the rf_tmp copies must stay identical.
+            "a differing rf_tmp copy is no longer reported",
+            "        if canonical is not None and texts.get(rel, canonical) != canonical:",
+            "        if False:",
+            "rf-tmp-drift / an rf_tmp copy that differs by one byte is a finding",
+        ),
+        Mutation(
+            "a bare mkdtemp is no longer reported",
+            "            if \"rmtree\" not in body and \"atexit\" not in body:",
+            "            if False:",
+            "bare-mkdtemp / a bare tempfile.mkdtemp is a finding",
+        ),
+        Mutation(
+            "rf_tmp.mkdtemp is reported as bare",
+            "            if name != \"mkdtemp\" or (isinstance(f, _ast.Attribute) and getattr(f.value, \"id\", \"\") == \"rf_tmp\"):",
+            "            if name != \"mkdtemp\":",
+            "bare-mkdtemp / rf_tmp.mkdtemp is silent",
+        ),
+        Mutation(
+            "a shell mktemp -d with no trap is no longer reported",
+            "        if not _TRAP_RM.search(text):",
+            "        if False:",
+            "bare-mkdtemp / a shell mktemp -d with no trap is a finding",
         ),
     ),
 )

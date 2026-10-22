@@ -684,7 +684,7 @@ def check_rf_tmp_drift() -> tuple[list[Finding], int]:
         texts[rel] = p.read_bytes()
     canonical = texts.get(RF_TMP_COPIES[0])
     for rel in RF_TMP_COPIES[1:]:
-        if canonical is not None and rel in texts and texts[rel] != canonical:
+        if canonical is not None and texts.get(rel, canonical) != canonical:
             findings.append(Finding("rf-tmp-drift", rel, 0, f"differs from {RF_TMP_COPIES[0]} -- copy the canonical file over it (cp) and re-run"))
     return findings, len(RF_TMP_COPIES)
 
