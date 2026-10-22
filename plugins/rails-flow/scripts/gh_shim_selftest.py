@@ -273,6 +273,29 @@ def _git_timeout(base: Path) -> None:
           r.returncode != 0 and fx.ran() == [] and "did not answer within 1 s" in text and "cannot be judged" in text, f"rc {r.returncode}, stub ran {fx.ran()}, {text[-300:]!r}")
 
 
+@case("an unreadable alias with a git that does not answer in time is a named refusal, and gh never runs")
+def _git_timeout_alias(base: Path) -> None:
+    """#2295: the `--shim-unreadable` entry (a gh alias whose expansion holds a quote) catches GitTimeout too. The stub sleeps past the limit only on `rev-parse --show-toplevel`, which that entry's
+    judge asks first; the alias is `pr "rea"dy 5`, which the shim cannot read and hands to the judge."""
+    fx = Fixture(base)
+    stubs = base / "stubgit"
+    stubs.mkdir()
+    real_git = shutil.which("git", path=os.pathsep.join(d for d in fx.env["PATH"].split(os.pathsep) if "git-shim" not in d)) or "git"   # not a shim: the stub would call itself
+    (stubs / "git").write_text(f'#!/bin/sh\ncase "$*" in *"--show-toplevel"*) [ -n "$RF_STUB_SLOW" ] && sleep 4;; esac\nexec {real_git} "$@"\n')
+    (stubs / "git").chmod(0o755)
+    env = {"PATH": f"{stubs}{os.pathsep}{fx.env['PATH']}", "STUB_ALIASES": 'weird: pr "rea"dy 5', "RAILS_FLOW_GIT_TIMEOUT": "60"}
+    fx.reset()
+    r = fx.sh("gh weird", env)
+    text = r.stdout + r.stderr
+    check("shim: CONTROL: with the same stub answering at once, the unreadable alias is refused as unreadable (not as a stall)",
+          r.returncode != 0 and fx.ran() == [] and "did not answer" not in text, f"rc {r.returncode}, stub ran {fx.ran()}, {text[-300:]!r}")
+    fx.reset()
+    r = fx.sh("gh weird", {**env, "RF_STUB_SLOW": "1", "RAILS_FLOW_GIT_TIMEOUT": "1"})
+    text = r.stdout + r.stderr
+    check("shim: an unreadable alias with a git that does not answer in time is a NAMED refusal, exits non-zero and never runs gh",
+          r.returncode != 0 and fx.ran() == [] and "did not answer within 1 s" in text, f"rc {r.returncode}, stub ran {fx.ran()}, {text[-300:]!r}")
+
+
 @case("a worktree with a green record is named in the refusal")
 def _elsewhere(base: Path) -> None:
     """#2143: the shim judges the checkout it runs in; when another worktree holds a green, zero-skip record the refusal names it and the cd form."""

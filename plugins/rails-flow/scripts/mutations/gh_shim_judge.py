@@ -27,6 +27,7 @@ GUARD = Guard(
         Mutation("a HOME that is not the account's is not noticed", '        names.add("HOME")', '        pass', 'redirecting variable'),
         Mutation('an XDG_CONFIG_HOME that is not the default is not noticed', '        names.add("XDG_CONFIG_HOME")', '        pass', 'redirecting variable'),
         Mutation('a git that does not answer in time is allowed by the shim entry', '            sys.exit(_timed_out(exc, " ".join(sys.argv[2:])))', '            sys.exit(0)', 'a git that does not answer in time is a NAMED refusal'),
+        Mutation('a git that does not answer in time is allowed by the unreadable-alias entry', '            sys.exit(_timed_out(exc, sys.argv[2]))', '            sys.exit(0)', 'an unreadable alias with a git that does not answer in time is a named refusal'),
         Mutation('an alias expansion that is not plain words is not refused where in force', '    return refuse("this gh alias expands to something that is not plain words', '    return 0\n    return refuse("this gh alias expands to something that is not plain words', 'alias flags'),
     ),
 )
