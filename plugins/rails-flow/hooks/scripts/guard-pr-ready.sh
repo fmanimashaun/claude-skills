@@ -26,9 +26,10 @@
 # `gh pr ready`, as two separate commands.
 #
 # SCOPE. Silent (exit 0) for every command that does not invoke `gh pr ready`, and for `gh pr ready --undo`
-# (the safe direction). NOT APPLICABLE, and passes, where the target repository does not run project_gates:
-# in force only when a `.github/workflows/*.yml` names `project_gates.py`, `CLAUDE.md` carries the
-# `<!-- rails-flow:begin` managed marker, or a `rails-flow/sweep` directory exists under the git dir.
+# (the safe direction). Judged in EVERY git repository, unless it declares an opt-out with a reason in
+# `.claude/rails-flow/no-project-gates` (#2304). A repository that does not run project_gates is REFUSED by name ("project
+# gates are not wired"), not skipped: it is wired when a `.github/workflows/*.yml` names `project_gates.py`, `CLAUDE.md`
+# carries the `<!-- rails-flow:begin` managed marker, or a `rails-flow/sweep` directory exists under the git dir.
 # Outside a git repository: exit 0.
 #
 # FAILS CLOSED, SCOPED. Exit 2 blocks. When it is in force and the record is unreadable or malformed, or
