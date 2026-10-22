@@ -252,6 +252,27 @@ def _claim_bodies(base: Path) -> None:
     check("a body the claim extractor cannot read (not UTF-8) is refused: the shim runs the hook strict", ok, why)
 
 
+@case("a git that does not answer in time is a named refusal, and gh never runs")
+def _git_timeout(base: Path) -> None:
+    """#2295: the shim is the guarantee, so a git that stalls must refuse by name. The stub answers `rev-parse --show-toplevel` and every other call at once and sleeps past the limit only
+    on `rev-parse HEAD`, which `judge_record` asks: that reaches the `GitTimeout` handler in the shim's entry, not the earlier "git could not say" refusal."""
+    fx = Fixture(base)
+    fx.record()
+    stubs = base / "stubgit"
+    stubs.mkdir()
+    real_git = shutil.which("git", path=os.pathsep.join(d for d in fx.env["PATH"].split(os.pathsep) if "git-shim" not in d)) or "git"   # not a shim: the stub would call itself
+    (stubs / "git").write_text(f'#!/bin/sh\ncase "$*" in *"rev-parse HEAD"*) [ -n "$RF_STUB_SLOW" ] && sleep 4;; esac\nexec {real_git} "$@"\n')
+    (stubs / "git").chmod(0o755)
+    path = f"{stubs}{os.pathsep}{fx.env['PATH']}"
+    ok, why = allowed(fx, "gh pr ready 5", {"PATH": path, "RAILS_FLOW_GIT_TIMEOUT": "60"})
+    check("shim: CONTROL: with the same stub answering at once, the green record is allowed", ok, why)
+    fx.reset()
+    r = fx.sh("gh pr ready 5", {"PATH": path, "RF_STUB_SLOW": "1", "RAILS_FLOW_GIT_TIMEOUT": "1"})
+    text = r.stdout + r.stderr
+    check("shim: a git that does not answer in time is a NAMED refusal, exits non-zero and never runs gh",
+          r.returncode != 0 and fx.ran() == [] and "did not answer within 1 s" in text and "cannot be judged" in text, f"rc {r.returncode}, stub ran {fx.ran()}, {text[-300:]!r}")
+
+
 @case("a worktree with a green record is named in the refusal")
 def _elsewhere(base: Path) -> None:
     """#2143: the shim judges the checkout it runs in; when another worktree holds a green, zero-skip record the refusal names it and the cd form."""
