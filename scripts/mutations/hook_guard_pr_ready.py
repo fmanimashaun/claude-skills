@@ -122,9 +122,45 @@ GUARD = Guard(
         ),
         Mutation(
             'the cd form is suggested for a path the exception cannot accept',
-            'if CD_WORD.match(path)',
-            'if True',
+            'plain = CD_WORD.match(path) is not None',
+            'plain = True',
             'named WITHOUT the cd form',
+        ),
+        Mutation(
+            'the worktree list is split on newlines, so a path holding one is cut in two',
+            'for field in done.stdout.split("\\0"):',
+            'for field in done.stdout.replace("\\0", "\\n").split("\\n"):',
+            'a worktree path holding a NEWLINE is one path',
+        ),
+        Mutation(
+            'a path with a newline or quote is shown raw in the refusal',
+            'shown = path if plain else repr(path)',
+            'shown = path',
+            'a worktree path holding a NEWLINE is one path, shown escaped',
+        ),
+        Mutation(
+            'the hint reads every worktree, whatever the cap',
+            'if scanned >= HINT_MAX_WORKTREES:',
+            'if False:',
+            'the hint reads at most RAILS_FLOW_HINT_MAX_WORKTREES worktrees',
+        ),
+        Mutation(
+            'a hint git call may outlast what is left of the time budget',
+            'timeout=max(0.05, min(GIT_TIMEOUT, left))',
+            'timeout=GIT_TIMEOUT',
+            'the hint has a TIME budget',
+        ),
+        Mutation(
+            'a git that does not answer in time reads as "not a repository" again',
+            'raise GitTimeout(f"`git {\' \'.join(args[:3])}` in {where} did not answer within {limit:g} s") from exc',
+            'return None',
+            'a git that does not answer in time is a NAMED refusal',
+        ),
+        Mutation(
+            'the hook entry does not catch a GitTimeout',
+            '    except GitTimeout as exc:\n        return refuse(f"{exc}, so whether',
+            '    except ZeroDivisionError as exc:\n        return refuse(f"{exc}, so whether',
+            'a git that does not answer in time is a NAMED refusal',
         ),
     ),
 )

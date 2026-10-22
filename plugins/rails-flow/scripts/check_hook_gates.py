@@ -558,6 +558,7 @@ def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
         env.pop(k, None)                    # a git hook's GIT_DIR, a CI's GH_*: each would route every fixture
     if path_prefix:
         env["PATH"] = os.pathsep.join(str(p) for p in path_prefix) + os.pathsep + env["PATH"]
+    env.setdefault("RAILS_FLOW_GIT_TIMEOUT", "120")      # a loaded machine must not turn a slow git into a refusal (#2295); the rows that test the timeout set their own
     if env_extra:
         env.update(env_extra)
     done = _run([*((shell,) if isinstance(shell, str) else shell), str(hooks_dir / name)], cwd=cwd, input=stdin, env=env,
@@ -6394,6 +6395,44 @@ def guard_pr_ready_fixtures() -> None:
         res = guard(repo, "gh pr ready 3")
         check("guard-pr-ready (#2143): a worktree path the cd exception cannot accept is named WITHOUT the cd form",
               f"from a session started in {spaced}" in res[1] and f"cd {spaced}" not in res[1] and f"cd {wt} && gh pr ready 3" in res[1], blocked_lines(res[1]))
+        # #2293 review S1: the worktree list is read with -z, so a newline in a path is one path, shown escaped.
+        newline = add_worktree("wt\nnl", "feature/2143-newline")
+        record_in(newline)
+        res = guard(repo, "gh pr ready 3")
+        check("guard-pr-ready (#2143): a worktree path holding a NEWLINE is one path, shown escaped, never as raw text or cut in two",
+              repr(str(newline)) in res[1] and str(newline) not in res[1] and f"cd {wt} && gh pr ready 3" in res[1], blocked_lines(res[1]))
+        # #2293 review S2: the search is bounded.
+        res = run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(repo)}),
+                       env_extra={"RAILS_FLOW_HINT_MAX_WORKTREES": "1"})
+        check("guard-pr-ready (#2143): the hint reads at most RAILS_FLOW_HINT_MAX_WORKTREES worktrees and says it stopped",
+              res[0] == 2 and res[1].count("exists for HEAD") == 1 and "stopped after 1 worktrees" in res[1], blocked_lines(res[1]))
+        real_git = shutil.which("git", path=os.pathsep.join(d for d in os.environ.get("PATH", "").split(os.pathsep) if "git-shim" not in d)) or "git"   # not an installed shim: the stub would call itself
+        stubs = Path(td) / "stub-git"
+        stubs.mkdir()
+
+        def stub_git(body: str) -> None:
+            f = stubs / "git"
+            f.write_text("#!/bin/sh\n" + body + "\n", encoding="utf-8")
+            f.chmod(0o755)
+
+        stub_git(f'case "$*" in *--git-path*rails-flow*) [ -n "$RF_STUB_SLOW" ] && sleep 3;; esac\nexec {real_git} "$@"')
+        res = run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(repo)}),
+                       path_prefix=[stubs], env_extra={"RAILS_FLOW_HINT_BUDGET": "1", "RF_STUB_SLOW": "1"})
+        check("guard-pr-ready (#2143): the hint has a TIME budget: a git that answers too slowly names nothing, says it stopped, and the refusal stands",
+              res[0] == 2 and "exists for HEAD" not in res[1] and "stopped after 1 s" in res[1], blocked_lines(res[1]))
+        # #2295: a git that does not answer in time is a NAMED REFUSAL, not "not a repository" (which is allowed).
+        stub_git("sleep 5")
+        notrepo = Path(td) / "not-a-repo"
+        notrepo.mkdir()
+        slow = {"RAILS_FLOW_GIT_TIMEOUT": "1"}
+        res = run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(repo)}), path_prefix=[stubs], env_extra=slow)
+        expect("guard-pr-ready (#2295): a git that does not answer in time is a NAMED refusal, not an allow", res, 2, "did not answer within 1 s", "cannot be told")
+        res = run_hook("guard-pr-ready.sh", cwd=notrepo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(notrepo)}), path_prefix=[stubs], env_extra=slow)
+        expect("guard-pr-ready (#2295): ...in a directory that may or may not be a repository too: nothing is guessed", res, 2, "did not answer within 1 s")
+        stub_git("echo 'fatal: not a git repository (or any of the parent directories): .git' >&2\nexit 128")
+        res = run_hook("guard-pr-ready.sh", cwd=notrepo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 3"}, "cwd": str(notrepo)}), path_prefix=[stubs], env_extra=slow)
+        expect("guard-pr-ready (#2295): CONTROL: git ANSWERING `not a git repository` is still allowed", res, 0)
+        shutil.rmtree(stubs, ignore_errors=True)
 
     with scratch_dir() as td:
         plain = new_repo(td, "plain", marker=False)
