@@ -79,5 +79,11 @@ GUARD = Guard(
             "    if sha_date < tag_date:",
             "a STATUS at 08:00Z is NEWER than a tag at 10:00+05:00 (05:00Z), though its text sorts earlier",
         ),
+        Mutation(
+            "a fixture inherits the runner's branch signals, so in CI on an arm PR the not-an-arm fixture IS an arm",
+            "base = {k: v for k, v in fixture_git.hermetic().items() if k not in branch_signals}",
+            "base = {k: v for k, v in dict(os.environ).items()}",
+            "--when arm on a branch that is not an arm is still not applicable (exit 3) when the RUNNER's environment says it is an arm (CI on an arm PR)",
+        ),
     ),
 )
