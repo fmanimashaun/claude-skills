@@ -61,7 +61,7 @@ STOP_WAIT = 5.0
 # worktrees keeps only other worktrees and the declared KEEP entries. The main checkout's own parent holds other projects, so it is
 # never scanned.
 SCRATCH = ".rf-scratch"
-KEEP = frozenset({"_logs", "_handoff", "_board", "_tools"})
+KEEP = frozenset({"_logs", "_handoff", "_board", "_tools", ".DS_Store"})   # .DS_Store: macOS writes it, nobody chose to
 
 
 def run(cmd, cwd=None, env=None, timeout=60) -> tuple[int, str]:
@@ -281,13 +281,31 @@ def parent_leftovers(parent: str, main: str, registered: set[str], since: float 
     return out
 
 
-def open_pr_bases(branch: str, cwd: str) -> list[int] | None:
-    """Open PRs whose BASE is `branch` (they stack on it), or None when `gh` cannot say: the remote branch is then kept (fails closed)."""
-    rc, out = run(["gh", "pr", "list", "--state", "open", "--base", branch, "--limit", "200", "--json", "number", "--jq", ".[].number"], cwd=cwd)
-    return [int(n) for n in out.split()] if rc == 0 else None
+def open_prs_on(branch: str, cwd: str) -> list[int] | None:
+    """Open PRs that use `branch` as their BASE (they stack on it) or their HEAD (still in review), or None when `gh` cannot say: the
+    remote branch is then kept (fails closed)."""
+    found: list[int] = []
+    for side in ("--base", "--head"):
+        rc, out = run(["gh", "pr", "list", "--state", "open", side, branch, "--limit", "200", "--json", "number", "--jq", ".[].number"], cwd=cwd)
+        if rc != 0:
+            return None
+        found += [int(n) for n in out.split()]
+    return sorted(set(found))
 
 
-PR_BASES = open_pr_bases     # the selftest swaps in a stub, so it never calls the network
+PR_BASES = open_prs_on     # the selftest swaps in a stub, so it never calls the network
+
+
+def protected(main: str, branch: str) -> bool:
+    """Never deleted (commit security review): an integration branch, the remote's default branch, or the main checkout's branch."""
+    names = {i.removeprefix("origin/") for i in INTEGRATION}
+    rc, default = git(main, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD")
+    if rc == 0 and default.strip():
+        names.add(default.strip().removeprefix("origin/"))
+    rc, current = git(main, "symbolic-ref", "-q", "--short", "HEAD")
+    if rc == 0 and current.strip():
+        names.add(current.strip())
+    return branch in names
 
 
 def delete_branch(main: str, branch: str, tip: str) -> list[str]:
@@ -296,22 +314,24 @@ def delete_branch(main: str, branch: str, tip: str) -> list[str]:
     LOCAL: `git update-ref -d refs/heads/<b> <tip>`, which refuses if the branch moved since the merge check. Not `git branch -d`: that judges
     "merged" against the checkout it runs in, and the main checkout's HEAD is often behind the integration branch, so it would refuse a branch
     this script has already proved merged (measured 2026-10-22: four merged branches, `-d` refused all four from a stale main). Never `-D`.
-    REMOTE: `git push origin --delete <b>` only when the branch is on `origin` and no open PR uses it as its base; when `gh` cannot say, it
-    is kept and named."""
+    REMOTE: deleted only when the branch is on `origin`, no open PR uses it as its base or its head, and its remote tip is still `tip`
+    (`--force-with-lease`, so a branch someone pushed to since is never deleted); when `gh` cannot say, it is kept and named.
+    NEVER an integration branch, the remote's default branch or the main checkout's branch (`protected`)."""
     left = []
-    if not branch:
+    if not branch or protected(main, branch):
         return left
     if git(main, "update-ref", "-d", f"refs/heads/{branch}", tip)[0] != 0 and git(main, "rev-parse", "-q", "--verify", f"refs/heads/{branch}")[0] == 0:
         left.append(f"branch {branch} (it moved since the merge check)")
     if git(main, "remote", "get-url", "origin")[0] != 0 or not git(main, "ls-remote", "--heads", "origin", branch)[1].strip():
         return left
-    bases = PR_BASES(branch, main)
-    if bases is None:
-        left.append(f"remote branch origin/{branch} (`gh` could not say whether an open PR stacks on it)")
-    elif bases:
-        left.append(f"remote branch origin/{branch} (open PR(s) {', '.join(f'#{n}' for n in bases)} stack on it: retarget them first)")
-    elif git(main, "push", "-q", "origin", "--delete", branch)[0] != 0 or git(main, "ls-remote", "--heads", "origin", branch)[1].strip():
-        left.append(f"remote branch origin/{branch} (the delete failed)")
+    prs = PR_BASES(branch, main)
+    if prs is None:
+        left.append(f"remote branch origin/{branch} (`gh` could not say whether an open PR uses it)")
+    elif prs:
+        left.append(f"remote branch origin/{branch} (open PR(s) {', '.join(f'#{n}' for n in prs)} use it: retarget or close them first)")
+    elif (git(main, "push", "-q", f"--force-with-lease=refs/heads/{branch}:{tip}", "origin", f":refs/heads/{branch}")[0] != 0
+          or git(main, "ls-remote", "--heads", "origin", branch)[1].strip()):
+        left.append(f"remote branch origin/{branch} (the delete failed, or its tip moved since the merge check)")
     return left
 
 
@@ -644,7 +664,20 @@ def selftest() -> int:
                     check("a merged branch with no stacked PR is deleted on origin too", code == 0 and not on_origin, str(said[-2:]))
                 else:
                     check(f"the remote branch is kept and named when {name}", code == 1 and on_origin and any(needle in ln for ln in said), str(said[-2:]))
-            PR_BASES = open_pr_bases
+            # a remote tip that moved since the merge check is never deleted (force-with-lease)
+            wm = add("moved", parent="repo-wt")
+            universe()
+            g("push", "-q", "origin", "b-moved-repo-wt")
+            tip = g("rev-parse", "b-moved-repo-wt").strip()
+            later = g("commit-tree", "-p", tip, "-m", "pushed after the merge", f"{tip}^{{tree}}").strip()      # the remote moves, the local branch does not
+            g("push", "-q", "origin", f"{later}:refs/heads/b-moved-repo-wt")
+            PR_BASES = lambda branch, cwd: []  # noqa: E731
+            said.clear()
+            code = teardown(wm, pg_bin=binpath, say=said.append)
+            check("a remote branch whose tip moved since the merge check is kept and named",
+                  code == 1 and bool(g("ls-remote", "--heads", "origin", "b-moved-repo-wt").strip()) and any("moved" in ln for ln in said), str(said[-2:]))
+            check("an integration branch is protected from deletion", protected(main, "dev") and protected(main, "main") and not protected(main, "b-x"))
+            PR_BASES = open_prs_on
 
             def td(path, **kw):      # a raise inside the teardown is a failed fixture with a label, not a crashed selftest
                 try:
