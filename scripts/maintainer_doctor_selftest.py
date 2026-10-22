@@ -27,6 +27,7 @@ import subprocess
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -1255,6 +1256,40 @@ def run() -> int:
         if not exited or len(pids) != 2 or left:
             FAILURES.append(f"#1459: Ctrl-C during a gate left it running (doctor exited: {exited}; recorded "
                             f"{len(pids)} of 2 pids; survivors {left})")
+
+    # #2306: the temp monitor reports a leaked rf- dir over 24 h; --fix removes it, keeps a foreign one, a young one and one a live
+    # process holds.
+    with tempfile.TemporaryDirectory() as tmp_root:
+        old = time.time() - 3 * 24 * 3600
+        for name in ("rf-leaked", "foreign-old", "rf-held"):
+            os.makedirs(os.path.join(tmp_root, name))
+            os.utime(os.path.join(tmp_root, name), (old, old))
+        os.makedirs(os.path.join(tmp_root, "rf-young"))
+        holder = subprocess.Popen(["sleep", "60"], cwd=os.path.join(tmp_root, "rf-held"))
+        try:
+            report = md.Doctor(fix=False)
+            report.check_temp_dirs(tmp_root=tmp_root, scratch_glob=os.path.join(tmp_root, "none-*"))
+            r = find(report, "temp dirs")
+            _tick()
+            if not (r and r.status == md.FAIL and "rf-leaked" in r.findings and "foreign-old" not in r.findings and "rf-young" not in r.findings):
+                FAILURES.append(f"#2306: a leaked rf- dir over 24 h is reported (and only ours, and only old ones): {r}")
+            fixer = md.Doctor(fix=True)
+            fixer.check_temp_dirs(tmp_root=tmp_root, scratch_glob=os.path.join(tmp_root, "none-*"))
+            _tick()
+            if os.path.exists(os.path.join(tmp_root, "rf-leaked")):
+                FAILURES.append("#2306: --fix removes a leaked rf- dir over 24 h")
+            _tick()
+            if not os.path.exists(os.path.join(tmp_root, "foreign-old")):
+                FAILURES.append("#2306: --fix never touches another program's entry")
+            _tick()
+            if not os.path.exists(os.path.join(tmp_root, "rf-young")):
+                FAILURES.append("#2306: --fix keeps an rf- dir under 24 h")
+            _tick()
+            if shutil.which("lsof") and not os.path.exists(os.path.join(tmp_root, "rf-held")):
+                FAILURES.append("#2306: --fix keeps an rf- dir a live process still holds")
+        finally:
+            holder.kill()
+            holder.wait()
 
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)

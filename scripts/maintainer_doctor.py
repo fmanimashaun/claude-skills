@@ -1258,6 +1258,55 @@ class Doctor:
         else:
             self.add(SKIP, "nothing beside the worktrees", (lines or ("the audit could not run",))[-1])
 
+    def check_temp_dirs(self, tmp_root: str | None = None, scratch_glob: str = "/private/tmp/claude-*", now: float | None = None) -> None:
+        """Monitor and clear the temp dirs (#2306, owner rule 2026-10-22: "temp folder should be monitored and cleared out").
+
+        Reports the size and entry count of the system temp dir and of the session scratchpads, and OUR entries there (named `rf-`, by
+        `rf_tmp.py`) older than 24 h: those are leaks, since rf_tmp removes its dirs at exit and on a signal. `--fix` removes exactly those,
+        and only when no live process holds one (`lsof +D`; without lsof every entry counts as held, so nothing is removed). Another
+        program's entries are reported in the totals and never touched."""
+        import glob as _glob
+        import time as _time
+
+        root = tmp_root or tempfile.gettempdir()
+        now = now or _time.time()
+
+        def size_kb(path: str) -> int:
+            code, out = self.run("du", "-sk", path, cwd=REPO)
+            return int(out.split()[0]) if code == 0 and out.split() and out.split()[0].isdigit() else -1
+
+        def held(path: str) -> bool:
+            if shutil.which("lsof") is None:
+                return True
+            code, out = self.run("lsof", "-t", "+D", path, cwd=REPO)
+            return bool(out.strip())
+
+        try:
+            entries = os.listdir(root)
+        except OSError as exc:
+            self.add(SKIP, "temp dirs monitored", f"cannot list {root}: {exc}")
+            return
+        scratch = sorted(_glob.glob(scratch_glob))
+        stale = sorted(e for e in entries if e.startswith("rf-") and now - os.lstat(os.path.join(root, e)).st_mtime > 24 * 3600)
+        mb = lambda kb: "size unknown" if kb < 0 else f"{kb // 1024} MB"  # noqa: E731 -- du can fail on a very large dir
+        detail = (f"{root}: {len(entries)} entries, {mb(size_kb(root))}; scratchpads {len(scratch)}, "
+                  f"{mb(sum(max(size_kb(p), 0) for p in scratch))}; rf- entries over 24 h: {len(stale)}")
+        removed = []
+        if stale and self.fix:
+            for e in stale:
+                path = os.path.join(root, e)
+                if not held(path):
+                    shutil.rmtree(path, ignore_errors=True) if os.path.isdir(path) and not os.path.islink(path) else os.unlink(path)
+                    removed.append(e)
+            if removed:
+                self.fixed.append(f"removed {len(removed)} rf- temp entr{'y' if len(removed) == 1 else 'ies'} older than 24 h that no process held")
+        left = [e for e in stale if e not in removed]
+        if left:
+            self.add(FAIL, "temp dirs monitored", detail, "maintainer_doctor.py --fix removes our rf- entries over 24 h that no process holds",
+                     findings=tuple(left[:20]))
+        else:
+            self.add(PASS, "temp dirs monitored", detail)
+
     def check_corpora_ignored(self) -> None:
         """The ignore rules must actually cover the layout the setup instructions prescribe.
 
@@ -1583,6 +1632,7 @@ class Doctor:
         self.check_corpora_ignored()
         self.check_dist_clean()
         self.check_worktree_leftovers()
+        self.check_temp_dirs()
         if gates:
             self.check_gates()
         else:
