@@ -386,6 +386,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "plugins/rails-flow/scripts/check_brain_fresh.py")),
     ("brain fresh selftest",
      ("python3", "plugins/rails-flow/scripts/check_brain_fresh.py", "--selftest")),
+    # #2297. An owner ruling made on an issue must reach docs/brain/DECISIONS.md before the issue closes; a PR whose `Fixes #n`
+    # issue carries one with no D-NNN naming it is refused. The check needs a PR and gh, so it runs in a project's sweep (rails-flow
+    # checks.json); here its selftest proves it can refuse, and fail closed when gh is present and a read fails.
+    ("owner rulings selftest",
+     ("python3", "plugins/rails-flow/scripts/check_owner_rulings.py", "--selftest")),
     # #1361. The tenancy cop rails-flow installs is DERIVED from rails-8's multi-tenancy.md §7 and
     # committed beside its checker -- the same cross-plugin reason as the mandated gems above.
     ("tenancy cop derived",

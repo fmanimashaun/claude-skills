@@ -194,6 +194,21 @@
       ]
     },
     {
+      "id": "owner-rulings",
+      "why": "An issue is where an owner ruling is made, not where it is kept: it closes, and the next session looks in docs/brain (#2297). Seven rulings of 2026-10-21 and 22 lived only in issue comments and one session's memory. For each issue the PR closes (a line that is exactly `Fixes #n`), if its body or a comment states an owner ruling (`owner rule/ruling/decision/decided/direction`, or `owner, <date>`), some `## D-NNN` block in docs/brain/DECISIONS.md at HEAD, so one added in this PR or already on dev, must mention #n; otherwise the PR is refused, and `gh pr ready` with it. It reads GitHub through gh: with gh present a failed read REFUSES; it is not applicable (exit 3, said plainly) only when gh is not installed or the branch has no PR yet.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_owner_rulings.py"
+      ],
+      "applies_when": [
+        "docs/brain/DECISIONS.md"
+      ],
+      "requires": [
+        "python3",
+        "git"
+      ]
+    },
+    {
       "id": "docs-layout",
       "why": "A file's directory answers the question a reader would ask to find it; without a map agents litter docs/ and nothing can say a file is misplaced. Reports root files, code in docs, binaries at a root, product content inside the brain, memos at the brain root, and the missing map; --propose prints the moves with their link rewrites.",
       "command": [

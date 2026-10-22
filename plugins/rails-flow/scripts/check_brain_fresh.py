@@ -51,7 +51,7 @@ def is_arm(root: Path, base: str) -> bool:
     branch = os.environ.get("GITHUB_HEAD_REF") or git(root, "rev-parse", "--abbrev-ref", "HEAD")[1]
     if ARM_BRANCH.match(branch):
         return True
-    rc, diff = git(root, "diff", f"{base}...HEAD", "--", "CHANGELOG.md")
+    rc, diff = git(root, "diff", "--ignore-submodules=dirty", f"{base}...HEAD", "--", "CHANGELOG.md")
     return rc == 0 and any(RELEASE_HEADING.match(line) for line in diff.splitlines())
 
 
@@ -99,17 +99,17 @@ def selftest() -> int:
                            env={**os.environ, **(env or {})})
         return r.returncode, r.stdout + r.stderr
 
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import fixture_git  # noqa: E402  (a fixture's git touches only its own temp repo, #1588)
+
     def commit(root: Path, name: str, when: str) -> str:
         (root / name).write_text(name, encoding="utf-8")
-        e = {**os.environ, "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-             "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
-        subprocess.run(["git", "add", name], cwd=root, check=True, env=e)
-        subprocess.run(["git", "commit", "-q", "-m", name], cwd=root, check=True, env=e)
-        return git(root, "rev-parse", "--short", "HEAD")[1]
+        fixture_git.run(root, "add", name)
+        fixture_git.run(root, "commit", "-q", "-m", name, env={"GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when})
+        return fixture_git.run(root, "rev-parse", "--short", "HEAD").stdout.strip()
 
     def repo() -> Path:
-        r = Path(tempfile.mkdtemp(prefix="brain-fresh-"))
-        subprocess.run(["git", "init", "-q", "-b", "dev"], cwd=r, check=True)
+        r = fixture_git.init(Path(tempfile.mkdtemp(prefix="brain-fresh-")), "-b", "dev")
         (r / "docs/brain").mkdir(parents=True)
         return r
 
@@ -119,7 +119,7 @@ def selftest() -> int:
     r = repo()
     old = commit(r, "a", "2026-09-01T10:00:00+00:00")
     commit(r, "b", "2026-09-10T10:00:00+00:00")
-    subprocess.run(["git", "tag", "v1.0.0"], cwd=r, check=True)
+    fixture_git.run(r, "tag", "v1.0.0")
     new = commit(r, "c", "2026-09-20T10:00:00+00:00")
 
     status(r, new)
@@ -146,7 +146,8 @@ def selftest() -> int:
     check("a project with no v* tag has promoted nothing: nothing is stale", rc == 0 and "nothing has been promoted" in out, (rc, out))
 
     sh = Path(tempfile.mkdtemp(prefix="brain-fresh-shallow-"))
-    subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{r}", str(sh / "c")], check=True, capture_output=True)
+    subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{r}", str(sh / "c")], check=True, capture_output=True,
+                   env=fixture_git.hermetic())
     (sh / "c/docs/brain").mkdir(parents=True, exist_ok=True)
     status(sh / "c", new)
     rc, out = run(sh / "c")
@@ -160,13 +161,13 @@ def selftest() -> int:
     status(r, new)
     rc, out = run(r, "--when", "arm", env={"GITHUB_HEAD_REF": "chore/arm-v1.1.0"})
     check("--when arm on an arm branch passes a fresh STATUS", rc == 0, (rc, out))
-    subprocess.run(["git", "checkout", "-q", "-b", "feature/x"], cwd=r, check=True)
+    fixture_git.run(r, "checkout", "-q", "-b", "feature/x")
     cl = r / "CHANGELOG.md"
     cl.write_text("# c\n", encoding="utf-8")
     commit(r, "CHANGELOG.md", "2026-09-21T10:00:00+00:00")
-    subprocess.run(["git", "checkout", "-q", "-b", "armed"], cwd=r, check=True)
+    fixture_git.run(r, "checkout", "-q", "-b", "armed")
     cl.write_text("# c\n\n### 1.1.0 (release v1.1.0)\n", encoding="utf-8")
-    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "arm"], cwd=r, check=True)
+    fixture_git.run(r, "commit", "-qam", "arm")
     status(r, old, "2026-09-01")
     rc, out = run(r, "--when", "arm", "--base", "feature/x")
     check("--when arm also fires on a diff that adds a `(release vX)` heading, whatever the branch is called",
