@@ -19,7 +19,7 @@ THE SEVEN MEASUREMENTS. Each is a number in the report; the ones with a finding 
   context switches   a change of top-level navigation section, or a modal or tab opened. A finding only when the budget declares `switches`.
   waits              the time from an action to the page settling, and whether a spinner showed. A finding for each over the declared `wait`.
   dead ends          a page that is not the journey's declared end and offers no forward action. A finding for each.
-  back-tracks        a landing on a URL the journey already visited (a reload or a redirect is not one). A finding for each.
+  back-tracks        a landing on a URL the journey already visited (a landing the app caused, a redirect or a reload, is not one). A finding for each.
   forms re-entered   a form (its URL and field names) submitted again after it came back. A finding for each.
   late walls         a permission wall at step 2 or later: the person has already spent the steps before it. A finding for each.
 
@@ -52,9 +52,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 SCHEMA = "qa-flow/flow/1"
-ACTIONS = frozenset({"navigate", "click", "submit", "back", "reload", "redirect", "modal-open", "tab-open"})
-# A reload or a redirect puts the person on a URL again without their having gone back to it.
-NOT_A_BACKTRACK = frozenset({"reload", "redirect"})
+# A step is something the PERSON does. What the app does next (a redirect after a submit, a reload) is recorded on the row of the action that caused it, in
+# `then`, and is never a row of its own: otherwise a submit that redirects counts as two steps, and a journey is over its budget by the app's own plumbing.
+ACTIONS = frozenset({"navigate", "click", "submit", "back", "modal-open", "tab-open"})
+THEN = (None, "redirect", "reload")
 SWITCHES = frozenset({"modal-open", "tab-open"})
 # Class order of a ranked report: the walls and dead ends stop a person; the rest slow them.
 RANK = ("late-wall", "dead-end", "steps-over-budget", "journey-incomplete", "form-re-entered", "back-track", "wait-over-budget", "switches-over-budget")
@@ -69,12 +70,12 @@ SCHEMA_EXAMPLE = {
         "complete": True,
         "rows": [
             {"step": 1, "url": "/requests", "action": "navigate", "section": "requests", "settled_ms": 380, "spinner": False, "status": 200,
-             "forward_actions": 3, "terminal": False, "denied": False, "form": None},
+             "forward_actions": 3, "terminal": False, "denied": False, "form": None, "then": None},
             {"step": 2, "url": "/requests/new", "action": "click", "section": "requests", "settled_ms": 410, "spinner": False, "status": 200,
              "forward_actions": 1, "terminal": False, "denied": False,
-             "form": {"url": "/requests/new", "fields": ["title", "details"], "outcome": "advanced"}},
+             "form": {"url": "/requests/new", "fields": ["title", "details"], "outcome": "advanced"}, "then": None},
             {"step": 3, "url": "/requests/42", "action": "submit", "section": "requests", "settled_ms": 1900, "spinner": True, "status": 200,
-             "forward_actions": 0, "terminal": True, "denied": False, "form": None},
+             "forward_actions": 0, "terminal": True, "denied": False, "form": None, "then": "redirect"},
         ],
     }],
 }
@@ -114,28 +115,39 @@ class Result:
 # ---------------------------------------------------------------------------------------------
 
 _BUDGET_LINE = re.compile(r"^\s*(?:[-*>]\s*)?\**\s*budget\s*:?\s*\**\s*:?\s*(.*)$", re.I)
-_PAIR = re.compile(r"([a-z]+)\s*=\s*([0-9.]+)(ms|s)?(?![a-z])", re.I)   # the unit is attached to the number: `4 steps` is not `4 s`
+_NUMBER = r"[0-9]+(?:\.[0-9]+)?"
+# A number is digits, optionally a point and more digits: `.` alone, `3.` and `.5` are not numbers. The unit is attached to it (`4 steps` is not `4 s`).
+_PAIR = re.compile(rf"([a-z]+)\s*=\s*({_NUMBER})(ms|s)?(?![a-z0-9.])", re.I)
+_HEADING = re.compile(r"^(#+)\s+(.*?)\s*#*\s*$")
+
+
+def _headings(lines: list[str], heading: str) -> list[int]:
+    return [i for i, line in enumerate(lines) if (m := _HEADING.match(line)) and m.group(2) == heading]
 
 
 def _section(text: str, heading: str) -> list[str] | None:
     """The lines under `heading` (an exact heading line) up to the next heading of the same or a higher level; None when no such heading."""
     lines = text.splitlines()
-    for i, line in enumerate(lines):
-        m = re.match(r"^(#+)\s+(.*?)\s*#*\s*$", line)
-        if m and m.group(2) == heading:
-            level = len(m.group(1))
-            out = []
-            for nxt in lines[i + 1:]:
-                n = re.match(r"^(#+)\s", nxt)
-                if n and len(n.group(1)) <= level:
-                    break
-                out.append(nxt)
-            return out
-    return None
+    found = _headings(lines, heading)
+    if not found:
+        return None
+    level = len(_HEADING.match(lines[found[0]]).group(1))
+    out = []
+    for nxt in lines[found[0] + 1:]:
+        n = re.match(r"^(#+)\s", nxt)
+        if n and len(n.group(1)) <= level:
+            break
+        out.append(nxt)
+    return out
 
 
 def parse_budget(text: str, heading: str) -> tuple[Budget | None, str | None]:
     """`(budget, None)` or `(None, why)`. `Budget: steps=8 wait=3s [switches=3]` inside the journey's section, exactly one, nothing undeclared."""
+    from decimal import Decimal
+
+    count = len(_headings(text.splitlines(), heading))
+    if count > 1:
+        return None, f"has its heading `{heading}` {count} times in the journey document: a journey heading is unique, or the second one's budget is never read"
     section = _section(text, heading)
     if section is None:
         return None, f"no heading `{heading}` in the journey document, so the journey is declared nowhere"
@@ -147,13 +159,24 @@ def parse_budget(text: str, heading: str) -> tuple[Budget | None, str | None]:
         return None, f"declares {len(marked)} `Budget:` lines: one journey, one budget"
     if not lines:
         return None, f"`{marked[0].strip()}` has no `steps=` and `wait=` values"
-    seen: dict[str, float] = {}
-    for key, value, unit in _PAIR.findall(lines[0].group(1)):
+    rest = lines[0].group(1)
+    leftover = _PAIR.sub(" ", rest).strip(" ,;\t")
+    if leftover:
+        return None, f"its `Budget:` line has text this budget does not understand: `{leftover}` (limits are `steps=8`, `wait=3s`, `switches=3`)"
+    seen: dict[str, int] = {}
+    for key, value, unit in _PAIR.findall(rest):
         key = key.lower()
         if key in seen:
             return None, f"declares `{key}` twice in its budget"
         if key == "wait":
-            seen[key] = float(value) * (1 if unit.lower() == "ms" else 1000) if unit else float("nan")
+            if not unit:
+                return None, "`wait=` needs a unit, `s` or `ms` (for example `wait=3s`)"
+            ms = Decimal(value) * (1 if unit.lower() == "ms" else 1000)
+            if ms != ms.to_integral_value():
+                return None, f"`wait={value}{unit}` is not a whole number of milliseconds ({ms} ms)"
+            if ms < 1:
+                return None, f"`wait={value}{unit}` is less than 1 ms, which is not a budget"
+            seen[key] = int(ms)
         elif key in ("steps", "switches"):
             if unit or "." in value:
                 return None, f"`{key}` must be a whole number, got `{value}{unit or ''}`"
@@ -162,14 +185,9 @@ def parse_budget(text: str, heading: str) -> tuple[Budget | None, str | None]:
             return None, f"declares `{key}`, which is not a budget limit (steps, wait, switches)"
     if "steps" not in seen or "wait" not in seen:
         return None, "its budget needs both `steps=` and `wait=` (for example `Budget: steps=8 wait=3s`)"
-    if seen["wait"] != seen["wait"]:
-        return None, "`wait=` needs a unit, `s` or `ms` (for example `wait=3s`)"
-    if seen["steps"] < 1 or seen["wait"] <= 0:
-        return None, "a budget of zero steps or zero wait is not a budget"
-    unknown = set(seen) - {"steps", "wait", "switches"}
-    if unknown:
-        return None, f"declares {sorted(unknown)}, which is not a budget limit"
-    return Budget(int(seen["steps"]), int(seen["wait"]), int(seen["switches"]) if "switches" in seen else None), None
+    if seen["steps"] < 1:
+        return None, "a budget of zero steps is not a budget"
+    return Budget(seen["steps"], seen["wait"], seen.get("switches")), None
 
 
 # ---------------------------------------------------------------------------------------------
@@ -226,7 +244,11 @@ def validate(doc: dict) -> list[str]:
             if not isinstance(row.get("url"), str) or not row["url"].strip():
                 problems.append(f"{at}.url must be a non-empty string")
             if row.get("action") not in ACTIONS:
-                problems.append(f"{at}.action must be one of {', '.join(sorted(ACTIONS))}, got {row.get('action')!r}")
+                hint = (": a redirect or a reload is recorded as `then` on the row of the action that caused it, never as a row of its own"
+                        if row.get("action") in ("redirect", "reload") else "")
+                problems.append(f"{at}.action must be one of {', '.join(sorted(ACTIONS))}, got {row.get('action')!r}{hint}")
+            if "then" not in row or row["then"] not in THEN:
+                problems.append(f"{at}.then must be null, \"redirect\" or \"reload\": what the app did after the action, never a step")
             sm = row.get("settled_ms")
             if sm is not None and (not _is_int(sm) or sm < 0):
                 problems.append(f"{at}.settled_ms must be a whole number of milliseconds, or null when it was not measured")
@@ -316,8 +338,13 @@ def judge_journey(journey: dict, budget: Budget) -> tuple[list[Finding], dict, l
                 + (" (a spinner showed)" if row["spinner"] else " (no spinner showed)"), settled_ms=ms, budget_ms=budget.wait_ms,
                 over_ms=ms - budget.wait_ms, spinner=row["spinner"])
 
+    # 7 first, because a wall is reported once: a late wall with no forward action is a late wall, not also a dead end.
+    walls = [r for r in rows if r["denied"]]
+    late = [r for r in walls if r["step"] >= 2]
+    late_steps = {r["step"] for r in late}
+
     # 4. dead ends
-    dead = [r for r in rows if not r["terminal"] and r["forward_actions"] == 0]
+    dead = [r for r in rows if not r["terminal"] and r["forward_actions"] == 0 and r["step"] not in late_steps]
     for row in dead:
         add("dead-end", row, "a page that is not the journey's end and offers no forward action", forward_actions=0)
 
@@ -326,7 +353,7 @@ def judge_journey(journey: dict, budget: Budget) -> tuple[list[Finding], dict, l
     backs: list[int] = []
     for row in rows:
         key = _norm(row["url"])
-        if key in visited and row["action"] not in NOT_A_BACKTRACK:
+        if key in visited and row["then"] is None:
             backs.append(row["step"])
             add("back-track", row, f"returns to {key}, first visited at step {visited[key]}", first_step=visited[key])
         visited.setdefault(key, row["step"])
@@ -347,8 +374,6 @@ def judge_journey(journey: dict, budget: Budget) -> tuple[list[Finding], dict, l
         forms[sig] = row
 
     # 7. late permission walls
-    walls = [r for r in rows if r["denied"]]
-    late = [r for r in walls if r["step"] >= 2]
     for row in late:
         add("late-wall", row, f"a permission wall at step {row['step']}, after {row['step'] - 1} step(s) were spent", wasted_steps=row["step"] - 1)
 
@@ -374,7 +399,7 @@ def judge(doc: dict, root: Path) -> Result:
             continue
         name = journey.get("journey", "?")
         path = (root / journey["document"]).resolve()
-        if not str(path).startswith(str(root.resolve())):
+        if not path.is_relative_to(root.resolve()):
             problems.append(f"{name}: the document `{journey['document']}` is outside the project root")
             continue
         try:
@@ -444,6 +469,9 @@ def main(argv: list[str] | None = None) -> int:
     except Unusable as err:
         print(f"UNUSABLE: {err}", file=sys.stderr)
         return 2
+    except Exception as err:  # noqa: BLE001 -- exit 1 means "findings"; a crash that exits 1 would read as a finding, so it exits 2 and says what it was
+        print(f"UNUSABLE: unexpected {type(err).__name__}: {err}", file=sys.stderr)
+        return 2
     if a.json:
         print(json.dumps({"metrics": result.metrics, "unverified": result.unverified, "findings": [f.__dict__ for f in result.findings]}, indent=2))
     else:
@@ -470,7 +498,7 @@ def selftest() -> int:
 
     def row(step: int, url: str = "/a", **over) -> dict:
         base = {"step": step, "url": url, "action": "click", "section": "s", "settled_ms": 300, "spinner": False, "status": 200, "forward_actions": 2,
-                "terminal": False, "denied": False, "form": None}
+                "terminal": False, "denied": False, "form": None, "then": None}
         base.update(over)
         return base
 
@@ -521,8 +549,16 @@ def selftest() -> int:
     bt = journey([row(1, "/a"), row(2, "/b"), row(3, "/a", action="back"), row(4, "/c")])
     check("a landing on an earlier URL is a back-track naming the first visit",
           kinds(bt) == ["back-track"] and judge_journey(bt, BUDGET)[0][0].evidence["first_step"] == 1, kinds(bt))
-    check("a reload is not a back-track", kinds(journey([row(1, "/a"), row(2, "/a", action="reload")])) == [], "")
-    check("a redirect is not a back-track", kinds(journey([row(1, "/a"), row(2, "/a", action="redirect")])) == [], "")
+    check("a reload the app caused is not a back-track", kinds(journey([row(1, "/a"), row(2, "/a", action="submit", then="reload")])) == [], "")
+    check("a redirect the app caused is not a back-track", kinds(journey([row(1, "/a"), row(2, "/b", action="submit", then="redirect")])) == [], "")
+    check("a redirect that lands on an EARLIER page is still the app's doing, not a back-track",
+          kinds(journey([row(1, "/list"), row(2, "/new"), row(3, "/list", action="submit", then="redirect")])) == [], "")
+    # A step is something the person does: a submit that redirects is ONE step, not two.
+    sub = journey([row(1, "/a"), row(2, "/new", action="submit", then="redirect"), row(3, "/done")])
+    check("a submit followed by a redirect counts as 1 step (3 rows, 3 steps, never 4)", judge_journey(sub, Budget(3, 2000))[1]["steps"] == 3
+          and kinds(sub, Budget(3, 2000)) == [], judge_journey(sub, Budget(3, 2000))[1])
+    check("a journey is not over budget by the app's own redirects", kinds(journey([row(i, f"/p{i}", action="submit", then="redirect") for i in range(1, 4)]),
+                                                                          Budget(3, 2000)) == [], "")
     check("a trailing slash and a fragment do not make a new page", kinds(journey([row(1, "/a"), row(2, "/b"), row(3, "/a/#top")])) == ["back-track"], "")
     check("a different query is a different page", kinds(journey([row(1, "/a?x=1"), row(2, "/a?x=2")])) == [], "")
 
@@ -541,6 +577,11 @@ def selftest() -> int:
     late = journey([row(1, "/a"), row(2, "/b"), row(3, "/admin", denied=True, status=403, forward_actions=1)])
     lf = [f for f in judge_journey(late, BUDGET)[0] if f.measurement == "late-wall"]
     check("a wall at step 3 is a late wall naming the steps spent", len(lf) == 1 and lf[0].evidence["wasted_steps"] == 2, [f.detail for f in lf])
+    walled = journey([row(1, "/a"), row(2, "/admin", denied=True, status=403, forward_actions=0), row(3, "/c")])
+    check("a late wall with no forward action is reported ONCE, as a late wall, not also as a dead end", kinds(walled) == ["late-wall"], kinds(walled))
+    check("a wall at step 1 with no forward action is a dead end, reported once",
+          kinds(journey([row(1, "/admin", denied=True, status=403, forward_actions=0), row(2, "/b")])) == ["dead-end"],
+          kinds(journey([row(1, "/admin", denied=True, status=403, forward_actions=0), row(2, "/b")])))
     check("a wall at step 1 is not late", "late-wall" not in kinds(journey([row(1, "/admin", denied=True, status=403, forward_actions=1), row(2, "/b")])), "")
 
     # ranking
@@ -555,6 +596,9 @@ def selftest() -> int:
     b, why = parse_budget(good, "Journey")
     check("a budget is read from its own section only", b == Budget(8, 3000) and why is None, (b, why))
     check("a budget in milliseconds and with switches is read", parse_budget("## J\nBudget: steps=4 wait=500ms switches=2\n", "J")[0] == Budget(4, 500, 2), "")
+    check("a wait of exactly 1 ms is a budget", parse_budget("## J\nBudget: steps=1 wait=1ms\n", "J")[0] == Budget(1, 1), "")
+    check("a fractional second that is whole milliseconds is a budget", parse_budget("## J\nBudget: steps=1 wait=0.5s\n", "J")[0] == Budget(1, 500), "")
+    check("separators between limits are accepted", parse_budget("## J\nBudget: steps=4, wait=2s; switches=1\n", "J")[0] == Budget(4, 2000, 1), "")
     check("a bulleted, bold Budget line is read", parse_budget("## J\n- **Budget:** steps=4 wait=2s\n", "J")[0] == Budget(4, 2000), "")
     for label, text, needle in (
             ("no Budget line", "## J\ntext\n", "declares no `Budget:`"),
@@ -568,8 +612,19 @@ def selftest() -> int:
             ("a repeated limit", "## J\nBudget: steps=4 steps=5 wait=2s\n", "twice"),
             ("two Budget lines", "## J\nBudget: steps=4 wait=2s\nBudget: steps=5 wait=2s\n", "one journey, one budget"),
             ("the budget of ANOTHER journey", "## J\ntext\n\n## K\nBudget: steps=4 wait=2s\n", "declares no `Budget:`"),
-            ("a heading that is not in the document", "## K\nBudget: steps=4 wait=2s\n", "declared nowhere")):
-        got = parse_budget(text, "J")
+            ("a heading that is not in the document", "## K\nBudget: steps=4 wait=2s\n", "declared nowhere"),
+            ("a lone point as the wait number", "## J\nBudget: steps=8 wait=.s\n", "does not understand"),
+            ("a point with no digits after it", "## J\nBudget: steps=8 wait=3.s\n", "does not understand"),
+            ("a wait of a tenth of a millisecond", "## J\nBudget: steps=8 wait=0.0001s\n", "whole number of milliseconds"),
+            ("a wait of half a millisecond", "## J\nBudget: steps=8 wait=0.5ms\n", "whole number of milliseconds"),
+            ("a wait of zero", "## J\nBudget: steps=8 wait=0s\n", "less than 1 ms"),
+            ("leftover text on the line", "## J\nBudget: steps=8 wait=3s junk=zz\n", "does not understand"),
+            ("leftover words on the line", "## J\nBudget: steps=8 wait=3s approximately\n", "does not understand"),
+            ("a duplicated journey heading", "## J\nBudget: steps=4 wait=2s\n\n## J\nBudget: steps=9 wait=9s\n", "2 times")):
+        try:
+            got = parse_budget(text, "J")
+        except Exception as exc:  # noqa: BLE001 -- a crash in the parser is a failed check, not an aborted selftest
+            got = (None, f"raised {exc!r}")
         check(f"{label} is refused", got[0] is None and needle in (got[1] or ""), got)
 
     # the document and the refusals
@@ -601,6 +656,19 @@ def selftest() -> int:
             check("a document outside the project root is refused", False, "judged")
         except Unusable as err:
             check("a document outside the project root is refused", "outside the project root" in str(err), str(err))
+    # A sibling whose name merely STARTS with the root's name is outside it (a string prefix test says it is inside).
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        (base / "repo").mkdir()
+        (base / "repo-evil").mkdir()
+        (base / "repo-evil" / "j.md").write_text(good, encoding="utf-8")
+        sib = copy.deepcopy(doc)
+        sib["journeys"][0]["document"] = "../repo-evil/j.md"
+        try:
+            judge(sib, base / "repo")
+            check("a sibling directory that shares the root's name as a prefix is refused", False, "judged")
+        except Unusable as err:
+            check("a sibling directory that shares the root's name as a prefix is refused", "outside the project root" in str(err), str(err))
 
     def refused(label: str, mutate, needle: str) -> None:
         bad = copy.deepcopy(doc)
@@ -609,6 +677,10 @@ def selftest() -> int:
         check(label, any(needle in p for p in problems), problems)
 
     refused("a step out of order is refused", lambda d: d["journeys"][0]["rows"][1].update(step=5), "steps are the actions in order")
+    refused("`redirect` as an action is refused, with where it belongs", lambda d: d["journeys"][0]["rows"][0].update(action="redirect"), "recorded as `then`")
+    refused("`reload` as an action is refused", lambda d: d["journeys"][0]["rows"][0].update(action="reload"), "recorded as `then`")
+    refused("an unknown `then` is refused", lambda d: d["journeys"][0]["rows"][0].update(then="teleport"), "then must be null")
+    refused("a row with no `then` is refused", lambda d: d["journeys"][0]["rows"][0].pop("then"), "then must be null")
     refused("an unknown action is refused", lambda d: d["journeys"][0]["rows"][0].update(action="teleport"), "action must be one of")
     refused("a negative settled time is refused", lambda d: d["journeys"][0]["rows"][0].update(settled_ms=-1), "settled_ms")
     refused("a string settled time is refused", lambda d: d["journeys"][0]["rows"][0].update(settled_ms="fast"), "settled_ms")
@@ -653,6 +725,20 @@ def selftest() -> int:
     check("an unmeasured wait fails the run (exit 1), never passes it",
           run_main({"schema": SCHEMA, "journeys": [journey([row(1, "/a", settled_ms=None), row(2, "/b")])]}, good) == 1, "")
     check("a journey with no budget exits 2", run_main(doc, "## Journey\ntext\n") == 2, "")
+    check("`wait=.s` exits 2, never as a crash that reads as a finding", run_main(doc, "## Journey\nBudget: steps=8 wait=.s\n") == 2, "")
+    original = globals()["judge"]
+
+    def exploding(*args, **kwargs):
+        raise ValueError("unexpected")
+
+    globals()["judge"] = exploding
+    try:
+        crashed = run_main(doc, good)
+    except Exception as exc:  # noqa: BLE001 -- the selftest reports a crash as a failed check, it does not abort
+        crashed = f"raised {exc!r}"
+    finally:
+        globals()["judge"] = original
+    check("an unexpected exception exits 2, never 1 (which means findings)", crashed == 2, crashed)
     check("a malformed document exits 2", run_main({"schema": SCHEMA, "journeys": [{"journey": "x"}]}, good) == 2, "")
 
     check("the schema example is itself a valid document", validate(copy.deepcopy(SCHEMA_EXAMPLE)) == [], validate(copy.deepcopy(SCHEMA_EXAMPLE)))

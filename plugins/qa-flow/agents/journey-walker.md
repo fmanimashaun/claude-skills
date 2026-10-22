@@ -104,7 +104,8 @@ object per journey document heading you walked, with `journey`, `persona`, `docu
 | field | what to record |
 |---|---|
 | `url`, `status` | the page you landed on and its HTTP status |
-| `action` | `navigate`, `click`, `submit`, `back`, `reload`, `redirect`, `modal-open` or `tab-open`: what you did, not what the app did next |
+| `action` | `navigate`, `click`, `submit`, `back`, `modal-open` or `tab-open`: what **you** did. A step is something the person does, so a redirect or a reload is **never a row of its own** |
+| `then` | `null`, or `redirect` / `reload`: what the app did right after that action, recorded on the row of the action that caused it. A submit that redirects is one row (one step) with `then: "redirect"`, and `url` is the page you ended on |
 | `section` | the top-level navigation section the page sits in (the rail or header item it highlights); `null` if it has none |
 | `settled_ms` | milliseconds from the action to the first moment with no request in flight and no DOM change for 500 ms, read from the browser; `null` when you could not measure it (it is reported as not measured, never as a pass) |
 | `spinner` | a progress indicator (`role=progressbar`, `aria-busy="true"` or a spinning icon) was visible during the wait |

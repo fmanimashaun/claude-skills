@@ -55,21 +55,21 @@ GUARD = Guard(
         ),
         Mutation(
             "the journey's declared end counts as a dead end",
-            '    dead = [r for r in rows if not r["terminal"] and r["forward_actions"] == 0]',
-            '    dead = [r for r in rows if r["forward_actions"] == 0]',
+            '    dead = [r for r in rows if not r["terminal"] and r["forward_actions"] == 0 and r["step"] not in late_steps]',
+            '    dead = [r for r in rows if r["forward_actions"] == 0 and r["step"] not in late_steps]',
             'the declared end with no forward action is not a dead end',
         ),
         Mutation(
             'a dead end is never reported',
-            '    dead = [r for r in rows if not r["terminal"] and r["forward_actions"] == 0]',
+            '    dead = [r for r in rows if not r["terminal"] and r["forward_actions"] == 0 and r["step"] not in late_steps]',
             '    dead = []',
             'a page with no forward action that is not the end is a dead end',
         ),
         Mutation(
             'a reload counts as a back-track',
-            '        if key in visited and row["action"] not in NOT_A_BACKTRACK:',
+            '        if key in visited and row["then"] is None:',
             '        if key in visited:',
-            'a reload is not a back-track',
+            'a reload the app caused is not a back-track',
         ),
         Mutation(
             'a trailing slash makes a new page',
@@ -127,8 +127,8 @@ GUARD = Guard(
         ),
         Mutation(
             "another journey's Budget line is read",
-            '                if n and len(n.group(1)) <= level:',
-            '                if False:',
+            '        if n and len(n.group(1)) <= level:',
+            '        if False:',
             'the budget of ANOTHER journey is refused',
         ),
         Mutation(
@@ -139,8 +139,8 @@ GUARD = Guard(
         ),
         Mutation(
             'a wait with no unit is read as seconds',
-            'if unit else float("nan")',
-            'if unit else float(value) * 1000',
+            '            if not unit:',
+            '            if False:',
             'wait with no unit is refused',
         ),
         Mutation(
@@ -163,7 +163,7 @@ GUARD = Guard(
         ),
         Mutation(
             'a journey document outside the project root is read',
-            '        if not str(path).startswith(str(root.resolve())):',
+            '        if not path.is_relative_to(root.resolve()):',
             '        if False:',
             'a document outside the project root is refused',
         ),
@@ -175,9 +175,81 @@ GUARD = Guard(
         ),
         Mutation(
             'an unusable document exits 1, not 2',
-            '        return 2\n    if a.json:',
-            '        return 1\n    if a.json:',
+            '        print(f"UNUSABLE: {err}", file=sys.stderr)\n        return 2',
+            '        print(f"UNUSABLE: {err}", file=sys.stderr)\n        return 1',
             'a journey with no budget exits 2',
+        ),
+        Mutation(
+            "a sibling directory that shares the root's name as a prefix is read",
+            '        if not path.is_relative_to(root.resolve()):',
+            '        if not str(path).startswith(str(root.resolve())):',
+            "a sibling directory that shares the root's name as a prefix is refused",
+        ),
+        Mutation(
+            'an unexpected exception exits 1, which reads as findings',
+            '        print(f"UNUSABLE: unexpected {type(err).__name__}: {err}", file=sys.stderr)\n        return 2',
+            '        print(f"UNUSABLE: unexpected {type(err).__name__}: {err}", file=sys.stderr)\n        return 1',
+            'an unexpected exception exits 2, never 1',
+        ),
+        Mutation(
+            'an unexpected exception is not caught, so a crash escapes the exit-code contract',
+            '    except Exception as err:  # noqa: BLE001',
+            '    except SystemExit as err:  # noqa: BLE001',
+            'an unexpected exception exits 2, never 1',
+        ),
+        Mutation(
+            'a lone point is a number, so `wait=.s` parses and crashes',
+            '_NUMBER = r"[0-9]+(?:\\.[0-9]+)?"',
+            '_NUMBER = r"[0-9.]+"',
+            'a lone point as the wait number is refused',
+        ),
+        Mutation(
+            'a fractional millisecond is accepted',
+            '            if ms != ms.to_integral_value():',
+            '            if False:',
+            'a wait of half a millisecond is refused',
+        ),
+        Mutation(
+            'a wait under one millisecond is accepted',
+            '            if ms < 1:',
+            '            if False:',
+            'a wait of zero is refused',
+        ),
+        Mutation(
+            'leftover text on a Budget line is ignored',
+            '    if leftover:',
+            '    if False:',
+            'leftover text on the line is refused',
+        ),
+        Mutation(
+            'a journey heading that appears twice is accepted, so the second budget is never read',
+            '    if count > 1:',
+            '    if False:',
+            'a duplicated journey heading is refused',
+        ),
+        Mutation(
+            'a late wall with no forward action is reported twice (also as a dead end)',
+            ' and r["step"] not in late_steps]',
+            ']',
+            'a late wall with no forward action is reported ONCE',
+        ),
+        Mutation(
+            'an unknown `then` is accepted',
+            '            if "then" not in row or row["then"] not in THEN:',
+            '            if False:',
+            'an unknown `then` is refused',
+        ),
+        Mutation(
+            '`redirect` is accepted as an action of its own',
+            'ACTIONS = frozenset({"navigate", "click", "submit", "back", "modal-open", "tab-open"})',
+            'ACTIONS = frozenset({"navigate", "click", "submit", "back", "modal-open", "tab-open", "redirect", "reload"})',
+            '`redirect` as an action is refused',
+        ),
+        Mutation(
+            'a redirect counts as a step of its own',
+            '    steps = len(rows)',
+            '    steps = len(rows) + sum(1 for r in rows if r["then"])',
+            'a submit followed by a redirect counts as 1 step',
         ),
     ),
 )
