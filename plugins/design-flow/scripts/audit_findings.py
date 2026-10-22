@@ -87,8 +87,8 @@ _NEEDS_JOURNEY = "needs a declared flow or a judgement: no check yet (#2251)"
 NOT_MEASURED_TEMPLATE = {
     **{r: _NEEDS_JOURNEY for r in ("A29", "A30", "A33")},
     "A32": "needs a driven journey: the back link's state depends on the step before (#2229)",
-    **{f"A{n}": "the mock-up record has no check-answers or confirmation kind to declare (#2310)" for n in range(35, 43)},
-    **{f"A{n}": "the mock-up record has no task-list kind to declare (#2310)" for n in range(43, 53)},
+    **{f"A{n}": "a check-answers or confirmation page is declared (`multi-step: check-answers|confirmation`, #2310), but its rows are not built yet (#2327)" for n in range(35, 43)},
+    **{f"A{n}": "a task-list page is declared (`multi-step: task-list`, #2310), but its rows are not built yet (#2327)" for n in range(43, 53)},
     "A58": "needs a driver for a partial update (#2229)",
 }
 NEEDS_SCREENS = {r: "judged only for a screen whose record declares its template, via `--screens` (#2251); none did in this run"

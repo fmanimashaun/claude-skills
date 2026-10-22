@@ -692,13 +692,13 @@ def load_vocabulary() -> dict | None:
     except (OSError, ValueError):
         return None
     ok = (isinstance(data, dict) and all(isinstance(data.get(k), list) and data[k] and all(isinstance(x, str) and x for x in data[k])
-                                         for k in ("templates", "system_subkinds", "states"))
+                                         for k in ("templates", "system_subkinds", "multi_step_subkinds", "states"))
           and isinstance(data.get("nav_max_level"), int) and data["nav_max_level"] >= 1)
     return data if ok else None
 
 
 def template_problems(rel: str, fields: dict[str, str], vocab: dict) -> list[str]:
-    """`Template: <name>`, or `Template: system: <sub-kind>`, from the vocabulary."""
+    """`Template: <name>`, `Template: system: <sub-kind>`, or `Template: multi-step: <sub-kind>` (optional), from the vocabulary."""
     value = fields.get("Template", "")
     if not value:
         return [f"{rel}: no `Template:` line: name the page template this screen is ({', '.join(vocab['templates'])})"]
@@ -708,8 +708,11 @@ def template_problems(rel: str, fields: dict[str, str], vocab: dict) -> list[str
     if name == "system":
         if sub not in vocab["system_subkinds"]:
             return [f"{rel}: Template `system` takes a sub-kind, `system: <{'|'.join(vocab['system_subkinds'])}>`, got {value!r}"]
+    elif name == "multi-step":
+        if sub and sub not in vocab["multi_step_subkinds"]:
+            return [f"{rel}: Template `multi-step` takes no sub-kind (a question page) or one of `multi-step: <{'|'.join(vocab['multi_step_subkinds'])}>`, got {value!r}"]
     elif sub:
-        return [f"{rel}: only `system` takes a sub-kind; got {value!r}"]
+        return [f"{rel}: only `system` and `multi-step` take a sub-kind; got {value!r}"]
     return []
 
 
@@ -1014,7 +1017,8 @@ def selftest() -> int:
         code, msg = with_record(GOOD.replace("Template: list", "Template: List"))
         check_that("#2226: a template's case matters (the vocabulary is exact)", code == 1, msg)
         for tmpl in ("list", "detail", "create-edit", "multi-step", "dashboard", "settings", "search-results", "sign-in",
-                     "system: not-found", "system: no-permission", "system: error", "system: maintenance"):
+                     "system: not-found", "system: no-permission", "system: error", "system: maintenance",
+                     "multi-step: check-answers", "multi-step: confirmation", "multi-step: task-list"):
             code, msg = with_record(GOOD.replace("Template: list", f"Template: {tmpl}"))
             check_that(f"#2226 CONTROL: Template `{tmpl}` is accepted", code == 0, msg)
         code, msg = with_record(GOOD.replace("Template: list", "Template: system"))
@@ -1022,11 +1026,15 @@ def selftest() -> int:
         code, msg = with_record(GOOD.replace("Template: list", "Template: system: gone"))
         check_that("#2226: `system` with an unknown sub-kind is held", code == 1 and any("sub-kind" in m for m in msg), msg)
         code, msg = with_record(GOOD.replace("Template: list", "Template: list: compact"))
-        check_that("#2226: a sub-kind on a template that takes none is held", code == 1 and any("only `system`" in m for m in msg), msg)
+        check_that("#2226: a sub-kind on a template that takes none is held", code == 1 and any("only `system` and `multi-step`" in m for m in msg), msg)
+        code, msg = with_record(GOOD.replace("Template: list", "Template: multi-step: wizard"))
+        check_that("#2310: `multi-step` with an unknown sub-kind is held", code == 1 and any("multi-step" in m and "check-answers" in m for m in msg), msg)
+        code, msg = with_record(GOOD.replace("Template: list", "Template: check-answers"))
+        check_that("#2310: a sub-kind is not a template of its own (the nine stay nine)", code == 1, msg)
         # A missing or corrupt vocabulary refuses; it never lets a record through unchecked.
         real = globals()["VOCABULARY"]
         try:
-            for label, text in (("missing", None), ("not JSON", "{"), ("no templates", '{"templates": [], "system_subkinds": ["x"], "states": ["y"], "nav_max_level": 3}')):
+            for label, text in (("missing", None), ("not JSON", "{"), ("no templates", '{"templates": [], "system_subkinds": ["x"], "multi_step_subkinds": ["z"], "states": ["y"], "nav_max_level": 3}'), ("no multi-step sub-kinds", '{"templates": ["list"], "system_subkinds": ["x"], "multi_step_subkinds": [], "states": ["y"], "nav_max_level": 3}')):
                 bad = root / "vocab.json"
                 bad.unlink(missing_ok=True)
                 if text is not None:
