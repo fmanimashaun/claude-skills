@@ -47,6 +47,16 @@ def git(root: Path, *args: str) -> tuple[int, str]:
     return r.returncode, r.stdout.strip()
 
 
+def commit_time(root: Path, ref: str) -> tuple[int, str] | None:
+    """`(epoch seconds, ISO date)` of a commit, or None. The EPOCH is what is compared: two ISO strings carry their own
+    UTC offsets, and `10:00+05:00` sorts after `08:00+00:00` as text though it is three hours EARLIER (#2303 review)."""
+    rc, out = git(root, "log", "-1", "--format=%ct %cI", ref)
+    parts = out.split()
+    if rc != 0 or len(parts) != 2 or not parts[0].isdigit():
+        return None
+    return int(parts[0]), parts[1]
+
+
 def is_arm(root: Path, base: str) -> bool:
     branch = os.environ.get("GITHUB_HEAD_REF") or git(root, "rev-parse", "--abbrev-ref", "HEAD")[1]
     if ARM_BRANCH.match(branch):
@@ -72,17 +82,18 @@ def judge(root: Path) -> tuple[int, str]:
     if not tags:
         return 0, "no v* tag: nothing has been promoted, so nothing is stale"
     tag = tags.splitlines()[0]
-    rc, tag_date = git(root, "log", "-1", "--format=%cI", f"{tag}^{{commit}}")
-    if rc != 0 or not tag_date:
+    tag_at = commit_time(root, f"{tag}^{{commit}}")
+    if tag_at is None:
         return 1, f"cannot read the commit date of the newest tag {tag}"
-    rc, sha_date = git(root, "log", "-1", "--format=%cI", f"{sha}^{{commit}}")
-    if rc != 0 or not sha_date:
+    sha_at = commit_time(root, f"{sha}^{{commit}}")
+    if sha_at is None:
         return 1, f"STATUS.md names sha {sha}, which this clone does not have: it cannot be dated, so freshness cannot be shown"
-    if sha_date < tag_date:
-        return 1, (f"STATUS.md is older than the last promotion: it was written at sha {sha} ({sha_date[:10]}, _Updated {date}) "
-                   f"and the newest tag {tag} is dated {tag_date[:10]}. Refresh docs/brain/STATUS.md (and record the decisions "
+    (sha_ts, sha_date), (tag_ts, tag_date) = sha_at, tag_at
+    if sha_ts < tag_ts:
+        return 1, (f"STATUS.md is older than the last promotion: it was written at sha {sha} ({sha_date}, _Updated {date}) "
+                   f"and the newest tag {tag} is dated {tag_date}. Refresh docs/brain/STATUS.md (and record the decisions "
                    f"made since) before arming or promoting")
-    return 0, f"STATUS.md is current: sha {sha} ({sha_date[:10]}) is not older than {tag} ({tag_date[:10]})"
+    return 0, f"STATUS.md is current: sha {sha} ({sha_date}) is not older than {tag} ({tag_date})"
 
 
 def selftest() -> int:
@@ -138,6 +149,24 @@ def selftest() -> int:
     (r / STATUS).unlink()
     rc, out = run(r)
     check("a missing STATUS is refused", rc == 1 and "does not exist" in out, (rc, out))
+
+    # MIXED UTC OFFSETS (#2303 review): compare instants, not text. 10:00+05:00 is 05:00Z, EARLIER than a tag at 08:00Z.
+    mo = repo()
+    commit(mo, "a", "2026-09-01T10:00:00+00:00")
+    eastern_old = commit(mo, "b", "2026-09-10T10:00:00+05:00")      # 05:00Z
+    commit(mo, "t", "2026-09-10T08:00:00+00:00")
+    fixture_git.run(mo, "tag", "v1.0.0")                            # the tag is 08:00Z
+    status(mo, eastern_old, "2026-09-10")
+    rc, out = run(mo)
+    check("a STATUS at 10:00+05:00 (05:00Z) is OLDER than a tag at 08:00Z, though its text sorts later", rc == 1 and "older than the last promotion" in out, (rc, out))
+    mo2 = repo()
+    commit(mo2, "a", "2026-09-01T10:00:00+00:00")
+    commit(mo2, "t", "2026-09-10T10:00:00+05:00")
+    fixture_git.run(mo2, "tag", "v1.0.0")                           # the tag is 05:00Z
+    western_new = commit(mo2, "b", "2026-09-10T08:00:00+00:00")     # 08:00Z: later, though its text sorts earlier
+    status(mo2, western_new, "2026-09-10")
+    rc, out = run(mo2)
+    check("a STATUS at 08:00Z is NEWER than a tag at 10:00+05:00 (05:00Z), though its text sorts earlier", rc == 0, (rc, out))
 
     nt = repo()
     first = commit(nt, "a", "2026-09-01T10:00:00+00:00")

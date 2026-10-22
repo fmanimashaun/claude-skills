@@ -205,7 +205,8 @@
       ],
       "requires": [
         "python3",
-        "git"
+        "git",
+        "gh"
       ]
     },
     {

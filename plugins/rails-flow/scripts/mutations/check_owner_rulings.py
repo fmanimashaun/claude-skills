@@ -1,6 +1,6 @@
 """Mutation guard: check_owner_rulings (#2297). Declared here, run by scripts/mutation_check.py.
 
-The check refuses a PR that closes an issue carrying an owner ruling no D-NNN record mentions, and refuses
+The check refuses a PR that closes an issue carrying an OWNER's ruling no D-NNN `Refs` line records, and refuses
 (never passes) when gh is present but a read fails. Each mutation turns one refusal into a pass.
 """
 from mutation_types import Guard, Mutation  # noqa: F401
@@ -22,31 +22,61 @@ GUARD = Guard(
             '`owner, <date>` stops marking a ruling',
             '|\\bowner,\\s*\\d{4}-\\d{2}-\\d{2}\\b", re.I)',
             '", re.I)',
-            '`owner, <date>` in the issue body counts as a ruling',
+            '`owner, <date>` in the body of an issue the OWNER wrote counts as a ruling',
         ),
         Mutation(
             'an owner ruling in the issue body is not read',
-            '[(issue.get("createdAt", "")[:10], issue.get("body") or "")]',
-            '[("", "")]',
-            '`owner, <date>` in the issue body counts as a ruling',
+            '[(issue.get("createdAt", "")[:10], issue.get("body") or "")] if (issue.get("author") or {}).get("login") == owner else []',
+            '[]',
+            '`owner, <date>` in the body of an issue the OWNER wrote counts as a ruling',
+        ),
+        Mutation(
+            "a body any reporter wrote counts as the owner's",
+            'if (issue.get("author") or {}).get("login") == owner else []',
+            'if True else []',
+            '...but in the body of an issue a reporter wrote it is a quotation, not a ruling',
+        ),
+        Mutation(
+            "a comment from anyone counts as the owner's",
+            'for c in issue.get("comments", []) if c.get("authorAssociation") == "OWNER"]',
+            'for c in issue.get("comments", [])]',
+            "a reporter's comment quoting 'the owner decided' owes no record",
         ),
         Mutation(
             'every ruling counts as recorded',
-            '    return any(re.search(rf"#{issue}\\b", b) for b in blocks)',
-            '    return True',
+            '    for b in blocks:\n        for m in REFS_LINE.finditer(FENCE.sub("", b)):',
+            '    return True\n    for b in blocks:\n        for m in REFS_LINE.finditer(FENCE.sub("", b)):',
             'a closed issue with an owner ruling and no decision citing it is refused, naming the issue and the ruling',
         ),
         Mutation(
             '#50 is read as a mention of #5',
             'rf"#{issue}\\b"',
             'rf"#{issue}"',
-            'a block that mentions #50 does not record #5',
+            'a block that says Refs #50 does not record #5',
         ),
         Mutation(
-            'a mention outside DECISIONS.md records the ruling',
-            '    blocks = decision_blocks(decisions)\n',
-            '    blocks = decision_blocks(decisions) + ([(root / "docs/brain/STATUS.md").read_text()] if (root / "docs/brain/STATUS.md").exists() else [])\n',
-            'a mention outside DECISIONS.md does not record it',
+            'a Refs line inside a code fence records the ruling',
+            'REFS_LINE.finditer(FENCE.sub("", b))',
+            'REFS_LINE.finditer(b)',
+            'a `Refs #5` inside a code fence records nothing',
+        ),
+        Mutation(
+            'a Refs in the middle of a line records the ruling',
+            '^\\s*(?:[-*]\\s+)?\\**Refs',
+            '(?:[-*]\\s+)?\\**Refs',
+            'a `Refs #5` in the middle of a line is not a line of its own',
+        ),
+        Mutation(
+            'a passing mention anywhere in the block records the ruling',
+            '        for m in REFS_LINE.finditer(FENCE.sub("", b)):\n            if re.search(rf"#{issue}\\b", m.group(1)):',
+            '        for m in [None]:\n            if re.search(rf"#{issue}\\b", b):',
+            'a passing mention ("unlike #5") does not record it',
+        ),
+        Mutation(
+            'an owner that cannot be told passes',
+            '        if rc != 0 or not owner:\n            return 1,',
+            '        if False:\n            return 1,',
+            'with gh present, an owner that cannot be told REFUSES: a quotation cannot be told from a ruling',
         ),
         Mutation(
             'an issue that cannot be read passes',

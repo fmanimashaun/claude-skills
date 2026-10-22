@@ -14,13 +14,13 @@ GUARD = Guard(
     mutations=(
         Mutation(
             "a STATUS older than the last promotion passes",
-            "    if sha_date < tag_date:",
+            "    if sha_ts < tag_ts:",
             "    if False:",
             "a STATUS older than the last promotion is refused, and says so",
         ),
         Mutation(
             "a sha this clone does not have passes as fresh",
-            '    if rc != 0 or not sha_date:\n        return 1,',
+            '    if sha_at is None:\n        return 1,',
             '    if False:\n        return 1,',
             "a sha this clone does not have is refused, not passed",
         ),
@@ -65,6 +65,18 @@ GUARD = Guard(
             "    return rc == 0 and any(RELEASE_HEADING.match(line) for line in diff.splitlines())",
             "    return False",
             "--when arm also fires on a diff that adds a `(release vX)` heading, whatever the branch is called",
+        ),
+        Mutation(
+            "the instants are compared as ISO text, so a UTC offset decides the order",
+            "    if sha_ts < tag_ts:",
+            "    if sha_date < tag_date:",
+            "a STATUS at 10:00+05:00 (05:00Z) is OLDER than a tag at 08:00Z, though its text sorts later",
+        ),
+        Mutation(
+            "the instants are compared as ISO text, so a later STATUS in a western offset reads as stale",
+            "    if sha_ts < tag_ts:",
+            "    if sha_date < tag_date:",
+            "a STATUS at 08:00Z is NEWER than a tag at 10:00+05:00 (05:00Z), though its text sorts earlier",
         ),
     ),
 )
