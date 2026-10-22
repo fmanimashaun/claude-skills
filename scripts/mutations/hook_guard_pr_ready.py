@@ -154,7 +154,7 @@ GUARD = Guard(
             'a git that does not answer in time reads as "not a repository" again',
             'raise GitTimeout(f"`git {\' \'.join(args[:3])}` in {where} did not answer within {limit:g} s") from exc',
             'return None',
-            'a git that does not answer in time is a NAMED refusal',
+            'a git whose top level answers but whose later questions stall is a NAMED refusal from git() itself',
         ),
         Mutation(
             'the hook entry does not catch a git that gave no answer',

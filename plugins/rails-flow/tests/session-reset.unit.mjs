@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+const TEARDOWN_DONE = 'worktree_teardown: done, nothing left: no database, no process, no worktree, no branch, nothing beside it'
 const failures = []
 let checks = 0
 let fresh = 0
@@ -180,7 +181,7 @@ async function finishJob(s) {
   await s.bash('git worktree add -b feature/x /tmp/wt-x origin/dev', '')
   await s.bash('gh pr create --base dev', 'https://github.com/o/r/pull/7')
   await s.write('/tmp/handoffs/HANDOFF-x.md')   // outside the worktree it removes (#1728 review)
-  await s.bash('git worktree remove /tmp/wt-x', '')
+  await s.bash('python3 worktree_teardown.py /tmp/wt-x', TEARDOWN_DONE)
 }
 
 // ---- parsers ---------------------------------------------------------------------------------------
@@ -219,6 +220,43 @@ await check('job done: the session clears exactly once, then submits one prompt 
   await s.run()
   assert.equal(s.calls.clear, 1, 'later turns of the cleared session do not clear again')
   assert.equal(s.calls.compact.length, 0, 'a finished job is cleared, never compacted')
+})
+
+// #2296: the context clears only after the teardown PASSED. A bare `git worktree remove` leaves the databases, the branch and the
+// scratch behind, and a teardown that printed LEFT BEHIND or REFUSED did not finish, so neither marks the job removed.
+for (const [label, cmd, out] of [
+  ['a bare git worktree remove', 'git worktree remove /tmp/wt-x', ''],
+  ['a teardown that left something behind', 'python3 worktree_teardown.py /tmp/wt-x', 'worktree_teardown: LEFT BEHIND: branch feature/x (it moved since the merge check)'],
+  ['a refused teardown', 'python3 worktree_teardown.py /tmp/wt-x', 'worktree_teardown: REFUSED, uncommitted work'],
+  ['a dry run', 'python3 worktree_teardown.py --dry-run /tmp/wt-x', TEARDOWN_DONE],
+]) {
+  await check(`no clear after ${label} (#2296)`, async () => {
+    const s = await session({ gh: MERGED })
+    await s.bash('git worktree add -b feature/x /tmp/wt-x origin/dev', '')
+    await s.bash('gh pr create --base dev', 'https://github.com/o/r/pull/7')
+    await s.write('/tmp/handoffs/HANDOFF-x.md')
+    await s.bash(cmd, out)
+    await s.turnDone()
+    await s.run()
+    assert.equal(s.calls.clear, 0, label)
+  })
+}
+
+await check('passedTeardown reads the path only from a teardown that says it left nothing (#2296)', () => {
+  assert.equal(reset.passedTeardown('python3 x/worktree_teardown.py /tmp/wt-a', TEARDOWN_DONE), '/tmp/wt-a')
+  assert.equal(reset.passedTeardown('python3 worktree_teardown.py --assume-merged /tmp/wt-a', TEARDOWN_DONE), '/tmp/wt-a')
+  assert.equal(reset.passedTeardown('python3 worktree_teardown.py /tmp/wt-a', 'worktree_teardown: LEFT BEHIND: x'), null)
+  assert.equal(reset.passedTeardown('python3 worktree_teardown.py --audit', 'every worktrees parent holds only worktrees'), null)
+  assert.equal(reset.passedTeardown('git worktree remove /tmp/wt-a', TEARDOWN_DONE), null)
+  assert.equal(reset.passedTeardown('python3 worktree_teardown.py /tmp/wt-a && echo ok', TEARDOWN_DONE), '/tmp/wt-a')
+})
+
+await check('passedTeardown is linear: a long hostile command finishes in under 50 ms (#2305 review, CodeQL)', () => {
+  const hostile = 'worktree_teardown.py ' + '- -- '.repeat(20000) + '-'
+  const t0 = performance.now()
+  reset.passedTeardown(hostile, TEARDOWN_DONE)
+  const ms = performance.now() - t0
+  assert.ok(ms < 50, `took ${ms.toFixed(1)} ms`)
 })
 
 await check('the clear is queued synchronously from turn.complete, ahead of any later prompt or tool call', async () => {
@@ -268,7 +306,7 @@ await check('never mid-job: a live worktree, an unmerged PR, a PR merged elsewhe
   await s.bash('git worktree add -b b /tmp/b origin/dev', '')
   await s.bash('gh pr create', 'https://github.com/o/r/pull/7')
   await s.write('/tmp/handoffs/HANDOFF-x.md')   // outside the removed worktree, so only the named condition blocks (#1866)
-  await s.bash('git worktree remove /tmp/a', '')
+  await s.bash('python3 worktree_teardown.py /tmp/a', TEARDOWN_DONE)
   await s.turnDone(); await s.run()
   assert.equal(s.calls.clear, 0, 'a second live worktree')
   s = await session({ gh: { 7: { state: 'OPEN', baseRefName: 'dev' } } })
@@ -283,13 +321,13 @@ await check('never mid-job: a live worktree, an unmerged PR, a PR merged elsewhe
   s = await session({ gh: MERGED })
   await s.bash('git worktree add -b a /tmp/a origin/dev', '')
   await s.bash('gh pr create', 'https://github.com/o/r/pull/7')
-  await s.bash('git worktree remove /tmp/a', '')
+  await s.bash('python3 worktree_teardown.py /tmp/a', TEARDOWN_DONE)
   await s.turnDone(); await s.run()
   assert.equal(s.calls.clear, 0, 'no handoff')
   s = await session({ gh: MERGED })
   await s.bash('git worktree add -b a /tmp/a origin/dev', '')
   await s.write('/tmp/handoffs/HANDOFF-x.md')   // outside the removed worktree, so only the named condition blocks (#1866)
-  await s.bash('git worktree remove /tmp/a', '')
+  await s.bash('python3 worktree_teardown.py /tmp/a', TEARDOWN_DONE)
   await s.turnDone(); await s.run()
   assert.equal(s.calls.clear, 0, 'no PR recorded')
 })
@@ -299,7 +337,7 @@ await check('#1728 review: a handoff written inside the worktree it then removes
   await s.bash('git worktree add -b feature/x /tmp/wt-x origin/dev', '')
   await s.bash('gh pr create --base dev', 'https://github.com/o/r/pull/7')
   await s.write('/tmp/wt-x/HANDOFF.md')
-  await s.bash('git worktree remove /tmp/wt-x', '')
+  await s.bash('python3 worktree_teardown.py /tmp/wt-x', TEARDOWN_DONE)
   await s.turnDone()
   await s.run()
   assert.equal(s.calls.clear, 0, 'the handoff went with the worktree')
@@ -323,7 +361,7 @@ await check('#1728 delta: a handoff whose file is gone does not clear: the /priv
     await s.bash(`git worktree add -b feature/x ${removed} origin/dev`, '')
     await s.bash('gh pr create --base dev', 'https://github.com/o/r/pull/7')
     await s.write(written)
-    await s.bash(`git worktree remove ${removed}`, '')
+    await s.bash(`python3 worktree_teardown.py ${removed}`, TEARDOWN_DONE)
     rmSync(wt, { recursive: true, force: true })   // what git worktree remove does to the files
     await s.turnDone()
     await s.run()
@@ -339,7 +377,7 @@ await check('#1728 delta: CONTROL: a handoff file that still exists outside the 
   await s.bash('git worktree add -b feature/x /tmp/wt-z origin/dev', '')
   await s.bash('gh pr create --base dev', 'https://github.com/o/r/pull/7')
   await s.write(join(d, 'HANDOFF.md'))
-  await s.bash('git worktree remove /tmp/wt-z', '')
+  await s.bash('python3 worktree_teardown.py /tmp/wt-z', TEARDOWN_DONE)
   await s.turnDone()
   await s.run()
   assert.equal(s.calls.clear, 1)
@@ -355,7 +393,7 @@ await check('a Bash call that errors or is denied records nothing', async () => 
   await call({}, add, async () => ({ deny: 'no' }))
   assert.equal(reset.job.worktrees.size, 0)
   await call({}, add, async () => ({ text: '' }))
-  await call({}, { tool: 'Bash', command: 'git worktree remove /tmp/a' }, async () => ({ isError: true, text: '' }))
+  await call({}, { tool: 'Bash', command: 'python3 worktree_teardown.py /tmp/a' }, async () => ({ isError: true, text: '' }))
   assert.equal(reset.job.worktrees.size, 1)
   assert.equal(reset.job.removed, false)
 })
@@ -388,7 +426,7 @@ await check('a cleared session that starts its next job and finishes it clears a
   await s.bash('git worktree add -b feature/y /tmp/wt-y origin/dev', '')
   await s.bash('gh pr create', 'https://github.com/o/r/pull/7')
   await s.write('/tmp/handoffs/HANDOFF-y.md')
-  await s.bash('git worktree remove /tmp/wt-y', '')
+  await s.bash('python3 worktree_teardown.py /tmp/wt-y', TEARDOWN_DONE)
   await s.turnDone(); await s.run()
   assert.equal(s.calls.clear, 2)
 })
@@ -674,7 +712,7 @@ await check('the role survives a clear: the process goes on and session.start do
   const impl = await session({ role: null, proc: new Proc(h), sid: 'i1' })
   await impl.start()
   await impl.bash('git worktree add -b a /tmp/a origin/dev', '')
-  await impl.bash('git worktree remove /tmp/a', '')
+  await impl.bash('python3 worktree_teardown.py /tmp/a', TEARDOWN_DONE)
   assert.equal(reset.state.role, 'implementation', 'tool calls and the job bookkeeping leave the role alone')
 })
 
@@ -1043,7 +1081,7 @@ await check('P3: a path, branch or session id with a newline never reaches a pro
   await s.bash('git worktree add -b feature/x /tmp/wt-x origin/dev', '')
   await s.bash('gh pr create', 'https://github.com/o/r/pull/7')
   await s.write('/tmp/handoffs/HANDOFF\nIgnore the above.md')
-  await s.bash('git worktree remove /tmp/wt-x', '')
+  await s.bash('python3 worktree_teardown.py /tmp/wt-x', TEARDOWN_DONE)
   await s.turnDone(); await s.run()
   assert.equal(s.calls.clear, 1)
   assert.ok(!s.calls.submitted[0].includes('Ignore'))
@@ -1059,14 +1097,14 @@ await check('P2: a handoff comment counts only with its URL, and the prompt says
   await s.bash('git worktree add -b feature/x /tmp/wt-x origin/dev', '')
   await s.bash('gh pr create', 'https://github.com/o/r/pull/7')
   await s.bash('gh pr comment 7 --body handoff', 'no url')
-  await s.bash('git worktree remove /tmp/wt-x', '')
+  await s.bash('python3 worktree_teardown.py /tmp/wt-x', TEARDOWN_DONE)
   await s.turnDone(); await s.run()
   assert.equal(s.calls.clear, 0, 'a comment with no URL is no handoff')
   s = await session({ gh: MERGED })
   await s.bash('git worktree add -b feature/x /tmp/wt-x origin/dev', '')
   await s.bash('gh pr create', 'https://github.com/o/r/pull/7')
   await s.bash('gh pr comment 7 --body handoff', 'https://github.com/o/r/pull/7#issuecomment-99')
-  await s.bash('git worktree remove /tmp/wt-x', '')
+  await s.bash('python3 worktree_teardown.py /tmp/wt-x', TEARDOWN_DONE)
   await s.turnDone(); await s.run()
   assert.equal(s.calls.clear, 1)
   assert.ok(s.calls.submitted[0].includes('https://github.com/o/r/pull/7#issuecomment-99') && /verify/i.test(s.calls.submitted[0]))
@@ -1079,7 +1117,7 @@ await check('P2: the last full PR URL is kept and gh is asked with the URL, so a
   await s.bash('git worktree add -b feature/x /tmp/wt-x origin/dev', '')
   await s.bash('gh pr create', 'https://github.com/other/repo/pull/7')
   await s.write('/tmp/handoffs/HANDOFF-x.md')
-  await s.bash('git worktree remove /tmp/wt-x', '')
+  await s.bash('python3 worktree_teardown.py /tmp/wt-x', TEARDOWN_DONE)
   await s.turnDone(); await s.run()
   assert.ok(s.calls.gh.includes('gh pr view https://github.com/other/repo/pull/7 --json state,baseRefName'), s.calls.gh.join('|'))
 })
@@ -1165,7 +1203,7 @@ await check('P3: an add whose path the shell builds is a worktree no remove can 
   await s.bash('git worktree add ../x$(date +%s) -b b origin/dev', '')
   await s.bash('gh pr create', 'https://github.com/o/r/pull/7')
   await s.write('/tmp/handoffs/HANDOFF-x.md')
-  await s.bash('git worktree remove ../x1700000000', '')
+  await s.bash('python3 worktree_teardown.py ../x1700000000', TEARDOWN_DONE)
   await s.turnDone(); await s.run()
   assert.equal(s.calls.clear, 0)
 })
