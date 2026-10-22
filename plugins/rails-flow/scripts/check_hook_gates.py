@@ -6394,7 +6394,7 @@ def guard_pr_ready_fixtures() -> None:
         record_in(spaced)
         res = guard(repo, "gh pr ready 3")
         check("guard-pr-ready (#2143): a worktree path the cd exception cannot accept is named WITHOUT the cd form",
-              f"from a session started in {spaced}" in res[1] and f"cd {spaced}" not in res[1] and f"cd {wt} && gh pr ready 3" in res[1], blocked_lines(res[1]))
+              f"from a session started in {str(spaced)!r}" in res[1] and f"cd {spaced}" not in res[1] and f"cd {wt} && gh pr ready 3" in res[1], blocked_lines(res[1]))
         # #2293 review S1: the worktree list is read with -z, so a newline in a path is one path, shown escaped.
         newline = add_worktree("wt\nnl", "feature/2143-newline")
         record_in(newline)
