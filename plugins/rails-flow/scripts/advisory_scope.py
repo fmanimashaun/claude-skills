@@ -50,6 +50,8 @@ its findings and their dispositions checkable, as `risky_diff.py` does for the a
 """
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import argparse
 import difflib
 import hashlib
@@ -351,7 +353,7 @@ def selftest() -> int:  # noqa: C901 -- one fixture table, read top to bottom
 
     lay, marks = ("data/migrations", "data/schema.sql"), {"deps.manifest"}  # a made-up stack: no real one is named here
     # An EMPTY project directory: the stack detector reads the project tree, and the system temp root holds every other run's files.
-    empty = Path(tempfile.mkdtemp(prefix="advisory-empty-"))
+    empty = Path(rf_tmp.mkdtemp("advisory-empty-"))
     for label, text, want in (
             ("a plain plan triggers nothing", "Add a notes field to `src/views/notes.tpl`.", set()),
             ("a webhook named in a plan, with no threat model, is not security", "Receive the partner webhook at `src/hooks/partner.py`.", set()),

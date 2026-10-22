@@ -10,7 +10,8 @@ GUARD = Guard(
     # a staged mutant with no `references/` made the unmutated selftest exit 1 and every
     # mutation vacuously "caught". A directory, so a new reference doc is picked up rather than
     # quietly missing. `run_baseline` is what now proves this is sufficient.
-    needs=("plugins/rails-stack/skills/design-system/references",),
+    needs=("plugins/rails-flow/scripts/rf_tmp.py",   # rf_tmp (#2306)
+           "plugins/rails-stack/skills/design-system/references",),
     mutations=(
         # A clause lost at the END of a row: a substring test passed it (re-review of #1482).
         Mutation(

@@ -112,6 +112,8 @@ Stdlib only, no network.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import argparse
 import json
 import re
@@ -654,7 +656,7 @@ def selftest() -> int:
     import tempfile
 
     def cfg(body: str) -> Path:
-        d = Path(tempfile.mkdtemp(prefix="qa-controls-"))
+        d = Path(rf_tmp.mkdtemp("qa-controls-"))
         (d / "qa.config.yml").write_text(body, encoding="utf-8")
         return d / "qa.config.yml"
 
@@ -689,7 +691,7 @@ def selftest() -> int:
           session_ending(cfg("controls:\n  session_ending: [Sign Out]\n")) == ["sign out"],
           "a mixed-case declaration survived unnormalised")
     def recorded(body: str) -> list[str]:
-        d = Path(tempfile.mkdtemp(prefix="qa-run-"))
+        d = Path(rf_tmp.mkdtemp("qa-run-"))
         run = d / "interactions.json"
         run.write_text(body, encoding="utf-8")
         return recorded_policy(run)

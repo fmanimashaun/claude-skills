@@ -41,6 +41,8 @@ Stdlib only.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parents[3] / 'scripts'))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import argparse
 import json
 import re
@@ -371,7 +373,7 @@ def _selftest() -> int:
     import tempfile as _tf
 
     def project(pack_rb: str | None) -> Path:
-        root = Path(_tf.mkdtemp(prefix="drift-"))
+        root = Path(rf_tmp.mkdtemp("drift-"))
         if pack_rb is not None:
             (root / "config" / "initializers").mkdir(parents=True)
             (root / "config" / "initializers" / "brand.rb").write_text(pack_rb, encoding="utf-8")

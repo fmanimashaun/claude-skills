@@ -21,7 +21,8 @@ GUARD = Guard(
     ),
     # Read, not imported. The selftest's last checks run the REAL command against this
     # checker's section contract and FAIL rather than skip when absent.
-    needs=("commands/brief.md",),
+    needs=("scripts/rf_tmp.py",   # rf_tmp (#2306)
+           "commands/brief.md",),
     mutations=(
         Mutation(
             "the duplication threshold collapses and shared vocabulary reads as a copy",

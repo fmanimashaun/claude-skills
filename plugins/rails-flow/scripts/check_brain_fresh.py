@@ -28,6 +28,8 @@ Exit: 0 fresh (or nothing promoted yet) · 1 stale or cannot tell · 3 `--when a
 """
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import argparse
 import os
 import re
@@ -126,7 +128,7 @@ def selftest() -> int:
         return fixture_git.run(root, "rev-parse", "--short", "HEAD").stdout.strip()
 
     def repo() -> Path:
-        r = fixture_git.init(Path(tempfile.mkdtemp(prefix="brain-fresh-")), "-b", "dev")
+        r = fixture_git.init(Path(rf_tmp.mkdtemp("brain-fresh-")), "-b", "dev")
         (r / "docs/brain").mkdir(parents=True)
         return r
 
@@ -180,7 +182,7 @@ def selftest() -> int:
     rc, out = run(nt)
     check("a project with no v* tag has promoted nothing: nothing is stale", rc == 0 and "nothing has been promoted" in out, (rc, out))
 
-    sh = Path(tempfile.mkdtemp(prefix="brain-fresh-shallow-"))
+    sh = Path(rf_tmp.mkdtemp("brain-fresh-shallow-"))
     subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{r}", str(sh / "c")], check=True, capture_output=True,
                    env=fixture_git.hermetic())
     (sh / "c/docs/brain").mkdir(parents=True, exist_ok=True)

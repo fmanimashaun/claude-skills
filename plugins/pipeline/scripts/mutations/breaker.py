@@ -12,7 +12,8 @@ GUARD = Guard(
     # Read, not imported. The selftest's last checks run against the SHIPPED doctrine and the
     # SHIPPED surfaces, and FAIL rather than skip when absent -- so the mutant needs them, or
     # every mutation reports as "caught by the wrong fixture" and the real signal is buried.
-    needs=(
+    needs=("scripts/rf_tmp.py",   # rf_tmp (#2306)
+           
         "reference/stop-conditions.md",
         "commands/ack.md",
         "commands/deploy-cloud.md",

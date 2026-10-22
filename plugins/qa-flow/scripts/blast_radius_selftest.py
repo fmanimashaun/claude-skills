@@ -19,6 +19,8 @@ Stdlib only; no graph tool, no network, no app.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import contextlib
 import io
 import json
@@ -119,7 +121,7 @@ EXISTING_SPECS = ("spec/models/invoice_spec.rb", "spec/models/widget_spec.rb")
 
 
 def project(config: str = "", minitest: bool = False) -> Path:
-    root = Path(tempfile.mkdtemp(prefix="qaflow-blast-"))
+    root = Path(rf_tmp.mkdtemp("qaflow-blast-"))
     (root / "docs" / "architecture").mkdir(parents=True)
     (root / "docs" / "architecture" / "graph.json").write_text(
         json.dumps(GRAPH), encoding="utf-8")

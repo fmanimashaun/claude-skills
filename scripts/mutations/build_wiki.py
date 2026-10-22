@@ -14,7 +14,8 @@ GUARD = Guard(
     # The selftest builds every page from the live tree (inventory_data.collect_data reads the
     # plugins, the manifests, the maintainer agents and commands, and the doctor's gate table), so
     # the tree it reads is staged whole.
-    needs=(
+    needs=("plugins/rails-flow/scripts/rf_tmp.py",   # rf_tmp (#2306)
+           
         ".claude-plugin/",
         ".claude/",
         "plugins/",

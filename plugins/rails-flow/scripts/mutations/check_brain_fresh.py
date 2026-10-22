@@ -10,7 +10,8 @@ GUARD = Guard(
     subject="scripts/check_brain_fresh.py",
     selftest="scripts/check_brain_fresh.py",
     selftest_args=("--selftest",),
-    needs=("scripts/fixture_git.py",),
+    needs=("scripts/rf_tmp.py",  # rf_tmp (#2306)
+           "scripts/fixture_git.py",),
     mutations=(
         Mutation(
             "a STATUS older than the last promotion passes",

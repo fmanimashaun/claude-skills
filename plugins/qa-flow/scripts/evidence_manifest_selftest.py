@@ -17,6 +17,8 @@ Stdlib only; no network, no browser.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import json
 import sys
 import tempfile
@@ -42,7 +44,7 @@ def check(label: str, got, want) -> None:
 
 
 def _tmp() -> Path:
-    return Path(tempfile.mkdtemp(prefix="qaflow-evidence-manifest-"))
+    return Path(rf_tmp.mkdtemp("qaflow-evidence-manifest-"))
 
 
 def unit(name: str, **kw) -> dict:

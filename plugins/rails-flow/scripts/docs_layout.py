@@ -26,6 +26,8 @@ Nothing here summarises or edits prose: files move byte-for-byte; only path stri
 """
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import argparse
 import difflib
 import json
@@ -927,7 +929,7 @@ def selftest() -> int:
 
     # ---- REQUIRED DIRECTORIES, WAIVERS AND THE SWEEP (#2298) ---------------------------------------------------------
     def tree(files: dict[str, str], marks: tuple[str, ...] = ()) -> Path:
-        r = Path(tempfile.mkdtemp(prefix="docs-layout-"))
+        r = Path(rf_tmp.mkdtemp("docs-layout-"))
         for rel, text in files.items():
             (r / rel).parent.mkdir(parents=True, exist_ok=True)
             (r / rel).write_text(text, encoding="utf-8")

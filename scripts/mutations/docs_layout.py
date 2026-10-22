@@ -9,7 +9,7 @@ GUARD = Guard(
     name="docs_layout",
     subject="plugins/rails-flow/scripts/docs_layout.py",
     selftest="plugins/rails-flow/scripts/docs_layout.py",   # --selftest lives in the module itself
-    needs=("plugins/rails-flow/checks.json",),   # #2298: the selftest runs the command checks.json registers
+    needs=("plugins/rails-flow/scripts/rf_tmp.py", "plugins/rails-flow/checks.json"),   # rf_tmp (#2306); #2298: the selftest runs the command checks.json registers
     mutations=(
         Mutation(
             "code in docs/ is classified as authored prose, so a generator script looks like a document",

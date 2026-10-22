@@ -16,6 +16,8 @@ Costs nothing: no network, no corpora needed for the guard tests.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parents[1] / 'plugins' / 'rails-flow' / 'scripts'))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import sys
 import tempfile
 from pathlib import Path
@@ -450,7 +452,7 @@ def run() -> int:
     # there would let every `shipped` claim through unverified whenever the docs move.
     _tick()
     real_out = bc.OUT
-    bc.OUT = Path(tempfile.mkdtemp(prefix="coverage-nodocs-")) / "gone" / "coverage.md"
+    bc.OUT = Path(rf_tmp.mkdtemp("coverage-nodocs-")) / "gone" / "coverage.md"
     try:
         problems = bc.verify_shipped_evidence()
         if not any("cannot read the reference docs" in p for p in problems):
@@ -539,7 +541,7 @@ def run() -> int:
     # otherwise every status claim passes unverified the moment the reference folder moves.
     _tick()
     real_out = bc.OUT
-    bc.OUT = Path(tempfile.mkdtemp(prefix="coverage-nodocs-int-")) / "gone" / "coverage.md"
+    bc.OUT = Path(rf_tmp.mkdtemp("coverage-nodocs-int-")) / "gone" / "coverage.md"
     try:
         problems = bc.verify_interaction_claims()
         if not any("cannot read the reference docs" in p for p in problems):
@@ -638,7 +640,7 @@ def run() -> int:
     # disappears is the `skip != pass` failure this repo keeps re-learning.
     _tick()
     real_out_cat = bc.OUT
-    bc.OUT = Path(tempfile.mkdtemp(prefix="coverage-nocat-")) / "gone" / "coverage.md"
+    bc.OUT = Path(rf_tmp.mkdtemp("coverage-nocat-")) / "gone" / "coverage.md"
     try:
         problems = bc.verify_no_undeclared_entry()
         if not any("cannot read the catalogue" in p for p in problems):
@@ -686,7 +688,7 @@ def run() -> int:
     # ---- the builder refuses to emit a hollow file when the corpus is missing --------
     _tick()
     real_root = bc.TW_ROOT
-    bc.TW_ROOT = Path(tempfile.mkdtemp(prefix="coverage-absent-")) / "does-not-exist"
+    bc.TW_ROOT = Path(rf_tmp.mkdtemp("coverage-absent-")) / "does-not-exist"
     try:
         bc.build()
         FAILURES.append("absent corpus: expected BuildError, but a file was produced")

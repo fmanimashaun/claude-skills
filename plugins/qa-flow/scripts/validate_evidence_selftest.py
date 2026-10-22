@@ -21,6 +21,8 @@ Costs nothing: no network, no browser, stdlib only.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import sys
 import tempfile
 from pathlib import Path
@@ -51,7 +53,7 @@ def _tick() -> None:
 
 
 def _tmpdir() -> Path:
-    return Path(tempfile.mkdtemp(prefix="qaflow-evidence-"))
+    return Path(rf_tmp.mkdtemp("qaflow-evidence-"))
 
 
 def _write(body: str, *, header: str | None = None, bom: bool = False) -> Path:

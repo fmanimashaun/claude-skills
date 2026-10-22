@@ -9,7 +9,7 @@ GUARD = Guard(
     name="risky_diff",
     subject="scripts/risky_diff.py",
     selftest="scripts/risky_diff.py",   # --selftest lives in the module itself
-    needs=("scripts/fixture_git.py", "scripts/classify_door.py", "scripts/advisory_scope.py", "scripts/check_threat_model.py", "scripts/detect_stack.py", "checks.json"),
+    needs=("scripts/rf_tmp.py", "scripts/fixture_git.py", "scripts/classify_door.py", "scripts/advisory_scope.py", "scripts/check_threat_model.py", "scripts/detect_stack.py", "checks.json"),
     # its git goes through fixture_git (#1588); it imports classify_door's diff, and advisory_scope's override line, filler test, issue check and slug (#2264)
     mutations=(
         Mutation(

@@ -35,6 +35,8 @@ converted; a lone CR is left alone.
 
 Verify with `python3 scripts/package_core.py --selftest`.
 """
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parents[1] / 'plugins' / 'rails-flow' / 'scripts'))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import os, sys, tempfile, zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -120,7 +122,7 @@ def selftest() -> int:
     lf = {k: v.replace(b"\r\n", b"\n") for k, v in crlf.items()}
     built = {}
     for label, files in (("crlf", crlf), ("lf", lf)):
-        work = tempfile.mkdtemp(prefix=f"pkg-{label}-")
+        work = rf_tmp.mkdtemp(f"pkg-{label}-")
         skills, dist = os.path.join(work, "skills"), os.path.join(work, "dist")
         _tree(skills, files)
         with open(build("demo", skills, dist), "rb") as fh:
@@ -134,7 +136,7 @@ def selftest() -> int:
               all(b"\r" not in z.read(n) for n in z.namelist()))
 
     # 2. Binary members survive byte-for-byte, CRLF inside and all.
-    work = tempfile.mkdtemp(prefix="pkg-bin-")
+    work = rf_tmp.mkdtemp("pkg-bin-")
     skills, dist = os.path.join(work, "skills"), os.path.join(work, "dist")
     _tree(skills, {"demo/SKILL.md": b"# Demo\r\n", "demo/assets/logo.png": _FAKE_PNG})
     out = build("demo", skills, dist)

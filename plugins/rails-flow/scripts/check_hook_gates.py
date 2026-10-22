@@ -24,6 +24,8 @@ Exit 0: every fixture holds.  Exit 1: a fixture failed (a hook regressed).  Exit
 """
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import argparse
 import contextlib
 import io
@@ -1629,7 +1631,7 @@ def guard_bash_fixtures() -> None:
     # command, a missing python3 (the raw JSON) or a lone surrogate still passed. Degraded mode now
     # matches unanchored; with no grep, bash's `=~` matches.
     def bindir(tools: tuple[str, ...], python: bool) -> str:
-        bd = tempfile.mkdtemp()
+        bd = rf_tmp.mkdtemp()
         for tool in tools:
             real = next((f"{d}/{tool}" for d in ("/usr/bin", "/bin") if os.path.exists(f"{d}/{tool}")), None)
             if real:
@@ -1785,7 +1787,7 @@ DB_RESET_STILL_REFUSED = (*DB_RESET_LISTING_THEN_RESET, "bin/rails db:reset", "R
 
 def guard_bash_db_reset_fixtures() -> None:
     def project(guardrails: str | None, *, ci_script: bool = False, ci_rb: bool = False) -> Path:
-        root = Path(tempfile.mkdtemp())
+        root = Path(rf_tmp.mkdtemp())
         if guardrails is not None:
             (root / "GUARDRAILS.md").write_text(guardrails)
         if ci_script:

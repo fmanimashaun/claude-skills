@@ -21,6 +21,8 @@ Stdlib only.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parents[1] / 'plugins' / 'rails-flow' / 'scripts'))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import ast
 import dataclasses
 import json
@@ -85,7 +87,7 @@ assert NOISY_SELFTEST != SELFTEST
 
 def _fixture_guard(mutations: tuple[mc.Mutation, ...], selftest: str = SELFTEST) -> tuple[mc.Guard, Path]:
     """A real Guard pointing at a throwaway subject/selftest pair inside a temp 'repo'."""
-    root = Path(tempfile.mkdtemp(prefix="mutcheck-selftest-"))
+    root = Path(rf_tmp.mkdtemp("mutcheck-selftest-"))
     (root / "scripts").mkdir()
     (root / "scripts" / "subject_under_test.py").write_text(SUBJECT, encoding="utf-8")
     (root / "scripts" / "subject_selftest.py").write_text(selftest, encoding="utf-8")

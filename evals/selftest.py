@@ -19,6 +19,8 @@ Costs nothing. No API calls, no `claude` binary, no network.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parents[1] / 'plugins' / 'rails-flow' / 'scripts'))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import json
 import sys
 import tempfile
@@ -43,7 +45,7 @@ CHECKS = 0
 
 def workspace(files: dict[str, str]) -> Path:
     """Materialise a throwaway workspace from {relative path: contents}."""
-    root = Path(tempfile.mkdtemp(prefix="gate-fixture-"))
+    root = Path(rf_tmp.mkdtemp("gate-fixture-"))
     for relpath, content in files.items():
         target = root / relpath
         target.parent.mkdir(parents=True, exist_ok=True)

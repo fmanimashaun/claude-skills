@@ -10,7 +10,8 @@ GUARD = Guard(
     subject="scripts/check_owner_rulings.py",
     selftest="scripts/check_owner_rulings.py",
     selftest_args=("--selftest",),
-    needs=(),
+    needs=("scripts/rf_tmp.py",  # rf_tmp (#2306)
+           ),
     mutations=(
         Mutation(
             'a closing keyword in the middle of a sentence closes an issue',
