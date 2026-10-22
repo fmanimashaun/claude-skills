@@ -119,7 +119,8 @@ def tagged(token: str) -> list[int]:
 # descended from the caller WHILE ITS PARENT IS ALIVE (pid and start time, read through libproc: no process is spawned, a
 # pass over ~700 processes is ~1 ms), so an orphan is still known after it is re-parented to pid 1. The sweep kills a
 # recorded pid only if its start time still matches: a reused pid is never touched. A subtree that already existed when the
-# box opened is the caller's own and is skipped. LIMIT: a child that forks and loses its parent inside one tick (0.1 s).
+# box opened is the caller's own and is skipped. LIMIT, STATED AND UNTESTED (#2294 review S2): a child that forks and loses its parent
+# inside one tick (0.1 s) is never recorded. A test would have to win that race on purpose, so it would pin the scheduler, not the code.
 class _BsdInfo(ctypes.Structure if sys.platform == "darwin" else object):  # type: ignore[misc]
     _fields_ = [("pbi_flags", ctypes.c_uint32), ("pbi_status", ctypes.c_uint32), ("pbi_xstatus", ctypes.c_uint32),
                 ("pbi_pid", ctypes.c_uint32), ("pbi_ppid", ctypes.c_uint32), ("pbi_uid", ctypes.c_uint32), ("pbi_gid", ctypes.c_uint32),
@@ -178,14 +179,14 @@ class _Lineage:
         while not self._stop.wait(0.1):
             self.scan()
 
-    def stop(self) -> list[int]:
+    def stop(self) -> list[tuple[int, tuple[int, int]]]:
         """Stop watching and return every recorded pid that is still the same process."""
         if self._thread:
             self._stop.set()
             self._thread.join()
             self.scan()
         table = process_table()
-        return sorted(pid for pid, start in self.seen.items() if pid in table and table[pid][1] == start)
+        return sorted((pid, start) for pid, start in self.seen.items() if pid in table and table[pid][1] == start)
 
 
 def _signal(pid: int, sig: int) -> None:
@@ -195,13 +196,17 @@ def _signal(pid: int, sig: int) -> None:
         pass
 
 
-def sweep(token: str, also: list[int] | tuple[int, ...] = ()) -> list[int]:
+def sweep(token: str, also: list | tuple = ()) -> list[int]:
     """Kill every process carrying `token`. Freeze first so none can fork past the sweep, then
     CONT and KILL each one (a stopped process is killed too, but CONT lets it see the signal at once),
     and reap our own children so they do not linger as zombies. Returns the pids it killed."""
     frozen: set[int] = set()
     for _ in range(20):                 # until a scan finds nothing new
-        new = (set(tagged(token)) | set(also)) - frozen          # `also`: what the lineage recorded and the token cannot reach (#2292)
+        # `also`: (pid, start time) pairs the lineage recorded and the token cannot reach (#2292). Each start time is checked AGAIN here, right before
+        # the SIGSTOP (#2294 review S1): between `stop()` and this line a recorded process can exit and its pid be reused by an unrelated one.
+        table = process_table() if also else {}
+        recorded = {pid for pid, start in also if pid in table and table[pid][1] == start}
+        new = (set(tagged(token)) | recorded) - frozen
         if not new:
             break
         for pid in new:
@@ -423,6 +428,19 @@ def selftest() -> int:
                   f"orphan {orphan}, tagged {tagged(box7.token) if orphan else '-'}")
             check("a /bin binary orphaned inside contained() is swept anyway, through the lineage (#2292)",
                   len(orphan) == 1 and not _alive(orphan[0]) and orphan[0] in box7.killed, f"orphan {orphan}, killed {box7.killed}")
+
+        # #2294 review S1: a recorded pid whose start time no longer matches is a DIFFERENT process (the pid was reused): the sweep must not touch it.
+        if sys.platform == "darwin":
+            bystander = subprocess.Popen(["/bin/sleep", "30"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(0.2)
+            real = process_table().get(bystander.pid, (0, (0, 0)))[1]
+            stale = (real[0] - 1, real[1])                 # the start time the lineage recorded for the pid's PREVIOUS owner
+            killed = sweep(uuid.uuid4().hex, also=[(bystander.pid, stale)])
+            alive = bystander.poll() is None
+            bystander.kill()
+            bystander.wait()
+            check("a recorded pid whose start time changed (a reused pid) is not killed by the sweep",
+                  alive and bystander.pid not in killed, f"alive {alive}, killed {killed}")
 
         # 6. The CLI: returns the command's status, and kills what it left.
         f6 = pidfile("cli.pids")

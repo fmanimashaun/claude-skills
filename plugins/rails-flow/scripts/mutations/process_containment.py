@@ -96,5 +96,12 @@ GUARD = Guard(
             "        while not self._stop.wait(0.1):\n            pass",
             "a /bin binary orphaned inside contained() is swept anyway",
         ),
+        Mutation(
+            # #2294 review S1: the start time is re-checked right before the SIGSTOP, so a reused pid is never stopped or killed.
+            "the sweep trusts the recorded pid without re-checking its start time, so a reused pid is killed",
+            "        recorded = {pid for pid, start in also if pid in table and table[pid][1] == start}",
+            "        recorded = {pid for pid, start in also}",
+            "a recorded pid whose start time changed (a reused pid) is not killed",
+        ),
     ),
 )
