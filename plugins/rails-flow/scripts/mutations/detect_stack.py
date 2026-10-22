@@ -611,5 +611,23 @@ GUARD = Guard(
             '                entry["cases"] = value["cases"]',
             'a valid ui_scope is reported with its cases as a path',
         ),
+        Mutation(
+            'any auto_install method passes',
+            '                if isinstance(how, dict) and how.get("method") not in AUTO_INSTALL_METHODS and isinstance(how.get("method"), str):',
+            '                if False:',
+            'an auto_install method we do not run is a problem',
+        ),
+        Mutation(
+            'any auto_install repo passes',
+            '                if isinstance(how, dict) and isinstance(how.get("repo"), str) and not VENDOR_REPO.fullmatch(how["repo"]):',
+            '                if False:',
+            'an auto_install repo that is not a github.com repository is a problem',
+        ),
+        Mutation(
+            'any token name passes',
+            '            if isinstance(row.get("token"), str) and not re.fullmatch(r"[A-Z][A-Z0-9_]*", row["token"]):',
+            '            if False:',
+            'a token that is not an environment variable name is a problem',
+        ),
     ),
 )

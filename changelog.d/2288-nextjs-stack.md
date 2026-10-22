@@ -1,0 +1,2 @@
+section: nextjs-stack
+- **Vercel and Supabase CLIs install unattended — `plugins/nextjs-stack/stacks.json`** (#2288). The `vercel` CLI installs with `npm-global` from `github.com/vercel/vercel` and needs `VERCEL_TOKEN`. The `supabase` CLI installs on macOS from the vendor's Homebrew tap (`supabase/tap/supabase`, `github.com/supabase/homebrew-tap`); elsewhere it is a `PR NEEDED` devDependency (coordinator ruling: no silent repo edit), and it needs `SUPABASE_ACCESS_TOKEN`.

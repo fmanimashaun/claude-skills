@@ -106,14 +106,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/detect_stack.py" . --descriptor
 A project can be several stacks at once (Next.js + Supabase + Vercel). Then every reported stack is active, with no
 question asked, and each setup section is worked in turn. Asking is only for exit 1 or exit 2.
 
-Once the stacks are settled, name what each one still needs installed (#2168):
+Once the stacks are settled, install what each one still needs (#2168, #2288). It is the same step as
+`/rails-flow:toolchain-check` (its "detected stack's own tools" section): run it and handle each line as that section says.
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/stack_toolchain.py" --project .
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/toolchain_install.py" --project . --session-id "$CLAUDE_CODE_SESSION_ID"
 ```
 
-Report every `MISSING` or `NOT READY` line to the user with its step, and keep going: it is advisory, and an install is the
-user's to make. Exit 2 means it could not judge; say so rather than reporting the toolchain complete.
+Exit 2 means it could not judge and installed nothing; say so rather than reporting the toolchain complete.
 
 ## 1. Inspect the project first
 
