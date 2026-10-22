@@ -244,8 +244,11 @@ def processes_in(path: str) -> dict[int, str]:
             if where == path or where.startswith(path + os.sep):
                 found[int(entry.name)] = ""
     found = {pid: "" for pid in found if alive(pid)}      # a process that ended while the table was read is not a stray
-    for pid in found:
-        found[pid] = run(["ps", "-o", "command=", "-p", str(pid)], cwd="/")[1].strip()[:80]
+    if found:      # ONE `ps` for every pid, not one per pid: thousands of subprocesses when the match is wide (#2305 review)
+        for line in run(["ps", "-o", "pid=,command=", "-p", ",".join(map(str, found))], cwd="/")[1].splitlines():
+            pid_s, _, command = line.strip().partition(" ")
+            if pid_s.isdigit() and int(pid_s) in found:
+                found[int(pid_s)] = command.strip()[:80]
     return found
 
 
