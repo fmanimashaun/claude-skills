@@ -15,12 +15,12 @@ One file per mock-up, `docs/product/mockups/<slug>.md`, with one `Key: value` li
 | `Widths:` | at least a phone width (480 or less) and a desktop width (1024 or more) |
 | `States:` | `;`-separated entries; every state of the vocabulary exactly once, each `<state>` (designed) or `<state>: n/a: <reason>`. Example: `loaded; loading: n/a: static page; error; empty-filtered: n/a: no filter; partial: n/a: one source; permission-denied: n/a: public; success: n/a: read only; first-run: n/a: seeded`. At least one state is designed; `loaded` need not be (a system page marks most states n/a) |
 | `Shell:` | `docs/product/mockups/shell.md`, always that path |
-| `Template:` | the page template: `list`, `detail`, `create-edit`, `multi-step`, `dashboard`, `settings`, `search-results`, `sign-in`, or `system: <not-found\|no-permission\|error\|maintenance>` |
+| `Template:` | the page template: `list`, `detail`, `create-edit`, `multi-step`, `dashboard`, `settings`, `search-results`, `sign-in`, `system: <not-found\|no-permission\|error\|maintenance>`, or `multi-step`, which may carry a sub-kind for the pages that are not a question: `multi-step: <check-answers\|confirmation\|task-list>` (no sub-kind is a question page). A sub-kind is not a template of its own: there are nine templates |
 | `Screen:` | this screen's name; unique across records |
 | `Nav:` | `level N under <parent>`, N from 1 to 3. Level 1 sits under the literal `shell`; level N of 2 or 3 sits under the `Screen:` of an existing record at level N-1 |
 | `Story:` | **once the screen is built**: a repo path to the story file (`*.stories.*`) or the user-visible file that implements this mock-up. Required by the gate on the real diff (`--base`), not at plan time (`--paths`) |
 
-The allowed values (templates, system sub-kinds, states, the nav depth cap) are one list, `plugins/rails-flow/reference/mockup-vocabulary.json`, which the gate reads and the frontend architecture framework (#2220) cites. A missing or unreadable list refuses every record. `n/a: <reason>` demands a non-empty reason, not a true one: the reviewer reads the truth. A record whose `Template:`, `States:`, `Screen:` or `Nav:` is missing or outside the vocabulary is refused when it is **added or changed**; existing records are never re-judged.
+The allowed values (templates, system and multi-step sub-kinds, states, the nav depth cap) are one list, `plugins/rails-flow/reference/mockup-vocabulary.json`, which the gate reads and the frontend architecture framework (#2220) cites. A missing or unreadable list refuses every record. `n/a: <reason>` demands a non-empty reason, not a true one: the reviewer reads the truth. A record whose `Template:`, `States:`, `Screen:` or `Nav:` is missing or outside the vocabulary is refused when it is **added or changed**; existing records are never re-judged.
 
 ## The shell record
 

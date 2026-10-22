@@ -13,7 +13,8 @@ THE SCREEN-TO-RECORD LINK IS DATA THE CALLER SUPPLIES. A record has no route (it
 `screen` no record has, and refuses two records with one `Screen:`. A URL in no entry is undeclared, never assumed.
 
 WHAT IS MEASURED. The browser collector records FACTS in `structure`; this decides. Seven rules, each only for the template that owns it:
-  multi-step      A31 a back link at the top (present, and before the page's h1)
+  multi-step      (a question page: `Template: multi-step` with no sub-kind, #2310; check-answers, confirmation and task-list pages are not judged here)
+                  A31 a back link at the top (present, and before the page's h1)
                   A34 the forward button is labelled "Continue", not "Next" (a finding only for "Next": the other labels the rule does not name are not asserted)
   search-results  A53 a results count; pagination when the count is above ten; and, with no results, a no-results message
                   A54 the count sits above the list, and names a search term when the URL carries one
@@ -69,7 +70,8 @@ def load_records(root: Path) -> dict[str, dict]:
             continue
         if name in records:
             raise Unusable(f"two mock-up records name the screen `{name}` ({records[name]['path']} and {path.name}): a screen name is unique")
-        template = re.split(r"[:\s]", fields.get("Template", "").strip(), maxsplit=1)[0] if fields.get("Template") else ""
+        # `multi-step: check-answers` stays whole: a sub-kind is a different page from the question page the multi-step rules describe (#2310)
+        template = re.sub(r"\s*:\s*", ": ", fields.get("Template", "").strip()).rstrip(": ")
         records[name] = {"template": template, "fields": fields, "path": f"{RECORD_DIR}{path.name}"}
     return records
 
@@ -294,6 +296,10 @@ def selftest() -> int:
     check("a sort control below the list is an A56 finding", run("search-results", results(sort_control={"present": True, "before_list": False})) == ["A56"])
     check("no sort control is not a finding (a sort is optional)", run("search-results", results(sort_control={"present": False, "before_list": None})) == [])
     # applicability: a rule is judged only for its template
+    for sub_kind in ("check-answers", "confirmation", "task-list"):
+        check(f"a multi-step: {sub_kind} page is not judged as a question page", run(f"multi-step: {sub_kind}", {}) == [])
+    check("a trailing colon leaves no trailing space, so the template still names a judge", run("multi-step:", GOOD_STEP) == [] and run("multi-step: ", {**GOOD_STEP, "forward_button": {"present": True, "label": "Next"}}) == ["A34"])
+    check("a multi-step: sub-kind written without a space is read the same", run("multi-step:confirmation", {}) == [])
     check("a list screen is not judged for a back link", run("list", {}) == [])
     check("a multi-step screen is not judged for a results count", run("multi-step", {**GOOD_STEP, **results(count_text=None)}) == [])
     # a missing structure is unverified, never clean

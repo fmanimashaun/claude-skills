@@ -70,8 +70,8 @@ The report lists, under **Not audited**, every rule you could not measure this r
 - rules whose check is not built (card in a card #2227, focus visible #2228, forced states #2229,
   Core Web Vitals #2230);
 - 23 of the 30 template rules (A29 to A58), each with its reason in the report: the record has no
-  check-answers, confirmation or task-list kind to declare (#2310), or the rule needs a declared flow
-  or a driven journey. The seven it can measure are judged only with `--screens`.
+  check-answers, confirmation or task-list page's rows are not built yet (#2327; a record declares
+  them as `multi-step: <sub-kind>`, #2310), or the rule needs a declared flow or a driven journey. The seven it can measure are judged only with `--screens`.
 
 `audit_findings.py report` writes that section itself from the framework's rules table: every rule the
 document did not audit, grouped by what blocks it, plus the judgement rules. You do not write it and
