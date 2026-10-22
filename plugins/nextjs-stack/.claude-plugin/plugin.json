@@ -1,7 +1,7 @@
 {
   "name": "nextjs-stack",
   "description": "Next.js + Supabase + Vercel stack, 0.1.0, an early release: conventions for how the three fit together, the stack's markers for the stack detector, and a React frontend architecture (the react skill) whose rules are each enforced by lint, nextjs-stack's checks, a declaration or a recorded review verdict. feature/fix/review still lean on the Rails-flavoured agents. Platform knowledge stays in Vercel's official plugin (vercel-plugin) and Supabase's supabase/agent-skills, which it points to rather than copies.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "Fisayo Animashaun"
   }
