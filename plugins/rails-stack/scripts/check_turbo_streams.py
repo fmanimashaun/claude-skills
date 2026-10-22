@@ -12,8 +12,9 @@ renders with no request and no viewer. Four findings, all from reading the sourc
   1. `turbo_stream_from` with a LITERAL name (a string without interpolation, or a symbol) is one stream every viewer shares: a public stream by
      construction. It is a finding unless `.rails-flow/public-streams.json` declares the name with a reason.
   2. A declaration with no reason, or for a name no view uses, is itself a finding (a declaration is a decision, and a stale one hides a change).
-  3. `turbo_stream_from ... channel: Name`: `app/channels/<name>.rb` must exist and define `subscription_allowed?`, the hook turbo-rails documents for a
-     subscription check.
+  3. `turbo_stream_from ... channel: Name`: `app/channels/<name>.rb` must exist and its OWN `subscribed` must call `subscription_allowed?` before
+     `stream_from`, as turbo-rails' documented custom channel does (it subclasses `ActionCable::Channel::Base`). Defining `subscription_allowed?` is not
+     enough: `Turbo::StreamsChannel#subscribed` never calls it, so a subclass that only defines the method is still open.
   4. A partial that a broadcast renders (the `partial:` of a `broadcast_*` call, or the default partial of `broadcasts_to` / `broadcasts`) must not mention
      `current_user`, `current_*`, `session`, `cookies` or `Current.`: there is no request there, so it raises or renders one viewer's data to everyone.
 
@@ -21,7 +22,8 @@ Declarations: `.rails-flow/public-streams.json` is `{"public": [{"stream": "anno
 
 WHAT IT IS HONESTLY NOT. It reads names and partials. It cannot tell whether the controller that renders `turbo_stream_from @project` authorized
 `@project`; that stays a review judgement. A name built at run time from a variable, a record or an array is not judged, and the default partial of
-`broadcasts_to` is located by the model's file name pluralised with a plain `s`, so an irregular plural is reported as "not located", never as clean.
+`broadcasts_to` is located by the model's file name pluralised with a plain `s`, so an irregular plural is reported as "not located", never as clean. A
+broadcast partial is read as one file: **a helper it calls, or a partial it renders, is not followed**, so `current_user` hidden one level down is not found.
 Every run prints how many calls, channels and partials it read, so a project with none shows a count of 0 and not a bare pass.
 
 Exit codes: 0 clean, 1 findings, 2 the declaration file cannot be read. Stdlib only.
@@ -56,12 +58,54 @@ def first_argument(args: str) -> tuple[str, str] | None:
     """`(kind, value)` for the first argument of a `turbo_stream_from` call: `("literal", name)` for a plain string or symbol, `("channel", Name)` for a
     `channel:` option anywhere in the call, else None (a record, variable, array or interpolated string: not judged)."""
     channel = re.search(r"\bchannel:\s*([A-Z][\w:]*)", args)
-    head = args.strip().lstrip("(").strip()
-    literal = re.match(r"""^(?:"([^"#]*)"|'([^']*)'|:([A-Za-z_]\w*))\s*(?:[,)]|$|%>)""", head)
+    positional = [p for p in split_arguments(args) if not re.match(r"^(?:[A-Za-z_]\w*:(?!:)|\*\*)", p)]
+    # a literal is a PUBLIC stream only when it is the sole stream argument: `turbo_stream_from "x", current_user` is scoped to a viewer
+    literal = re.match(r"""^(?:"([^"#]*)"|'([^']*)'|:([A-Za-z_]\w*))$""", positional[0]) if len(positional) == 1 else None
     if literal:
         return "literal", next(g for g in literal.groups() if g is not None)
     if channel:
         return "channel", channel.group(1)
+    return None
+
+
+def split_arguments(args: str) -> list[str]:
+    """The top-level, comma-separated arguments of a call's text (quotes and brackets respected; stops at the call's closing paren). Blanks are dropped."""
+    parts: list[str] = []
+    current, depth, quote = "", 0, None
+    for ch in args:
+        if quote:
+            current += ch
+            quote = None if ch == quote else quote
+        elif ch in "\"'":
+            quote = ch
+            current += ch
+        elif ch in "([{":
+            depth += 1
+            current += ch
+        elif ch in ")]}":
+            if depth == 0:
+                break
+            depth -= 1
+            current += ch
+        elif ch == "," and depth == 0:
+            parts.append(current)
+            current = ""
+        else:
+            current += ch
+    parts.append(current)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def channel_problem(text: str, name: str) -> str | None:
+    """Why a channel file does not check its subscriptions, or None. Its OWN `subscribed` must call `subscription_allowed?`: turbo-rails'
+    `Turbo::StreamsChannel#subscribed` never does, so defining the method in a subclass of it checks nothing."""
+    m = re.search(r"^[ \t]*def subscribed\b(.*?)(?=^[ \t]*def |\Z)", text, re.S | re.M)
+    if m is None:
+        return (f"channel {name} has no `subscribed` of its own, so it inherits one that never calls subscription_allowed? "
+                f"(Turbo::StreamsChannel#subscribed only verifies the signed name): write the channel on ActionCable::Channel::Base with its own `subscribed`")
+    if "subscription_allowed?" not in m.group(1):
+        return (f"channel {name}: its `subscribed` never calls subscription_allowed?"
+                + (", which is defined but never called, so the subscription is not checked" if "def subscription_allowed?" in text else ""))
     return None
 
 
@@ -156,8 +200,8 @@ def run(project: Path) -> tuple[int, list[str]]:
                 channel_text = read(channel_file) if channel_file.is_file() else None
                 if channel_text is None:
                     findings.append(f"{where}: channel {name} has no app/channels/{snake(name)}.rb to check")
-                elif "subscription_allowed?" not in channel_text:
-                    findings.append(f"{where}: channel {name} does not define subscription_allowed?, so any holder of a signed name can subscribe")
+                elif (problem := channel_problem(channel_text, name)) is not None:
+                    findings.append(f"{where}: {problem}")
     for name in sorted(set(declared) - used):
         findings.append(f"{DECLARATIONS}: public stream {name!r} is declared but no view uses it: delete the declaration")
     partials, unlocated = broadcast_partials(project)
@@ -220,12 +264,26 @@ def _selftest() -> int:
     check("a declaration file that cannot be read is exit 2", code == 2)
     code, out = project(view("<%= turbo_stream_from @room, channel: AuditChannel %>\n"))
     check("a custom channel with no file is a finding", code == 1 and any("no app/channels/audit_channel.rb" in ln for ln in out))
-    chan = {"app/channels/audit_channel.rb": "class AuditChannel < Turbo::StreamsChannel\n  def subscribed\n    stream_from verified_stream_name_from_params\n  end\nend\n"}
-    code, out = project({**view("<%= turbo_stream_from @room, channel: AuditChannel %>\n"), **chan})
-    check("a custom channel without subscription_allowed? is a finding", code == 1 and any("does not define subscription_allowed?" in ln for ln in out))
-    good = {"app/channels/audit_channel.rb": chan["app/channels/audit_channel.rb"].replace("  def subscribed", "  def subscription_allowed?\n    true\n  end\n\n  def subscribed")}
+    only_defines = {"app/channels/audit_channel.rb": "class AuditChannel < Turbo::StreamsChannel\n  def subscription_allowed?\n    true\n  end\nend\n"}
+    code, out = project({**view("<%= turbo_stream_from @room, channel: AuditChannel %>\n"), **only_defines})
+    check("a subclass of Turbo::StreamsChannel that only defines subscription_allowed? is still open: a finding", code == 1 and any("no `subscribed` of its own" in ln for ln in out))
+    defined_not_called = {"app/channels/audit_channel.rb": "class AuditChannel < ActionCable::Channel::Base\n  def subscribed\n    stream_from verified_stream_name_from_params\n  end\n\n"
+                          "  def subscription_allowed?\n    true\n  end\nend\n"}
+    code, out = project({**view("<%= turbo_stream_from @room, channel: AuditChannel %>\n"), **defined_not_called})
+    check("a channel whose subscribed never calls subscription_allowed? is a finding", code == 1 and any("defined but never called" in ln for ln in out))
+    good = {"app/channels/audit_channel.rb": "class AuditChannel < ActionCable::Channel::Base\n  extend Turbo::Streams::Broadcasts, Turbo::Streams::StreamName\n"
+            "  include Turbo::Streams::StreamName::ClassMethods\n\n  def subscribed\n    if (stream_name = verified_stream_name_from_params).present? && subscription_allowed?\n"
+            "      stream_from stream_name\n    else\n      reject\n    end\n  end\n\n  def subscription_allowed?\n    current_user.admin?\n  end\nend\n"}
     code, out = project({**view("<%= turbo_stream_from @room, channel: AuditChannel %>\n"), **good})
-    check("a custom channel that defines subscription_allowed? is clean", code == 0)
+    check("the documented custom channel (its own subscribed calls subscription_allowed?) is clean", code == 0)
+    code, out = project({**view('<%= turbo_stream_from "room", channel: AuditChannel %>\n'), **good})
+    check("a literal stream name with a channel that checks the subscription still reads as public (a name is not access)", code == 1 and any("'room'" in ln for ln in out))
+    code, out = project(view('<%= turbo_stream_from "x", current_user %>\n'))
+    check("a literal beside a viewer streamable is scoped, not public", code == 0)
+    code, out = project(view('<%= turbo_stream_from("x", @room) %>\n'))
+    check("a literal beside a record, in parentheses, is scoped, not public", code == 0)
+    code, out = project(view('<%= turbo_stream_from "x", data: { a: 1 } %>\n'))
+    check("a literal with only keyword options is the sole stream argument: public", code == 1)
     model = {"app/models/message.rb": "class Message < ApplicationRecord\n  broadcasts_to :room\nend\n"}
     code, out = project({**model, "app/views/messages/_message.html.erb": "<p><%= current_user.name %></p>\n"})
     check("the default partial of broadcasts_to that uses current_user is a finding", code == 1 and any("_message.html.erb:1" in ln and "current_user" in ln for ln in out))
