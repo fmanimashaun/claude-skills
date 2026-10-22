@@ -255,6 +255,19 @@ more). The pid is `$PPID` of the shell `$.process.run` starts: measured under `c
   already recorded under its own session id when that claim's process is gone (or is this process). A fresh start,
   or `RAILS_FLOW_ROLE=coordinator`, is the only way to claim a free or stale claim. A resumed coordinator whose
   session id changed on resume therefore becomes an implementation session: relaunch it with the override.
+- **A resumed session never ends with no role** (#2307). The election script prints a role on every resume path
+  (measured with the shipped script: a dead claim under the session's own id gives coordinator; a dead claim under
+  another id, no claim and an empty claim give implementation), so what left every session roleless after a restart
+  was around it: `session.start` not running or not matching, the election's `sh` timing out under a restart-wide
+  stall (this machine was measured stalling 20 to 60 s, hence `ELECT_TIMEOUT_MS` = 20 s), or a throw. A resumed
+  session whose election fails by any of these **defaults to implementation** (`state.defaulted`); its clear needs
+  the same full job-done condition as any implementation session (a worktree it created and removed, its own merged
+  PR, a surviving handoff), so a coordinator whose claim did not survive never clears on anything weaker, and
+  `/rails-flow:claim-coordinator` takes the role back. `ensureRole` asks again from the prompt and the turn start
+  (at most once per 30 s; a defaulted role is asked again, so a passed stall gives the real answer, including the
+  claim of the session's own id coming back as coordinator). A fresh session (no turns) that cannot be elected, a
+  forced `RAILS_FLOW_ROLE=coordinator` and a pre-warmed spare are not defaulted. The "could not elect" line is
+  only for a fresh session that still has no role after that. `RAILS_FLOW_DEBUG=1` records which failure it was.
 - **Not done:** the role is not written to the board's session record (`coordination.py`); that is a separate change.
 
 **Hardening from the adversarial review of #1728.** (1) Any tool call after the turn ended, or while `gh` answers,

@@ -38,7 +38,7 @@ export const DEFAULT_COORDINATOR_HANDOFF = '~/projects/claude-skills-wt/_logs/CO
 
 // This session's elected role. Module variables survive a /clear (the process goes on, and session.start does
 // not fire again), so the role survives it; a resume is a new process and elects again.
-export const state = { role: null, coordinator: null, line: null, hasSurface: false, compactDue: null, rearm: null, debug: [] }
+export const state = { role: null, coordinator: null, line: null, hasSurface: false, defaulted: false, electAt: null, compactDue: null, rearm: null, debug: [] }
 
 // Debug notes: with RAILS_FLOW_DEBUG=1 each compact or clear decision, and any rejection, is appended to
 // ~/.claude/rails-flow/debug.log, so a live test can be read without a transcript. Off, the notes are dropped.
@@ -157,6 +157,10 @@ export function parseElection(out) {
 }
 
 export function electionLine(r) {
+  if (r.defaulted) {
+    return 'rails-flow role: the election could not run after this restart, so this session defaults to implementation. It clears itself only after a worktree it created is removed and its own PR is merged into dev; ' +
+      'if it is the coordinator, /rails-flow:claim-coordinator takes the role back.'
+  }
   return r.role === 'coordinator'
     ? 'rails-flow role: this session was elected coordinator (none was live). It compacts itself near a limit and never clears.'
     : `rails-flow role: this session is an implementation session; the coordinator is ${r.coordinator ?? 'another live session'}. ` +
@@ -178,16 +182,73 @@ async function isResumed($) {
   }
 }
 
-// Elect this session's role. Fails open to null: any error leaves the session with no automatic action.
+// How long the election's `sh` may run before it counts as no answer. 20 s, not 8: the machine this runs on was measured with I/O stalls of
+// 20 to 60 s (a `git commit` that takes 2 s took 21 s; a 10 s git timeout fired for real in a hook), and the owner restarts every session at once
+// (#2307), so ten elections hit a stalled disk together. A timeout used to leave a resumed session with no role at all.
+export const ELECT_TIMEOUT_MS = 20000
+// A session with no role asks again no more often than this (ensureRole).
+export const ELECT_RETRY_MS = 30000
+
+// Elect this session's role. A fresh session that cannot be told fails open to null: any error leaves it with no automatic action. A RESUMED
+// session never ends with no role (#2307): when the election throws, times out, exits non-zero or prints nothing usable, it DEFAULTS to
+// implementation, the safe side ("fewer coordinators, never more"). Its job-done clear is the same full condition as any implementation session's
+// (a worktree it created and removed, its own merged PR, a surviving handoff), so a coordinator whose claim did not survive never clears on anything weaker.
 export async function electRole($) {
+  let forced = null
+  let resumed = false
+  let why = null
   try {
-    const forced = roleOf(await $.env.get('RAILS_FLOW_ROLE'))
+    forced = roleOf(await $.env.get('RAILS_FLOW_ROLE'))
     if (forced === 'implementation') return { role: forced, coordinator: null }
+    resumed = await isResumed($)
     const sid = await $.session.id()
-    const r = await $.process.run(['sh', '-c', ELECT_SCRIPT, 'sh', String(sid), forced === 'coordinator' ? '1' : '0', (await isResumed($)) ? '1' : '0'], { timeoutMs: 8000 })
-    return r.exitCode === 0 ? parseElection(r.stdout) : null
+    const r = await $.process.run(['sh', '-c', ELECT_SCRIPT, 'sh', String(sid), forced === 'coordinator' ? '1' : '0', resumed ? '1' : '0'], { timeoutMs: ELECT_TIMEOUT_MS })
+    if (r.exitCode === 0) {
+      const e = parseElection(r.stdout)
+      if (e !== null || /^\s*spare\b/.test(String(r.stdout ?? ''))) return e   // a pre-warmed spare takes no part and is not defaulted (#2068)
+      why = `the script printed ${JSON.stringify(String(r.stdout ?? '').trim().slice(0, 60))}`
+    } else {
+      why = `the script exited ${r.exitCode}`
+    }
+  } catch (err) {
+    why = `${String(err?.message ?? err).slice(0, 120)}`
+    if (forced === null) resumed = resumed || (await isResumed($).catch(() => true))
+  }
+  if (resumed && forced === null) {
+    debugNote(`election failed (${why}); a resumed session defaults to implementation (#2307)`)
+    return { role: 'implementation', coordinator: null, defaulted: true }
+  }
+  return null
+}
+
+// Give this session the role `r` names. Returns whether a role was set.
+async function applyRole($, r, how) {
+  if (r === null) return false
+  state.role = r.role
+  state.coordinator = r.coordinator
+  state.defaulted = r.defaulted === true
+  state.line = electionLine(r)
+  try {
+    state.hasSurface = (await $.session.surfaces()).length > 0
   } catch {
-    return null
+    state.hasSurface = false
+  }
+  say($, `role=${r.role}${state.defaulted ? ' (defaulted)' : ''} hasSurface=${state.hasSurface} (${how})`)
+  return true
+}
+
+// A session that still has no role (or only a defaulted one) asks again, from a hook that does fire on a resumed session (the prompt, the turn start), so the role never
+// depends on one `session.start` that may not run, may not match, or may have been stalled (#2307). Cheap when the role is known; at most one
+// election per ELECT_RETRY_MS otherwise. Advisory and fails open: an error leaves the role as it was.
+export async function ensureRole($) {
+  try {
+    if (state.role !== null && !state.defaulted) return        // a DEFAULTED role is asked again: a stall that has passed may now give the real answer
+    const now = Date.now()
+    if (state.electAt !== null && now - state.electAt < ELECT_RETRY_MS) return
+    state.electAt = now
+    await applyRole($, await electRole($), 'elected on demand: session.start left no role')
+  } catch {
+    /* fails open */
   }
 }
 
@@ -197,12 +258,13 @@ export async function electRole($) {
 export async function syncRole($) {
   try {
     if (roleOf(await $.env.get('RAILS_FLOW_ROLE'))) return
-    const r = await $.process.run(['sh', '-c', ELECT_SCRIPT, 'sh', String(await $.session.id()), '0', '2'], { timeoutMs: 8000 })
+    const r = await $.process.run(['sh', '-c', ELECT_SCRIPT, 'sh', String(await $.session.id()), '0', '2'], { timeoutMs: ELECT_TIMEOUT_MS })
     const e = r.exitCode === 0 ? parseElection(r.stdout) : null
     if (e === null || e.role === state.role) return
     say($, `role ${state.role} -> ${e.role} (the machine-wide claim changed)`)
     state.role = e.role
     state.coordinator = e.coordinator
+    state.defaulted = false
     state.line = electionLine(e)
   } catch {
     /* fails open: the role stays as it was */
@@ -520,18 +582,8 @@ export function register(on) {
   // Distinct from lane-band's unmatched session.start: this one carries a matcher (isInteractive), so the two do not
   // collide. A `-p` run never runs it, and so never gets a role.
   on('session.start', { isInteractive: true }, async ($, e, next) => {
-    const r = await electRole($)
-    if (r !== null) {
-      state.role = r.role
-      state.coordinator = r.coordinator
-      state.line = electionLine(r)
-      try {
-        state.hasSurface = (await $.session.surfaces()).length > 0
-      } catch {
-        state.hasSurface = false
-      }
-      say($, `role=${r.role} hasSurface=${state.hasSurface}`)
-    }
+    state.electAt = Date.now()
+    await applyRole($, await electRole($), 'session.start')
     return next(e)
   })
 
@@ -581,6 +633,7 @@ export function register(on) {
   // A new turn is new work: a cached turn end belongs to the turn before it, and must not let a merge answer that
   // arrives mid-turn queue a clear (Fable's second review of #1728, P1).
   on('turn.start', async ($, e, next) => {
+    await ensureRole($)
     await syncRole($)
     job.turnEnd = null
     job.touched = false
