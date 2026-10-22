@@ -26,6 +26,8 @@ GUARD = Guard(
         Mutation('only a list of the dangerous variables is refused, so one nobody thought of passes', '    names = {k for k in os.environ if k.startswith(("GIT_", "GH_")) and k not in HARMLESS_ENV and not k.startswith(("GIT_AUTHOR_", "GIT_COMMITTER_", "GIT_TRACE"))}', '    names = {k for k in os.environ if k in ("GIT_DIR", "GIT_WORK_TREE", "GH_HOST") or k.startswith("GIT_CONFIG")}', 'redirecting variable'),
         Mutation("a HOME that is not the account's is not noticed", '        names.add("HOME")', '        pass', 'redirecting variable'),
         Mutation('an XDG_CONFIG_HOME that is not the default is not noticed', '        names.add("XDG_CONFIG_HOME")', '        pass', 'redirecting variable'),
+        Mutation('a git that does not answer in time is allowed by the shim entry', '            sys.exit(_timed_out(exc, " ".join(sys.argv[2:])))', '            sys.exit(0)', 'a git that does not answer in time is a named refusal'),
+        Mutation('a git that does not answer in time is allowed by the unreadable-alias entry', '            sys.exit(_timed_out(exc, sys.argv[2]))', '            sys.exit(0)', 'an unreadable alias with a git that does not answer in time is a named refusal'),
         Mutation('an alias expansion that is not plain words is not refused where in force', '    return refuse("this gh alias expands to something that is not plain words', '    return 0\n    return refuse("this gh alias expands to something that is not plain words', 'alias flags'),
     ),
 )

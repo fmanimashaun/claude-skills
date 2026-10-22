@@ -538,6 +538,18 @@ rewrite. Files move byte-for-byte; only path strings are rewritten — in `CLAUD
 `loop.md`, `README.md` and every doc. Code found in `docs/` is reported, never moved: it leaves for
 `scripts/` by your hand. On a new project, `--scaffold --write` alone lays the map down.
 
+**Four directories are required in every project** (#2298): `brain/`, `product/`, `architecture/` and `evidence/`;
+`design/` where the project has a UI (`app/views`, `src/app`, `components`, …) and `runbooks/` where it deploys
+(`config/deploy.yml`, `Dockerfile`, `vercel.json`, …). A project that has none of a required directory fails the check
+unless `docs/README.md` carries a `## Waivers` table with the directory and **a reason**; a waiver with no reason, or
+for a directory that exists, fails too. `--scaffold --write` creates the missing ones. A legacy tree maps in with
+`--propose --write` (`decisions/` and `progress/` into `brain/`, `spec/` and `plan/` into `product/`, `research/` and
+`inventory/` into `evidence/`, `process/` into `runbooks/`, by `git mv`, link rewrites asserted). The check runs
+in a project's sweep only where §8 wired `project_gates.py` into CI or `CLAUDE.md` (a project that skipped §8 is
+reported by nothing: wire it). Two more checks ride the same sweep (#2297): `brain-fresh` (an arm or promotion is
+refused while `docs/brain/STATUS.md` predates the last release tag) and `owner-rulings` (a PR whose `Fixes #n` issue carries
+an owner ruling needs a `## D-NNN` block in `docs/brain/DECISIONS.md` that mentions `#n`).
+
 ## 5. Knowledge-graph integration (only if graph tools are present)
 
 Detect with `command -v code-review-graph` and `command -v graphify`. Skip absent
