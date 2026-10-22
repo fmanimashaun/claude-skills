@@ -69,3 +69,6 @@ plugins/*/tsconfig.json
 
 # A cost record measured outside CI under --host; nothing reads it (#1738)
 docs/evidence/mutation-cost-baseline.local.json
+
+# A worktree's own artifacts (reviewer exports, baselines, logs); worktree_teardown.py removes it (#2296)
+.rf-scratch/

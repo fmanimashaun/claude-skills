@@ -1256,6 +1256,23 @@ class Doctor:
             f"git clone {CORPORA_REPO} {CORPORA_DIR}",
         )
 
+    def check_worktree_leftovers(self) -> None:
+        """Nothing beside the worktrees (#2296, owner rule 2026-10-22: "a teardown worktree should never leave a file or folder behind").
+
+        Asks `worktree_teardown.py --audit`, the one place that knows what a worktrees' parent may hold (the registered worktrees and
+        its KEEP list), so this check and the teardown cannot disagree. A FAIL names the entries; they are the evidence of a session or a
+        reviewer that wrote beside its worktree instead of into `<worktree>/.rf-scratch`."""
+        code, out = self.run("python3", str(REPO / "plugins/rails-flow/scripts/worktree_teardown.py"), "--audit", "--root", str(REPO), cwd=REPO)
+        lines = tuple(ln for ln in out.splitlines() if ln.strip())
+        if code == 0:
+            self.add(PASS, "nothing beside the worktrees", lines[-1] if lines else "")
+        elif code == 1:
+            self.add(FAIL, "nothing beside the worktrees", "entries no worktree owns sit in a worktrees' parent",
+                     "move what is still needed under its worktree's .rf-scratch (or _logs, _handoff, _board, _tools), delete the rest",
+                     findings=lines)
+        else:
+            self.add(SKIP, "nothing beside the worktrees", (lines or ("the audit could not run",))[-1])
+
     def check_corpora_ignored(self) -> None:
         """The ignore rules must actually cover the layout the setup instructions prescribe.
 
@@ -1580,6 +1597,7 @@ class Doctor:
         self.check_corpora()
         self.check_corpora_ignored()
         self.check_dist_clean()
+        self.check_worktree_leftovers()
         if gates:
             self.check_gates()
         else:

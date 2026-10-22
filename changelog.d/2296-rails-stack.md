@@ -1,0 +1,2 @@
+section: rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+- **parallel-session-lane: put a worktree's artifacts in `<worktree>/.rf-scratch/`, never beside it — `plugins/rails-stack/skills/parallel-session-lane/SKILL.md`** (#2296). Our-design change, the owner rule of 2026-10-22. The teardown removes that dir, deletes the merged branch, and fails by name on anything left in the worktrees' parent.

@@ -174,7 +174,7 @@ export function electionLine(r) {
   return r.role === 'coordinator'
     ? 'rails-flow role: this session was elected coordinator (none was live). It compacts itself near a limit and never clears.'
     : `rails-flow role: this session is an implementation session; the coordinator is ${r.coordinator ?? 'another live session'}. ` +
-        'It clears itself after its PR is merged into dev and its worktree is removed.'
+        'It clears itself after its PR is merged into dev and worktree_teardown.py has passed (#2296).'
 }
 
 // Is this session a resume (or continue, or fork)? The mods `session.start` input carries no start source: its
@@ -424,6 +424,25 @@ export function parseWorktreeRemove(cmd) {
   return a === null ? null : (a.find((x) => !x.startsWith('-')) ?? null)
 }
 
+// A PASSED teardown (#2296): `worktree_teardown.py <path>` whose output says it left nothing (no database, process, worktree,
+// branch or file beside it) -> the path, else null. The owner rule: the context clears only after the teardown has passed, so a
+// bare `git worktree remove` (which leaves the databases, the branch and the scratch behind) no longer marks the job removed, and
+// a teardown that printed LEFT BEHIND or REFUSED does not either.
+export function passedTeardown(cmd, text) {
+  // TOKENISED, not one regex (#2305 review, CodeQL: a nested quantifier backtracked exponentially on `worktree_teardown.py - -- - ...`).
+  // Linear: the words after the script up to the first shell separator; flags start with `-`, the first other word is the path.
+  const s = String(cmd)
+  const at = s.indexOf('worktree_teardown.py')
+  if (at < 0) return null
+  const rest = s.slice(at + 'worktree_teardown.py'.length).split(/[;&|\n]/, 1)[0]
+  const words = rest.split(/\s+/).filter(Boolean)
+  const flags = words.filter((w) => w.startsWith('-'))
+  if (flags.some((f) => ['--dry-run', '--audit', '--selftest', '--check-wording'].includes(f.split('=')[0]))) return null
+  const path = words.find((w) => !w.startsWith('-'))
+  if (path === undefined) return null
+  return String(text ?? '').includes('worktree_teardown: done, nothing left') ? path : null
+}
+
 // The URL of the pull request `gh pr create` printed: the LAST full github.com PR URL, never a bare number,
 // because the coordinator works in two repositories and `gh pr view <n>` would pick the current one.
 export function createdPr(cmd, text) {
@@ -620,13 +639,13 @@ export function register(on) {
         job.worktrees.set(add.path, add.branch)
         job.removed = false
       }
-      const rm = parseWorktreeRemove(cmd)
+      const out = r?.text ?? r?.result?.stdout
+      const rm = passedTeardown(cmd, out)
       if (rm) {
         job.worktrees.delete(rm)
         job.removedPaths.add(rm.replace(/\/+$/, ''))
         job.removed = true
       }
-      const out = r?.text ?? r?.result?.stdout
       const pr = createdPr(cmd, out)
       if (pr !== null) job.prs.add(pr)
       job.handoff = handoffComment(cmd, out) ?? job.handoff
