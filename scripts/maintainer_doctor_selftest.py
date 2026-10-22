@@ -266,8 +266,18 @@ def hostile_environment_fixtures() -> None:
             shutil.rmtree(work.parent, ignore_errors=True)
 
     with tempfile.TemporaryDirectory() as td:
-        # (A) the shim first on PATH. CONTROL: the old way (a plain clone of an empty remote, staged with `git add -A`) is refused in it.
-        shim_env = {**base, "PATH": f"{shim}{os.pathsep}{base['PATH']}"}
+        # (A) the shim first on PATH, with what a Claude session gives it: the shim accepts a marked fixture only when TMPDIR and CLAUDE_SESSION_PROJECT_TOP are set
+        # (`temp_root_ok`), and a bare CI runner sets neither, so there it refuses every fixture, marked or not (found on the runner, #2312). The Mac passed because the
+        # selftest ran from a session whose shell had both.
+        shim_env = {**base, "PATH": f"{shim}{os.pathsep}{base['PATH']}", "TMPDIR": tempfile.gettempdir(), "CLAUDE_SESSION_PROJECT_TOP": str(REAL_REPO)}
+        # CONTROLS. The environment lets a MARKED fixture stage with `git add -A` (so the check is about the fixture, not about a shim that refuses everything), and refuses the
+        # old way: a plain clone of an empty remote, staged with `git add -A`.
+        marked = fixture_git.init(Path(td) / "marked", "-b", "main")
+        (marked / "m.txt").write_text("x\n", encoding="utf-8")
+        _tick()
+        staged = subprocess.run(["git", "add", "-A"], cwd=marked, env=fixture_git.env(marked, shim_env), capture_output=True, text=True)
+        if staged.returncode != 0:
+            FAILURES.append(f"#2312: CONTROL: the shim environment refused `git add -A` in a MARKED fixture, so check A cannot tell a good fixture from a bad one: {staged.stderr.strip().splitlines()[:2]}")
         subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(Path(td) / "old-remote.git")], env=shim_env, capture_output=True)
         subprocess.run(["git", "clone", "-q", str(Path(td) / "old-remote.git"), str(Path(td) / "old")], env=shim_env, capture_output=True)
         _tick()
