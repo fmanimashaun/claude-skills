@@ -56,6 +56,12 @@ SHARD = r"_p\d+"
 RUNNER = ("%w[development test production].each{|e| ActiveRecord::Base.configurations.configs_for(env_name: e).each{|c| "
           "puts [e, c.adapter, c.database].join(\"\\t\")}}")
 STOP_WAIT = 5.0
+# NOTHING LEFT BEHIND (#2296, owner rule 2026-10-22: "a teardown worktree should never leave a file or folder behind"). A worktree's
+# artifacts (reviewer exports, baselines, logs) go in its own SCRATCH dir, which the teardown removes; the shared parent of the
+# worktrees keeps only other worktrees and the declared KEEP entries. The main checkout's own parent holds other projects, so it is
+# never scanned.
+SCRATCH = ".rf-scratch"
+KEEP = frozenset({"_logs", "_handoff", "_board", "_tools"})
 
 
 def run(cmd, cwd=None, env=None, timeout=60) -> tuple[int, str]:
@@ -82,7 +88,8 @@ def worktrees(cwd) -> list[dict]:
             key, _, val = line.partition(" ")
             row[key] = val
         if "worktree" in row:
-            rows.append({"path": os.path.realpath(row["worktree"]), "head": row.get("HEAD", ""), "locked": "locked" in row})
+            rows.append({"path": os.path.realpath(row["worktree"]), "head": row.get("HEAD", ""), "locked": "locked" in row,
+                         "branch": row.get("branch", "").removeprefix("refs/heads/")})
     return rows
 
 
@@ -106,6 +113,7 @@ def refusal(path: str, assume_merged: bool) -> str | None:
     if row["locked"]:
         return "the worktree is locked (`git worktree unlock` first, deliberately)"
     rc, status = git(path, "status", "--porcelain", "--ignore-submodules=dirty")
+    status = "\n".join(ln for ln in status.splitlines() if ln.strip() and not ln[3:].startswith(SCRATCH + "/"))   # the scratch dir goes with it
     if rc != 0 or status.strip():
         return "uncommitted work (commit or push it first): " + (status.strip().splitlines() or ["git status failed"])[0]
     if not assume_merged:
@@ -251,6 +259,83 @@ def stop(pid: int) -> None:
         time.sleep(0.2)
 
 
+def born(path: str) -> float | None:
+    """When `git worktree add` made this worktree: the mtime of its admin dir's `commondir`, written once at the add."""
+    rc, gitdir = git(path, "rev-parse", "--absolute-git-dir")
+    f = Path(gitdir.strip(), "commondir")
+    return f.stat().st_mtime if rc == 0 and f.is_file() else None
+
+
+def parent_leftovers(parent: str, main: str, registered: set[str], since: float | None = None) -> list[str]:
+    """Entries in a worktrees' parent that are neither a registered worktree nor KEEP (made at or after `since`, when given)."""
+    if os.path.realpath(parent) == os.path.realpath(os.path.dirname(main)) or not os.path.isdir(parent):
+        return []
+    out = []
+    for name in sorted(os.listdir(parent)):
+        full = os.path.realpath(os.path.join(parent, name))
+        if name in KEEP or full in registered:
+            continue
+        if since is not None and os.lstat(os.path.join(parent, name)).st_mtime < since:
+            continue
+        out.append(name)
+    return out
+
+
+def open_pr_bases(branch: str, cwd: str) -> list[int] | None:
+    """Open PRs whose BASE is `branch` (they stack on it), or None when `gh` cannot say: the remote branch is then kept (fails closed)."""
+    rc, out = run(["gh", "pr", "list", "--state", "open", "--base", branch, "--limit", "200", "--json", "number", "--jq", ".[].number"], cwd=cwd)
+    return [int(n) for n in out.split()] if rc == 0 else None
+
+
+PR_BASES = open_pr_bases     # the selftest swaps in a stub, so it never calls the network
+
+
+def delete_branch(main: str, branch: str, tip: str) -> list[str]:
+    """Delete the worktree's merged branch, local and remote (#2296 scope addition); what was left, by name.
+
+    LOCAL: `git update-ref -d refs/heads/<b> <tip>`, which refuses if the branch moved since the merge check. Not `git branch -d`: that judges
+    "merged" against the checkout it runs in, and the main checkout's HEAD is often behind the integration branch, so it would refuse a branch
+    this script has already proved merged (measured 2026-10-22: four merged branches, `-d` refused all four from a stale main). Never `-D`.
+    REMOTE: `git push origin --delete <b>` only when the branch is on `origin` and no open PR uses it as its base; when `gh` cannot say, it
+    is kept and named."""
+    left = []
+    if not branch:
+        return left
+    if git(main, "update-ref", "-d", f"refs/heads/{branch}", tip)[0] != 0 and git(main, "rev-parse", "-q", "--verify", f"refs/heads/{branch}")[0] == 0:
+        left.append(f"branch {branch} (it moved since the merge check)")
+    if git(main, "remote", "get-url", "origin")[0] != 0 or not git(main, "ls-remote", "--heads", "origin", branch)[1].strip():
+        return left
+    bases = PR_BASES(branch, main)
+    if bases is None:
+        left.append(f"remote branch origin/{branch} (`gh` could not say whether an open PR stacks on it)")
+    elif bases:
+        left.append(f"remote branch origin/{branch} (open PR(s) {', '.join(f'#{n}' for n in bases)} stack on it: retarget them first)")
+    elif git(main, "push", "-q", "origin", "--delete", branch)[0] != 0 or git(main, "ls-remote", "--heads", "origin", branch)[1].strip():
+        left.append(f"remote branch origin/{branch} (the delete failed)")
+    return left
+
+
+def audit(root: str, say=print, parents: list[str] | None = None) -> int:
+    """Every entry in every worktrees' parent that is not a registered worktree or KEEP (#2296): 1 when any, so a doctor can fail on it.
+    The parents are those of the registered worktrees, the conventional `<main checkout>-wt` sibling, and any `parents` given: after the last
+    worktree in a parent is torn down, only the convention or an explicit parent still finds what it left."""
+    rows = worktrees(os.path.realpath(root))
+    if not rows:
+        say(f"worktree_teardown --audit: {root} is not a git repository")
+        return 2
+    main = rows[0]["path"]
+    registered = {os.path.realpath(r["path"]) for r in rows}
+    where = {os.path.dirname(r["path"]) for r in rows[1:]} | {main + "-wt"} | {os.path.realpath(p) for p in parents or []}
+    found = {p: parent_leftovers(p, main, registered) for p in sorted(where)}
+    found = {p: f for p, f in found.items() if f}
+    for p, f in found.items():
+        say(f"worktree_teardown --audit: {p} holds {len(f)} entr{'y' if len(f) == 1 else 'ies'} that no worktree owns: " + ", ".join(f[:20])
+            + (" ..." if len(f) > 20 else ""))
+    if not found:
+        say("worktree_teardown --audit: every worktrees' parent holds only worktrees and " + ", ".join(sorted(KEEP)))
+    return 1 if found else 0
+
+
 def teardown(path: str, dry_run=False, assume_merged=False, pg_bin: str | None = None, say=print) -> int:
     path = os.path.realpath(path)
     why = refusal(path, assume_merged)
@@ -293,6 +378,9 @@ def teardown(path: str, dry_run=False, assume_merged=False, pg_bin: str | None =
     if dry_run:
         say("  --dry-run: nothing changed")
         return 0
+    since = born(path)
+    row = next(r for r in worktrees(path) if r["path"] == path)
+    shutil.rmtree(os.path.join(path, SCRATCH), ignore_errors=True)      # the worktree's own artifacts (#2296), before the remove that would refuse them
     for pid in pids:
         stop(pid)
     for database in doomed:
@@ -309,10 +397,14 @@ def teardown(path: str, dry_run=False, assume_merged=False, pg_bin: str | None =
     left += ["databases (PostgreSQL could not be asked afterwards)"] if now is None else [f"database {d}" for d in owned(now, names, shared)]
     left += [f"process {p}" for p in pids if alive(p)]
     left += [f"worktree {path}"] if os.path.exists(path) or any(r["path"] == path for r in worktrees(main)) else []
+    left += delete_branch(main, row["branch"], row["head"])
+    registered = {os.path.realpath(r["path"]) for r in worktrees(main)}
+    left += [f"{os.path.join(os.path.dirname(path), e)} (made in the worktrees' parent during this worktree's life: it belongs under "
+             f"<worktree>/{SCRATCH}, which goes with the worktree)" for e in parent_leftovers(os.path.dirname(path), main, registered, since)]
     if left:
         say("worktree_teardown: LEFT BEHIND: " + ", ".join(left))
         return 1
-    say("worktree_teardown: done, nothing left: no database, no process, no worktree")
+    say("worktree_teardown: done, nothing left: no database, no process, no worktree, no branch, nothing beside it")
     return 0
 
 
@@ -510,6 +602,50 @@ def selftest() -> int:
             check("--assume-merged ends a branch whose head is not an ancestor", teardown(wq, assume_merged=True, pg_bin=binpath, say=quiet) == 0
                   and dropped() == ["app_dev_squashed"] and not listed(wq))
 
+            # 7. nothing left beside it (#2296): scratch goes with the worktree; an export in the worktrees' parent fails by name;
+            #    the KEEP entries stay; the merged branch goes, locally and on origin unless a PR stacks on it.
+            global PR_BASES
+            said: list[str] = []
+            wt_parent = os.path.join(root, "repo-wt")
+            w7 = add("scratchy", parent="repo-wt")
+            universe()
+            os.makedirs(os.path.join(w7, SCRATCH, "export"))
+            Path(w7, SCRATCH, "export", "big.txt").write_text("x\n")
+            os.makedirs(os.path.join(wt_parent, "_logs"), exist_ok=True)
+            check("a worktree whose artifacts are in its scratch dir ends with status 0", teardown(w7, pg_bin=binpath, say=quiet) == 0)
+            check("the scratch dir goes with the worktree, and the KEEP entry stays", not os.path.exists(w7) and os.path.isdir(os.path.join(wt_parent, "_logs")))
+            check("its merged branch is deleted locally", g("branch", "--list", "b-scratchy-repo-wt").strip() == "")
+            w8 = add("leaky", parent="repo-wt")
+            universe()
+            os.makedirs(os.path.join(wt_parent, "_review-leaky"))
+            code = teardown(w8, pg_bin=binpath, say=said.append)
+            check("an export left in the worktrees' parent fails the teardown, by name",
+                  code == 1 and any("_review-leaky" in ln and SCRATCH in ln for ln in said), str(said[-2:]))
+            check("the worktree itself is still removed", not os.path.exists(w8))
+            check("--audit finds the conventional <main>-wt parent with no worktree left in it", audit(main, say=quiet) == 0)
+            check("--audit names what no worktree owns in a given parent", audit(main, say=quiet, parents=[wt_parent]) == 1)
+            os.rmdir(os.path.join(wt_parent, "_review-leaky"))
+            check("--audit is clean when the parent holds only worktrees and KEEP", audit(main, say=quiet, parents=[wt_parent]) == 0)
+            os.makedirs(main + "-wt/_doctrine-old")
+            check("--audit scans the conventional <main>-wt parent even when no worktree is registered there", audit(main, say=quiet) == 1)
+            os.rmdir(main + "-wt/_doctrine-old")
+            bare = os.path.join(root, "origin.git")
+            fixture_git.init(bare, "--bare", "-b", "dev")
+            g("remote", "add", "origin", bare)
+            for name, bases, want, needle in (("pushed", [], 0, None), ("stacked", [41], 1, "#41"), ("unknown", None, 1, "could not say")):
+                wp = add(name, parent="repo-wt")
+                universe()
+                g("push", "-q", "origin", f"b-{name}-repo-wt")
+                PR_BASES = lambda branch, cwd, _b=bases: _b  # noqa: E731
+                said.clear()
+                code = teardown(wp, pg_bin=binpath, say=said.append)
+                on_origin = bool(g("ls-remote", "--heads", "origin", f"b-{name}-repo-wt").strip())
+                if needle is None:
+                    check("a merged branch with no stacked PR is deleted on origin too", code == 0 and not on_origin, str(said[-2:]))
+                else:
+                    check(f"the remote branch is kept and named when {name}", code == 1 and on_origin and any(needle in ln for ln in said), str(said[-2:]))
+            PR_BASES = open_pr_bases
+
             def td(path, **kw):      # a raise inside the teardown is a failed fixture with a label, not a crashed selftest
                 try:
                     return teardown(path, pg_bin=binpath, say=quiet, **kw)
@@ -630,6 +766,8 @@ def main_cli(argv: list[str]) -> int:
     ap.add_argument("--pg-bin")
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--check-wording", action="store_true")
+    ap.add_argument("--audit", action="store_true", help="list what no worktree owns in each worktrees' parent (exit 1 when any)")
+    ap.add_argument("--parent", action="append", default=[], help="with --audit: another worktrees' parent to scan")
     ap.add_argument("--root", default=str(Path(__file__).resolve().parents[3]))
     args = ap.parse_args(argv)
     if args.selftest:
@@ -640,6 +778,8 @@ def main_cli(argv: list[str]) -> int:
             print(f"teardown wording: {line}")
         print(f"teardown wording: {len(WORDING_SITES)} place(s) checked, {len(found)} finding(s)")
         return 1 if found else 0
+    if args.audit:
+        return audit(args.root, parents=args.parent)
     if not args.worktree:
         ap.error("a worktree path is required")
     return teardown(args.worktree, dry_run=args.dry_run, assume_merged=args.assume_merged, pg_bin=args.pg_bin)
