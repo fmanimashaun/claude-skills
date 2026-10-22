@@ -16,7 +16,10 @@ renders with no request and no viewer. Four findings, all from reading the sourc
      guard clause `reject unless subscription_allowed?` (also `return reject unless ...`), or turbo-rails' own `if ... && subscription_allowed? ... else reject`
      (it subclasses `ActionCable::Channel::Base`). Defining `subscription_allowed?` is not enough: `Turbo::StreamsChannel#subscribed` never calls it, so a
      subclass that only defines the method is still open; a `super` inside `subscribed` has already streamed; comments are stripped, so the name in a comment
-     proves nothing. A strict shape beats chasing every bypass: anything else is a finding.
+     proves nothing. A strict shape beats chasing every bypass: anything else is a finding. **Ambiguity is refused, not parsed**: a channel file with a second
+     definition of `subscribed` (a `def` or a `define_method`), a `=begin` block, or anything after `def subscribed` on its own line (a one-liner, a `;`, a
+     heredoc opener) is a finding, because Ruby runs forms this reader would read wrongly (the later definition wins; a guarded `def` inside `=begin/=end` is
+     not code; a heredoc can hold the guard line).
   4. A partial that a broadcast renders (the `partial:` of a `broadcast_*` call, or the default partial of `broadcasts_to` / `broadcasts`) must not mention
      `current_user`, `current_*`, `session`, `cookies` or `Current.`: there is no request there, so it raises or renders one viewer's data to everyone.
 
@@ -156,7 +159,19 @@ def channel_problem(text: str, name: str) -> str | None:
     """Why a channel file does not check its subscriptions, or None. Its OWN `subscribed` must OPEN with the guard (`opens_with_guard`): turbo-rails'
     `Turbo::StreamsChannel#subscribed` never calls `subscription_allowed?`, so defining the method in a subclass of it checks nothing, and a `super` inside
     `subscribed` has already streamed. Comments are stripped first, so the name in a comment proves nothing."""
+    # AMBIGUITY IS A FINDING, NOT SOMETHING TO PARSE AROUND: Ruby runs forms this reader would pick wrongly (a second `def subscribed` wins, a guarded `def`
+    # inside `=begin/=end` is not code, a heredoc can hold the guard line, `define_method(:subscribed)` redefines it), and a strict reader beats parsing Ruby.
+    if re.search(r"^=begin\b", text, re.M):
+        return f"channel {name}: the file has a `=begin`/`=end` block comment, which this check cannot read around: remove it, or the channel cannot be checked"
     code = strip_comments(text)
+    defs = len(re.findall(r"\bdef\s+subscribed\b", code))
+    defined = len(re.findall(r"\bdefine_method\s*\(?\s*(?::subscribed\b|[\"']subscribed[\"'])", code))
+    if defs + defined > 1:
+        return f"channel {name}: `subscribed` is defined more than once (def or define_method), so which one runs cannot be read here: keep exactly one plain `def subscribed`"
+    if defined:
+        return f"channel {name}: `subscribed` is defined with define_method, which this check does not read: write a plain `def subscribed`"
+    if re.search(r"\bdef\s+subscribed\b(?![ \t]*(?:\(\s*\))?[ \t]*$)", code, re.M):
+        return f"channel {name}: `def subscribed` has more on its own line (a one-liner, `;`, `=`, or a heredoc opener), which this check cannot read: put the body on the lines below"
     body = subscribed_body(code)
     if body is None:
         return (f"channel {name} has no `subscribed` of its own, so it inherits one that never calls subscription_allowed? "
@@ -346,6 +361,27 @@ def _selftest() -> int:
     check("a stream_from before the check (return stream_from(x)) is a finding", code == 1 and any("must OPEN with the guard" in ln for ln in out))
     code, out = project({**page, **channel("    super\n    reject unless subscription_allowed?\n", parent="Turbo::StreamsChannel")})
     check("super inside subscribed on a Turbo::StreamsChannel subclass is a finding (it has already streamed)", code == 1 and any("calls super" in ln for ln in out))
+    two_defs = ("class AuditChannel < ActionCable::Channel::Base\n  def subscribed\n    reject unless subscription_allowed?\n    stream_from verified_stream_name_from_params\n  end\n\n"
+                "  def subscribed\n    stream_from verified_stream_name_from_params\n  end\n\n  def subscription_allowed?\n    false\n  end\nend\n")
+    code, out = project({**page, "app/channels/audit_channel.rb": two_defs})
+    check("two `def subscribed`, the unguarded one winning, is a finding", code == 1 and any("defined more than once" in ln for ln in out))
+    in_block = ("class AuditChannel < ActionCable::Channel::Base\n=begin\n  def subscribed\n    reject unless subscription_allowed?\n  end\n=end\n"
+                "  def subscribed\n    stream_from verified_stream_name_from_params\n  end\n\n  def subscription_allowed?\n    false\n  end\nend\n")
+    code, out = project({**page, "app/channels/audit_channel.rb": in_block})
+    check("a guarded def inside =begin/=end, then the real one, is a finding", code == 1 and any("=begin" in ln for ln in out))
+    heredoc = ("class AuditChannel < ActionCable::Channel::Base\n  def subscribed; stream_from verified_stream_name_from_params; end; X = <<~R\n    reject unless subscription_allowed?\n  R\n\n"
+               "  def subscription_allowed?\n    false\n  end\nend\n")
+    code, out = project({**page, "app/channels/audit_channel.rb": heredoc})
+    check("a one-liner `def subscribed; ...; end` with a heredoc holding the guard line is a finding", code == 1 and any("more on its own line" in ln for ln in out))
+    code, out = project({**page, "app/channels/audit_channel.rb": "class AuditChannel < ActionCable::Channel::Base\n  def subscribed()\n    reject unless subscription_allowed?\n    stream_from verified_stream_name_from_params\n  end\n\n  def subscription_allowed?\n    true\n  end\nend\n"})
+    check("`def subscribed()` with empty parentheses and the body below is clean", code == 0)
+    redefined = ("class AuditChannel < ActionCable::Channel::Base\n  def subscribed\n    reject unless subscription_allowed?\n    stream_from verified_stream_name_from_params\n  end\n\n"
+                 "  define_method(:subscribed) { stream_from verified_stream_name_from_params }\n\n  def subscription_allowed?\n    false\n  end\nend\n")
+    code, out = project({**page, "app/channels/audit_channel.rb": redefined})
+    check("define_method(:subscribed) after a guarded def is a finding", code == 1 and any("defined more than once" in ln for ln in out))
+    only_define_method = redefined.replace("  def subscribed\n    reject unless subscription_allowed?\n    stream_from verified_stream_name_from_params\n  end\n\n", "")
+    code, out = project({**page, "app/channels/audit_channel.rb": only_define_method})
+    check("a channel whose only subscribed is a define_method is a finding (not read)", code == 1 and any("define_method" in ln for ln in out))
     code, out = project({**page, **channel("    reject unless subscription_allowed?\n    stream_from verified_stream_name_from_params\n")})
     check("the guard clause `reject unless subscription_allowed?` is clean", code == 0)
     code, out = project({**page, **channel("    # only a signed-in admin may listen\n    reject unless subscription_allowed? # the guard\n    stream_from verified_stream_name_from_params\n")})
