@@ -812,18 +812,18 @@ def check_gate_without_onfailure() -> tuple[list[Finding], int]:
 
 
 # Rule: findings-script-drift (#1680)
-# qa-reporter validates its findings records with findings.py, which rails-flow owns. It used to call
-# `../rails-flow/scripts/findings.py`, which resolves only in this repo's checkout: an install puts each
-# plugin in its own versioned cache directory. qa-flow now ships a copy; this keeps it the same script.
-FINDINGS_COPIES = ("plugins/rails-flow/scripts/findings.py",
+# findings.py is a stack-neutral script whose CANONICAL home is core-skills (#2283). Each plugin whose agents run it ships a
+# byte-identical copy, because an agent reaches only its own ${CLAUDE_PLUGIN_ROOT} (an install puts each plugin in its own
+# versioned cache directory, so `../rails-flow/scripts/findings.py` resolves only in this checkout, #1680). The copies are
+# permanent, not temporary: there is no cross-plugin root to read the canonical one through. Index 0 is canonical.
+FINDINGS_COPIES = ("plugins/core-skills/scripts/findings.py",
+                   "plugins/rails-flow/scripts/findings.py",
                    "plugins/qa-flow/scripts/findings.py",
-                   # #2173: rails-stack's code-reviewer moved out of rails-flow and runs its own copy (a plugin sees only its own
-                   # ${CLAUDE_PLUGIN_ROOT}). TEMPORARY: findings.py is a neutral reference whose canonical home is to become core-skills (#2283).
                    "plugins/rails-stack/scripts/findings.py")
 
 
 def check_findings_script_drift() -> tuple[list[Finding], int]:
-    """The findings.py copies exist and are byte-identical to the rails-flow (canonical) one."""
+    """The findings.py copies exist and are byte-identical to the core-skills (canonical) one."""
     findings: list[Finding] = []
     texts = {}
     for rel in FINDINGS_COPIES:
@@ -831,7 +831,7 @@ def check_findings_script_drift() -> tuple[list[Finding], int]:
         if not p.is_file():
             findings.append(Finding("findings-script-drift", rel, 0,
                                     "missing -- qa-reporter's findings validation has nothing to run (#1680); "
-                                    "copy it from plugins/rails-flow/scripts/findings.py"))
+                                    "copy it from plugins/core-skills/scripts/findings.py"))
             continue
         texts[rel] = p.read_bytes()
     canonical = texts.get(FINDINGS_COPIES[0])
@@ -855,8 +855,10 @@ VENDORED_COPIES = (
      "the vendored triage_failures.py imports it; it leaves with that copy, when the flows' triage reads the descriptor (#2183)"),
     ("plugins/rails-flow/scripts/mockup_records.py", "plugins/qa-flow/scripts/mockup_records.py",
      "qa-flow's release_evidence.py refuses the certification stamp for a shipped design with no `Story:`; it reads the record lines with this file (#2226), and leaves when a shared core plugin owns it"),
-    ("plugins/rails-flow/reference/agent-output-contract.md", "plugins/rails-stack/reference/agent-output-contract.md",
-     "every moved agent cites it; a neutral reference whose canonical home is to become core-skills (#2283); the copy stays, since an agent reads only its own plugin"),
+    ("plugins/core-skills/reference/agent-output-contract.md", "plugins/rails-flow/reference/agent-output-contract.md",
+     "PERMANENT: rails-flow's agents cite it through ${CLAUDE_PLUGIN_ROOT}; core-skills is the canonical home (#2283) and an agent reads only its own plugin"),
+    ("plugins/core-skills/reference/agent-output-contract.md", "plugins/rails-stack/reference/agent-output-contract.md",
+     "PERMANENT: every agent in rails-stack cites it; core-skills is the canonical home (#2283) and an agent reads only its own plugin"),
 )
 
 
@@ -5910,12 +5912,18 @@ def selftest() -> int:
     scenario("identical findings.py copies are silent", rule="findings-script-drift", expect_finding=False,
              files={c: FS for c in FINDINGS_COPIES}, only=check_findings_script_drift)
     scenario("a findings.py copy that differs by one byte is a finding", rule="findings-script-drift",
-             expect_finding=True, files={**{c: FS for c in FINDINGS_COPIES}, FINDINGS_COPIES[1]: FS + "\n"},
+             expect_finding=True, files={**{c: FS for c in FINDINGS_COPIES}, FINDINGS_COPIES[2]: FS + "\n"},
              only=check_findings_script_drift)
     scenario("a missing qa-flow findings.py is a finding", rule="findings-script-drift", expect_finding=True,
-             files={c: FS for c in FINDINGS_COPIES if c != FINDINGS_COPIES[1]}, only=check_findings_script_drift)
+             files={c: FS for c in FINDINGS_COPIES if c != FINDINGS_COPIES[2]}, only=check_findings_script_drift)
     scenario("a rails-stack findings.py that differs by one byte is a finding", rule="findings-script-drift",
-             expect_finding=True, files={**{c: FS for c in FINDINGS_COPIES}, FINDINGS_COPIES[2]: FS + "\n"},
+             expect_finding=True, files={**{c: FS for c in FINDINGS_COPIES}, FINDINGS_COPIES[3]: FS + "\n"},
+             only=check_findings_script_drift)
+    scenario("a rails-flow findings.py that differs by one byte is a finding", rule="findings-script-drift",
+             expect_finding=True, files={**{c: FS for c in FINDINGS_COPIES}, FINDINGS_COPIES[1]: FS + "\n"},
+             only=check_findings_script_drift)
+    scenario("a core-skills (canonical) findings.py that differs from the copies is a finding", rule="findings-script-drift",
+             expect_finding=True, files={**{c: FS for c in FINDINGS_COPIES}, FINDINGS_COPIES[0]: FS + "\n"},
              only=check_findings_script_drift)
     VC = "BODY = 1\n"
     scenario("identical vendored copies are silent", rule="vendored-copy-drift", expect_finding=False,
