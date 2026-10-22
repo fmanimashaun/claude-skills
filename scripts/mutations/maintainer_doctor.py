@@ -5,7 +5,8 @@ GUARD = Guard(
     name="maintainer_doctor",
     subject="scripts/maintainer_doctor.py",
     selftest="scripts/maintainer_doctor_selftest.py",
-    needs=(
+    needs=("plugins/rails-flow/scripts/rf_tmp.py",   # rf_tmp (#2306)
+           
         # + `scripts`: GATES names ~55 sibling scripts; listing them by hand is the same rot that made check_handoff inert.
         ".gitignore",
         "scripts",

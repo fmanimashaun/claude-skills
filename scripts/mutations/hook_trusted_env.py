@@ -8,7 +8,8 @@ GUARD = Guard(
     # Only the hostile-environment group drives this subject, and each mutant runs ONE of its checks.
     selftest_args=("--only", "hostile_env"),
     narrow_with="--match",
-    needs=("plugins/rails-flow/scripts/advisory_scope.py", "plugins/rails-flow/scripts/security_scope.py", "plugins/rails-flow/scripts/check_threat_model.py", "plugins/rails-flow/scripts/detect_stack.py",  # stop-gate.sh runs advisory_scope.py (#2262)
+    needs=("plugins/rails-flow/scripts/rf_tmp.py",   # rf_tmp (#2306)
+           "plugins/rails-flow/scripts/advisory_scope.py", "plugins/rails-flow/scripts/security_scope.py", "plugins/rails-flow/scripts/check_threat_model.py", "plugins/rails-flow/scripts/detect_stack.py",  # stop-gate.sh runs advisory_scope.py (#2262)
            "plugins/rails-flow/scripts/fixture_git.py", "plugins/rails-flow/hooks/hooks.json", "plugins/qa-flow/hooks/hooks.json", "plugins/pipeline/hooks/hooks.json", "plugins/design-flow/hooks/hooks.json",
            "plugins/rails-flow/scripts/assign_lanes.py", "plugins/rails-flow/scripts/brain_local_sync.py",
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts", "plugins/pipeline/hooks/scripts", "plugins/design-flow/hooks/scripts", "plugins/qa-flow/scripts",

@@ -7,7 +7,8 @@ GUARD = Guard(
     selftest="scripts/evidence_app_tie.py",   # --selftest lives in the module
     # The pattern compiler is borrowed, not copied, and the selftest drives the entry points that
     # close the import cycle -- both need the real neighbours staged.
-    needs=("scripts/route_coverage.py",
+    needs=("scripts/rf_tmp.py",   # rf_tmp (#2306)
+           "scripts/route_coverage.py",
            "scripts/validate_evidence.py",
            "scripts/validate_evidence_selftest.py",
            "scripts/qa_config.py"),

@@ -11,7 +11,8 @@ GUARD = Guard(
     subject="scripts/session_reaper.py",
     selftest="scripts/session_reaper.py",
     selftest_args=("--selftest",),
-    needs=("scripts/process_containment.py",),      # imported by the subject
+    needs=("scripts/rf_tmp.py",   # rf_tmp (#2306)
+           "scripts/process_containment.py",),      # imported by the subject
     mutations=(
         Mutation(
             "a RUNNING orphan is reaped too, so a server the session meant to leave is killed",

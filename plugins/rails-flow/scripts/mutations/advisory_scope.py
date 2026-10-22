@@ -8,7 +8,8 @@ GUARD = Guard(
     selftest_args=("--selftest",),
     # It reuses security_scope (the security category), check_threat_model (the filler test) and detect_stack; the selftest
     # builds a scratch repo through fixture_git.
-    needs=("scripts/check_threat_model.py", "scripts/detect_stack.py", "scripts/fixture_git.py"),
+    needs=("scripts/rf_tmp.py",   # rf_tmp (#2306)
+           "scripts/check_threat_model.py", "scripts/detect_stack.py", "scripts/fixture_git.py"),
     mutations=(
         Mutation(
             "the security category stops firing",

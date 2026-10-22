@@ -5,6 +5,7 @@ GUARD = Guard(
     name="lint_self_consistency",
     subject="scripts/lint_self_consistency.py",
     selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
+    needs=("plugins/rails-flow/scripts/rf_tmp.py",),  # rf_tmp (#2306)
     mutations=(
         Mutation(
             # #2182 release blocker: every shipped file type is scanned for the clone-only skills path.

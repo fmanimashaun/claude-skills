@@ -7,7 +7,8 @@ GUARD = Guard(
     subject="plugins/rails-flow/hooks/scripts/session-start.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
     selftest_args=("--only", "submodule_filter"),
-    needs=("plugins/rails-flow/scripts/advisory_scope.py", "plugins/rails-flow/scripts/security_scope.py", "plugins/rails-flow/scripts/check_threat_model.py", "plugins/rails-flow/scripts/detect_stack.py",  # stop-gate.sh runs advisory_scope.py (#2262)
+    needs=("plugins/rails-flow/scripts/rf_tmp.py",   # rf_tmp (#2306)
+           "plugins/rails-flow/scripts/advisory_scope.py", "plugins/rails-flow/scripts/security_scope.py", "plugins/rails-flow/scripts/check_threat_model.py", "plugins/rails-flow/scripts/detect_stack.py",  # stop-gate.sh runs advisory_scope.py (#2262)
            "plugins/rails-flow/scripts/fixture_git.py", "plugins/rails-flow/scripts/wip_commit.py",  # wip-commit.sh runs it (#1915 x #1920)
            'plugins/qa-flow/scripts/remote_evidence.py',  # #1581 merge: run by release-gate.sh
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # session-start.sh runs all three (#1581, #1828: the harness drives it)

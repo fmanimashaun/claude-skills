@@ -7,6 +7,7 @@ GUARD = Guard(
     name='statusline',
     subject='scripts/statusline.py',
     selftest='scripts/statusline.py',
+    needs=("scripts/rf_tmp.py", ),  # rf_tmp (#2306)
     mutations=(
         Mutation(
             'amber starts at 81%',

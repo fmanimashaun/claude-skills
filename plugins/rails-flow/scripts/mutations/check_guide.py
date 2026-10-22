@@ -5,7 +5,8 @@ GUARD = Guard(
     name="check_guide",
     subject="scripts/check_guide.py",
     selftest="scripts/check_guide_selftest.py",
-    needs=("scripts/fixture_git.py",),   # its selftest's pin fixtures run git through fixture_git (#1588)
+    needs=("scripts/rf_tmp.py",   # rf_tmp (#2306)
+           "scripts/fixture_git.py",),   # its selftest's pin fixtures run git through fixture_git (#1588)
     mutations=(
         Mutation(
             "subgraph depth stops deciding whether a bare `end` is legal",
