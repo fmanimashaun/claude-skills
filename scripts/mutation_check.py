@@ -502,6 +502,9 @@ def mutation_limits(guards: list[Guard], timed: list[tuple[list[str], float]]) -
 
 
 TAIL_WIDTH = 300
+FAILING_LABEL = re.compile(r"^\s+- \S")      # a selftest's `  - <label of the failing check>` line
+FAILURE_TALLY = re.compile(r"\d+ of \d+ checks? FAILED|FAILED -- \d+")      # "1 of 187 checks FAILED" (check_hook_gates), "SELFTEST FAILED -- 21 of 134 checks:" (the doctor's), "unit FAILED -- 6 failed of 81:"
+MAX_LABELS = 40                              # so a selftest with hundreds of failures cannot flood a CI log
 
 
 def tail_block(output: str | bytes | None, lines: int) -> str:
@@ -514,8 +517,14 @@ def tail_block(output: str | bytes | None, lines: int) -> str:
     """
     if isinstance(output, bytes):
         output = output.decode("utf-8", errors="replace")
-    rows = (output or "").strip().splitlines()[-lines:]
-    return "".join(f"\n      {row[:TAIL_WIDTH]}" for row in rows)
+    every = (output or "").strip().splitlines()
+    rows = every[-lines:]
+    # A selftest names each failing check on a `  - label` line after its "N of M checks FAILED" tally (#2308). The last few lines can be only some of them, or none of
+    # them (the tally, or a list longer than the tail), and a red result that cannot say what failed is the one that cannot be fixed or re-run to find out. So the tally and
+    # EVERY label (up to MAX_LABELS) come with the tail, in the order the selftest wrote them.
+    labels = [row for row in every[:len(every) - len(rows)] if FAILING_LABEL.match(row)][:MAX_LABELS]
+    tally = [row for row in every[:len(every) - len(rows)] if FAILURE_TALLY.search(row)][-1:]
+    return "".join(f"\n      {row[:TAIL_WIDTH]}" for row in tally + labels + rows)
 
 
 def run_baseline(guard: Guard) -> list[str]:
@@ -954,7 +963,7 @@ def main(argv: list[str] | None = None) -> int:
     if warnings:
         print(f"warning: {context}")
     if problems:
-        print(failure_report(problems, notes + [f"not judged (STARVED, machine load): {entry.splitlines()[0]}" for entry in starved_entries], total), file=sys.stderr)
+        print(failure_report(problems, notes + [f"not judged (STARVED, machine load): {entry.strip()}" for entry in starved_entries], total), file=sys.stderr)
         return 1
     if starved_entries:
         # NOT A PASS, NOT A FAILURE (#2000): the machine decided. Exit EXIT_STARVED, which the doctor treats as a skip and a proof refuses; no shard record is written.

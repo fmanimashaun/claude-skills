@@ -301,6 +301,85 @@ def hostile_environment_fixtures() -> None:
         build("a hostile global and system gitconfig", cfg_env)
 
 
+def sweep_progress_fixtures() -> None:
+    """#2308: a sweep cancelled at the PR timeout left NO output (the report prints at the very end), so a slow runner could not be told from a hung gate. The REAL `diagnose`
+    path is run in a subprocess over a fast gate and a slow one and cancelled while the slow one runs, and what the log holds is read: SIGTERM (what a cancelled CI job
+    sends after SIGINT: the gate's group is killed and `gate interrupted` is written) and SIGKILL (nothing can be written, so the start line alone must name the gate)."""
+    import select
+    import signal
+    import time
+    work = fixture()
+    try:
+        scripts = work / "scripts"
+        scripts.mkdir(exist_ok=True)
+        pidfile = work / "slow.pid"
+        (scripts / "_fast.py").write_text("print('fast')\n", encoding="utf-8")
+        (scripts / "_slow.py").write_text(f"import os, time\nopen({str(pidfile)!r}, 'w').write(str(os.getpid()))\ntime.sleep(60)\n", encoding="utf-8")
+        driver = work / "_driver.py"
+        driver.write_text("import sys\n"
+                          f"sys.path.insert(0, {str(Path(__file__).resolve().parent)!r})\n"
+                          "from pathlib import Path\n"
+                          "import maintainer_doctor as md\n"
+                          f"md.REPO = Path({str(work)!r})\n"
+                          "md.GATES = ((\"fast gate\", (\"python3\", \"scripts/_fast.py\")), (\"slow gate\", (\"python3\", \"scripts/_slow.py\")))\n"
+                          "sys.exit(md.Doctor().diagnose(gates=True, gates_only=True))\n", encoding="utf-8")
+
+        def alive(pid: int) -> bool:
+            try:
+                os.kill(pid, 0)
+                return True
+            except OSError:
+                return False
+
+        def cancelled(sig: int) -> tuple[str, int | None]:
+            """The log of a sweep killed with `sig` once `slow gate` has started, and the slow gate's pid (None if it never recorded one)."""
+            pidfile.unlink(missing_ok=True)
+            d = subprocess.Popen([sys.executable, str(driver)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+            seen = b""
+            rest = b""
+            try:
+                # Raw reads with a deadline, not `for line in d.stdout`: an unflushed start line must FAIL here after 30 s, not block for the slow gate's whole minute.
+                deadline = time.monotonic() + 30
+                while time.monotonic() < deadline and b"gate start: slow gate" not in seen:
+                    if select.select([d.stdout], [], [], 1)[0]:
+                        chunk = os.read(d.stdout.fileno(), 65536)
+                        if not chunk:
+                            break
+                        seen += chunk
+                time.sleep(1)                                  # the slow gate has started; let it record its pid
+                os.kill(d.pid, sig)
+                rest = d.communicate(timeout=60)[0]
+            finally:
+                if d.poll() is None:
+                    d.kill()
+                    d.wait()
+            pid = int(pidfile.read_text()) if pidfile.exists() and pidfile.read_text().strip().isdigit() else None
+            return (seen + rest).decode("utf-8", "replace"), pid
+
+        log, pid = cancelled(signal.SIGTERM)
+        _tick()
+        ok = ("gate start: fast gate" in log and "gate end: fast gate passed in" in log and "gate start: slow gate" in log
+              and "gate interrupted: slow gate" in log and "gate end: slow gate" not in log)
+        if not ok:
+            FAILURES.append(f"#2308: a sweep cancelled (SIGTERM) mid-gate must name the gate it was in, with the finished gate's time: {log.strip().splitlines()[-6:]}")
+        _tick()
+        if pid is None or alive(pid):
+            FAILURES.append(f"#2308: the slow gate (pid {pid}) was left running after the sweep was cancelled")
+            if pid is not None:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
+        log, pid = cancelled(signal.SIGKILL)
+        _tick()
+        if not ("gate start: slow gate" in log and "gate end: slow gate" not in log):
+            FAILURES.append(f"#2308: a sweep killed outright (SIGKILL) mid-gate must still have named the gate it was in by its start line: {log.strip().splitlines()[-4:]}")
+        if pid is not None and alive(pid):
+            os.kill(pid, signal.SIGKILL)                       # the orphan of the SIGKILLed sweep, which could not clean up after itself
+    finally:
+        shutil.rmtree(work.parent, ignore_errors=True)
+
+
 def repo_untouched_fixtures() -> None:
     """#1588: a gate that commits into the real repository turns the sweep red, by name.
 
@@ -632,6 +711,7 @@ def run() -> int:
     gate_time_fixtures()
     starved_gate_fixtures()
     hostile_environment_fixtures()
+    sweep_progress_fixtures()
     repo_untouched_fixtures()
     ruleset_fixtures()
     # ---- healthy machine: nothing may FAIL ---------------------------------------------

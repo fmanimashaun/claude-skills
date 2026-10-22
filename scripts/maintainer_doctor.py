@@ -42,9 +42,11 @@ Stdlib only, no network beyond the `git`/`gh` calls the checks make.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -891,6 +893,24 @@ def gate_output(out: str, code: int) -> tuple[str, tuple[str, ...]]:
 RULESET_ARGS: tuple[str, ...] = ()
 
 
+@contextlib.contextmanager
+def cancelled_as_interrupt():
+    """SIGTERM is an interrupt for the length of a sweep (#2308). A CI job that is cancelled or times out is sent SIGINT and then SIGTERM; Python's default
+    for SIGTERM is to die at once, with the gate's process group still running and nothing said about which gate it was in. As a KeyboardInterrupt it runs the
+    same path as Ctrl-C (#1459): the gate's whole group is killed and `gate interrupted: <name>` is written. The previous handler is put back."""
+    def raise_interrupt(signum, frame):
+        raise KeyboardInterrupt(f"signal {signum}")
+    try:
+        previous = signal.signal(signal.SIGTERM, raise_interrupt)
+    except ValueError:        # not the main thread: nothing to install
+        yield
+        return
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
 @dataclass
 class Doctor:
     fix: bool = False
@@ -903,8 +923,16 @@ class Doctor:
     fixed: list[str] = field(default_factory=list)
     # Wall time of each gate that RAN, by gate name, on this process's own clock (#2246). A skip never ran, so it has none.
     timings: dict[str, float] = field(default_factory=dict)
+    # Write a line as each gate starts and ends, flushed at once (#2308). The report below prints at the very end, so a sweep cancelled at the PR
+    # timeout left NO output and a slow runner could not be told from a hung gate. Off only where a caller wants the results and nothing else.
+    stream: bool = True
 
     # ---- helpers ----------------------------------------------------------------------
+    def announce(self, line: str) -> None:
+        """One progress line, flushed. CI pipes stdout, where Python buffers: an unflushed line is lost with a killed process, which is the case this exists for."""
+        if self.stream:
+            print(line, flush=True)
+
     def run(self, *args: str, cwd: Path | None = None,
             timeout: int = DEFAULT_TIMEOUT) -> tuple[int, str]:
         try:
@@ -1489,9 +1517,16 @@ class Doctor:
                 )
                 continue
             started = time.monotonic()
-            code, out = self.run(*slow_gate_command(name, cmd, self.require_slow),
-                                 timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
+            limit = SLOW_GATES.get(name, DEFAULT_TIMEOUT)
+            self.announce(f"gate start: {name} (limit {limit} s)")
+            try:
+                code, out = self.run(*slow_gate_command(name, cmd, self.require_slow), timeout=limit)
+            except BaseException:
+                # The sweep itself is being cancelled or timed out (SIGINT, or SIGTERM read as an interrupt by `cancelled_as_interrupt`): this is the gate it was in.
+                self.announce(f"gate interrupted: {name} after {time.monotonic() - started:.1f} s (the sweep was cancelled or timed out here)")
+                raise
             self.timings[name] = time.monotonic() - started  # a killed gate is timed too: how long it ran is the evidence
+            self.announce(f"gate end: {name} {'passed' if code == 0 else 'timed out' if code == 124 else f'exit {code}'} in {self.timings[name]:.1f} s")
             if code == 0:
                 # A slow gate's own summary line (mutation_check prints jobs and elapsed) is the
                 # measurement SLOW_GATES is set from; on a runner this is the only place it exists.
@@ -1581,7 +1616,8 @@ class Doctor:
         # identically on a runner and on a laptop. That is what makes them the right half to automate,
         # and the only half.
         if gates_only:
-            self.check_gates(fast=fast)
+            with cancelled_as_interrupt():
+                self.check_gates(fast=fast)
             self.report()
             return 1 if any(r.status == FAIL for r in self.results) else 0
         self.check_prerequisites()
@@ -1599,7 +1635,8 @@ class Doctor:
         self.check_dist_clean()
         self.check_worktree_leftovers()
         if gates:
-            self.check_gates()
+            with cancelled_as_interrupt():
+                self.check_gates()
         else:
             self.add(
                 SKIP, "full gate sweep", "not requested",
