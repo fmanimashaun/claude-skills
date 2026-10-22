@@ -241,7 +241,9 @@ def record(project: Path, installed: list[str]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     data = json.dumps({"status": "restart-pending", "installed": ids,
                        "resume_step": "restart Claude Code (or /reload-plugins), then: toolchain_install.py --confirm"}, indent=2) + "\n"
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)   # a symlink planted after the check is refused
+    # O_NOFOLLOW: a symlink planted after the check is refused. 0o600: the marker holds only plugin ids, but nothing else needs to
+    # read it, so it is private like the briefing file beside it (#2318 CodeQL: a world-readable create mask is refused).
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(data)
     return path
@@ -440,6 +442,8 @@ def selftest() -> int:
                  f"the marketplace is registered before the install: {calls()!r}")
             marker = json.loads((proj / MARKER).read_text(encoding="utf-8")) if (proj / MARKER).exists() else {}
             case(marker.get("installed") == ["p@claude-plugins-official"], f"the install is recorded in the restart marker: {marker}")
+            mode = (proj / MARKER).stat().st_mode & 0o777 if (proj / MARKER).exists() else None
+            case(mode == 0o600, f"the restart marker is created private, mode 0600: {oct(mode) if mode is not None else None}")
             # 3. install refused: BLOCKED, not recorded
             fake("claude", listing + 'case "$*" in *"plugin install"*) echo \'{"outcome": "failed", "failureCode": "needs_prompt"}\'; exit 1;; esac\n')
             rc, out = go()

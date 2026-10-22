@@ -189,5 +189,11 @@ GUARD = Guard(
             '        if False:',
             'a briefing file others can read is refused',
         ),
+        Mutation(
+            'the restart marker is created world-readable',
+            'os.O_TRUNC | os.O_NOFOLLOW, 0o600)',
+            'os.O_TRUNC | os.O_NOFOLLOW, 0o644)',
+            'the restart marker is created private, mode 0600',
+        ),
     ),
 )
