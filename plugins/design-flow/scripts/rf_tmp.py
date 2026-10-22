@@ -43,6 +43,14 @@ def _clean() -> None:
         _DIRS.remove((pid, d))
 
 
+def release(path: str) -> None:
+    """Hand `path` over: this process will not remove it at exit. For a dir made here and inspected by ANOTHER process after this one
+    ends (a fixture built in a subprocess); that process then owns its removal. Nothing else changes, the marker included."""
+    target = os.path.realpath(path)
+    for pid, d in [x for x in _DIRS if os.path.realpath(x[1]) == target]:
+        _DIRS.remove((pid, d))
+
+
 def owner_pid(path: str) -> int | None:
     """The pid in `path`'s marker, or None when `path` is not a directory carrying a valid one (then it is not ours)."""
     if os.path.islink(path) or not os.path.isdir(path):
@@ -115,6 +123,14 @@ def selftest() -> int:
     if fork.stdout.strip() != "True True":
         bad += 1
         print(f"FAIL a forked child's exit leaves the parent's dir and its marker: {fork.stdout!r} {fork.stderr[-200:]!r}")
+    handed = subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0, %r); import rf_tmp; d = rf_tmp.mkdtemp('handed'); "
+                             "rf_tmp.release(d); print(d)" % here], capture_output=True, text=True)
+    path = handed.stdout.strip()
+    if not path or not os.path.isdir(path):
+        bad += 1
+        print(f"FAIL a released dir outlives the process that made it: {path!r} {handed.stderr[-200:]!r}")
+    else:
+        shutil.rmtree(path, ignore_errors=True)
     keep = subprocess.run([sys.executable, "-c", "import signal, sys; sys.path.insert(0, %r); import rf_tmp; h = lambda s, f: None; "
                            "signal.signal(signal.SIGTERM, h); rf_tmp.mkdtemp('x'); print(signal.getsignal(signal.SIGTERM) is h)" % here],
                           capture_output=True, text=True)

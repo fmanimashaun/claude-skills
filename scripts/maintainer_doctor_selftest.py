@@ -247,7 +247,7 @@ def hostile_environment_fixtures() -> None:
     base = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     off_shim = os.pathsep.join(d for d in base["PATH"].split(os.pathsep) if "git-shim" not in d)
     probe = (f"import sys; sys.path.insert(0, {str(Path(__file__).resolve().parent)!r}); import maintainer_doctor_selftest as t; "
-             "w = t.fixture(); print(w)")
+             "w = t.fixture(); t.rf_tmp.release(str(w.parent)); print(w)")   # handed to this process, which removes it below (#2306)
 
     def build(label: str, env: dict[str, str]) -> None:
         done = subprocess.run([sys.executable, "-c", probe], env=env, capture_output=True, text=True, timeout=300)

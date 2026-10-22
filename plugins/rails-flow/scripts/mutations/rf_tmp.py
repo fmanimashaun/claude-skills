@@ -44,5 +44,11 @@ GUARD = Guard(
             "        f.write(\"\")",
             "a forked child's exit leaves the parent's dir and its marker",
         ),
+        Mutation(
+            "release() no longer hands a dir over, so a fixture built in a subprocess is gone before its parent reads it",
+            "    for pid, d in [x for x in _DIRS if os.path.realpath(x[1]) == target]:\n        _DIRS.remove((pid, d))",
+            "    pass",
+            "a released dir outlives the process that made it",
+        ),
     ),
 )
