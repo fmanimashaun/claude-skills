@@ -6502,7 +6502,7 @@ def guard_pr_ready_fixtures() -> None:
         wired_probe = [sys.executable, str(HOOKS / "lib" / "pr_ready_guard.py"), "--wired", str(plain)]
 
         def wired_line() -> str:
-            return subprocess.run(wired_probe, capture_output=True, text=True, timeout=30).stdout
+            return _run(wired_probe, capture_output=True, text=True, timeout=30).stdout
         check("pr_ready_guard --wired (#2304): an unwired repository gets the PROJECT GATES NOT WIRED line, naming setup-flow and the opt-out file",
               "PROJECT GATES NOT WIRED" in wired_line() and "setup-flow" in wired_line() and "no-project-gates" in wired_line(), wired_line()[:200])
         expect("guard-pr-ready (#2304): NOT wired (no marker, no workflow, no record dir): REFUSED, naming the wiring", guard(plain, "gh pr ready 12"), 2, "project gates are not wired")
