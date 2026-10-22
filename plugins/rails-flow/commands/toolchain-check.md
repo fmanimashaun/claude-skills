@@ -31,6 +31,19 @@ against a local checkout instead of the network:
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/toolchain_version.py" --published-from /path/to/claude-skills
 ```
 
+### The detected stack's own tools (#2168)
+
+Then check what THIS project's stack needs, beyond the claude-skills versions:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/stack_toolchain.py" --project .
+```
+
+Each detected stack declares its plugins and CLIs in its descriptor's `toolchain` block. The script reports each missing or
+not-ready one with the step that fixes it: a Rails project without `rails-stack`, a Next.js one without `nextjs-stack`, a
+Supabase or Vercel project without the official plugin or its CLI, Docker not running. Exit 0 complete, 1 something to
+install (list it for the user; installing is theirs to do), 2 could not judge (say so; it is not "complete").
+
 ## Update, restart, resume
 
 The gate spans a restart, which is the whole difficulty: the process that decides an update

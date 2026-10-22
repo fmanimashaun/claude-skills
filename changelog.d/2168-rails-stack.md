@@ -1,0 +1,2 @@
+section: rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+- **A Rails project without rails-stack is named by the toolchain audit — `plugins/rails-stack/stacks.json`** (#2168). The Rails descriptor's new `toolchain` block names `rails-stack@claude-skills`, so `/rails-flow:toolchain-check` flags a detected Rails project where it is not enabled, with the install line. This meets #2174's requirement: once the Rails-only hooks moved to rails-stack, a project with rails-flow alone lost the migration guard and rubocop auto-correct silently.

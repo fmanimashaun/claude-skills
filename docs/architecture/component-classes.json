@@ -4444,17 +4444,17 @@
    "via": "declared"
   },
   {
-   "class": "neutral",
-   "issue": null,
-   "nextjs_lines": 0,
+   "class": "mixed",
+   "issue": 2183,
+   "nextjs_lines": 2,
    "path": "plugins/rails-flow/commands/toolchain-check.md",
    "plugin": "rails-flow",
    "proven": false,
-   "rails_lines": 0,
+   "rails_lines": 1,
    "registered": [],
-   "seam": "",
+   "seam": "wording only: Rails is named in prose or metadata, no behaviour depends on it",
    "type": "command",
-   "via": "declared"
+   "via": "decision"
   },
   {
    "class": "neutral",
@@ -5906,6 +5906,19 @@
    "class": "neutral",
    "issue": null,
    "nextjs_lines": 0,
+   "path": "plugins/rails-flow/scripts/stack_toolchain.py",
+   "plugin": "rails-flow",
+   "proven": false,
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "script",
+   "via": "declared"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
    "path": "plugins/rails-flow/scripts/statusline.py",
    "plugin": "rails-flow",
    "proven": true,
@@ -7266,6 +7279,19 @@
    "seam": "",
    "type": "test",
    "via": "declared"
+  },
+  {
+   "class": "neutral",
+   "issue": null,
+   "nextjs_lines": 0,
+   "path": "plugins/rails-flow/scripts/mutations/stack_toolchain.py",
+   "plugin": "rails-flow",
+   "proven": false,
+   "rails_lines": 0,
+   "registered": [],
+   "seam": "",
+   "type": "test",
+   "via": "tests stack_toolchain.py"
   },
   {
    "class": "neutral",
