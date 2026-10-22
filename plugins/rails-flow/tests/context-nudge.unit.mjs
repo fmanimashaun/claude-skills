@@ -231,3 +231,30 @@ await check('a request with no usage keeps the last reading, and adds no context
   assert.equal(h.status.at(-1), 'context 10% · cache 75%')
   assert.deepEqual((await h.submit('x')).context ?? [], [])
 })
+
+// #2307: a session with no role (session.start never ran, or left none) asks again from the prompt, and the "could not elect" line is only for a
+// session that still has none after that.
+await check('a prompt elects a role-less session on demand, and never shows "could not elect" after a restart (#2307)', async () => {
+  reset.state.role = null
+  reset.state.line = null
+  reset.state.defaulted = false
+  reset.state.electAt = null
+  const mod = await import(`../hooks/context-nudge.mjs?fresh=${++fresh}`)
+  const hooks = {}
+  mod.register((event, ...rest) => {
+    hooks[event] = rest[rest.length - 1]
+  })
+  const asked = []
+  const $ = {
+    env: { get: async () => undefined },
+    ui: { status() {} },
+    session: { id: async () => 'resumed-1', turns: async () => 5, surfaces: async () => ['terminal'] },
+    process: { run: async (argv) => { asked.push(argv[0]); return { exitCode: 0, stdout: 'implementation 123 other-id' } } },
+  }
+  const r = await hooks['prompt.submit']($, { text: 'first prompt after the restart' }, async (e) => e)
+  assert.equal(reset.state.role, 'implementation', 'the prompt asked, and the session has a role')
+  assert.ok(asked.length >= 1, 'the election ran from the prompt')
+  assert.ok(!(r.context ?? []).join('\n').includes('could not elect'), 'no "could not elect" line')
+  assert.ok((r.context ?? []).join('\n').includes('implementation session'), 'the one role line is the elected role')
+  reset.state.role = 'implementation'
+})

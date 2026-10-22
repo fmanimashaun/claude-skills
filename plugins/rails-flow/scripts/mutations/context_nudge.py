@@ -172,5 +172,11 @@ GUARD = Guard(
             "      now = undefined       // called, never read",
             "the usage view leaves out a window that has already reset",
         ),
+        Mutation(
+            'the prompt does not elect a role-less session on demand',
+            '    if (!askedRole && isTheirs(e.origin)) await ensureRole($)      // the "could not elect" line only after a second try (#2307)\n',
+            '',
+            'a prompt elects a role-less session on demand',
+        ),
     ),
 )
