@@ -123,6 +123,10 @@ The report gets a section for each kind: the hand-off table and the notification
 not only as findings, because a walk that shows twelve landed hand-offs is evidence too. Run
 `validate_evidence.py` on both files first; a row it refuses is not counted.
 
+**A third artefact, `flow.json` (#2250), is judged by `flow_report.py`, not read by you:** put its markdown in the report as the **Flow bottlenecks** section, and file each finding
+(`Source` = `journey`; signature `(journey, measurement, step)`) as a defect with the step that causes it. A journey it refused for having no `Budget:` is not a finding about the
+product: report it as a gap the engineer fills, never as a pass.
+
 **Defects** → one issue per **distinct** defect, never per instance:
 `gh issue create --title "[S2][e2e] <summary>" --label "qa,from-qa,severity:s2"` with
 steps, expected vs actual, evidence paths/URLs, environment (target URL + sha

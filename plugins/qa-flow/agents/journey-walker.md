@@ -95,10 +95,32 @@ what it says the person should see, do, and be told.
   a fixture session id signs a context in even though the real cookie is HttpOnly — a fact about
   the fixture recipe, not a defect.
 
+## The flow — one row per action, measured, never estimated (#2250)
+
+Beside the pages, record **how the journey went** as `flow.json` (`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/flow_report.py" --schema` prints the shape). One journey
+object per journey document heading you walked, with `journey`, `persona`, `document` (the path), `heading` (the journey's heading, **exactly as written**) and
+`complete` (you reached the journey's declared end); then one row per **action** you took, in order, `step` counting from 1 with none missing:
+
+| field | what to record |
+|---|---|
+| `url`, `status` | the page you landed on and its HTTP status |
+| `action` | `navigate`, `click`, `submit`, `back`, `reload`, `redirect`, `modal-open` or `tab-open`: what you did, not what the app did next |
+| `section` | the top-level navigation section the page sits in (the rail or header item it highlights); `null` if it has none |
+| `settled_ms` | milliseconds from the action to the first moment with no request in flight and no DOM change for 500 ms, read from the browser; `null` when you could not measure it (it is reported as not measured, never as a pass) |
+| `spinner` | a progress indicator (`role=progressbar`, `aria-busy="true"` or a spinning icon) was visible during the wait |
+| `forward_actions` | the links and buttons in `main` that lead onward, not counting Back, Cancel, Close or global navigation; `0` means the page leaves the person nothing to do |
+| `terminal` | this page is the journey document's declared end |
+| `denied` | the page is a permission wall (a 403, or a page that says the person may not do this) |
+| `form` | `null`, or `{url, fields, outcome}`: the form you submitted, its field **names**, and `advanced` (it took you on) or `returned` (the same form came back, for example with errors) |
+
+**Never invent a limit.** The thresholds are the journey's own: its section of the journey document must carry one line, `Budget: steps=8 wait=3s` (and optionally
+`switches=3`). If it does not, you do not guess one and you do not skip the journey: write `flow.json` as you walked it and say which journey has no budget; `flow_report.py`
+will refuse that journey and name it, and the engineer declares it. The measurements and their definitions are in `flow_report.py`'s header, not here.
+
 ## The report — rows a script can refuse
 
 One directory per run under `docs/evidence/qa/<date>-walkthrough/`, on a `docs/evidence/...`
-branch made in a `git worktree` so the walk never sits on the working branch. Four artefacts:
+branch made in a `git worktree` so the walk never sits on the working branch. Five artefacts:
 
 | artefact | one row per | validated by |
 |---|---|---|
@@ -106,6 +128,7 @@ branch made in a `git worktree` so the walk never sits on the working branch. Fo
 | `handoffs.csv` | hand-off checkpoint in a journey document | `validate_evidence.py` → **handoffs** profile |
 | `notifications.csv` | template the catalogue names at a step you performed | `validate_evidence.py` → **notifications** profile |
 | `stand-ins.md` | stand-in run, verbatim, beside the step it replaced | read by a human; the hand-off row it replaces is `Out of Scope` naming it |
+| `flow.json` | action of a journey (#2250) | `flow_report.py`, which measures the journey as a flow against the `Budget:` its own document declares |
 
 A hand-off row's `Status` is `Landed` (the consequence showed where the spec says), `Missing`
 (you were the recipient and it did not — a finding, with a screenshot and a severity), `Blocked` or
@@ -143,7 +166,7 @@ later request. A path costs one line. See `reference/agent-output-contract.md`.
 
 ```
 REPORT  qa/walkthrough/<date>-<slug>.md
-CSVs    pages.csv, handoffs.csv, notifications.csv
+CSVs    pages.csv, handoffs.csv, notifications.csv; flow.json
 VERDICT 4 personas walked; 2 hand-off failures, 1 notification the catalogue names and the app never sent.
 ```
 

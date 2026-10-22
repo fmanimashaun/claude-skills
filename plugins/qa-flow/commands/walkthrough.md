@@ -56,6 +56,18 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate_evidence.py" docs/evidence/qa/<d
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate_evidence.py" docs/evidence/qa/<date>-walkthrough/notifications.csv
 ```
 
+Then measure each journey as a flow (#2250). `flow.json` is judged against the `Budget:` line each journey's own document declares, and a journey with no budget is
+**refused**, never judged against a default:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/flow_report.py" docs/evidence/qa/<date>-walkthrough/flow.json --root .
+```
+
+Exit `2` is a stop: it names every journey with no `Budget:` (or whose document or heading it cannot find), and the engineer declares the budget in that journey's section
+(`Budget: steps=8 wait=3s`, optionally `switches=3`); do not pick one. Exit `1` means bottlenecks (a dead end, a back-track, a form entered twice, a permission wall after
+steps were spent, a step or a wait over budget) or a wait that was not measured: the script's markdown goes into the report as its **Flow bottlenecks** section, ranked,
+each naming the step that causes it, and each finding is one more defect for `qa-reporter` with `Source` = `journey`.
+
 Then `qa-reporter` consolidates: one row per page per width, one per hand-off, one per expected
 notification, the stand-ins listed, then the deduplicated findings with `Source` = `journey`, and
 one issue per distinct defect with facts, reproduction, severity, acceptance criteria and the
