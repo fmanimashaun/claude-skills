@@ -86,9 +86,38 @@ def sweep_dir(root: str, timeout: float | None = None) -> Path | None:
     return Path(where) if os.path.isabs(where) else Path(root) / where
 
 
+OPT_OUT = ".claude/rails-flow/no-project-gates"
+NOT_WIRED = ("project gates are not wired in this repository: no workflow names project_gates.py, CLAUDE.md has no rails-flow managed block "
+             "and no sweep has ever run here, so every project gate (docs-layout, brain-fresh, owner-rulings, ...) is inert (#2304)")
+UNWIRED_FIX = (f"Run /rails-flow:setup-flow (its section 8 wires project_gates.py into CI and CLAUDE.md). A repository that genuinely opts out "
+               f"says so in {OPT_OUT}: one line giving the reason.")
+
+
+def opt_out_reason(root: str) -> str | None:
+    """The reason a repository gives for running no project gates, from its first non-blank, non-`#` line of OPT_OUT; None when there is no such file
+    or it holds no reason. A file with no reason is not an opt-out: a silent opt-out is the inert gate this exists to end. A SYMLINK is not one either: it
+    could point at any file on the machine, so the reason would be one the repository never wrote."""
+    path = Path(root) / OPT_OUT
+    if path.is_symlink():
+        return None
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                return line
+    except OSError:
+        pass
+    return None
+
+
 def in_force(root: str) -> bool:
-    """The repository runs project_gates: a workflow names it, CLAUDE.md carries the rails-flow managed
-    marker, or a sweep record directory already exists. Otherwise the hook does not apply (point 4)."""
+    """The repository is JUDGED: every repository this plugin is installed in, unless it declared an opt-out with a reason (#2304). Before #2304 this meant
+    "the repository runs project_gates", so a project that never wired it (flo-it-ui) was silently outside every gate, and the guard said "not applicable"."""
+    return opt_out_reason(root) is None
+
+
+def wired_by_files(root: str) -> bool:
+    """A workflow names project_gates.py, or CLAUDE.md carries the rails-flow managed marker. Reads files only, no git."""
     wf = Path(root) / ".github" / "workflows"
     for f in sorted(wf.glob("*.yml")) + sorted(wf.glob("*.yaml")) if wf.is_dir() else []:
         try:
@@ -97,14 +126,26 @@ def in_force(root: str) -> bool:
         except OSError:
             continue
     try:
-        if MARKER in (Path(root) / "CLAUDE.md").read_text(encoding="utf-8", errors="replace"):
-            return True
+        return MARKER in (Path(root) / "CLAUDE.md").read_text(encoding="utf-8", errors="replace")
     except OSError:
-        pass
+        return False
+
+
+def wired(root: str) -> bool:
+    """The repository runs project_gates: its files say so (wired_by_files), or a sweep record directory already exists."""
+    if wired_by_files(root):
+        return True
     d = sweep_dir(root)
     if d is None:
         return True       # git cannot say where the sweep records live, so whether any exist cannot be told: judged, and refused by name where the record cannot be found (judge_record)
     return d.is_dir()
+
+
+def refuse_unwired(args: str) -> int:
+    print(f"BLOCKED by rails-flow pr-ready guard: {NOT_WIRED}.", file=sys.stderr)
+    print(UNWIRED_FIX, file=sys.stderr)
+    print(f"  then: python3 \"${{CLAUDE_PLUGIN_ROOT}}/scripts/project_gates.py\" and `gh pr ready{(' ' + args.strip()) if args.strip() else ''}` as two commands.", file=sys.stderr)
+    return 2
 
 
 def refuse(reason: str, args: str) -> int:
@@ -350,6 +391,8 @@ def judge_record(root: str, args: str) -> int:
     d = sweep_dir(root)
     if d is None:
         return refuse(f"the git directory of {root} could not be read.", args)
+    if not wired_by_files(root) and not d.is_dir():      # one git call, the same one the record lookup below needs (the hint's time budget counts them)
+        return refuse_unwired(args)
     record = d / f"{head}.json"
     if not record.is_file():
         return refuse(f"no sweep record for HEAD {head[:12]} (looked for {record}).{elsewhere_hint(root, args)}", args)
@@ -515,7 +558,21 @@ def shim_unreadable_alias(expansion: str, cwd: str) -> int:
                   "write the alias with plain words, or run the command directly).", expansion)
 
 
+def status_line(cwd: str) -> str:
+    """The SessionStart line for a repository whose project gates are not wired and which did not opt out, else ''. Never raises: a hook that cannot tell says nothing here."""
+    try:
+        root = git(cwd, "rev-parse", "--show-toplevel")
+    except GitUnanswered:
+        return ""
+    if not root or wired(root) or opt_out_reason(root) is not None:
+        return ""
+    return f"- PROJECT GATES NOT WIRED: no project gate runs and `gh pr ready` is refused (#2304). Run /rails-flow:setup-flow, or opt out with a reason in {OPT_OUT}."
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 2 and sys.argv[1] == "--wired":
+        print(status_line(sys.argv[2]), end="")
+        sys.exit(0)
     def _timed_out(exc: GitTimeout, shown: str) -> int:
         return refuse(f"{exc}, so this `gh pr ready` cannot be judged; a gate that cannot tell does not allow. Run the same command again (the machine is probably under load).", shown)
 
