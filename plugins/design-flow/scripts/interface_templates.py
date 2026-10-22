@@ -71,7 +71,7 @@ def load_records(root: Path) -> dict[str, dict]:
         if name in records:
             raise Unusable(f"two mock-up records name the screen `{name}` ({records[name]['path']} and {path.name}): a screen name is unique")
         # `multi-step: check-answers` stays whole: a sub-kind is a different page from the question page the multi-step rules describe (#2310)
-        template = re.sub(r"\s*:\s*", ": ", fields.get("Template", "").strip())
+        template = re.sub(r"\s*:\s*", ": ", fields.get("Template", "").strip()).rstrip(": ")
         records[name] = {"template": template, "fields": fields, "path": f"{RECORD_DIR}{path.name}"}
     return records
 
@@ -298,6 +298,7 @@ def selftest() -> int:
     # applicability: a rule is judged only for its template
     for sub_kind in ("check-answers", "confirmation", "task-list"):
         check(f"a multi-step: {sub_kind} page is not judged as a question page", run(f"multi-step: {sub_kind}", {}) == [])
+    check("a trailing colon leaves no trailing space, so the template still names a judge", run("multi-step:", GOOD_STEP) == [] and run("multi-step: ", {**GOOD_STEP, "forward_button": {"present": True, "label": "Next"}}) == ["A34"])
     check("a multi-step: sub-kind written without a space is read the same", run("multi-step:confirmation", {}) == [])
     check("a list screen is not judged for a back link", run("list", {}) == [])
     check("a multi-step screen is not judged for a results count", run("multi-step", {**GOOD_STEP, **results(count_text=None)}) == [])

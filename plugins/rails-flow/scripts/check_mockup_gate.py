@@ -702,9 +702,11 @@ def template_problems(rel: str, fields: dict[str, str], vocab: dict) -> list[str
     value = fields.get("Template", "")
     if not value:
         return [f"{rel}: no `Template:` line: name the page template this screen is ({', '.join(vocab['templates'])})"]
-    name, _, sub = (part.strip() for part in value.partition(":"))
+    name, colon, sub = (part.strip() for part in value.partition(":"))
     if name not in vocab["templates"]:
         return [f"{rel}: Template {value!r} is not one of {', '.join(vocab['templates'])}"]
+    if colon and not sub:
+        return [f"{rel}: Template {value!r} has a `:` with no sub-kind after it: write the template alone, or `<template>: <sub-kind>`"]
     if name == "system":
         if sub not in vocab["system_subkinds"]:
             return [f"{rel}: Template `system` takes a sub-kind, `system: <{'|'.join(vocab['system_subkinds'])}>`, got {value!r}"]
@@ -1031,6 +1033,9 @@ def selftest() -> int:
         check_that("#2310: `multi-step` with an unknown sub-kind is held", code == 1 and any("multi-step" in m and "check-answers" in m for m in msg), msg)
         code, msg = with_record(GOOD.replace("Template: list", "Template: check-answers"))
         check_that("#2310: a sub-kind is not a template of its own (the nine stay nine)", code == 1, msg)
+        for empty in ("multi-step:", "multi-step: ", "list:"):
+            code, msg = with_record(GOOD.replace("Template: list", f"Template: {empty}"))
+            check_that(f"#2310: a `:` with no sub-kind (`{empty}`) is held", code == 1 and any("no sub-kind after it" in m for m in msg), msg)
         # A missing or corrupt vocabulary refuses; it never lets a record through unchecked.
         real = globals()["VOCABULARY"]
         try:

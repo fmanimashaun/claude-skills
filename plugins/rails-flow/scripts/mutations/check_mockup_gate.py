@@ -589,6 +589,12 @@ GUARD = Guard(
             'a sub-kind on a template that takes none is held',
         ),
         Mutation(
+            'a colon with nothing after it is accepted',
+            '    if colon and not sub:',
+            '    if False:',
+            '#2310: a `:` with no sub-kind (`multi-step:`) is held',
+        ),
+        Mutation(
             'an unknown multi-step sub-kind is accepted',
             '        if sub and sub not in vocab["multi_step_subkinds"]:',
             '        if False:',
