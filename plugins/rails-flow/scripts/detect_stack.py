@@ -1174,6 +1174,10 @@ def selftest() -> int:
                 ("a ready command given as a path is a problem", {"clis": [{"bin": "x", "install": "i", "ready": ["/opt/x", "ok"], "ready_hint": "h"}]}, "ready[0] '/opt/x' must be a bare command name"),
                 ("a version given as a string is a problem", {"clis": [{"bin": "x", "install": "i", "version": "--version"}]}, "version"),
                 ("an empty version list is a problem", {"clis": [{"bin": "x", "install": "i", "version": []}]}, "version"),
+                ("an auto_install method we do not run is a problem", {"clis": [{"bin": "x", "install": "i", "auto_install": [{"method": "curl-sh", "package": "x", "repo": "github.com/v/x"}]}]}, "method 'curl-sh' is not one of"),
+                ("an auto_install repo that is not a github.com repository is a problem", {"clis": [{"bin": "x", "install": "i", "auto_install": [{"method": "npm-global", "package": "x", "repo": "https://evil.example/x"}]}]}, "must be `github.com/<owner>/<repo>`"),
+                ("a token that is not an environment variable name is a problem", {"clis": [{"bin": "x", "install": "i", "token": "my token"}]}, "must be an environment variable name"),
+                ("a well-formed auto_install and token pass", {"clis": [{"bin": "x", "install": "i", "token": "X_TOKEN", "auto_install": [{"method": "brew-tap", "package": "v/tap/x", "repo": "github.com/v/homebrew-tap", "os": "darwin"}]}]}, ""),
                 ("an unknown toolchain key is a problem", {"clis": [{"bin": "x", "install": "i", "login": ["x"]}]}, "login is not a declared descriptor key")):
             tdir = plug(f"tc-{abs(hash(label)) % 10**8}", [{"id": "tc", "all": [{"file": "tc.txt"}], "descriptor": {"toolchain": tc}}])
             out = io.StringIO()
