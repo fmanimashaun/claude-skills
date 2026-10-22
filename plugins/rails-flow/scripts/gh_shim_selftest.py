@@ -62,11 +62,14 @@ def check(label: str, ok: bool, detail: str = "") -> None:
 class Fixture:
     """A repository where project_gates runs (a workflow names it), a stub gh behind the shim, and a way to write the sweep record."""
 
-    def __init__(self, base: Path, in_force: bool = True):
+    def __init__(self, base: Path, in_force: bool = True, opt_out: bool = False):
         self.base = base
         self.repo = base / "repo"
         fixture_git.init(self.repo, "-b", "main")
         (self.repo / "a.txt").write_text("one\n")
+        if opt_out:      # #2304: a repository that does not run project_gates must SAY so, with a reason
+            (self.repo / ".claude" / "rails-flow").mkdir(parents=True)
+            (self.repo / ".claude" / "rails-flow" / "no-project-gates").write_text("# why\nthis repository runs its own doctor, not project_gates\n")
         if in_force:
             wf = self.repo / ".github" / "workflows"
             wf.mkdir(parents=True)
@@ -383,8 +386,11 @@ def _bad(base: Path) -> None:
 @case("not in force")
 def _not_in_force(base: Path) -> None:
     fx = Fixture(base, in_force=False)
-    ok, why = allowed(fx, "gh pr ready 5")
-    check("shim: a repository that does not run project_gates is left alone", ok, why)
+    ok, why = refused(fx, "gh pr ready 5")
+    check("shim (#2304): a repository where project_gates is NOT wired is refused, not left alone: every project gate is inert there", ok, why)
+    opt = Fixture(base / "opt", in_force=False, opt_out=True)
+    ok, why = allowed(opt, "gh pr ready 5")
+    check("shim (#2304): a repository that declares an opt-out WITH a reason is left alone", ok, why)
 
 
 @case("explicit target")
@@ -478,9 +484,12 @@ def _redirecting(base: Path) -> None:
     for var in ("GIT_EDITOR=true", "GH_TOKEN=t", "GIT_AUTHOR_NAME=a", "GH_PROMPT_DISABLED=1"):
         ok, why = allowed(fx, f"{var} gh pr ready 5")
         check(f"shim: CONTROL: {var} points nowhere, so it is not refused", ok, why)
-    nofx = Fixture(base / "nf", in_force=False)
+    nofx = Fixture(base / "nf", in_force=False, opt_out=True)
     ok, why = allowed(nofx, "GH_REPO=o/r gh pr ready 5")
-    check("shim: IN FORCE ONLY where project_gates runs: a named repository from a repository that does not run it is not checked (the stated carve-out)", ok, why)
+    check("shim: a named repository from a repository that opted out of project_gates is not checked (#2304: opting out, with a reason, is the one carve-out)", ok, why)
+    unwired = Fixture(base / "nf-unwired", in_force=False)
+    ok, why = refused(unwired, "GH_REPO=o/r gh pr ready 5")
+    check("shim (#2304): ...but from a repository that never wired project_gates and did not opt out it is refused", ok, why)
     outside = base / "outside"
     outside.mkdir()
     ok, why = allowed(fx, "GH_REPO=o/r gh pr ready 5", cwd=outside)
@@ -525,9 +534,9 @@ def _alias_flags(base: Path) -> None:
         check(f"shim: a multi-line alias expansion as `gh alias list` prints it ({shape}) is refused where in force, not read as its first line", ok, why)
     ok, why = allowed(fx, "gh other", {"STUB_ALIASES": "rdy2: |-\n    pr\n    ready\nother: pr list"})
     check("shim: CONTROL: the alias AFTER a multi-line one is read as its own single line and untouched", ok, why)
-    nof = Fixture(base / "nf2", in_force=False)
+    nof = Fixture(base / "nf2", in_force=False, opt_out=True)
     ok, why = allowed(nof, "gh mine", {"STUB_ALIASES": "mine: pr list --search \"a b\""})
-    check("shim: CONTROL: ...and it runs where project_gates does not", ok, why)
+    check("shim: CONTROL: ...and it runs where the repository opted out of project_gates (#2304)", ok, why)
 
 
 @case("alias placeholder")
