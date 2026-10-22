@@ -437,6 +437,50 @@ def _cpu_cost_fixtures() -> None:
     mc._COST.clear()
 
 
+# A selftest that fails the way check_hook_gates does: a tally, the label of the one failing check on a `  - ` line, then more output after it (#2308).
+LABELLED_FAILING_SELFTEST = (
+    "import sys\n"
+    "print('subject selftest: 1 of 187 checks FAILED', file=sys.stderr)\n"
+    "print('  - the one failing check', file=sys.stderr)\n"
+    "for i in range(12):\n"
+    "    print(f'trailing-{i:02d}', file=sys.stderr)\n"
+    "sys.exit(1)\n")
+
+
+def _failing_label_fixtures() -> None:
+    """#2308: a red selftest's report names EVERY failing check, not just the last few lines. A guard's baseline failed with `1 of 187 checks FAILED` and no label, and three
+    re-runs passed, so the failing check could not be named afterwards."""
+    one = "subject selftest: 1 of 187 checks FAILED\n  - the one failing check\n" + "\n".join(f"after-{i:02d}" for i in range(10))
+    block = mc.tail_block(one, 6)
+    _tick()
+    if "the one failing check" not in block or "1 of 187 checks FAILED" not in block:
+        FAILURES.append(f"#2308: the report must carry the tally and the failing check's label even when ten lines follow them: {block!r}")
+    _tick()
+    if block.count("after-") != 6:
+        FAILURES.append(f"#2308: the last-lines tail must stay exactly as long as asked: {block!r}")
+    many = "SELFTEST FAILED -- 60 of 100 checks:\n" + "\n".join(f"  - check-{i:02d} failed" for i in range(60))
+    out = mc.tail_block(many, 6)
+    _tick()
+    shown = out.count("failed")
+    if "SELFTEST FAILED -- 60 of 100" not in out or shown != mc.MAX_LABELS + 6:
+        FAILURES.append(f"#2308: 60 failing checks with a 6-line tail must show the tally, {mc.MAX_LABELS} capped labels and the 6 tail lines ({mc.MAX_LABELS + 6}), got {shown}")
+    _tick()
+    first = [line for line in out.splitlines() if "check-" in line]
+    if first[:1] != ["        - check-00 failed"] or first[mc.MAX_LABELS - 1:mc.MAX_LABELS] != ["        - check-39 failed"]:
+        FAILURES.append(f"#2308: the labels come in the order the selftest wrote them: {first[:2]} ... {first[mc.MAX_LABELS - 2:mc.MAX_LABELS + 1]}")
+    guard, root = _fixture_guard((mc.Mutation("even numbers reported odd", "n % 2 == 0", "False", "fixture-odd"),), selftest=LABELLED_FAILING_SELFTEST)
+    saved = mc.REPO
+    mc.REPO = root
+    try:
+        problems = mc.run_baseline(guard)
+    finally:
+        mc.REPO = saved
+        shutil.rmtree(root, ignore_errors=True)
+    _tick()
+    if not any("INERT" in p and "the one failing check" in p and "1 of 187 checks FAILED" in p for p in problems):
+        FAILURES.append(f"#2308: the baseline's INERT report must name the failing check: {problems}")
+
+
 def _sigint_fixtures() -> None:
     """#1635: proc_group.restore_sigint resets an inherited-IGNORED SIGINT, and only that."""
     import signal as _sg
@@ -1450,6 +1494,7 @@ def run() -> int:
     _proc_group_fixtures()
     _cpu_cost_fixtures()
     _sigint_fixtures()
+    _failing_label_fixtures()
 
     # ---- 2. a SURVIVOR must be reported ------------------------------------------------
     # This mutation changes the subject in a way neither fixture observes, so the selftest still

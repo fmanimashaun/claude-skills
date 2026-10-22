@@ -357,5 +357,29 @@ GUARD = Guard(
             "            if self.shards_external:",
             "under --mutation-shards, no OTHER gate is skipped",
         ),
+        Mutation(
+            "a gate's start is never written to the log",
+            '            self.announce(f"gate start: {name} (limit {limit} s)")\n',
+            '',
+            '#2308: a sweep cancelled (SIGTERM) mid-gate must name the gate',
+        ),
+        Mutation(
+            'SIGTERM is not read as an interrupt, so a cancelled sweep dies without killing or naming its gate',
+            '        with cancelled_as_interrupt():\n            self.check_gates(fast=fast)\n',
+            '        self.check_gates(fast=fast)\n',
+            '#2308: a sweep cancelled (SIGTERM) mid-gate must name the gate',
+        ),
+        Mutation(
+            'progress lines are buffered, so a killed sweep loses the gate it was in',
+            '            print(line, flush=True)',
+            '            print(line)',
+            '#2308: a sweep killed outright (SIGKILL)',
+        ),
+        Mutation(
+            'a cancelled gate is not named as interrupted',
+            '                self.announce(f"gate interrupted: {name} after {time.monotonic() - started:.1f} s (the sweep was cancelled or timed out here)")\n',
+            '',
+            '#2308: a sweep cancelled (SIGTERM) mid-gate must name the gate',
+        ),
     ),
 )

@@ -1474,6 +1474,11 @@ class Doctor:
         else:
             self.add(PASS, name, f"{len(added)} commit(s) added during the sweep, all by {me or 'the configured user'}")
 
+    def sweep(self, fast: bool = False) -> None:
+        """The gate sweep, with SIGTERM read as an interrupt (#2308): the ONE place both `diagnose` paths run the gates, so a cancel is handled the same in each."""
+        with cancelled_as_interrupt():
+            self.check_gates(fast=fast)
+
     def check_gates(self, fast: bool = False) -> None:
         tips_before = self._ref_tips()
         try:
@@ -1616,8 +1621,7 @@ class Doctor:
         # identically on a runner and on a laptop. That is what makes them the right half to automate,
         # and the only half.
         if gates_only:
-            with cancelled_as_interrupt():
-                self.check_gates(fast=fast)
+            self.sweep(fast=fast)
             self.report()
             return 1 if any(r.status == FAIL for r in self.results) else 0
         self.check_prerequisites()
@@ -1635,8 +1639,7 @@ class Doctor:
         self.check_dist_clean()
         self.check_worktree_leftovers()
         if gates:
-            with cancelled_as_interrupt():
-                self.check_gates()
+            self.sweep()
         else:
             self.add(
                 SKIP, "full gate sweep", "not requested",

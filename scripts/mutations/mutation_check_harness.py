@@ -600,5 +600,23 @@ GUARD = Guard(
             "        return 0\n",
             "every guard was starved must exit",
         ),
+        Mutation(
+            'the report carries only the last lines, so a label and the tally are lost',
+            '    return "".join(f"\\n      {row[:TAIL_WIDTH]}" for row in tally + labels + rows)',
+            '    return "".join(f"\\n      {row[:TAIL_WIDTH]}" for row in rows)',
+            "the report must carry the tally and the failing check's label",
+        ),
+        Mutation(
+            'the labels are not capped',
+            'if FAILING_LABEL.match(row)][:MAX_LABELS]',
+            'if FAILING_LABEL.match(row)]',
+            '60 failing checks with a 6-line tail',
+        ),
+        Mutation(
+            'the tally is dropped when it falls outside the tail',
+            'if FAILURE_TALLY.search(row)][-1:]',
+            'if FAILURE_TALLY.search(row)][:0]',
+            "must carry the tally and the failing check's label",
+        ),
     ),
 )
