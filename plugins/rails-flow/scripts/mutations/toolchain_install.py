@@ -143,7 +143,7 @@ GUARD = Guard(
         ),
         Mutation(
             'only the last line of the listing is parsed',
-            '        listed = json.loads(out[out.index("["):]) if rc == 0 and "[" in out else []',
+            '        listed = json.JSONDecoder().raw_decode(out, out.index("["))[0] if rc == 0 and "[" in out else []',
             '        listed = json.loads(out.strip().splitlines()[-1]) if rc == 0 and out.strip() else []',
             'a pretty-printed listing reads and the install runs in the project',
         ),
@@ -152,6 +152,24 @@ GUARD = Guard(
             '    if bad or not isinstance(ids, list):',
             '    if False:',
             'a crafted marker id is not trusted or echoed',
+        ),
+        Mutation(
+            'a non-object marker is used as is',
+            '    old = old if isinstance(old, dict) else {}',
+            '    pass',
+            'a marker that is not an object is replaced, not a crash',
+        ),
+        Mutation(
+            'a tracked marker is rewritten',
+            '        raise UnsafeMarker(f"{MARKER} is tracked by git',
+            '        pass  # raise UnsafeMarker(f"{MARKER} is tracked by git',
+            'a tracked marker is not rewritten',
+        ),
+        Mutation(
+            'text after the listing breaks the parse',
+            'json.JSONDecoder().raw_decode(out, out.index("["))[0]',
+            'json.loads(out[out.index("["):])',
+            "text after the listing's array does not block the install",
         ),
     ),
 )

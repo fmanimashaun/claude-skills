@@ -140,7 +140,8 @@ def install_plugin(plugin_id: str, project: Path, env: dict[str, str]) -> str | 
     # that points anywhere (#2288 security review). `marketplace list --json` carries each one's source (documented).
     rc, out = run([claude, "plugin", "marketplace", "list", "--json"], env, 120, cwd=here)
     try:
-        listed = json.loads(out[out.index("["):]) if rc == 0 and "[" in out else []    # pretty-printed or one line
+        # pretty-printed or one line; anything after the array (a warning on stderr) is ignored, not a parse failure
+        listed = json.JSONDecoder().raw_decode(out, out.index("["))[0] if rc == 0 and "[" in out else []
     except ValueError:
         listed = []
     entry = next((m for m in listed if isinstance(m, dict) and m.get("name") == marketplace), None) if isinstance(listed, list) else None
@@ -202,10 +203,16 @@ def install_cli(row: dict, project: Path, env: dict[str, str]) -> tuple[str, str
 def record(project: Path, installed: list[str]) -> Path:
     """Add the plugins just installed to the restart marker, which `--confirm` clears once each is enabled."""
     path = safe_marker(project)
+    git = tool("git", project)
+    if git and run([git, "-C", str(project), "ls-files", "--error-unmatch", "--", str(MARKER)],
+                   stack_toolchain.probe_env(project)[0], 60)[0] == 0:
+        # a marker the repository tracks came with the clone: rewriting it would leave a dirty tracked file an agent may commit
+        raise UnsafeMarker(f"{MARKER} is tracked by git, so the restart marker is not written over it")
     try:
         old = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
     except (OSError, ValueError):
         old = {}
+    old = old if isinstance(old, dict) else {}       # a marker that is not an object is not ours: start clean
     ids = sorted({i for i in (old.get("installed") or []) if plugin_id_ok(i)} | set(installed))
     path.parent.mkdir(parents=True, exist_ok=True)
     data = json.dumps({"status": "restart-pending", "installed": ids,
@@ -328,8 +335,9 @@ def install(project: Path, home: Path, dirs: list[Path] | None = None, session_i
     if installed:
         try:
             lines.append(f"recorded in {record(project, installed).relative_to(project)}: restart, then run --confirm")
-        except (UnsafeMarker, OSError) as err:
-            blocked.append(f"the installs were not recorded for the restart: {err}")
+        except (UnsafeMarker, OSError, ValueError, TypeError, AttributeError) as err:
+            # the install already happened: a marker that cannot be written is BLOCKED and reported, never a crash that hides it
+            blocked.append(f"the installs were not recorded for the restart: {type(err).__name__}: {err}")
     lines += [f"BLOCKED {b}" for b in blocked] + [f"PR NEEDED {p}" for p in pr]
     if session_id and blocked:
         lines += file_asks(blocked, session_id, project)
@@ -570,6 +578,24 @@ def selftest() -> int:
             case(tool("git", proj) != str((pbin / "git").resolve()) and not (root / "PWNED-GIT").exists(),
                  f"a global symlink into the project is not taken as the tool: {tool('git', proj)}")
             (bindir / "git").unlink()
+            # 18. a listing with text after the array still reads; a tracked or non-object marker never crashes or is rewritten
+            fake("claude", listing.replace("; exit 0;;", "; echo 'npm warn deprecated something'; exit 0;;") + 'echo \'{"outcome": "ok"}\'\n')
+            enable([])
+            rc, out = go()
+            case(rc == 0 and "plugin install" in calls(), f"text after the listing's array does not block the install: rc={rc} {out}")
+            (proj / MARKER).parent.mkdir(parents=True, exist_ok=True)
+            (proj / MARKER).write_text("[]", encoding="utf-8")
+            rc, out = install(proj, home, [plug])
+            case(rc == 0 and json.loads((proj / MARKER).read_text(encoding="utf-8")).get("installed") == ["p@claude-plugins-official"],
+                 f"a marker that is not an object is replaced, not a crash: rc={rc} {out}")
+            fixture_git.run(proj, "add", "-f", str(MARKER))
+            before = (proj / MARKER).read_text(encoding="utf-8")
+            rc, out = install(proj, home, [plug])
+            case(rc == 1 and (proj / MARKER).read_text(encoding="utf-8") == before and any("tracked by git" in l for l in out),
+                 f"a tracked marker is not rewritten: rc={rc} {out}")
+            fixture_git.run(proj, "rm", "--cached", "-q", str(MARKER))
+            (proj / MARKER).unlink()
+            fake("claude", ok_json)
             # 13. a stack that cannot be judged installs nothing
             rc, out = install(root / "no-such-project", home, [plug])
             case(rc == 2, f"a project that cannot be judged is exit 2 and installs nothing: rc={rc}")
