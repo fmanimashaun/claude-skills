@@ -219,8 +219,8 @@ def judge_templates(snapshots: list[dict], screens_doc: object, root: Path) -> t
             continue
         try:
             validate_structure(url, snap.get("structure"), template)
-        except Unusable as err:
-            unverified.append(f"{url}: {err}")
+        except Unusable:
+            unverified.append(url)
             continue
         findings += JUDGES[template](url, snap["structure"])
         for rule in TEMPLATE_RULES[template]:
