@@ -86,10 +86,10 @@ GUARD = Guard(
             "a RED record is refused",
         ),
         Mutation(
-            "a repository that does not run project_gates is judged anyway",
+            "a repository that declared an opt-out, with a reason, is judged anyway",
             "    if not root or not in_force(root):\n",
             "    if not root:\n",
-            "NOT in force (no marker, no workflow, no record dir)",
+            "an opt-out WITH a reason leaves the repository alone",
         ),
         Mutation(
             'the refusal never names the worktree with a green record',
@@ -188,9 +188,9 @@ GUARD = Guard(
             'a git that is not installed is a NAMED refusal',
         ),
         Mutation(
-            'a repository whose git cannot say where its sweep directory is counts as not in force',
-            '    if d is None:\n        return True       # git cannot say',
-            '    if d is None:\n        return False      # git cannot say',
+            'a repository whose git cannot say where its sweep directory is is allowed instead of refused by name',
+            '    if d is None:\n        return refuse(f"the git directory of {root} could not be read.", args)',
+            '    if d is None:\n        return 0',
             'whose git cannot say where it is',
         ),
         Mutation(
@@ -198,6 +198,54 @@ GUARD = Guard(
             '    return max(0.05, min(GIT_TIMEOUT if timeout is None else timeout, budget_left()))',
             '    return max(0.05, GIT_TIMEOUT if timeout is None else timeout)',
             'ONE time budget bounds every git call',
+        ),
+        Mutation(
+            "a repository that never wired project_gates is 'not applicable' again, so every project gate is inert there and nothing says so",
+            '    return opt_out_reason(root) is None',
+            '    return wired(root)',
+            'guard-pr-ready (#2304): NOT wired (no marker, no workflow, no record dir): REFUSED, naming the wiring',
+        ),
+        Mutation(
+            'an opt-out file with no reason counts as an opt-out, so a silent opt-out ends the guarantee',
+            '            if line and not line.startswith("#"):',
+            '            if True:',
+            'guard-pr-ready (#2304): an opt-out file that gives NO reason is not an opt-out: refused',
+        ),
+        Mutation(
+            'a symlinked opt-out file is followed, so a reason the repository never wrote ends the guarantee',
+            '    if path.is_symlink():',
+            '    if False:',
+            'guard-pr-ready (#2304): an opt-out that is a SYMLINK is not an opt-out, even to a file holding a reason: refused',
+        ),
+        Mutation(
+            "a repository with no wiring and no record falls through to the generic 'no sweep record' refusal, which does not say the gates are not wired",
+            '    if not wired_by_files(root) and not d.is_dir():',
+            '    if False:',
+            'guard-pr-ready (#2304): NOT wired (no marker, no workflow, no record dir): REFUSED, naming the wiring',
+        ),
+        Mutation(
+            'the refusal stops naming the opt-out file',
+            'UNWIRED_FIX = (f"Run /rails-flow:setup-flow (its section 8 wires project_gates.py into CI and CLAUDE.md). A repository that genuinely opts out "\n               f"says so in {OPT_OUT}: one line giving the reason.")',
+            'UNWIRED_FIX = "Run /rails-flow:setup-flow (its section 8 wires project_gates.py into CI and CLAUDE.md)."',
+            '...and the refusal says how to fix it (setup-flow) and how to opt out',
+        ),
+        Mutation(
+            "SessionStart's probe prints nothing for an unwired repository",
+            '    if not root or wired(root) or opt_out_reason(root) is not None:\n        return ""',
+            '    if True:\n        return ""',
+            'pr_ready_guard --wired (#2304): an unwired repository gets the PROJECT GATES NOT WIRED line, naming setup-flow and the opt-out file',
+        ),
+        Mutation(
+            "SessionStart's probe says it even where the repository opted out",
+            '    if not root or wired(root) or opt_out_reason(root) is not None:',
+            '    if not root or wired(root):',
+            'pr_ready_guard --wired (#2304): ...an opted-out repository gets no line',
+        ),
+        Mutation(
+            "SessionStart's probe says it even where the workflow names project_gates",
+            '    if not root or wired(root) or opt_out_reason(root) is not None:',
+            '    if not root or opt_out_reason(root) is not None:',
+            'pr_ready_guard --wired (#2304): ...and a repository whose workflow names project_gates.py gets no line',
         ),
     ),
 )

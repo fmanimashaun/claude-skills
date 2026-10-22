@@ -106,14 +106,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/detect_stack.py" . --descriptor
 A project can be several stacks at once (Next.js + Supabase + Vercel). Then every reported stack is active, with no
 question asked, and each setup section is worked in turn. Asking is only for exit 1 or exit 2.
 
-Once the stacks are settled, name what each one still needs installed (#2168):
+Once the stacks are settled, install what each one still needs (#2168, #2288). It is the same step as
+`/rails-flow:toolchain-check` (its "detected stack's own tools" section): run it and handle each line as that section says.
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/stack_toolchain.py" --project .
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/toolchain_install.py" --project . --session-id "$CLAUDE_CODE_SESSION_ID"
 ```
 
-Report every `MISSING` or `NOT READY` line to the user with its step, and keep going: it is advisory, and an install is the
-user's to make. Exit 2 means it could not judge; say so rather than reporting the toolchain complete.
+Exit 2 means it could not judge and installed nothing; say so rather than reporting the toolchain complete.
 
 ## 1. Inspect the project first
 
@@ -545,8 +545,9 @@ unless `docs/README.md` carries a `## Waivers` table with the directory and **a 
 for a directory that exists, fails too. `--scaffold --write` creates the missing ones. A legacy tree maps in with
 `--propose --write` (`decisions/` and `progress/` into `brain/`, `spec/` and `plan/` into `product/`, `research/` and
 `inventory/` into `evidence/`, `process/` into `runbooks/`, by `git mv`, link rewrites asserted). The check runs
-in a project's sweep only where §8 wired `project_gates.py` into CI or `CLAUDE.md` (a project that skipped §8 is
-reported by nothing: wire it). Two more checks ride the same sweep (#2297): `brain-fresh` (an arm or promotion is
+in a project's sweep only where §8 wired `project_gates.py` into CI or `CLAUDE.md`; a project that skipped §8 has every
+gate inert, so `gh pr ready` is **refused** there (and SessionStart says "PROJECT GATES NOT WIRED") until it is wired or declares
+an opt-out, with a reason, in `.claude/rails-flow/no-project-gates` (#2304). Two more checks ride the same sweep (#2297): `brain-fresh` (an arm or promotion is
 refused while `docs/brain/STATUS.md` predates the last release tag) and `owner-rulings` (a PR whose `Fixes #n` issue carries
 an owner ruling needs a `## D-NNN` block in `docs/brain/DECISIONS.md` that mentions `#n`).
 
@@ -882,6 +883,12 @@ covers all of them. **Pin the `ref`** — an unpinned `main` means our next rele
 what your CI enforces, which is the same drift this whole toolchain exists to remove. Bump it
 deliberately, the way you bump any other dependency, and record which tag you pinned so the bump is
 a decision rather than a discovery.
+
+**Wiring is not optional (#2304).** A repository where this plugin is installed and that neither names `project_gates.py` in a
+workflow, nor carries the rails-flow managed block in `CLAUDE.md`, nor has ever run a sweep, has no gate that runs: the guard on
+`gh pr ready` refuses it ("project gates are not wired") and SessionStart prints a "PROJECT GATES NOT WIRED" line, instead of
+reporting "not applicable". The way out is to wire it (this section), or, for a repository that genuinely runs something else,
+to write one line giving the reason in `.claude/rails-flow/no-project-gates` (a file with no reason is not an opt-out).
 
 `project_gates.py` discovers which of the shipped checks apply to *this* repo and reports four
 states — **pass / FAIL / not-applicable / ERROR**. A project with no `qa/` directory reports the

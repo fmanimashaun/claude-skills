@@ -27,7 +27,8 @@ agent, which measures with a browser and lets scripts decide.
 ## Steps
 
 1. Hand the **interface-auditor** the app URL and the screens. It collects one snapshot per screen,
-   runs `interface_audit.py`, merges any qa-flow judge output it finds, validates with
+   runs `interface_audit.py` (with `--screens` once each URL is matched to its mock-up record, so the
+   template rows and the undeclared-screen finding are judged), merges any qa-flow judge output it finds, validates with
    `audit_findings.py check`, and writes `report.md` with `audit_findings.py report`.
 2. Read the report back to the user: the ranked findings, **each with its authority line**, then the
    **Not audited** list. Do not soften a house rule into advice and do not harden one into a

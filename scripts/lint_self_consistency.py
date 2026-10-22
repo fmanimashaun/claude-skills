@@ -933,6 +933,8 @@ VENDORED_COPIES = (
      "the vendored triage_failures.py imports it; it leaves with that copy, when the flows' triage reads the descriptor (#2183)"),
     ("plugins/rails-flow/scripts/mockup_records.py", "plugins/qa-flow/scripts/mockup_records.py",
      "qa-flow's release_evidence.py refuses the certification stamp for a shipped design with no `Story:`; it reads the record lines with this file (#2226), and leaves when a shared core plugin owns it"),
+    ("plugins/rails-flow/scripts/mockup_records.py", "plugins/design-flow/scripts/mockup_records.py",
+     "design-flow's interface_templates.py reads the record lines with this file to judge a screen against its declared `Template:` (#2251); it leaves when a shared core plugin owns it"),
     ("plugins/rails-flow/reference/agent-output-contract.md", "plugins/rails-stack/reference/agent-output-contract.md",
      "every moved agent cites it; a neutral reference whose single home is core-skills (#2186), which removes this copy"),
 )

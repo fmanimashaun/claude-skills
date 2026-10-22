@@ -31,18 +31,33 @@ against a local checkout instead of the network:
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/toolchain_version.py" --published-from /path/to/claude-skills
 ```
 
-### The detected stack's own tools (#2168)
+### The detected stack's own tools (#2168, #2288)
 
-Then check what THIS project's stack needs, beyond the claude-skills versions:
+Then install what THIS project's stack still needs. The flow is unattended, so it acts rather than printing advice:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/stack_toolchain.py" --project .
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/toolchain_install.py" --project . --session-id "$CLAUDE_CODE_SESSION_ID"
 ```
 
-Each detected stack declares its plugins and CLIs in its descriptor's `toolchain` block. The script reports each missing or
-not-ready one with the step that fixes it: a Rails project without `rails-stack`, a Next.js one without `nextjs-stack`, a
-Supabase or Vercel project without the official plugin or its CLI, Docker not running. Exit 0 complete, 1 something to
-install (list it for the user; installing is theirs to do), 2 could not judge (say so; it is not "complete").
+Each detected stack declares its plugins and CLIs in its descriptor's `toolchain` block. The script installs a missing plugin at
+local scope, only from an allowlisted marketplace whose registered source it checks, and a missing CLI by the vendor's method,
+after proving the package comes from the vendor's repository. It checks that the tokens (`VERCEL_TOKEN`, `SUPABASE_ACCESS_TOKEN`)
+are present in `.rails-flow/toolchain.env`, which must be ignored and untracked by git, the file itself (not a symlink) and mode
+0600. No install needs a token, so none is put in an argument or a log; they are there for the vendor commands you run.
+The `claude plugin` commands run in the project (local scope names its `.claude/settings.local.json`), so that project's own
+settings may apply to them: the guarantee holds inside a trusted workspace only (#1843).
+
+- `INSTALLED plugin …`: it loads after a restart. Record the step, ask for the restart, and run
+  `toolchain_install.py --confirm` after it.
+- `BLOCKED …`: something an agent cannot do (a missing token, a refused install, a package from the wrong repository). With
+  `--session-id`, each is filed as a coordination ask for the board. Move on to other work; do not wait.
+- `PR NEEDED …`: a change to the project itself, such as a devDependency. Make it on its own branch and open a pull request,
+  through the normal flow. It is never left as an uncommitted edit.
+- A tool call that the harness denies for permission is not seen by the script. File it the same way:
+  `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lib/coordination.py" ask --session-id "$CLAUDE_CODE_SESSION_ID" --title "toolchain BLOCKED: <the denied command>"`.
+
+Exit 0 nothing left to do, 1 a BLOCKED or PR NEEDED line, 2 could not judge (say so; nothing was installed). To see what is
+missing without installing anything, run `stack_toolchain.py --project .`.
 
 ## Update, restart, resume
 

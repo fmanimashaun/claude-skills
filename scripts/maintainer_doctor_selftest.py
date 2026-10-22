@@ -54,14 +54,19 @@ def _tick() -> None:
     CHECKS += 1
 
 
-def _git(cwd: Path, *args: str) -> str:
+def _git(cwd: Path, *args: str, must: bool = False) -> str:
     """Fixture git (#1588): in a repo through fixture_git, bound to it and refused if its init failed; anything else
-    (`init --bare` and `clone` from the temp root) runs plain and commits nothing."""
+    (`init --bare` and `clone` from the temp root) runs plain and commits nothing. `must`: a step that builds the fixture raises when git
+    fails (#2312), because a build step that fails quietly leaves a repository with no commits and no `origin/dev`, and 21 checks then fail
+    on a message about `origin/dev` that says nothing about the cause."""
     if (cwd / ".git").is_dir():
         p = fixture_git.run(cwd, *args, check=False)
     else:
         p = subprocess.run(("git",) + args, cwd=cwd, capture_output=True, text=True)
-    return (p.stdout + p.stderr).strip()
+    out = (p.stdout + p.stderr).strip()
+    if must and p.returncode != 0:
+        raise RuntimeError(f"fixture step `git {' '.join(args)}` failed in {cwd} (exit {p.returncode}): {out[:300]}")
+    return out
 
 
 def fixture(*, on_branch: str = "dev", stale_main: bool = False, dirty: bool = False,
@@ -78,8 +83,12 @@ def fixture(*, on_branch: str = "dev", stale_main: bool = False, dirty: bool = F
     """
     root = Path(rf_tmp.mkdtemp("doctor-fx-"))
     remote, work = root / "remote.git", root / "work"
-    _git(root, "init", "--bare", "-b", "main", str(remote))
-    _git(root, "clone", str(remote), str(work))
+    _git(root, "init", "--bare", "-b", "main", str(remote), must=True)
+    # NOT `git clone` (#2312): a clone of an empty remote is a plain repository, and rails-flow's git shim, which a maintainer's Mac has first on PATH, refuses
+    # `git add -A` in a repository that does not carry fixture_git's marker (#1994). Every staging step below then failed quietly and the fixture had no
+    # commits, so 21 checks failed on this Mac and passed in CI, which has no shim. `init` + `remote add` is the same repository for an empty remote.
+    fixture_git.init(work, "-b", "main")
+    _git(work, "remote", "add", "origin", str(remote), must=True)
     # The doctor reads the clone's CONFIGURED user to tell its own commits from a foreign one, so this is the code
     # under test's input, not a fixture identity; `_git` binds it to `work` through fixture_git (#1588).
     _git(work, "config", "user.email", "t@t")  # fixture-git: exempt (the configured user is what the doctor under test reads)
@@ -95,53 +104,53 @@ def fixture(*, on_branch: str = "dev", stale_main: bool = False, dirty: bool = F
     elif gitignore is not None:
         (work / ".gitignore").write_text(gitignore)
     (work / "seed.txt").write_text("seed\n")
-    _git(work, "add", "-A")
-    _git(work, "commit", "-m", "init")
-    _git(work, "push", "-u", "origin", "main")
+    _git(work, "add", "-A", must=True)
+    _git(work, "commit", "-m", "init", must=True)
+    _git(work, "push", "-u", "origin", "main", must=True)
 
     # A SECOND commit on main, so `origin/main` can be genuinely ahead of a rewound local
     # `main`. The first version of this fixture set local main to `dev^` -- which in this repo
     # shape IS origin/main, so there was no staleness to find and the check looked broken when
     # the fixture was. Two commits is what makes the trap reproducible.
     (work / "release.txt").write_text("v0\n")
-    _git(work, "add", "-A")
-    _git(work, "commit", "-m", "release: v0")
-    _git(work, "push", "origin", "main")
+    _git(work, "add", "-A", must=True)
+    _git(work, "commit", "-m", "release: v0", must=True)
+    _git(work, "push", "origin", "main", must=True)
 
-    _git(work, "checkout", "-b", "dev")
+    _git(work, "checkout", "-b", "dev", must=True)
     (work / "dev.txt").write_text("dev\n")
-    _git(work, "add", "-A")
-    _git(work, "commit", "-m", "dev work")
-    _git(work, "push", "-u", "origin", "dev")
+    _git(work, "add", "-A", must=True)
+    _git(work, "commit", "-m", "dev work", must=True)
+    _git(work, "push", "-u", "origin", "dev", must=True)
 
     if promotion:
         # A REAL promotion, done both ways, because the difference is invisible in the tree and
         # decisive in the history. Both leave `main` byte-identical to `dev`; only the merge leaves
         # a commit on `main` with a parent on `dev`, and only that makes the NEXT promotion mergeable.
-        _git(work, "checkout", "main")
+        _git(work, "checkout", "main", must=True)
         if promotion == "squash":
-            _git(work, "merge", "--squash", "dev")
-            _git(work, "commit", "-m", "release: v1 (squashed — this is the trap)")
+            _git(work, "merge", "--squash", "dev", must=True)
+            _git(work, "commit", "-m", "release: v1 (squashed — this is the trap)", must=True)
         else:
-            _git(work, "merge", "--no-ff", "dev", "-m", "release: v1")
-        _git(work, "push", "origin", "main")
-        _git(work, "checkout", "dev")
+            _git(work, "merge", "--no-ff", "dev", "-m", "release: v1", must=True)
+        _git(work, "push", "origin", "main", must=True)
+        _git(work, "checkout", "dev", must=True)
         # dev moves on afterwards, which is the ordinary mid-cycle state and the one that made the
         # first version of this check useless: `dev` is not an ancestor of `main` in EITHER case, so
         # asking that question passes the squash. The fixture keeps this here on purpose.
         (work / "after.txt").write_text("more dev work\n")
-        _git(work, "add", "-A")
-        _git(work, "commit", "-m", "dev work after the release")
-        _git(work, "push", "origin", "dev")
+        _git(work, "add", "-A", must=True)
+        _git(work, "commit", "-m", "dev work after the release", must=True)
+        _git(work, "push", "origin", "dev", must=True)
 
     if direct_to_main:
         # A commit that exists only on main -- invisible to every future dev-based change.
-        _git(work, "checkout", "main")
+        _git(work, "checkout", "main", must=True)
         (work / "sneaky.txt").write_text("only on main\n")
-        _git(work, "add", "-A")
-        _git(work, "commit", "-m", "feat: added straight to main")
-        _git(work, "push", "origin", "main")
-        _git(work, "checkout", "dev")
+        _git(work, "add", "-A", must=True)
+        _git(work, "commit", "-m", "feat: added straight to main", must=True)
+        _git(work, "push", "origin", "main", must=True)
+        _git(work, "checkout", "dev", must=True)
 
     if stale_main:
         # Rewind the LOCAL main ref one commit behind origin/main, leaving the remote untouched.
@@ -156,12 +165,12 @@ def fixture(*, on_branch: str = "dev", stale_main: bool = False, dirty: bool = F
             (work / md.CORPORA_DIR / c).mkdir(parents=True, exist_ok=True)
 
     if on_branch != "dev":
-        _git(work, "checkout", on_branch)
+        _git(work, "checkout", on_branch, must=True)
     if dirty:
         (work / "app").mkdir(exist_ok=True)
         (work / "app" / "new_file.py").write_text("# uncommitted\n")
 
-    _git(work, "fetch", "--all")
+    _git(work, "fetch", "--all", must=True)
     return work
 
 
@@ -225,6 +234,74 @@ def ruleset_fixtures() -> None:
                 FAILURES.append(f"ruleset FAIL lacks the finding or the remedy: {r.detail!r} / {r.remedy!r}")
         finally:
             md.RULESET_ARGS = saved
+
+
+def hostile_environment_fixtures() -> None:
+    """#2312: the fixture repositories build on a maintainer's machine as they do on a CI runner. 21 checks failed on the maintainer's Mac and passed in CI because the
+    Mac has rails-flow's git shim first on PATH (it refuses `git add -A` in a repository that is not marked as a fixture, #1994) and a system gitconfig of its own
+    (Homebrew's `core.hooksPath`, Xcode's `init.defaultBranch`). The fixture is built here in a subprocess under each, in turn (the shim refuses a hostile
+    GIT_CONFIG_GLOBAL itself, so the two cannot be combined): (A) the shipped shim first on PATH, (B) a hostile global AND system gitconfig. Each has a CONTROL that proves
+    the environment is hostile, so the check cannot pass by the environment having gone benign."""
+    import tempfile
+    shim = REAL_REPO / "plugins" / "rails-flow" / "git-shim"
+    base = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    off_shim = os.pathsep.join(d for d in base["PATH"].split(os.pathsep) if "git-shim" not in d)
+    probe = (f"import sys; sys.path.insert(0, {str(Path(__file__).resolve().parent)!r}); import maintainer_doctor_selftest as t; "
+             "w = t.fixture(); print(w)")
+
+    def build(label: str, env: dict[str, str]) -> None:
+        done = subprocess.run([sys.executable, "-c", probe], env=env, capture_output=True, text=True, timeout=300)
+        _tick()
+        if done.returncode != 0:
+            FAILURES.append(f"#2312: the fixture could not be built with {label}: {(done.stderr or done.stdout).strip().splitlines()[-1:]}")
+            return
+        work = Path(done.stdout.strip().splitlines()[-1])
+        try:
+            for ref in ("origin/main", "origin/dev"):
+                _tick()
+                if fixture_git.run(work, "rev-parse", "--verify", "-q", ref, check=False).returncode != 0:
+                    FAILURES.append(f"#2312: the fixture built with {label} has no `{ref}`")
+            _tick()
+            status = fixture_git.run(work, "status", "--porcelain", check=False).stdout.strip()
+            if status:
+                FAILURES.append(f"#2312: the fixture built with {label} is not clean: {status[:120]!r}")
+        finally:
+            shutil.rmtree(work.parent, ignore_errors=True)
+
+    with tempfile.TemporaryDirectory() as td:
+        # (A) the shim first on PATH, with what a Claude session gives it: the shim accepts a marked fixture only when TMPDIR and CLAUDE_SESSION_PROJECT_TOP are set
+        # (`temp_root_ok`), and a bare CI runner sets neither, so there it refuses every fixture, marked or not (found on the runner, #2312). The Mac passed because the
+        # selftest ran from a session whose shell had both.
+        shim_env = {**base, "PATH": f"{shim}{os.pathsep}{base['PATH']}", "TMPDIR": tempfile.gettempdir(), "CLAUDE_SESSION_PROJECT_TOP": str(REAL_REPO)}
+        # CONTROLS. The environment lets a MARKED fixture stage with `git add -A` (so the check is about the fixture, not about a shim that refuses everything), and refuses the
+        # old way: a plain clone of an empty remote, staged with `git add -A`.
+        marked = fixture_git.init(Path(td) / "marked", "-b", "main")
+        (marked / "m.txt").write_text("x\n", encoding="utf-8")
+        _tick()
+        staged = subprocess.run(["git", "add", "-A"], cwd=marked, env=fixture_git.env(marked, shim_env), capture_output=True, text=True)
+        if staged.returncode != 0:
+            FAILURES.append(f"#2312: CONTROL: the shim environment refused `git add -A` in a MARKED fixture, so check A cannot tell a good fixture from a bad one: {staged.stderr.strip().splitlines()[:2]}")
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(Path(td) / "old-remote.git")], env=shim_env, capture_output=True)
+        subprocess.run(["git", "clone", "-q", str(Path(td) / "old-remote.git"), str(Path(td) / "old")], env=shim_env, capture_output=True)
+        _tick()
+        old = Path(td) / "old"
+        if not old.is_dir():
+            FAILURES.append("#2312: CONTROL could not clone with the shim first on PATH")
+        else:
+            (old / "f.txt").write_text("x\n", encoding="utf-8")
+            if subprocess.run(["git", "-C", str(old), "add", "-A"], env=shim_env, capture_output=True, text=True).returncode == 0:
+                FAILURES.append("#2312: CONTROL is vacuous: `git add -A` in a plain clone was NOT refused with the shipped shim first on PATH")
+        build("the shipped git shim first on PATH", shim_env)
+        # (B) a hostile global and system gitconfig, the shim off PATH. CONTROL: the config applies (a plain `git init` names the default branch it sets).
+        cfg = Path(td) / "hostile-gitconfig"
+        cfg.write_text("[init]\n\tdefaultBranch = master\n[core]\n\thooksPath = .githooks\n", encoding="utf-8")
+        cfg_env = {**base, "PATH": off_shim, "GIT_CONFIG_GLOBAL": str(cfg), "GIT_CONFIG_SYSTEM": str(cfg)}
+        subprocess.run(["git", "init", "-q", str(Path(td) / "probe")], env=cfg_env, capture_output=True)
+        head = subprocess.run(["git", "-C", str(Path(td) / "probe"), "symbolic-ref", "HEAD"], env=cfg_env, capture_output=True, text=True).stdout.strip()
+        _tick()
+        if head != "refs/heads/master":
+            FAILURES.append(f"#2312: CONTROL is vacuous: the hostile gitconfig did not apply (a plain init named {head!r})")
+        build("a hostile global and system gitconfig", cfg_env)
 
 
 def repo_untouched_fixtures() -> None:
@@ -557,6 +634,7 @@ def run() -> int:
     timeout_fixtures()
     gate_time_fixtures()
     starved_gate_fixtures()
+    hostile_environment_fixtures()
     repo_untouched_fixtures()
     ruleset_fixtures()
     # ---- healthy machine: nothing may FAIL ---------------------------------------------

@@ -5,7 +5,7 @@
 # tripwire; this is where the effect happens. Everything it does not guard is exec'd with its argv unchanged.
 #
 # REFUSES `gh pr ready` (not `--undo`) unless the sweep record for the HEAD of the checkout it runs in is green with zero skips, by the SAME judgement as the hook
-# (`hooks/scripts/lib/pr_ready_guard.py`, called with `--shim`): in force only where project_gates runs; a repository named by -R/--repo, a URL or GH_REPO is refused (a local
+# (`hooks/scripts/lib/pr_ready_guard.py`, called with `--shim`): judged in every repository (one that never wired project_gates is refused by name, one that declares a reasoned opt-out in .claude/rails-flow/no-project-gates is left alone, #2304); a repository named by -R/--repo, a URL or GH_REPO is refused (a local
 # record cannot stand for it); any argument that is not a plain PR number or branch is refused.
 # ALIASES: a gh alias (`gh alias set`) hides `pr ready` behind a name gh expands itself, so an argument that is not a gh command is resolved with `gh alias list` and judged.
 #

@@ -41,7 +41,13 @@ Say what the rule is; the report prints its authority for you.
    list under `docs/evidence/design/<date>-interface-audit/`.
 3. **Judge.** `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/interface_audit.py snapshots.json --out findings.json`.
    Exit 1 means findings, 2 means the snapshots are unusable (say why, fix the collection, never
-   edit the JSON).
+   edit the JSON). To judge the template rows as well, add `--screens screens.json`: a list of
+   `{"url": "/orders", "screen": "Order list"}` that **you** write by matching each URL to the
+   `Screen:` line of a record in `docs/product/mockups/` (`null` when no record fits; never guess a
+   match). A URL with no record, or a record without `Template:`, `States:` or `Nav:`, becomes an
+   **A10** finding carrying a proposed record: relay it as a proposal for a person to review, never
+   as the screen's template. A rule of multi-step (A31, A34) or search-results (A53 to A57) is judged
+   only for a screen whose record declares that `Template:`.
 4. **Reuse what already exists.** If qa-flow evidence is present (`layout_fit`, `text_resize`,
    `theme_parity`, `link_audit` `--json` outputs), convert each with
    `audit_findings.py from-judge NAME file.json --screens N` and merge with
@@ -59,10 +65,13 @@ Say what the rule is; the report prints its authority for you.
 The report lists, under **Not audited**, every rule you could not measure this run and why. Today:
 
 - rules judged by a recorded review verdict (density, content hierarchy, interaction feedback,
-  whether a screen is the right template): there is no verdict channel yet (#2225), so they are
-  **not audited**, never "looks fine";
+  whether a screen is the right template): there is no verdict channel yet (#2225, rows in #2309), so
+  they are **not audited**, never "looks fine";
 - rules whose check is not built (card in a card #2227, focus visible #2228, forced states #2229,
-  Core Web Vitals #2230) and the mock-up record's `Template:`, `States:`, `Nav:` lines (#2226).
+  Core Web Vitals #2230);
+- 23 of the 30 template rules (A29 to A58), each with its reason in the report: the record has no
+  check-answers, confirmation or task-list page's rows are not built yet (#2327; a record declares
+  them as `multi-step: <sub-kind>`, #2310), or the rule needs a declared flow or a driven journey. The seven it can measure are judged only with `--screens`.
 
 `audit_findings.py report` writes that section itself from the framework's rules table: every rule the
 document did not audit, grouped by what blocks it, plus the judgement rules. You do not write it and
