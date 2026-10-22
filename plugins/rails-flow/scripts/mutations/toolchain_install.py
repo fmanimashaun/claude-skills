@@ -171,5 +171,23 @@ GUARD = Guard(
             'json.loads(out[out.index("["):])',
             "text after the listing's array does not block the install",
         ),
+        Mutation(
+            'a symlinked briefing file is followed',
+            '    if path.is_symlink():\n        return {}, f"the briefing file {rel} is a symlink',
+            '    if False:\n        return {}, f"the briefing file {rel} is a symlink',
+            'a symlinked briefing file is not followed',
+        ),
+        Mutation(
+            'a briefing file resolving outside the project is read',
+            '    if not stack_toolchain.inside(path.resolve(), project):',
+            '    if False:',
+            'a briefing file under a symlinked directory is not read',
+        ),
+        Mutation(
+            'a briefing file others can read is accepted',
+            '        if mode & 0o077:',
+            '        if False:',
+            'a briefing file others can read is refused',
+        ),
     ),
 )

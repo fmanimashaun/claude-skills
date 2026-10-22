@@ -41,8 +41,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/toolchain_install.py" --project . --sessi
 
 Each detected stack declares its plugins and CLIs in its descriptor's `toolchain` block. The script installs a missing plugin at
 local scope, only from an allowlisted marketplace whose registered source it checks, and a missing CLI by the vendor's method,
-after proving the package comes from the vendor's repository. It reads tokens (`VERCEL_TOKEN`, `SUPABASE_ACCESS_TOKEN`) from
-`.rails-flow/toolchain.env`, and only when git ignores that file and does not track it.
+after proving the package comes from the vendor's repository. It checks that the tokens (`VERCEL_TOKEN`, `SUPABASE_ACCESS_TOKEN`)
+are present in `.rails-flow/toolchain.env`, which must be ignored and untracked by git, the file itself (not a symlink) and mode
+0600. No install needs a token, so none is put in an argument or a log; they are there for the vendor commands you run.
+The `claude plugin` commands run in the project (local scope names its `.claude/settings.local.json`), so that project's own
+settings may apply to them: the guarantee holds inside a trusted workspace only (#1843).
 
 - `INSTALLED plugin …`: it loads after a restart. Record the step, ask for the restart, and run
   `toolchain_install.py --confirm` after it.

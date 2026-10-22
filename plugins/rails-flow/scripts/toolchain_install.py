@@ -11,10 +11,15 @@ descriptors: the project supplies no command, package or source.
 - A CLI is installed by the first `auto_install` method that applies on this OS, after proving the package is the vendor's: an
   npm package's registry `repository.url`, or a Homebrew tap's remote, must name the descriptor's `repo`. `npm-dev` is never run
   here: adding a devDependency edits the project, so it is reported as `PR NEEDED`, a reviewed change on its own branch.
-- A CLI's `token` comes from the briefing file `.rails-flow/toolchain.env`, read only when git ignores it and does not track it.
-  The token is never written anywhere: the flow passes it in the environment of the vendor command that needs it.
-- Every command runs with stack_toolchain's probe environment (an allowlist, the project's directories off PATH, cwd `/`), and
-  every tool (`claude`, `npm`, `brew`) must resolve outside the project.
+- A CLI's `token` must be present in the briefing file `.rails-flow/toolchain.env`, which is read only when git ignores it and
+  does not track it, it is the file itself (not a symlink, not resolving outside the project) and its mode is 0600. No install
+  step needs a token, so a token is only CHECKED present: never put in an argument, a log or an output line, and left for the
+  vendor commands the developer runs (#2318 ruling).
+- Every command runs with stack_toolchain's probe environment (an allowlist, the project's directories off PATH), and every
+  tool (`claude`, `npm`, `brew`, `git`) must resolve outside the project. The vendor installs and `git` run from `/`. The
+  `claude plugin` commands run with the project as their working directory, because `--scope local` names that project's
+  `.claude/settings.local.json`; the project's own settings may then apply to the CLI, within the trusted-workspace bound of
+  #1843.
 
 Each thing an agent cannot do is one `BLOCKED` line (a missing token, a committable briefing file, a refused install, a package
 from the wrong repository); with `--session-id` each is also filed as a coordination ask, which the board shows once the
@@ -82,6 +87,13 @@ def briefing(project: Path, env: dict[str, str]) -> tuple[dict[str, str], str | 
     if not path.exists():
         return {}, None
     rel = str(BRIEFING)
+    # The file itself, never what a link points at: a symlink is refused, and so is a path that resolves outside the project;
+    # it is opened with O_NOFOLLOW so a link swapped in after these checks (its shape is judged before git is asked anything about it) is refused too. Tokens are private: a file any group or
+    # other user can read is refused, 0600 only (coordinator, #2318 review).
+    if path.is_symlink():
+        return {}, f"the briefing file {rel} is a symlink, so it is not read"
+    if not stack_toolchain.inside(path.resolve(), project):
+        return {}, f"the briefing file {rel} resolves outside the project, so it is not read"
     git = tool("git", project)
     if not git:
         return {}, "git is not on PATH outside the project, so the briefing file cannot be proved ignored"
@@ -92,9 +104,17 @@ def briefing(project: Path, env: dict[str, str]) -> tuple[dict[str, str], str | 
     if ignored != 0:
         return {}, f"the briefing file {rel} is not ignored by git, so it could be committed: add it to .gitignore"
     try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as err:
-        return {}, f"the briefing file {rel} cannot be read: {err}"
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as err:
+        return {}, f"the briefing file {rel} cannot be opened: {err}"
+    with os.fdopen(fd, "r", encoding="utf-8") as fh:
+        mode = os.fstat(fh.fileno()).st_mode
+        if mode & 0o077:
+            return {}, f"the briefing file {rel} is readable by others (mode {oct(mode & 0o777)}): chmod 600 it"
+        try:
+            text = fh.read()
+        except (OSError, UnicodeDecodeError) as err:
+            return {}, f"the briefing file {rel} cannot be read: {err}"
     values: dict[str, str] = {}
     for line in text.splitlines():
         m = re.fullmatch(r"\s*(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*", line)
@@ -135,6 +155,8 @@ def install_plugin(plugin_id: str, project: Path, env: dict[str, str]) -> str | 
     if not claude:
         return f"plugin {plugin_id}: the claude CLI is not on PATH, so it cannot be installed"
     here = str(project)   # local scope is the project's own settings.local.json, and the listing then sees what the project registers
+    # The add runs BEFORE the source check on purpose: the check reads the registration the add makes (or one that already exists),
+    # and only an allowlisted source is ever added here; if the name is taken by another source, the check below refuses the install.
     run([claude, "plugin", "marketplace", "add", MARKETPLACES.get(marketplace, marketplace)], env, cwd=here)  # registered already is fine
     # The allowlist is on the SOURCE, not the name: a repository's settings can register a marketplace under an allowlisted name
     # that points anywhere (#2288 security review). `marketplace list --json` carries each one's source (documented).
@@ -182,6 +204,8 @@ def install_cli(row: dict, project: Path, env: dict[str, str]) -> tuple[str, str
             if not brew:
                 continue
             tap = "/".join(package.split("/")[:2])
+            # The tap is added BEFORE its remote is checked: an untapped tap reports no remote, so there is nothing to check until
+            # it exists. Tapping fetches formula files and runs none of them; only `brew install` below runs code, after the check.
             run([brew, "tap", tap], env)
             rc, out = run([brew, "tap-info", "--json", tap], env, 120)
             try:
@@ -454,6 +478,10 @@ def selftest() -> int:
                  f"a missing token is BLOCKED, naming it: rc={rc} {out}")
             (proj / ".rails-flow").mkdir()
             (proj / BRIEFING).write_text("# tokens\nVCLI_TOKEN=abc\n", encoding="utf-8")
+            (proj / BRIEFING).chmod(0o644)
+            rc, out = go()
+            case(rc == 1 and any("readable by others (mode 0o644)" in l for l in out), f"a briefing file others can read is refused: {out}")
+            (proj / BRIEFING).chmod(0o600)
             rc, out = go()
             case(rc == 0, f"a token in an ignored briefing file passes: rc={rc} {out}")
             (proj / ".gitignore").write_text("", encoding="utf-8")
@@ -464,6 +492,28 @@ def selftest() -> int:
             rc, out = go()
             case(rc == 1 and any("tracked by git" in l for l in out), f"a tracked briefing file is not read: {out}")
             fixture_git.run(proj, "rm", "--cached", "-q", str(BRIEFING))
+            # an ignored briefing path that is a symlink to a file outside the project is never followed
+            secret = root / "outside-secret.env"
+            secret.write_text("VCLI_TOKEN=stolen\n", encoding="utf-8")
+            secret.chmod(0o600)
+            (proj / BRIEFING).rename(root / "briefing.bak")
+            (proj / BRIEFING).symlink_to(secret)
+            values, problem = briefing(proj, stack_toolchain.probe_env(proj)[0])
+            case(problem is not None and "symlink" in problem and not values, f"a symlinked briefing file is not followed: {problem} {values}")
+            (proj / BRIEFING).unlink()
+            # a symlinked .rails-flow DIRECTORY: the file is no link itself, but it resolves outside the project
+            outdir = root / "outside-dir"
+            outdir.mkdir()
+            (outdir / "toolchain.env").write_text("VCLI_TOKEN=stolen\n", encoding="utf-8")
+            (outdir / "toolchain.env").chmod(0o600)
+            (proj / ".rails-flow").rmdir()
+            (proj / ".rails-flow").symlink_to(outdir, target_is_directory=True)
+            values, problem = briefing(proj, stack_toolchain.probe_env(proj)[0])
+            case(problem is not None and "resolves outside the project" in problem and not values,
+                 f"a briefing file under a symlinked directory is not read: {problem} {values}")
+            (proj / ".rails-flow").unlink()
+            (proj / ".rails-flow").mkdir()
+            (root / "briefing.bak").rename(proj / BRIEFING)
             # 7. CLI install: npm package from the vendor's repo is installed; from another repo it is BLOCKED and not installed
             (bindir / "vcli").unlink()
             fake("npm", 'case "$*" in "view vcli repository.url") echo "git+https://github.com/vendor/vcli.git";; esac\n')
@@ -566,6 +616,7 @@ def selftest() -> int:
             (proj / MARKER).unlink()
             # 17. git inside the project never answers for the briefing file
             (proj / BRIEFING).write_text("VCLI_TOKEN=abc\n", encoding="utf-8")
+            (proj / BRIEFING).chmod(0o600)
             (pbin / "git").write_text(f'#!/bin/sh\necho ran > "{root / "PWNED-GIT"}"\nexit 0\n', encoding="utf-8")
             (pbin / "git").chmod(0o755)
             os.environ["PATH"] = f"{pbin}{os.pathsep}{bindir}{os.pathsep}/usr/bin{os.pathsep}/bin"
