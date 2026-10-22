@@ -376,6 +376,16 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/derive_architecture_rules.py", "--check")),
     ("architecture rules derived selftest",
      ("python3", "scripts/derive_architecture_rules.py", "--selftest")),
+    # #2297. A nudge ("brain-review due since 2026-10-04") printed for 18 days and nothing acted on it, so the brain is
+    # enforced where a release is made: an ARM may not be cut, and a PROMOTION may not be proved, while STATUS.md predates
+    # the last release. The arm gate runs in every sweep and exits 3 (a SKIP, never a pass) off an arm; the promotion gate
+    # is in PR_SKIPPED_GATES so only the full sweep (the release proof) pays for it, and a proof refuses any skip.
+    ("brain fresh at arm",
+     ("python3", "plugins/rails-flow/scripts/check_brain_fresh.py", "--when", "arm")),
+    ("brain fresh at promotion",
+     ("python3", "plugins/rails-flow/scripts/check_brain_fresh.py")),
+    ("brain fresh selftest",
+     ("python3", "plugins/rails-flow/scripts/check_brain_fresh.py", "--selftest")),
     # #1361. The tenancy cop rails-flow installs is DERIVED from rails-8's multi-tenancy.md §7 and
     # committed beside its checker -- the same cross-plugin reason as the mandated gems above.
     ("tenancy cop derived",
@@ -723,7 +733,7 @@ CORPORA_GATES = frozenset({"coverage matrix drift"})
 # is for private repos), so nothing reaches `main` without it.
 # An exact set, pinned by the selftest in both directions like CORPORA_GATES: widening it is how a
 # "fast" mode becomes the only mode.
-PR_SKIPPED_GATES = frozenset({"mutation coverage", "guard-bash cases (full)"})
+PR_SKIPPED_GATES = frozenset({"mutation coverage", "guard-bash cases (full)", "brain fresh at promotion"})
 
 # Seconds a subprocess gets before the doctor calls it hung. Right for a check that reads the tree
 # once, which is nearly all of them.
