@@ -56,5 +56,48 @@ GUARD = Guard(
         Mutation("the wording check stops requiring the teardown's name", "elif token not in \" \".join(lines[at:at + span]):", "elif False:",
                  "the wording check names"),
         Mutation("the wording check stops noticing a missing file", "if not f.exists():", "if False:", ""),
+        Mutation(
+            # #2296: the worktree's own scratch dir goes with it.
+            "the scratch dir is left in place, so the remove refuses or leaves it",
+            "    shutil.rmtree(os.path.join(path, SCRATCH), ignore_errors=True)",
+            "    pass",
+            "a worktree whose artifacts are in its scratch dir ends with status 0",
+        ),
+        Mutation(
+            "a leftover in the worktrees' parent is not reported",
+            "    left += [f\"{os.path.join(os.path.dirname(path), e)} (made in",
+            "    left += [] and [f\"{os.path.join(os.path.dirname(path), e)} (made in",
+            "an export left in the worktrees' parent fails the teardown, by name",
+        ),
+        Mutation(
+            "the merged branch is never deleted",
+            "    left += delete_branch(main, row[\"branch\"], row[\"head\"])",
+            "    left += []",
+            "its merged branch is deleted locally",
+        ),
+        Mutation(
+            "an integration branch is no longer protected",
+            "    return branch in names",
+            "    return False",
+            "an integration branch is protected from deletion",
+        ),
+        Mutation(
+            "the remote delete is not leased on the merged tip",
+            "f\"--force-with-lease=refs/heads/{branch}:{tip}\", \"origin\", f\":refs/heads/{branch}\")",
+            "\"--force\", \"origin\", f\":refs/heads/{branch}\")",
+            "a remote branch whose tip moved since the merge check is kept and named",
+        ),
+        Mutation(
+            "an open PR on the branch no longer keeps the remote branch",
+            "    elif prs:",
+            "    elif False:",
+            "the remote branch is kept and named when stacked",
+        ),
+        Mutation(
+            "--audit stops scanning the conventional <main>-wt parent",
+            "| {main + \"-wt\"} |",
+            "|",
+            "--audit scans the conventional <main>-wt parent even when no worktree is registered there",
+        ),
     ),
 )

@@ -160,7 +160,7 @@ export function electionLine(r) {
   return r.role === 'coordinator'
     ? 'rails-flow role: this session was elected coordinator (none was live). It compacts itself near a limit and never clears.'
     : `rails-flow role: this session is an implementation session; the coordinator is ${r.coordinator ?? 'another live session'}. ` +
-        'It clears itself after its PR is merged into dev and its worktree is removed.'
+        'It clears itself after its PR is merged into dev and worktree_teardown.py has passed (#2296).'
 }
 
 // Is this session a resume (or continue, or fork)? The mods `session.start` input carries no start source: its
@@ -346,6 +346,16 @@ export function parseWorktreeAdd(cmd) {
 export function parseWorktreeRemove(cmd) {
   const a = worktreeArgs(cmd, 'remove')
   return a === null ? null : (a.find((x) => !x.startsWith('-')) ?? null)
+}
+
+// A PASSED teardown (#2296): `worktree_teardown.py <path>` whose output says it left nothing (no database, process, worktree,
+// branch or file beside it) -> the path, else null. The owner rule: the context clears only after the teardown has passed, so a
+// bare `git worktree remove` (which leaves the databases, the branch and the scratch behind) no longer marks the job removed, and
+// a teardown that printed LEFT BEHIND or REFUSED does not either.
+export function passedTeardown(cmd, text) {
+  const m = /worktree_teardown\.py((?:\s+--?[\w-]+(?:=\S+)?)*)\s+(?!--)([^\s;&|]+)/.exec(String(cmd))
+  if (!m || /--(?:dry-run|audit|selftest|check-wording)\b/.test(m[1])) return null
+  return /worktree_teardown: done, nothing left/.test(String(text ?? '')) ? m[2] : null
 }
 
 // The URL of the pull request `gh pr create` printed: the LAST full github.com PR URL, never a bare number,
@@ -548,13 +558,13 @@ export function register(on) {
         job.worktrees.set(add.path, add.branch)
         job.removed = false
       }
-      const rm = parseWorktreeRemove(cmd)
+      const out = r?.text ?? r?.result?.stdout
+      const rm = passedTeardown(cmd, out)
       if (rm) {
         job.worktrees.delete(rm)
         job.removedPaths.add(rm.replace(/\/+$/, ''))
         job.removed = true
       }
-      const out = r?.text ?? r?.result?.stdout
       const pr = createdPr(cmd, out)
       if (pr !== null) job.prs.add(pr)
       job.handoff = handoffComment(cmd, out) ?? job.handoff

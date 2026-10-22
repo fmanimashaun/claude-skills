@@ -378,5 +378,24 @@ GUARD = Guard(
             'case " $(ps -o command= -p "$1" 2>/dev/null) " in *--bg-spare*) return 0 ;; esac',
             "whose command line only MENTIONS --bg-spare",
         ),
+        Mutation(
+            # #2296: the context clears only after the teardown PASSED.
+            "a teardown that left something behind counts as done",
+            "  return /worktree_teardown: done, nothing left/.test(String(text ?? '')) ? m[2] : null",
+            "  return m[2]",
+            "no clear after a teardown that left something behind",
+        ),
+        Mutation(
+            "a dry run counts as a teardown",
+            "if (!m || /--(?:dry-run|audit|selftest|check-wording)\\b/.test(m[1])) return null",
+            "if (!m || /--(?:audit|selftest|check-wording)\\b/.test(m[1])) return null",
+            "no clear after a dry run",
+        ),
+        Mutation(
+            "a bare git worktree remove marks the job removed again",
+            "      const rm = passedTeardown(cmd, out)",
+            "      const rm = passedTeardown(cmd, out) ?? parseWorktreeRemove(cmd)",
+            "no clear after a bare git worktree remove",
+        ),
     ),
 )
