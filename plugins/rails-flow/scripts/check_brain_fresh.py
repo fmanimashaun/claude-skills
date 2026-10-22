@@ -105,9 +105,15 @@ def selftest() -> int:
         if not ok:
             bad.append(f"{label}{(' — ' + str(detail)) if detail else ''}")
 
+    # A FIXTURE SETS ITS OWN BRANCH SIGNALS AND NEVER READS THE RUNNER'S. In CI on an arm PR the ambient GITHUB_HEAD_REF is
+    # `chore/arm-vX.Y.Z`, which made the "not an arm" fixture an arm and the selftest refuse (the v1.159.0 arm, #2313).
+    # The child's environment is hermetic (no GIT_*), minus every variable the script could read a branch from.
+    branch_signals = ("GITHUB_HEAD_REF", "GITHUB_REF_NAME", "GITHUB_REF", "GITHUB_BASE_REF")
+
     def run(root: Path, *args: str, env: dict | None = None):
+        base = {k: v for k, v in fixture_git.hermetic().items() if k not in branch_signals}
         r = subprocess.run([sys.executable, __file__, "--root", str(root), *args], capture_output=True, text=True,
-                           env={**os.environ, **(env or {})})
+                           env={**base, **(env or {})})
         return r.returncode, r.stdout + r.stderr
 
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -185,6 +191,17 @@ def selftest() -> int:
     status(r, old, "2026-09-01")
     rc, out = run(r, "--when", "arm")
     check("--when arm on a branch that is not an arm is not applicable (exit 3), whatever STATUS says", rc == 3 and "not an arm" in out, (rc, out))
+    # The runner's own branch must not reach the fixture: with the AMBIENT environment set to an arm (as in CI on an arm PR)
+    # the same "not an arm" fixture still gets exit 3.
+    saved = {k: os.environ.get(k) for k in branch_signals}
+    try:
+        os.environ.update({"GITHUB_HEAD_REF": "chore/arm-v9.9.9", "GITHUB_REF_NAME": "chore/arm-v9.9.9", "GITHUB_REF": "refs/heads/chore/arm-v9.9.9"})
+        rc, out = run(r, "--when", "arm")
+    finally:
+        for k, v in saved.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+    check("--when arm on a branch that is not an arm is still not applicable (exit 3) when the RUNNER's environment says it is an arm (CI on an arm PR)",
+          rc == 3 and "not an arm" in out, (rc, out))
     rc, out = run(r, "--when", "arm", env={"GITHUB_HEAD_REF": "chore/arm-v1.1.0"})
     check("--when arm on an arm branch judges, and refuses a stale STATUS", rc == 1 and "older than the last promotion" in out, (rc, out))
     status(r, new)
