@@ -28,6 +28,7 @@ to kill, and a fixture can assert that number.
 from __future__ import annotations
 
 import contextlib
+import ctypes
 import os
 import signal
 import subprocess
@@ -112,6 +113,82 @@ def tagged(token: str) -> list[int]:
     return holding(TOKEN_VAR, token)
 
 
+# LINEAGE, FOR WHAT THE TOKEN CANNOT REACH (#2292). On macOS the kernel withholds a SYSTEM binary's environment: KERN_PROCARGS2
+# returns its path and argv only (measured: ~30 bytes for /bin/sleep, /bin/cat, /usr/bin/yes, no environment at all), so a
+# leaked `cat` or `sleep` carries the token and is still invisible to `tagged()`. A watcher thread records every process
+# descended from the caller WHILE ITS PARENT IS ALIVE (pid and start time, read through libproc: no process is spawned, a
+# pass over ~700 processes is ~1 ms), so an orphan is still known after it is re-parented to pid 1. The sweep kills a
+# recorded pid only if its start time still matches: a reused pid is never touched. A subtree that already existed when the
+# box opened is the caller's own and is skipped. LIMIT, STATED AND UNTESTED (#2294 review S2): a child that forks and loses its parent
+# inside one tick (0.1 s) is never recorded. A test would have to win that race on purpose, so it would pin the scheduler, not the code.
+class _BsdInfo(ctypes.Structure if sys.platform == "darwin" else object):  # type: ignore[misc]
+    _fields_ = [("pbi_flags", ctypes.c_uint32), ("pbi_status", ctypes.c_uint32), ("pbi_xstatus", ctypes.c_uint32),
+                ("pbi_pid", ctypes.c_uint32), ("pbi_ppid", ctypes.c_uint32), ("pbi_uid", ctypes.c_uint32), ("pbi_gid", ctypes.c_uint32),
+                ("pbi_ruid", ctypes.c_uint32), ("pbi_rgid", ctypes.c_uint32), ("pbi_svuid", ctypes.c_uint32), ("pbi_svgid", ctypes.c_uint32),
+                ("rfu_1", ctypes.c_uint32), ("pbi_comm", ctypes.c_char * 16), ("pbi_name", ctypes.c_char * 32), ("pbi_nfiles", ctypes.c_uint32),
+                ("pbi_pgid", ctypes.c_uint32), ("pbi_pjobc", ctypes.c_uint32), ("e_tdev", ctypes.c_uint32), ("e_tpgid", ctypes.c_uint32),
+                ("pbi_nice", ctypes.c_int32), ("pbi_start_tvsec", ctypes.c_uint64), ("pbi_start_tvusec", ctypes.c_uint64)] \
+        if sys.platform == "darwin" else []
+
+
+def process_table() -> dict[int, tuple[int, tuple[int, int]]]:
+    """{pid: (ppid, start time)} for every process this user can read, or {} where libproc is not available (not macOS)."""
+    if sys.platform != "darwin":
+        return {}
+    try:
+        lp = ctypes.CDLL("/usr/lib/libproc.dylib")
+        buf = (ctypes.c_int * 16384)()
+        count = lp.proc_listallpids(buf, ctypes.sizeof(buf))
+        info, size, out = _BsdInfo(), ctypes.sizeof(_BsdInfo), {}
+        for i in range(max(count, 0)):
+            if lp.proc_pidinfo(buf[i], 3, 0, ctypes.byref(info), size) == size:     # PROC_PIDTBSDINFO
+                out[int(info.pbi_pid)] = (int(info.pbi_ppid), (int(info.pbi_start_tvsec), int(info.pbi_start_tvusec)))
+        return out
+    except (OSError, AttributeError):
+        return {}
+
+
+class _Lineage:
+    """Records the caller's descendants born inside the box, by (pid, start time), while their parents still say so."""
+
+    def __init__(self, root: int) -> None:
+        import threading
+        self.root, self.seen = root, {}
+        table = process_table()
+        self.before = {(pid, start) for pid, (_, start) in table.items()}
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True) if table else None
+        if self._thread:
+            self._thread.start()
+
+    def scan(self) -> None:
+        table = process_table()
+        children: dict[int, list[int]] = {}
+        for pid, (ppid, _) in table.items():
+            children.setdefault(ppid, []).append(pid)
+        todo = list(children.get(self.root, []))
+        while todo:
+            pid = todo.pop()
+            start = table[pid][1]
+            if (pid, start) in self.before:
+                continue                                      # the caller's own process from before the box, and its subtree
+            self.seen[pid] = start
+            todo.extend(children.get(pid, []))
+
+    def _run(self) -> None:
+        while not self._stop.wait(0.1):
+            self.scan()
+
+    def stop(self) -> list[tuple[int, tuple[int, int]]]:
+        """Stop watching and return every recorded pid that is still the same process."""
+        if self._thread:
+            self._stop.set()
+            self._thread.join()
+            self.scan()
+        table = process_table()
+        return sorted((pid, start) for pid, start in self.seen.items() if pid in table and table[pid][1] == start)
+
+
 def _signal(pid: int, sig: int) -> None:
     try:
         os.kill(pid, sig)
@@ -119,13 +196,17 @@ def _signal(pid: int, sig: int) -> None:
         pass
 
 
-def sweep(token: str) -> list[int]:
+def sweep(token: str, also: list | tuple = ()) -> list[int]:
     """Kill every process carrying `token`. Freeze first so none can fork past the sweep, then
     CONT and KILL each one (a stopped process is killed too, but CONT lets it see the signal at once),
     and reap our own children so they do not linger as zombies. Returns the pids it killed."""
     frozen: set[int] = set()
     for _ in range(20):                 # until a scan finds nothing new
-        new = set(tagged(token)) - frozen
+        # `also`: (pid, start time) pairs the lineage recorded and the token cannot reach (#2292). Each start time is checked AGAIN here, right before
+        # the SIGSTOP (#2294 review S1): between `stop()` and this line a recorded process can exit and its pid be reused by an unrelated one.
+        table = process_table() if also else {}
+        recorded = {pid for pid, start in also if pid in table and table[pid][1] == start}
+        new = (set(tagged(token)) | recorded) - frozen
         if not new:
             break
         for pid in new:
@@ -183,6 +264,7 @@ def contained():
     token = uuid.uuid4().hex
     box, saved = Box(token), os.environ.get(TOKEN_VAR)
     os.environ[TOKEN_VAR] = token
+    lineage = _Lineage(os.getpid())
     try:
         yield box
     finally:
@@ -191,7 +273,7 @@ def contained():
         else:
             os.environ[TOKEN_VAR] = saved
         with _deferred_signals():
-            box.killed = sweep(token)
+            box.killed = sweep(token, also=lineage.stop())
 
 
 # A BROKEN FIXTURE, the shape of the 2026-10-03 leak. The fixture starts a CHILD; the child starts a
@@ -223,7 +305,7 @@ _LEAKY = ("import os, subprocess, sys, time\n"
 # code under test arranges: a held signal waits, an unheld one aborts the wait. `contained()` looks `sweep` up by name at call time.
 _SLOW_SWEEP_CLI = ("import sys, time\nsys.path.insert(0, sys.argv[1])\nimport process_containment as pc\n"
                    "real = pc.sweep\n"
-                   "def slow(token):\n    time.sleep(1.0)\n    return real(token)\n"
+                   "def slow(*a, **k):\n    time.sleep(1.0)\n    return real(*a, **k)\n"
                    "pc.sweep = slow\n"
                    "sys.exit(pc.main(['--'] + sys.argv[2:]))\n")
 
@@ -261,7 +343,10 @@ def selftest() -> int:
         pidfiles.append(path)
         return path
 
-    def wait_for(path: str, n: int = 2, timeout: float = 10.0) -> list[int]:
+    # 60 s, not 10 (#2294): the wait ends as soon as the file holds the pids, so the ceiling costs nothing on a quiet machine. At load ~12 a process
+    # took over 10 s to start (measured: `mktemp` alone 10 s), the fixture had recorded nothing when the signal was sent, and the guard read the
+    # unmutated selftest as failing (INERT).
+    def wait_for(path: str, n: int = 2, timeout: float = 60.0) -> list[int]:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline and len(_recorded(path)) < n:
             time.sleep(0.05)
@@ -318,6 +403,44 @@ def selftest() -> int:
             time.sleep(1.0)              # `other` exits while the block runs
         rc = other.wait()
         check("the sweep leaves a caller's OTHER child alone: its exit status is still 3", rc == 3, f"got {rc}")
+        # #2292: the lineage records the CALLER's descendants, but never one the caller started BEFORE the box: that one is the caller's, and must outlive it.
+        keeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL)
+        time.sleep(0.3)
+        with contained() as box_k:
+            time.sleep(0.4)                  # at least one watcher pass sees `keeper` as a child of the caller
+        alive_after = keeper.poll() is None
+        keeper.kill()
+        keeper.wait()
+        check("a child the caller started BEFORE the box outlives it (the lineage skips what existed at entry)",
+              alive_after and keeper.pid not in box_k.killed, f"alive after {alive_after}, killed {box_k.killed}")
+
+        # 7. #2292: a SYSTEM binary orphaned inside the box. On macOS its environment cannot be read, so the token cannot see it; the lineage
+        # recorded it while its parent (a shell that then exits) was alive, and the sweep kills it. Checked by the pid the shell recorded.
+        if sys.platform == "darwin":
+            f7 = pidfile("sysbin.pids")
+            with contained() as box7:
+                subprocess.run(["/bin/sh", "-c", f'/bin/sleep 120 </dev/null >/dev/null 2>&1 & echo $! > {f7}; sleep 0.3'], check=False)
+                orphan = wait_for(f7, n=1)
+                invisible = bool(orphan) and orphan[0] not in tagged(box7.token)
+            time.sleep(0.3)
+            check("CONTROL (#2292): a /bin binary's environment is unreadable, so the token alone cannot see it", invisible,
+                  f"orphan {orphan}, tagged {tagged(box7.token) if orphan else '-'}")
+            check("a /bin binary orphaned inside contained() is swept anyway, through the lineage (#2292)",
+                  len(orphan) == 1 and not _alive(orphan[0]) and orphan[0] in box7.killed, f"orphan {orphan}, killed {box7.killed}")
+
+        # #2294 review S1: a recorded pid whose start time no longer matches is a DIFFERENT process (the pid was reused): the sweep must not touch it.
+        if sys.platform == "darwin":
+            bystander = subprocess.Popen(["/bin/sleep", "30"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(0.2)
+            real = process_table().get(bystander.pid, (0, (0, 0)))[1]
+            stale = (real[0] - 1, real[1])                 # the start time the lineage recorded for the pid's PREVIOUS owner
+            killed = sweep(uuid.uuid4().hex, also=[(bystander.pid, stale)])
+            alive = bystander.poll() is None
+            bystander.kill()
+            bystander.wait()
+            check("a recorded pid whose start time changed (a reused pid) is not killed by the sweep",
+                  alive and bystander.pid not in killed, f"alive {alive}, killed {killed}")
 
         # 6. The CLI: returns the command's status, and kills what it left.
         f6 = pidfile("cli.pids")
