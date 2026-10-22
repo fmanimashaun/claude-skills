@@ -53,7 +53,7 @@ GUARD = Guard(
         Mutation("a record missing a design line counts as declared",
                  '        missing = [k for k in DESIGN_LINES if not record["fields"].get(k)]', "        missing = []",
                  "a record with no Nav line is an A10 finding naming the missing line"),
-        Mutation("a proposal never names a template", '    if r.get("count_text") is not None and (r.get("list_items") or 0) >= 0 and r.get("list_items", 0) > 0:',
+        Mutation("a proposal never names a template", '    if r.get("count_text") is not None and (r.get("list_items") or 0) > 0:',
                  "    if False:", "the proposal names a Template from a results structure, as a proposal"),
         Mutation("a missing structure is judged anyway",
                  '    """Refuse a structure block that cannot be judged (a missing fact is not a pass)."""',

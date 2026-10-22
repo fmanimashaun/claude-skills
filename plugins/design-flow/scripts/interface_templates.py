@@ -170,7 +170,7 @@ def propose(snap: dict) -> tuple[str, str]:
     """A Template proposed from structure, and why. A proposal for a person to review, never a verdict on which template the screen should be."""
     s = snap.get("structure") or {}
     r = s.get("results") or {}
-    if r.get("count_text") is not None and (r.get("list_items") or 0) >= 0 and r.get("list_items", 0) > 0:
+    if r.get("count_text") is not None and (r.get("list_items") or 0) > 0:
         return "search-results", "it shows a results count above a list of results"
     if (s.get("back_link") or {}).get("present") and (s.get("forward_button") or {}).get("present"):
         return "multi-step", "it has a back link and a forward button"
