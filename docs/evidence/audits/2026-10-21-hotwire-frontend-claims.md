@@ -243,3 +243,29 @@ https://raw.githubusercontent.com/hotwired/turbo-rails/v2.0.23/app/channels/turb
 ```quotes H22e
 https://raw.githubusercontent.com/hotwired/turbo-rails/v2.0.23/lib/turbo-rails.rb | turbo-rails v2.0.23 | ActiveSupport::MessageVerifier.new(signed_stream_verifier_key, digest: "SHA256", serializer: JSON)
 ```
+
+## J. Frame submits and stream answers, verified for #2278 (2026-11-03)
+
+Re-verified by `doctrine-verifier` against hotwired/turbo v8.0.23 for the Frames and Streams flow slice of #2223. The H8 correction (a frame submit need not redirect) and the H26
+mechanics now have their own quoted rows.
+
+| id | claim | verdict | source | wording note | Brakeman / erb_lint |
+|---|---|---|---|---|---|
+| H8f | A form submission made from inside a frame is not required to redirect (the frame controller builds its `FormSubmission` without `mustRedirect`), while a Turbo Drive form submission must: a non-GET 2xx that is not a redirect raises "Form responses must redirect to another location" | CONFIRMED | turbo v8.0.23 `src/core/frames/frame_controller.js:194`, `src/core/drive/navigator.js:29`, `src/core/drive/form_submission.js:30,149` | the error fires only on a 2xx non-redirect; a 4xx or 5xx goes to the failed-submission path and is rendered | no / no | [quotes: H8f]
+| H26s | A Turbo Stream response to a frame-targeted form is intercepted by the stream observer on `turbo:before-fetch-response` and applied to the page, so the frame never loads it | CONFIRMED | turbo v8.0.23 `src/observers/stream_observer.js:44-49`; `frame_controller.js:209` (the stream Accept type for frame form requests) | `turbo_stream.update("modal", "")` is a Rails helper and follows from this, it is not in Turbo's source | no / no | [quotes: H26s]
+| H1m | A frame response without a matching frame fires a cancelable `turbo:frame-missing`; if it is not default-prevented the frame shows "Content missing" | CONFIRMED | turbo v8.0.23 `src/core/frames/frame_controller.js:~321,419`, `src/core/frames/frame_view.js:5-6` | "Content missing" appears only when the event is not cancelled | no / no | [quotes: H1m]
+
+```quotes H8f
+https://raw.githubusercontent.com/hotwired/turbo/v8.0.23/src/core/frames/frame_controller.js | turbo v8.0.23 | this.formSubmission = new FormSubmission(this, element, submitter)
+https://raw.githubusercontent.com/hotwired/turbo/v8.0.23/src/core/drive/navigator.js | turbo v8.0.23 | this.formSubmission = new FormSubmission(this, form, submitter, true)
+https://raw.githubusercontent.com/hotwired/turbo/v8.0.23/src/core/drive/form_submission.js | turbo v8.0.23 | const error = new Error("Form responses must redirect to another location")
+```
+
+```quotes H26s
+https://raw.githubusercontent.com/hotwired/turbo/v8.0.23/src/observers/stream_observer.js | turbo v8.0.23 | if (response && fetchResponseIsStream(response)) {
+```
+
+```quotes H1m
+https://raw.githubusercontent.com/hotwired/turbo/v8.0.23/src/core/frames/frame_controller.js | turbo v8.0.23 | } else if (this.#willHandleFrameMissingFromResponse(fetchResponse)) {
+https://raw.githubusercontent.com/hotwired/turbo/v8.0.23/src/core/frames/frame_view.js | turbo v8.0.23 | Content missing
+```

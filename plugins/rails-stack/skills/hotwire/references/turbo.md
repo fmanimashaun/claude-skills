@@ -28,7 +28,9 @@ What the server must do:
   :unprocessable_content`; Rack 3.1 renamed it — `SKILL.md` says which Rails and Rack combinations
   accept the new symbol; `:unprocessable_entity` returned 422 on every Rack checked, through 3.1.8, and warned only on 3.1.0–3.1.2).
 - **Server errors → `500`** (Turbo shows the response). A `200` containing a
-  form response without redirect is the classic "my form does nothing" bug.
+  form response without redirect is the classic "my form does nothing" bug
+  (for a Drive submit; a frame submit renders a 200 into the frame —
+  `frames-and-modals.md` §2).
 
 Programmatic navigation: `Turbo.visit(location)`,
 `Turbo.visit(location, { action: "replace" })` (no new history entry),
@@ -195,8 +197,10 @@ Key mechanics:
 - The frame element exposes `element.src` and `element.reload()` from JS.
 
 Gotcha list: a link inside a frame that should do a full-page nav (show
-pages!) needs `_top`; forms inside frames still need 303/422 statuses;
-redirect responses navigate the *frame* unless broken out.
+pages!) needs `_top`; a Drive form submit must redirect (or fail with 422) but a
+form submitted from inside a frame is not required to redirect, and its response
+must still contain the matching frame (`frames-and-modals.md` §1–§2); redirect
+responses navigate the *frame* unless broken out.
 
 ## 5. Turbo Streams — the actions
 

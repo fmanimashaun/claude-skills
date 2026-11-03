@@ -244,6 +244,20 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "turbo-flow",
+      "why": "Three Hotwire mistakes look fine in review and fail in the browser, each with a plain source signature (verified against Turbo v8.0.23 by doctrine-verifier, hotwire/references/frames-and-modals.md): a template reached by a data-turbo-frame=\"modal\" link that does not render inside turbo_frame_tag \"modal\" (the modal shows \"Content missing\" and nothing opens); a render :new or :edit with no status, which answers 200 and a Turbo Drive form submission that is not a redirect is not rendered at all; and a respond_to with format.turbo_stream and no format.html or format.any, which leaves a client without Turbo with no usable answer. It prints how many modal links, renders and respond_to blocks it read, so a project with none shows 0, not a bare pass. The rendered-page half (a crawl judge for turbo:frame-missing) is not here: it needs a stack-specific seam in the neutral qa-flow (#2278).",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_turbo_flow.py"
+      ],
+      "applies_when": [
+        "config/application.rb"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }
