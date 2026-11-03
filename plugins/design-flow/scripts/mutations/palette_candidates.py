@@ -106,5 +106,23 @@ GUARD = Guard(
             "    if False:",
             "",   # normalise_hex is called everywhere; the module fails hard, which is honest
         ),
+        Mutation(
+            "the dark feedback tones keep their light value, under 3:1 on the dark card (#2324)",
+            '    for tone in ("--destructive", "--success", "--warning", "--info"):\n',
+            '    for tone in ():\n',
+            "every dark feedback tone is 4.5:1 on the dark card and page",
+        ),
+        Mutation(
+            "the dark tones are lifted to the 3:1 floor only, so none can carry text",
+            "        lifted = nearest_passing(light[tone], dcard, AA_NORMAL, \"lighter\")[0]\n",
+            "        lifted = nearest_passing(light[tone], dcard, 3.0, \"lighter\")[0]\n",
+            "every dark feedback tone is 4.5:1 on the dark card and page",
+        ),
+        Mutation(
+            "a tone that already clears is 'improved' anyway",
+            "        dark[tone] = nearest_passing(lifted, dbg, AA_NORMAL, \"lighter\")[0]\n",
+            "        dark[tone] = _from_hls(_to_hls(lifted)[0], min(_to_hls(lifted)[1] + 0.01, 1.0), _to_hls(lifted)[2])\n",
+            "a tone that already clears is left exactly as it was",
+        ),
     ),
 )

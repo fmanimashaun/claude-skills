@@ -274,6 +274,16 @@ def snap(anchors: Anchors) -> dict[str, dict[str, str]]:
         "--overlay": n["900"],
         "--primary-ink": p_dark,        "--primary-hover": p_dark,
     })
+    # #2324. The feedback tones are tuned for a LIGHT ground (the defaults are #8A5A00 and the like), so
+    # left at their light value they measured 2.73-2.93:1 on every candidate's dark card -- under 1.4.11's
+    # 3:1, and `brand_pack_lint` now refuses a pack for it. The same hue, lightened until it clears 4.5:1
+    # on the dark card AND page (so it can carry text as well as a fill); a tone that already clears is
+    # returned unchanged (`nearest_passing`). `--destructive-foreground` follows its surface, like
+    # `--primary-foreground` above: whichever of white and the dark page reads better on it.
+    for tone in ("--destructive", "--success", "--warning", "--info"):
+        lifted = nearest_passing(light[tone], dcard, AA_NORMAL, "lighter")[0]
+        dark[tone] = nearest_passing(lifted, dbg, AA_NORMAL, "lighter")[0]
+    dark["--destructive-foreground"] = dbg if contrast(dbg, dark["--destructive"]) >= contrast(white, dark["--destructive"]) else white
 
     missing = [r for r in bpl.ROLES if r not in light]
     if missing:
@@ -916,6 +926,25 @@ def selftest() -> int:
         except Exception as exc:                                    # noqa: BLE001 — deliberate
             failures_found.append(f"{label}: raised {type(exc).__name__}: {exc}")
             return None
+
+    # ---- the dark feedback tones (#2324) ----------------------------------------------------------
+    # Every emitted candidate's dark tones clear 4.5:1 on the dark card AND page (1.4.11 asks 3:1; 4.5 lets a
+    # tone carry text as well as a fill), the hue is kept, and a tone that already clears is NOT touched. Measured from `snap()`'s
+    # own output, not from the helper it calls: proving the helper is not proving the caller.
+    for cand in CANDIDATES:
+        roles = snap(cand.anchors)
+        dk = roles["dark"]
+        low = [(t, round(min(contrast(dk[t], dk["--card"]), contrast(dk[t], dk["--background"])), 2))
+               for t in ("--destructive", "--success", "--warning", "--info")
+               if min(contrast(dk[t], dk["--card"]), contrast(dk[t], dk["--background"])) < AA_NORMAL]
+        check(f"{cand.anchors.slug}: every dark feedback tone is 4.5:1 on the dark card and page (so it can carry text too)", not low, f"{low}")
+        check(f"{cand.anchors.slug}: a dark tone keeps the light tone's hue",
+              all(abs(_to_hls(dk[t])[0] - _to_hls(roles["light"][t])[0]) < 0.02
+                  for t in ("--destructive", "--success", "--warning", "--info")))
+    already = Anchors(slug="t", ramp="cool", primary_light="#0B5FA5", primary_dark="#5AB0F5", dark_surfaces=("#0D1219", "#171E28", "#1C2530"),
+                      destructive="#FF8080", success="#7FE0A8", warning="#FFD27F", info="#8FC8FF")
+    check("a tone that already clears is left exactly as it was, not 'improved'",
+          all(snap(already)["dark"][t] == snap(already)["light"][t] for t in ("--destructive", "--success", "--warning", "--info")))
 
     # ---- the maths, against the two standard controls -------------------------------------
     # Without these the whole file is unfalsifiable, and the parity assertion in

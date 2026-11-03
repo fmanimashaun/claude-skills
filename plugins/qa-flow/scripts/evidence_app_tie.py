@@ -48,6 +48,8 @@ Stdlib only, no network, no database.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import argparse
 import csv
 import json
@@ -425,7 +427,7 @@ def _selftest() -> int:
     import tempfile
 
     def app(models: dict[str, str]) -> Path:
-        root = Path(tempfile.mkdtemp(prefix="app-tie-app-"))
+        root = Path(rf_tmp.mkdtemp("app-tie-app-"))
         (root / "app/models/concerns").mkdir(parents=True)
         for rel, body in models.items():
             (root / "app/models" / rel).write_text(body, encoding="utf-8")

@@ -25,6 +25,8 @@ Costs nothing: no network, no Rails, no bundler, no mermaid.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import sys
 import tempfile
 from pathlib import Path
@@ -96,14 +98,14 @@ def _tick() -> None:
 
 
 def _write(body: str) -> Path:
-    root = Path(tempfile.mkdtemp(prefix="railsflow-guide-"))
+    root = Path(rf_tmp.mkdtemp("railsflow-guide-"))
     path = root / "GUIDE.md"
     path.write_text(body, encoding="utf-8")
     return path
 
 
 def _decisions_log() -> Path:
-    root = Path(tempfile.mkdtemp(prefix="railsflow-decisions-"))
+    root = Path(rf_tmp.mkdtemp("railsflow-decisions-"))
     path = root / "DECISIONS.md"
     path.write_text("# Decisions\n\n## D-004 — bill on completion\n", encoding="utf-8")
     return path
@@ -199,7 +201,7 @@ def run() -> int:
     expect_unusable("an empty file", "", contains="no `<!-- rails-flow:begin")
     _tick()
     try:
-        cg.parse(Path(tempfile.mkdtemp(prefix="railsflow-guide-")) / "absent.md")
+        cg.parse(Path(rf_tmp.mkdtemp("railsflow-guide-")) / "absent.md")
         FAILURES.append("missing file: expected UNUSABLE")
     except cg.Unusable as exc:
         if "no such file" not in str(exc):
@@ -290,7 +292,7 @@ def run() -> int:
     expect_clean(
         "...and stays silent when the project has no decisions log",
         NO_CITE,
-        decisions=Path(tempfile.mkdtemp(prefix="railsflow-nolog-")) / "DECISIONS.md",
+        decisions=Path(rf_tmp.mkdtemp("railsflow-nolog-")) / "DECISIONS.md",
     )
 
     # ---- mermaid: the ways a diagram silently fails to render -------------------------
@@ -446,7 +448,7 @@ def run() -> int:
 
 
     # ---- pins: a diagram's cited lines must exist at a commit (#1640) -----------------------
-    repo = Path(tempfile.mkdtemp(prefix="railsflow-pins-"))
+    repo = Path(rf_tmp.mkdtemp("railsflow-pins-"))
     fixture_git.init(repo)
     (repo / "app").mkdir()
     (repo / "app" / "invoice.rb").write_text("".join(f"line {n}\n" for n in range(1, 11)), encoding="utf-8")
@@ -509,7 +511,7 @@ def run() -> int:
               pins(pin("app/job.rb:1")) .replace("#### Check it yourself", f"{pin('app/job.rb:1')}\n\nprose\n\n#### Check it yourself"),
               contains="pins nothing")
     pin_check("outside a git work tree the pins cannot be verified, never silently pass",
-              pins(pin("app/job.rb:1")), contains="not inside a git work tree", repo_dir=Path(tempfile.mkdtemp(prefix="railsflow-nogit-")))
+              pins(pin("app/job.rb:1")), contains="not inside a git work tree", repo_dir=Path(rf_tmp.mkdtemp("railsflow-nogit-")))
     # The entry point wires the pin check in: a guide that passes check() alone must still exit 1 here.
     _tick()
     import contextlib

@@ -7,7 +7,8 @@ GUARD = Guard(
     selftest='plugins/rails-flow/scripts/check_hook_gates.py',
     selftest_args=("--only", "guard_plan"),
     # The same staging the stop-gate guard needs: the harness, the hooks directory, and advisory_scope.py with its siblings.
-    needs=('plugins/rails-flow/scripts/fixture_git.py',
+    needs=("plugins/rails-flow/scripts/rf_tmp.py",   # rf_tmp (#2306)
+           'plugins/rails-flow/scripts/fixture_git.py',
            'plugins/rails-flow/scripts/assign_lanes.py',
            'plugins/rails-flow/scripts/brain_local_sync.py',
            'plugins/rails-flow/scripts/check_memory_index.py',

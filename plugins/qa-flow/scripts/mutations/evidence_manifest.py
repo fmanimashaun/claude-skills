@@ -5,6 +5,7 @@ GUARD = Guard(
     name="evidence_manifest",
     subject="scripts/evidence_manifest.py",
     selftest="scripts/evidence_manifest_selftest.py",
+    needs=("scripts/rf_tmp.py", ),  # rf_tmp (#2306)
     mutations=(
         Mutation(
             "a truncated final line crashes the parse (#111's own defect)",

@@ -89,5 +89,29 @@ GUARD = Guard(
             "",
             "the muted-text pair is measured in both modes",
         ),
+        Mutation(
+            "the dark hover label pair is dropped (it measured 2.22-3.02:1 in three packs)",
+            '    ("primary button label on hover", "--primary-foreground", "--primary-hover", "dark"),\n',
+            "",
+            "the hover label is judged in BOTH modes",
+        ),
+        Mutation(
+            "a dark feedback tone is no longer enumerated (reliance's measured 2.41-3.22:1)",
+            '    ("destructive tone on a card",    "--destructive",        "--card",       "dark",  AA_LARGE),\n',
+            "",
+            "--destructive is enumerated on the dark page and card",
+        ),
+        Mutation(
+            "a feedback tone is judged on the light ground too",
+            '    ("info tone on the page",         "--info",               "--background", "dark",  AA_LARGE),\n',
+            '    ("info tone on the page",         "--info",               "--background", "light", AA_LARGE),\n',
+            "--info is enumerated on the dark page and card",
+        ),
+        Mutation(
+            "the tones are held to the text floor instead of 1.4.11's 3:1",
+            '    ("warning tone on a card",        "--warning",            "--card",       "dark",  AA_LARGE),\n',
+            '    ("warning tone on a card",        "--warning",            "--card",       "dark"),\n',
+            "--warning is enumerated on the dark page and card",
+        ),
     ),
 )

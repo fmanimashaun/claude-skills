@@ -36,6 +36,8 @@ one, and the selftest uses temp directories, never a real settings file.
 """
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import argparse
 import json
 import re
@@ -172,7 +174,7 @@ def selftest() -> int:
             failures.append(f"{label}: {detail}" if detail else label)
 
     def project(files: dict[str, str]) -> Path:
-        root = Path(tempfile.mkdtemp(prefix="cps-"))
+        root = Path(rf_tmp.mkdtemp("cps-"))
         for rel, text in files.items():
             p = root / rel
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -223,7 +225,7 @@ def selftest() -> int:
             check("a settings file that is not JSON is unusable, never clean", True)
     finally:
         (root / S).unlink(); (root / ".claude").rmdir(); root.rmdir()
-    md_root = Path(tempfile.mkdtemp(prefix="cps-md-"))
+    md_root = Path(rf_tmp.mkdtemp("cps-md-"))
     try:
         (md_root / "a.md").write_text('# t\n\n```json\n{"permissions": {"defaultMode": "auto"}}\n```\n\n```json\n{"autoMode": {}}\n```\n', encoding="utf-8")
         (md_root / "b.md").write_text('```json\n{"permissions": {"defaultMode": "plan"}}\n```\n\n```sh\necho {"autoMode": {}}\n```\n', encoding="utf-8")

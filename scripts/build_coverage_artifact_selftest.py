@@ -28,6 +28,8 @@ Costs nothing: no network, and the corpora are needed by exactly one check, whic
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parents[1] / 'plugins' / 'rails-flow' / 'scripts'))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import json
 import re
 import sys
@@ -188,7 +190,7 @@ def test_totals_label_ordering() -> None:
 def test_cross_check_states() -> None:
     """Three states, and `skip` must never be reported as `ok`."""
     real = bc.OUT
-    tmp = Path(tempfile.mkdtemp(prefix="coverage-artifact-"))
+    tmp = Path(rf_tmp.mkdtemp("coverage-artifact-"))
     counted = {"rows": 113, "documented": 64, "derivable": 44, "needs-doctrine": 5}
     try:
         bc.OUT = tmp / "absent.md"

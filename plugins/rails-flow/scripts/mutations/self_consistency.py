@@ -5,6 +5,7 @@ GUARD = Guard(
     name="self_consistency",
     subject="scripts/self_consistency.py",
     selftest="scripts/self_consistency_selftest.py",
+    needs=("scripts/rf_tmp.py", ),  # rf_tmp (#2306)
     mutations=(
         Mutation(
             # An example that runs code and asserts nothing is a test that cannot fail -- green

@@ -11,7 +11,8 @@ GUARD = Guard(
     subject="evals/gates.py",
     selftest="evals/selftest.py",
     deps=("evals/run.py", "evals/scaffold.py"),
-    needs=("evals/suite.json", ".claude-plugin/marketplace.json"),
+    needs=("plugins/rails-flow/scripts/rf_tmp.py",   # rf_tmp (#2306)
+           "evals/suite.json", ".claude-plugin/marketplace.json"),
     mutations=(
         # Case 01's old precondition: any controller counts, and the scaffold ships one.
         Mutation(

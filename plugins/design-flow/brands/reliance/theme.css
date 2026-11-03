@@ -45,6 +45,14 @@
      brand-900 hue so dark stays recognisably Reliance rather than neutral grey. */
   --color-rh-ink-900: #061F30;  --color-rh-ink-800: #08293E;
   --color-rh-ink-700: #0B354F;  --color-rh-ink-600: #114562;
+
+  /* dark-mode feedback tones (#2324). The light tones above were darkened to clear 1.4.3 on a
+     LIGHT ground, which is exactly why they fail on the ink surfaces: #1171B0 2.87, #1F6D51 2.41,
+     #9B4B06 2.44 and #CB193B 2.68 against --card #08293E. Same hue, lightened until each reaches
+     4.5:1 on the card (so a tone can carry text as well as a fill), derived like the ink ramp
+     because the upstream system has no dark mode. */
+  --color-rh-info-dark:        #1693E5;  --color-rh-success-dark: #2D9F76;
+  --color-rh-warning-dark:     #E06C09;  --color-rh-error-dark:   #EB5C78;
 }
 
 /* Semantic roles — THE PUBLIC API. Components consume only these.
@@ -90,8 +98,9 @@
   --signal: var(--color-rh-secondary-700);     --signal-foreground: #FFFFFF;
 }
 
-/* Dark mode. Surfaces re-point onto the ink ramp; feedback roles and --ring keep one
-   value, per the contract. */
+/* Dark mode. Surfaces re-point onto the ink ramp, and so do the feedback tones and --ring: a
+   value tuned dark enough to read on a light ground is too dark to read on a dark one (#775,
+   #2324). */
 .dark {
   --chart-1: var(--color-rh-brand-500);        /* the same brand blue in dark: 3.35:1 on ink-800 (#1249) */
   /* slots 2-8: design-system's validated dark series (data-viz.md, #1271) */
@@ -117,6 +126,16 @@
        --primary-foreground #061F30 on #C9DBFF   = 12.08:1                                  */
   --primary: var(--color-rh-brand-100);
   --primary-foreground: var(--color-rh-ink-900);
+  /* #2324. --primary-hover left at its light value (brand-700 #0D5889) put the label above at
+     2.22:1 on hover. brand-50 lifts the fill: #061F30 on #E1F1FF is 14.62:1. */
+  --primary-hover: var(--color-rh-brand-50);
+  /* #2324. The feedback tones, re-pointed for dark (see the primitives): each is 4.5:1 or more on
+     --card #08293E and --background #061F30, where the light values measured 2.41-3.22:1.
+     --destructive-foreground follows its surface, like --primary-foreground above: white on
+     #EB5C78 is under 4.5:1, ink-900 on it is 5.08:1. */
+  --info: var(--color-rh-info-dark);           --success: var(--color-rh-success-dark);
+  --warning: var(--color-rh-warning-dark);     --destructive: var(--color-rh-error-dark);
+  --destructive-foreground: var(--color-rh-ink-900);
   --secondary: var(--color-rh-ink-700);        --secondary-foreground: var(--color-rh-neutral-25);
   --muted: var(--color-rh-ink-700);            --muted-foreground: var(--color-rh-neutral-200);
   --accent: var(--color-rh-ink-600);           --accent-foreground: var(--color-rh-neutral-25);

@@ -13,6 +13,8 @@ Costs nothing: no network, no bundler, no Rails.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import sys
 import tempfile
 from pathlib import Path
@@ -26,7 +28,7 @@ CHECKS = 0
 
 
 def _tree(files: dict[str, str]) -> Path:
-    root = Path(tempfile.mkdtemp(prefix="railsflow-selfconsist-"))
+    root = Path(rf_tmp.mkdtemp("railsflow-selfconsist-"))
     for relpath, content in files.items():
         target = root / relpath
         target.parent.mkdir(parents=True, exist_ok=True)

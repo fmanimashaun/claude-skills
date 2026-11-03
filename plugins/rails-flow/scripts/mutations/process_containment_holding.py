@@ -11,7 +11,8 @@ GUARD = Guard(
     subject="scripts/process_containment.py",
     selftest="scripts/session_reaper.py",
     selftest_args=("--selftest",),
-    needs=("scripts/session_reaper.py",),
+    needs=("scripts/rf_tmp.py",   # rf_tmp (#2306)
+           "scripts/session_reaper.py",),
     mutations=(
         Mutation(
             "entries are searched as joined text, so another variable's VALUE containing the entry matches (#1646 R1)",

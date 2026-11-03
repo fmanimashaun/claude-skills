@@ -23,6 +23,8 @@ Stdlib only, no network.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parents[1] / 'plugins' / 'rails-flow' / 'scripts'))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import argparse
 import json
 import subprocess
@@ -399,7 +401,7 @@ def selftest() -> int:
     global WIKI
     _real = WIKI
     try:
-        WIKI = Path(_tf.mkdtemp())
+        WIKI = Path(rf_tmp.mkdtemp())
         (WIKI / "Skills-Reference.md").write_text("## `x`\n\n>-\n", encoding="utf-8")
         (WIKI / "Command-Reference.md").write_text("- `/p:bare`\n", encoding="utf-8")
         found = check_descriptions()

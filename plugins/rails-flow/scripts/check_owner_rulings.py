@@ -32,6 +32,8 @@ is absent or there is no PR.
 """
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import argparse
 import json
 import os
@@ -135,7 +137,7 @@ def selftest() -> int:
         if not ok:
             bad.append(f"{label}{(' — ' + str(detail)) if detail else ''}")
 
-    tmp = Path(tempfile.mkdtemp(prefix="owner-rulings-"))
+    tmp = Path(rf_tmp.mkdtemp("owner-rulings-"))
     root = tmp / "repo"
     (root / "docs/brain").mkdir(parents=True)
     state = tmp / "state.json"

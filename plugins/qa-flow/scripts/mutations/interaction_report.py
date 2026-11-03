@@ -15,7 +15,8 @@ GUARD = Guard(
     # `qa_config.py` joined the list when the sweep gained a declared skip policy (#955): the
     # module imports it at load time, so without it the unmutated selftest cannot even start
     # and every mutation reads as caught — which the runner refuses outright.
-    needs=("scripts/crawl_collector.js",
+    needs=("scripts/rf_tmp.py",   # rf_tmp (#2306)
+           "scripts/crawl_collector.js",
            "scripts/qa_config.py"),
     mutations=(
         # #829. The skip returned 0, which the doctor renders as PASS.

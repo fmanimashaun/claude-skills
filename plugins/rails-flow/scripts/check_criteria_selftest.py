@@ -17,6 +17,8 @@ Costs nothing: no network, no Rails, no bundler.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import sys
 import tempfile
 from pathlib import Path
@@ -43,7 +45,7 @@ def _tick() -> None:
 
 
 def _write(body: str) -> Path:
-    root = Path(tempfile.mkdtemp(prefix="railsflow-criteria-"))
+    root = Path(rf_tmp.mkdtemp("railsflow-criteria-"))
     p = root / "acceptance.md"
     p.write_text(body, encoding="utf-8")
     return p
@@ -276,14 +278,14 @@ def run() -> int:
 
     _tick()
     try:
-        cc.parse(Path(tempfile.mkdtemp(prefix="railsflow-criteria-")) / "absent.md")
+        cc.parse(Path(rf_tmp.mkdtemp("railsflow-criteria-")) / "absent.md")
         FAILURES.append("missing file: expected UNUSABLE")
     except cc.Unusable as exc:
         if "no such file" not in str(exc):
             FAILURES.append(f"missing file: unexpected message: {exc}")
 
     # ---- the 1:1 mapping check --------------------------------------------------------
-    spec_root = Path(tempfile.mkdtemp(prefix="railsflow-spec-")) / "spec" / "requests"
+    spec_root = Path(rf_tmp.mkdtemp("railsflow-spec-")) / "spec" / "requests"
     spec_root.mkdir(parents=True)
     (spec_root / "sign_in_spec.rb").write_text(
         'RSpec.describe "sign in" do\n'
@@ -304,7 +306,7 @@ def run() -> int:
         "a missing spec root must fail closed, not pass silently",
         GOOD,
         contains="does not exist",
-        specs=Path(tempfile.mkdtemp(prefix="railsflow-nospec-")) / "absent",
+        specs=Path(rf_tmp.mkdtemp("railsflow-nospec-")) / "absent",
     )
 
     # ---- [security] criteria against the threat model (#2118) ---------------------------------
@@ -351,7 +353,7 @@ def run() -> int:
     sec_check("a list of ids in the slot cites each", sec.replace("[security] (TM-1)", "[security] (TM-1, TM-3)"), rows, None)
     # an existing model with no readable table is exit 2, never 0
     import tempfile as _t
-    d = Path(_t.mkdtemp(prefix="railsflow-model-"))
+    d = Path(rf_tmp.mkdtemp("railsflow-model-"))
     (d / "ac.md").write_text(sec, encoding="utf-8")
     (d / "bad-model.md").write_text("# not a model\n", encoding="utf-8")
     (d / "old-model.md").write_text("## Threats\n| Threat | STRIDE | Component | Decision | Reason |\n|---|---|---|---|---|\n| x | S | y | mitigate | z |\n", encoding="utf-8")
@@ -366,7 +368,7 @@ def run() -> int:
             FAILURES.append(f"{label}: expected exit 2, got {got}")
     # The default model is found from the repository root, wherever the criteria file sits (#2213 review), and a miss is said.
     import contextlib, io
-    repo = Path(_t.mkdtemp(prefix="railsflow-repo-"))
+    repo = Path(rf_tmp.mkdtemp("railsflow-repo-"))
     (repo / ".git").mkdir()
     deep = repo / "docs" / "product" / "acceptance" / "2026"
     deep.mkdir(parents=True)
@@ -425,7 +427,7 @@ def run() -> int:
     corpus = _json.loads((Path(__file__).resolve().parent / "fixtures" / "security-adversary-2213.json").read_text(encoding="utf-8"))
     for case in corpus:
         _tick()
-        root = Path(_t.mkdtemp(prefix="railsflow-adv-"))
+        root = Path(rf_tmp.mkdtemp("railsflow-adv-"))
         (root / ".git").mkdir()
         (root / "docs" / "product" / "acceptance").mkdir(parents=True)
         (root / "docs" / "security" / "threat-models").mkdir(parents=True)

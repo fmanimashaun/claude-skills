@@ -18,6 +18,8 @@ Costs nothing: no network, stdlib + git only.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parents[1] / 'plugins' / 'rails-flow' / 'scripts'))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import contextlib
 import io
 import shutil
@@ -25,6 +27,7 @@ import subprocess
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -78,7 +81,7 @@ def fixture(*, on_branch: str = "dev", stale_main: bool = False, dirty: bool = F
     initial commit so the fixture's tree stays clean -- an uncommitted `.gitignore` would make
     every dirty-tree assertion below lie.
     """
-    root = Path(tempfile.mkdtemp(prefix="doctor-fx-"))
+    root = Path(rf_tmp.mkdtemp("doctor-fx-"))
     remote, work = root / "remote.git", root / "work"
     _git(root, "init", "--bare", "-b", "main", str(remote), must=True)
     # NOT `git clone` (#2312): a clone of an empty remote is a plain repository, and rails-flow's git shim, which a maintainer's Mac has first on PATH, refuses
@@ -233,18 +236,23 @@ def ruleset_fixtures() -> None:
             md.RULESET_ARGS = saved
 
 
-def hostile_environment_fixtures() -> None:
+def hostile_environment_fixtures(project: Path | None = None, gitconfig: bool = True) -> None:
     """#2312: the fixture repositories build on a maintainer's machine as they do on a CI runner. 21 checks failed on the maintainer's Mac and passed in CI because the
     Mac has rails-flow's git shim first on PATH (it refuses `git add -A` in a repository that is not marked as a fixture, #1994) and a system gitconfig of its own
     (Homebrew's `core.hooksPath`, Xcode's `init.defaultBranch`). The fixture is built here in a subprocess under each, in turn (the shim refuses a hostile
     GIT_CONFIG_GLOBAL itself, so the two cannot be combined): (A) the shipped shim first on PATH, (B) a hostile global AND system gitconfig. Each has a CONTROL that proves
-    the environment is hostile, so the check cannot pass by the environment having gone benign."""
+    the environment is hostile, so the check cannot pass by the environment having gone benign.
+
+    `project` is where the tree sits for the shim's purposes (CLAUDE_SESSION_PROJECT_TOP, and where the shim is taken from); `gitconfig=False` runs only (A). The check is run
+    again for a project INSIDE the machine's temp root (#2332): that is where the mutation harness stages this tree, and the first version passed in the real tree and was INERT in
+    the staged copy, on macOS and on Linux, because it set TMPDIR to the temp root that then contained the project."""
     import tempfile
-    shim = REAL_REPO / "plugins" / "rails-flow" / "git-shim"
+    project = project or REAL_REPO
+    shim = project / "plugins" / "rails-flow" / "git-shim"
     base = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     off_shim = os.pathsep.join(d for d in base["PATH"].split(os.pathsep) if "git-shim" not in d)
     probe = (f"import sys; sys.path.insert(0, {str(Path(__file__).resolve().parent)!r}); import maintainer_doctor_selftest as t; "
-             "w = t.fixture(); print(w)")
+             "w = t.fixture(); t.rf_tmp.release(str(w.parent)); print(w)")   # handed to this process, which removes it below (#2306)
 
     def build(label: str, env: dict[str, str]) -> None:
         done = subprocess.run([sys.executable, "-c", probe], env=env, capture_output=True, text=True, timeout=300)
@@ -269,10 +277,15 @@ def hostile_environment_fixtures() -> None:
         # (A) the shim first on PATH, with what a Claude session gives it: the shim accepts a marked fixture only when TMPDIR and CLAUDE_SESSION_PROJECT_TOP are set
         # (`temp_root_ok`), and a bare CI runner sets neither, so there it refuses every fixture, marked or not (found on the runner, #2312). The Mac passed because the
         # selftest ran from a session whose shell had both.
-        shim_env = {**base, "PATH": f"{shim}{os.pathsep}{base['PATH']}", "TMPDIR": tempfile.gettempdir(), "CLAUDE_SESSION_PROJECT_TOP": str(REAL_REPO)}
+        # TMPDIR is a FRESH directory of its own, never the machine's temp root (#2332): the shim refuses a temp root that CONTAINS the session's project, and the harness stages this
+        # tree under the machine's temp root (`mutbase-<guard>-*`), so a check that set TMPDIR to it passed in the real tree and failed, on macOS and on Linux, in the staged copy
+        # the mutation guard runs. A fresh subdirectory cannot contain the tree wherever the tree sits, and every fixture the probe builds lands inside it.
+        session_tmp = Path(td) / "session-tmp"
+        session_tmp.mkdir()
+        shim_env = {**base, "PATH": f"{shim}{os.pathsep}{base['PATH']}", "TMPDIR": str(session_tmp), "CLAUDE_SESSION_PROJECT_TOP": str(project)}
         # CONTROLS. The environment lets a MARKED fixture stage with `git add -A` (so the check is about the fixture, not about a shim that refuses everything), and refuses the
         # old way: a plain clone of an empty remote, staged with `git add -A`.
-        marked = fixture_git.init(Path(td) / "marked", "-b", "main")
+        marked = fixture_git.init(session_tmp / "marked", "-b", "main")
         (marked / "m.txt").write_text("x\n", encoding="utf-8")
         _tick()
         staged = subprocess.run(["git", "add", "-A"], cwd=marked, env=fixture_git.env(marked, shim_env), capture_output=True, text=True)
@@ -289,6 +302,8 @@ def hostile_environment_fixtures() -> None:
             if subprocess.run(["git", "-C", str(old), "add", "-A"], env=shim_env, capture_output=True, text=True).returncode == 0:
                 FAILURES.append("#2312: CONTROL is vacuous: `git add -A` in a plain clone was NOT refused with the shipped shim first on PATH")
         build("the shipped git shim first on PATH", shim_env)
+        if not gitconfig:
+            return
         # (B) a hostile global and system gitconfig, the shim off PATH. CONTROL: the config applies (a plain `git init` names the default branch it sets).
         cfg = Path(td) / "hostile-gitconfig"
         cfg.write_text("[init]\n\tdefaultBranch = master\n[core]\n\thooksPath = .githooks\n", encoding="utf-8")
@@ -378,6 +393,22 @@ def sweep_progress_fixtures() -> None:
             os.kill(pid, signal.SIGKILL)                       # the orphan of the SIGKILLed sweep, which could not clean up after itself
     finally:
         shutil.rmtree(work.parent, ignore_errors=True)
+
+
+def _staged_hostile_environment_fixture() -> None:
+    """#2332: check A again, for a project that sits INSIDE the machine's temp root, as the mutation harness stages this tree (`mutbase-<guard>-*` under it). The shim refuses a
+    temp root that contains the session's project, so a check that takes the machine's temp root for TMPDIR passes in the real tree and is INERT in the staged copy. The project
+    here is a directory under the temp root whose `plugins` is the real one (the shim and the fixtures are read from it)."""
+    import tempfile
+    staged = Path(tempfile.mkdtemp(prefix="doctor-staged-"))
+    try:
+        (staged / "plugins").symlink_to(REAL_REPO / "plugins")
+        _tick()
+        if not str(staged.resolve()).startswith(str(Path(tempfile.gettempdir()).resolve())):
+            FAILURES.append(f"#2332: the staged project {staged} is not inside the temp root, so this fixture does not stage what the harness stages")
+        hostile_environment_fixtures(staged, gitconfig=False)
+    finally:
+        shutil.rmtree(staged, ignore_errors=True)
 
 
 def repo_untouched_fixtures() -> None:
@@ -711,6 +742,7 @@ def run() -> int:
     gate_time_fixtures()
     starved_gate_fixtures()
     hostile_environment_fixtures()
+    _staged_hostile_environment_fixture()
     sweep_progress_fixtures()
     repo_untouched_fixtures()
     ruleset_fixtures()
@@ -1419,6 +1451,63 @@ def run() -> int:
         if not exited or len(pids) != 2 or left:
             FAILURES.append(f"#1459: Ctrl-C during a gate left it running (doctor exited: {exited}; recorded "
                             f"{len(pids)} of 2 pids; survivors {left})")
+
+    # #2306, #2316 review: the temp monitor reports and --fix removes ONLY a directory proven ours (rf_tmp's owner marker) whose owner is
+    # gone and that nothing holds, over 24 h. A foreign rf- dir, a plain rf- file, a young dir, a held dir and one whose owner lives are kept.
+    with tempfile.TemporaryDirectory() as tmp_root:
+        old = time.time() - 3 * 24 * 3600
+        gone = subprocess.Popen(["true"])
+        gone.wait()                                    # a pid that has exited: a dead owner
+        def make(name: str, owner: int | None, is_file: bool = False) -> None:
+            path = os.path.join(tmp_root, name)
+            if is_file:
+                Path(path).write_text("x\n")
+            else:
+                os.makedirs(path)
+                if owner is not None:
+                    Path(path, ".rf_tmp-owner").write_text(f"rf_tmp v1\n{owner}\n{int(old)}\n")
+            os.utime(path, (old, old))
+        holder = subprocess.Popen(["sleep", "60"])
+        for name, owner, is_file in (("rf-leaked", gone.pid, False), ("rf-foreign", None, False), ("rf-x.txt", None, True),
+                                     ("rf-held", gone.pid, False), ("rf-alive", holder.pid, False), ("foreign-old", None, False)):
+            make(name, owner, is_file)
+        os.makedirs(os.path.join(tmp_root, "rf-young"))
+        Path(tmp_root, "rf-young", ".rf_tmp-owner").write_text(f"rf_tmp v1\n{gone.pid}\n{int(time.time())}\n")
+        holder.kill()
+        holder.wait()
+        alive = subprocess.Popen(["sleep", "60"])
+        Path(tmp_root, "rf-alive", ".rf_tmp-owner").write_text(f"rf_tmp v1\n{alive.pid}\n{int(old)}\n")
+        os.utime(os.path.join(tmp_root, "rf-alive"), (old, old))
+        cwd_holder = subprocess.Popen(["sleep", "60"], cwd=os.path.join(tmp_root, "rf-held"))
+        try:
+            report = md.Doctor(fix=False)
+            report.check_temp_dirs(tmp_root=tmp_root, scratch_glob=os.path.join(tmp_root, "none-*"))
+            r = find(report, "temp dirs")
+            _tick()
+            if not (r and r.status == md.FAIL and "rf-leaked" in r.findings
+                    and not {"foreign-old", "rf-young", "rf-foreign", "rf-x.txt"} & set(r.findings)):
+                FAILURES.append(f"#2306: a leaked rf- dir over 24 h is reported (and only ours, and only old ones): {r}")
+            fixer = md.Doctor(fix=True)
+            fixer.check_temp_dirs(tmp_root=tmp_root, scratch_glob=os.path.join(tmp_root, "none-*"))
+            for label, name, want in (("#2306: --fix removes a leaked rf- dir over 24 h", "rf-leaked", False),
+                                      ("#2306: --fix never touches another program's entry", "foreign-old", True),
+                                      ("#2306: --fix keeps an rf- dir under 24 h", "rf-young", True),
+                                      ("#2316: --fix keeps a foreign rf- dir with no owner marker", "rf-foreign", True),
+                                      ("#2316: --fix never removes a plain rf- file", "rf-x.txt", True),
+                                      ("#2316: --fix keeps a dir whose owner pid is alive", "rf-alive", True)):
+                _tick()
+                if os.path.lexists(os.path.join(tmp_root, name)) != want:
+                    FAILURES.append(label)
+            _tick()
+            if shutil.which("lsof") and not os.path.exists(os.path.join(tmp_root, "rf-held")):
+                FAILURES.append("#2306: --fix keeps an rf- dir a live process still holds")
+            _tick()
+            if fixer.fixed and "1 rf- temp entry" not in " ".join(fixer.fixed):
+                FAILURES.append(f"#2316: --fix counts only what is gone: {fixer.fixed}")
+        finally:
+            for p in (alive, cwd_holder):
+                p.kill()
+                p.wait()
 
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)

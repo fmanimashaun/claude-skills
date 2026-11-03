@@ -26,6 +26,8 @@ block, and shares a 1.5 s budget unless the hook sets a `timeout`; this finishes
 """
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import json
 import os
 import re
@@ -113,7 +115,7 @@ _PARENT = ("import subprocess, sys\n"
 
 def selftest() -> int:
     failures: list[str] = []
-    work = tempfile.mkdtemp(prefix="reaper-selftest-")
+    work = rf_tmp.mkdtemp("reaper-selftest-")
     # UNIQUE PER RUN: two guards run this selftest together under --jobs, and a shared id made each reap the other's
     # fixtures, so both went inert (#1646 review R2).
     mine, other = str(uuid.uuid4()), str(uuid.uuid4())

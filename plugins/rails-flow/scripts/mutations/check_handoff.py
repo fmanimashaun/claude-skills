@@ -17,7 +17,8 @@ GUARD = Guard(
     # the row for the missing one as stale. `run_baseline` (#422) surfaced it as INERT the day
     # it landed. A hand-typed list of a directory's contents goes quiet the first time the
     # directory grows, which is the coverage-gap class inside the harness built to catch it.
-    needs=(
+    needs=("scripts/rf_tmp.py",   # rf_tmp (#2306)
+           
         "reference/model-tiers.md",
         "commands/handoff.md",
         # The DIRECTORY, not ten hand-listed agent files. The list omitted

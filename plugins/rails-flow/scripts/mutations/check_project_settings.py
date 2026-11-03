@@ -6,6 +6,7 @@ GUARD = Guard(
     name='check_project_settings',
     subject='scripts/check_project_settings.py',
     selftest='scripts/check_project_settings.py',
+    needs=("scripts/rf_tmp.py", ),  # rf_tmp (#2306)
     mutations=(
         Mutation('autoMode is not flagged', '    if "autoMode" in data:', '    if False:', 'autoMode in settings.json is dead'),
         Mutation('bypassPermissions is not flagged', 'if isinstance(mode, str) and mode in DEAD_MODES:', 'if isinstance(mode, str) and mode == "auto":', 'defaultMode bypassPermissions is dead'),

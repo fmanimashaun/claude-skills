@@ -5,7 +5,8 @@ GUARD = Guard(
     name="maintainer_doctor",
     subject="scripts/maintainer_doctor.py",
     selftest="scripts/maintainer_doctor_selftest.py",
-    needs=(
+    needs=("plugins/rails-flow/scripts/rf_tmp.py",   # rf_tmp (#2306)
+           
         # + `scripts`: GATES names ~55 sibling scripts; listing them by hand is the same rot that made check_handoff inert.
         ".gitignore",
         "scripts",
@@ -380,6 +381,32 @@ GUARD = Guard(
             '                self.announce(f"gate interrupted: {name} after {time.monotonic() - started:.1f} s (the sweep was cancelled or timed out here)")\n',
             '',
             '#2308: a sweep cancelled (SIGTERM) mid-gate must name the gate',
+        ),
+        Mutation(
+            # #2306: the temp monitor and its --fix.
+            "a leaked rf- dir over 24 h is no longer reported",
+            "        stale = sorted(e for e, pid in owners.items() if pid is not None and now - os.lstat(os.path.join(root, e)).st_mtime > 24 * 3600)",
+            "        stale = []",
+            "#2306: a leaked rf- dir over 24 h is reported",
+        ),
+        Mutation(
+            # #2316 review: ownership by name alone deleted another program's rf- dir.
+            "a foreign rf- dir with no owner marker counts as ours",
+            "        stale = sorted(e for e, pid in owners.items() if pid is not None and now - os.lstat(os.path.join(root, e)).st_mtime > 24 * 3600)",
+            "        stale = sorted(e for e, pid in owners.items() if now - os.lstat(os.path.join(root, e)).st_mtime > 24 * 3600)",
+            "#2316: --fix keeps a foreign rf- dir with no owner marker",
+        ),
+        Mutation(
+            "a live owner no longer holds its dir",
+            "                if owner is not None:\n                    os.kill(owner, 0)\n                    return True",
+            "                if owner is not None:\n                    os.kill(owner, 0)\n                    return False",
+            "#2316: --fix keeps a dir whose owner pid is alive",
+        ),
+        Mutation(
+            "--fix removes an entry a live process holds",
+            "            return bool(out.strip())\n\n        try:\n            entries = os.listdir(root)",
+            "            return False\n\n        try:\n            entries = os.listdir(root)",
+            "#2306: --fix keeps an rf- dir a live process still holds",
         ),
     ),
 )

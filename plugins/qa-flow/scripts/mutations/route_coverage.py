@@ -9,7 +9,8 @@ GUARD = Guard(
     # so without it the staged tempdir fails at IMPORT and the harness reports the guard
     # INERT -- every mutation "caught" regardless. A guard's needs is everything its
     # subject imports, and that changed when the loader moved.
-    needs=("scripts/qa_config.py",),
+    needs=("scripts/rf_tmp.py",   # rf_tmp (#2306)
+           "scripts/qa_config.py",),
     # `validate_evidence` imports `evidence_app_tie` (#1133), so staging one without the other
     # leaves this guard dead on ModuleNotFoundError. Third time an added import has orphaned a
     # neighbouring guard (#1113, #1114); see the import-completeness invariant in the selftest.

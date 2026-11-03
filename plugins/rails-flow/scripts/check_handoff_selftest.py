@@ -26,6 +26,8 @@ Costs nothing: no network, no Rails, no bundler.
 
 from __future__ import annotations
 
+import sys as _rf_sys; from pathlib import Path as _RfPath; _rf_sys.path.insert(0, str(_RfPath(__file__).resolve().parent))  # rf_tmp (#2306)
+import rf_tmp  # noqa: E402  -- rf- temp dirs, removed at exit and on a signal
 import contextlib
 import io
 import subprocess
@@ -120,14 +122,14 @@ def _tick() -> None:
 
 
 def _write(body: str, name: str = "invoice-totals.md") -> Path:
-    root = Path(tempfile.mkdtemp(prefix="railsflow-handoff-"))
+    root = Path(rf_tmp.mkdtemp("railsflow-handoff-"))
     path = root / name
     path.write_text(body, encoding="utf-8")
     return path
 
 
 def _criteria_file(body: str | None = None) -> Path:
-    root = Path(tempfile.mkdtemp(prefix="railsflow-criteria-"))
+    root = Path(rf_tmp.mkdtemp("railsflow-criteria-"))
     path = root / "invoice-totals.md"
     path.write_text(
         body if body is not None else (
@@ -196,7 +198,7 @@ TIER_HEAD = "| Agent | Tier | `model:` | What proves its output |\n|---|---|---|
 
 
 def tiers_doc(rows: str) -> Path:
-    root = Path(tempfile.mkdtemp(prefix="railsflow-tiers-"))
+    root = Path(rf_tmp.mkdtemp("railsflow-tiers-"))
     path = root / "model-tiers.md"
     path.write_text(
         f"# Tiers\n\nprose\n\n{ch.TIERS_BEGIN}\n{TIER_HEAD}{rows}{ch.TIERS_END}\n", encoding="utf-8"
@@ -205,7 +207,7 @@ def tiers_doc(rows: str) -> Path:
 
 
 def agents_dir(agents: dict[str, str | None], advisor: bool = True) -> Path:
-    root = Path(tempfile.mkdtemp(prefix="railsflow-agents-")) / "agents"
+    root = Path(rf_tmp.mkdtemp("railsflow-agents-")) / "agents"
     root.mkdir(parents=True)
     for name, model in agents.items():
         model_line = f"model: {model}\n" if model is not None else ""
@@ -268,7 +270,7 @@ def run() -> int:  # noqa: PLR0915 -- a flat list of fixtures reads better than 
     )
     _tick()
     try:
-        ch.parse(Path(tempfile.mkdtemp(prefix="railsflow-handoff-")) / "absent.md")
+        ch.parse(Path(rf_tmp.mkdtemp("railsflow-handoff-")) / "absent.md")
         FAILURES.append("missing file: expected UNUSABLE")
     except ch.Unusable as exc:
         if "no such file" not in str(exc):
@@ -510,13 +512,13 @@ def run() -> int:  # noqa: PLR0915 -- a flat list of fixtures reads better than 
         "the criteria file does not exist",
         GOOD,
         contains="does not exist",
-        criteria=Path(tempfile.mkdtemp(prefix="railsflow-nocrit-")) / "invoice-totals.md",
+        criteria=Path(rf_tmp.mkdtemp("railsflow-nocrit-")) / "invoice-totals.md",
     )
     expect_findings(
         "a cheap-tier executor with no criteria file has no external proof",
         swap(EXECUTOR, "## Executor\nTier: mechanical (`model: haiku`) — the suite grades it.\n"),
         contains="external",
-        criteria=Path(tempfile.mkdtemp(prefix="railsflow-nocrit-")) / "invoice-totals.md",
+        criteria=Path(rf_tmp.mkdtemp("railsflow-nocrit-")) / "invoice-totals.md",
     )
     expect_findings(
         "a criteria file with no criteria in it",
@@ -712,7 +714,7 @@ def run() -> int:  # noqa: PLR0915 -- a flat list of fixtures reads better than 
             FAILURES.append(f"an empty tiers block: unexpected message: {exc}")
     _tick()
     try:
-        empty = Path(tempfile.mkdtemp(prefix="railsflow-noagents-")) / "agents"
+        empty = Path(rf_tmp.mkdtemp("railsflow-noagents-")) / "agents"
         empty.mkdir(parents=True)
         (empty / "readme.md").write_text("no frontmatter here\n", encoding="utf-8")
         ch.agent_models(empty)
@@ -722,7 +724,7 @@ def run() -> int:  # noqa: PLR0915 -- a flat list of fixtures reads better than 
             FAILURES.append(f"an agents dir with no definitions: unexpected message: {exc}")
     _tick()
     try:
-        ch.agent_models(Path(tempfile.mkdtemp(prefix="railsflow-noagents-")) / "absent")
+        ch.agent_models(Path(rf_tmp.mkdtemp("railsflow-noagents-")) / "absent")
         FAILURES.append("a missing agents dir: expected UNUSABLE")
     except ch.Unusable as exc:
         if "no such directory" not in str(exc):

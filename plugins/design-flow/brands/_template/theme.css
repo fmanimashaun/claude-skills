@@ -27,6 +27,8 @@
   /* the client's palette — private primitives */
   --color-brand-500: #0B5FA5;   /* primary — text-safe on --background AND under white text */
   --color-brand-600: #08497F;   /* primary, pressed   */
+  --color-brand-200: #8CC8F8;   /* primary hover ON DARK — one step lighter than brand-300, so hover lifts the fill
+                                   and the dark label stays readable (10.24:1) */
   --color-brand-300: #5AB0F5;   /* primary ON DARK — a light step, so the dark surface can be
                                    its foreground; the light step is unreadable on navy */
   --color-ink-900:   #10151C;   /* darkest text/surface */
@@ -84,6 +86,9 @@
   --accent: var(--color-ink-800);         --accent-foreground: var(--color-ink-50);
   --border: var(--color-ink-800);         --input: var(--color-ink-800);
   --primary: var(--color-brand-300);      --primary-foreground: var(--color-ink-900);
+  /* #2324. A role the light block overrides is overridden here too: left alone it keeps the LIGHT
+     value (a dark fill), and the dark label on it measured 2.22:1 in the reliance pack. */
+  --primary-hover: var(--color-brand-200);
   /* #775. Re-pointed for dark like the surfaces above, not left at their light values.
      A focus ring is a UI component state (WCAG 1.4.11, 3:1); an `-ink` role exists to BE
      text (1.4.3, 4.5:1). Held at their light values they measured 2.44:1 on this ground —

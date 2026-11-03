@@ -6,7 +6,8 @@ GUARD = Guard(
     subject="plugins/qa-flow/scripts/validate_evidence.py",
     selftest="plugins/qa-flow/scripts/validate_evidence_selftest.py",
     # `plugins/qa-flow`: its selftest reads profile/agent files across the plugin.
-    needs=("plugins/qa-flow",),
+    needs=("plugins/qa-flow/scripts/rf_tmp.py",   # rf_tmp (#2306)
+           "plugins/qa-flow",),
     mutations=(
         # #993: the two journey-walker profiles. Each rule below is the difference between a row that
         # records a defect and a row that merely says so.
